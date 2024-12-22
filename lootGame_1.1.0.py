@@ -709,33 +709,40 @@ class LootSystemGUI(tk.Frame):
             self.combat_manager.enemies_defeated += 1
             self.add_to_combat_log(f"\nEncountered {self.combat_manager.current_enemy.name}!")
         
-        # Combat round
-        if self.character.computed_stats["health"] > 0:
-            # Player attack
-            damage_to_enemy = max(1, self.character.computed_stats["attack"] - 
-                                self.combat_manager.current_enemy.defense)
-            self.combat_manager.current_enemy.health -= damage_to_enemy
+        # Player attack
+        damage_to_enemy = max(1, self.character.computed_stats["attack"] - 
+                            self.combat_manager.current_enemy.defense)
+        self.combat_manager.current_enemy.health -= damage_to_enemy
+        self.add_to_combat_log(
+            f"You deal {damage_to_enemy} damage to {self.combat_manager.current_enemy.name} "
+            f"({self.combat_manager.current_enemy.health}/{self.combat_manager.current_enemy.max_health} HP)"
+        )
+        
+        # Enemy attack if still alive
+        if self.combat_manager.current_enemy.is_alive():
+            damage_to_player = max(1, self.combat_manager.current_enemy.attack - 
+                                self.character.computed_stats["defense"])
+            self.character.computed_stats["health"] -= damage_to_player
             self.add_to_combat_log(
-                f"You deal {damage_to_enemy} damage to {self.combat_manager.current_enemy.name} "
-                f"({self.combat_manager.current_enemy.health}/{self.combat_manager.current_enemy.max_health} HP)"
+                f"{self.combat_manager.current_enemy.name} deals {damage_to_player} damage to you "
+                f"({self.character.computed_stats['health']}/{self.character.computed_stats['max_health']} HP)"
             )
-            
-            # Enemy attack if still alive
-            if self.combat_manager.current_enemy.is_alive():
-                damage_to_player = max(1, self.combat_manager.current_enemy.attack - 
-                                    self.character.computed_stats["defense"])
-                self.character.computed_stats["health"] -= damage_to_player
-                self.add_to_combat_log(
-                    f"{self.combat_manager.current_enemy.name} deals {damage_to_player} damage to you "
-                    f"({self.character.computed_stats['health']}/{self.character.computed_stats['max_health']} HP)"
-                )
+        
+        # Check for player death
+        if self.character.computed_stats["health"] <= 0:
+            self.add_to_combat_log("\nYou have been defeated!")
+            self.combat_manager.combat_active = False
+            self.adventure.current_adventure = None
+            self.character.computed_stats["health"] = 0  # Set health to 0 instead of negative
+            self.update_character_display()
+            return
         
         # Update character display
         self.update_character_display()
         
         # Schedule next combat tick if adventure is still active
-        if self.adventure.current_adventure:
-            self.root.after(1000, self.combat_tick)  # Combat tick every 1 seconds
+        if self.adventure.current_adventure and self.combat_manager.combat_active:
+            self.root.after(1000, self.combat_tick)  # Combat tick every 1 second
 
     def complete_adventure(self):
         self.combat_manager.combat_active = False
