@@ -191,12 +191,66 @@ class LootSystemGUI(tk.Frame):
         self.root.geometry("1200x800")
         self.character = Character()
         self.adventure = Adventure()
+
+        self.chest_tiers = {
+            "Basic": {
+                "price": 100,
+                "rarity_multipliers": {
+                    "common": 1.0,      # Base chances
+                    "uncommon": 1.0,
+                    "rare": 1.0,
+                    "epic": 1.0,
+                    "legendary": 1.0,
+                    "mythic": 1.0,
+                    "divine": 1.0,
+                    "unspoken": 1.0
+                }
+            },
+            "Advanced": {
+                "price": 500,
+                "rarity_multipliers": {
+                    "common": 0.0,      # No common
+                    "uncommon": 1.8,
+                    "rare": 1.7,
+                    "epic": 1.5,
+                    "legendary": 1.3,
+                    "mythic": 1.2,
+                    "divine": 1.1,
+                    "unspoken": 1.0
+                }
+            },
+            "Elite": {
+                "price": 2500,
+                "rarity_multipliers": {
+                    "common": 0.0,      # No common or uncommon
+                    "uncommon": 0.0,
+                    "rare": 2.4,
+                    "epic": 2.2,
+                    "legendary": 1.5,
+                    "mythic": 1.5,
+                    "divine": 1.3,
+                    "unspoken": 1.1
+                }
+            },
+            "Legendary": {
+                "price": 10000,
+                "rarity_multipliers": {
+                    "common": 0.0,      # No common, uncommon, or rare 
+                    "uncommon": 0.0,
+                    "rare": 0.0,
+                    "epic": 2.6,
+                    "legendary": 2.5,
+                    "mythic": 1.8,
+                    "divine": 1.7,
+                    "unspoken": 1.2
+                }
+            }
+        }
+
+
+        self.keys = {tier: 0 for tier in self.chest_tiers}  # Starting keys for each tier
         
-        # Economy variables
-        self.coins = 1000  # Starting coins
-        self.key_price = 100
-        self.keys = 5  # Starting keys
-        
+
         # Price multipliers for each rarity
         self.price_multipliers = {
             "common": 10,
@@ -217,7 +271,7 @@ class LootSystemGUI(tk.Frame):
             "epic": "#800080",        # Purple
             "legendary": "#FFA500",   # Orange
             "mythic": "#FF0000",      # Red
-            "divine": "#FFD700",      # Gold
+            "divine": "#FFB6C1",      # Light Pink
             "unspoken": "#FF1493"     # Deep Pink
         }
         
@@ -296,13 +350,26 @@ class LootSystemGUI(tk.Frame):
             }
         }
 
+        # starting stats
+        self.stats = {
+            "coins": 1000,
+            "chests_opened": {tier: 0 for tier in self.chest_tiers},  # Track per tier
+            "total_chests_opened": 0,
+            "coins_spent": 0,
+            "items_sold": 0,
+            "coins_earned": 0,
+            "rarities_found": {rarity: 0 for rarity in self.items.keys()},
+            "adventures_completed": 0,
+            "total_enemies_defeated": 0,
+            "total_exp_earned": 0,
+        }
         
         self.inventory = []
         self.create_widgets()
         self.update_counters()
         self.create_character_frame()
-        self.create_adventure_frame()
         self.create_equipment_frame()
+        self.create_adventure_frame()
         self.filtered_items = []
         self.filtered_indices = []
 
@@ -319,39 +386,109 @@ class LootSystemGUI(tk.Frame):
         self.right_frame = ttk.Frame(self.root, padding="10")
         self.right_frame.pack(side="right", fill="both", expand=True)
         
-        # Economy display
-        self.economy_frame = ttk.LabelFrame(self.top_frame, text="Economy", padding="5")
-        self.economy_frame.pack(side="left", padx=5)
+         # Create frame for chest controls
+        self.chest_controls_frame = ttk.LabelFrame(self.top_frame, text="Chest Controls", padding="5")
+        self.chest_controls_frame.pack(side="left", padx=5)
         
-        self.coins_label = ttk.Label(self.economy_frame, text=f"Coins: {self.coins}")
-        self.coins_label.pack(side="left", padx=5)
-        
-        self.keys_label = ttk.Label(self.economy_frame, text=f"Keys: {self.keys}")
-        self.keys_label.pack(side="left", padx=5)
-        
-        self.buy_key_button = ttk.Button(self.economy_frame, 
-                                        text=f"Buy Key ({self.key_price} coins)", 
-                                        command=self.buy_key)
-        self.buy_key_button.pack(side="left", padx=5)
-        
-        # Control buttons
-        self.control_frame = ttk.Frame(self.top_frame, padding="5")
-        self.control_frame.pack(side="left", padx=5)
-        
-        self.open_button = ttk.Button(self.control_frame, 
-                                     text="Open Chest (1 Key)", 
-                                     command=self.open_chest)
-        self.open_button.pack(side="left", padx=5)
-        
-        self.sell_button = ttk.Button(self.control_frame, 
-                                     text="Sell Selected", 
-                                     command=self.sell_items)
-        self.sell_button.pack(side="left", padx=5)
-        # Equip Button
-        self.equip_button = ttk.Button(self.control_frame,
-                                    text="Equip Selected",
-                                    command=self.equip_selected_item)
-        self.equip_button.pack(side="left", padx=5)
+        # Create inner frame for controls
+        chest_inner_frame = ttk.Frame(self.chest_controls_frame)
+        chest_inner_frame.grid(row=0, column=0, padx=5, pady=5)
+
+
+        # Bulk opening toggle
+        self.bulk_var = tk.BooleanVar(value=False)
+        self.bulk_check = ttk.Checkbutton(chest_inner_frame, 
+                                        text="Open 10x", 
+                                        variable=self.bulk_var)
+        self.bulk_check.grid(row=0, column=3, columnspan=4, pady=5)
+
+        # Create header labels
+        ttk.Label(chest_inner_frame, text="Tier", width=15).grid(row=1, column=0, padx=5)
+        ttk.Label(chest_inner_frame, text="Keys", width=10).grid(row=1, column=1, padx=5)
+        ttk.Label(chest_inner_frame, text="Actions", width=20).grid(row=1, column=2, columnspan=2, padx=5)
+
+        # Create frames for each chest tier
+        self.key_labels = {}
+        for i, (tier, info) in enumerate(self.chest_tiers.items(), 2):
+            # Tier name
+            ttk.Label(chest_inner_frame, 
+                    text=f"{tier}", 
+                    width=15).grid(row=i, column=0, padx=5, pady=2)
+            
+            # Key count
+            self.key_labels[tier] = ttk.Label(chest_inner_frame, 
+                                            text=f"{self.keys[tier]}", 
+                                            width=10)
+            self.key_labels[tier].grid(row=i, column=1, padx=5, pady=2)
+            
+            # Buy button
+            ttk.Button(chest_inner_frame,
+                    text=f"Buy ({info['price']})",
+                    width=15,
+                    command=lambda t=tier: self.buy_key(t)).grid(row=i, column=2, padx=5, pady=2)
+            
+            # Open button
+            ttk.Button(chest_inner_frame,
+                    text="Open",
+                    width=15,
+                    command=lambda t=tier: self.open_chest(t)).grid(row=i, column=3, padx=5, pady=2)
+     
+     
+        # stats frame:
+        self.stats_frame = ttk.LabelFrame(self.top_frame, text="Game Stats", padding="5")
+        self.stats_frame.pack(side="right", padx=5, fill="x", expand=True)
+
+        # Create three columns for stats
+        left_stats = ttk.Frame(self.stats_frame)
+        left_stats.pack(side="left", padx=10)
+        middle_stats = ttk.Frame(self.stats_frame)
+        middle_stats.pack(side="left", padx=10)
+        right_stats = ttk.Frame(self.stats_frame)
+        right_stats.pack(side="left", padx=10)
+        far_right_stats = ttk.Frame(self.stats_frame)
+        far_right_stats.pack(side="left", padx=10)
+
+
+        # Left column - Economy stats
+        ttk.Label(left_stats, text="Economy:", font=('Arial', 10, 'bold')).pack(anchor="w", pady=(0,5))
+        self.coins_label = ttk.Label(left_stats, text=f"Coins: {self.stats['coins']}")
+        self.coins_label.pack(anchor="w", pady=2)
+        self.spent_label = ttk.Label(left_stats, text=f"Coins Spent: {self.stats['coins_spent']}")
+        self.spent_label.pack(anchor="w", pady=2)
+        self.earned_label = ttk.Label(left_stats, text=f"Coins Earned: {self.stats['coins_earned']}")
+        self.earned_label.pack(anchor="w", pady=2)
+        self.items_sold_label = ttk.Label(left_stats, text=f"Items Sold: {self.stats['items_sold']}")
+        self.items_sold_label.pack(anchor="w", pady=2)
+
+        # Middle column - Chest stats
+        ttk.Label(middle_stats, text="Chests:", font=('Arial', 10, 'bold')).pack(anchor="w", pady=(0,5))
+        self.total_chests_label = ttk.Label(middle_stats, text=f"Total Opened: {self.stats['total_chests_opened']}")
+        self.total_chests_label.pack(anchor="w", pady=2)
+
+        # Chest counts per tier
+        self.chest_labels = {}
+        for tier in self.chest_tiers:
+            self.chest_labels[tier] = ttk.Label(middle_stats, 
+                                            text=f"{tier}: {self.stats['chests_opened'][tier]}")
+            self.chest_labels[tier].pack(anchor="w", pady=2)
+
+        # Right column - Rarity stats
+        ttk.Label(right_stats, text="Rarities Found:", font=('Arial', 10, 'bold')).pack(anchor="w", pady=(0,5))
+        self.rarity_labels = {}
+        for rarity in self.items.keys():
+            self.rarity_labels[rarity] = ttk.Label(right_stats, 
+                                                text=f"{rarity.capitalize()}: {self.stats['rarities_found'][rarity]}",
+                                                foreground=self.rarity_colors[rarity])
+            self.rarity_labels[rarity].pack(anchor="w", pady=2)
+
+        # Far right column - adventure stats
+        ttk.Label(far_right_stats, text="Adventure Stats:", font=('Arial', 10, 'bold')).pack(anchor="w", pady=(10,5))
+        self.adventures_label = ttk.Label(far_right_stats, text=f"Adventures Completed: {self.stats['adventures_completed']}")
+        self.adventures_label.pack(anchor="w", pady=2)
+        self.enemies_label = ttk.Label(far_right_stats, text=f"Total Enemies Defeated: {self.stats['total_enemies_defeated']}")
+        self.enemies_label.pack(anchor="w", pady=2)
+        self.total_exp_label = ttk.Label(far_right_stats, text=f"Total EXP Earned: {self.stats['total_exp_earned']}")
+        self.total_exp_label.pack(anchor="w", pady=2)
         
         # Filters
         self.filter_frame = ttk.LabelFrame(self.left_frame, text="Filters", padding="5")
@@ -374,6 +511,28 @@ class LootSystemGUI(tk.Frame):
         self.type_filter.pack(side="left", padx=5)
         self.type_filter.bind('<<ComboboxSelected>>', self.apply_filters)
         
+
+        # Action buttons frame
+        self.action_frame = ttk.Frame(self.left_frame, padding="5")
+        self.action_frame.pack(fill="x", pady=5)
+
+        # Create a container frame to center the buttons
+        button_container = ttk.Frame(self.action_frame)
+        button_container.pack(expand=True)
+
+        self.equip_button = ttk.Button(button_container,
+                                    text="Equip Selected",
+                                    width=20,
+                                    command=self.equip_selected_item)
+        self.equip_button.pack(side="left", padx=20)
+
+        self.sell_button = ttk.Button(button_container,
+                                    text="Sell Selected",
+                                    width=20,
+                                    command=self.sell_items)
+        self.sell_button.pack(side="left", padx=20)
+
+
         # Counters frame
         self.counters_frame = ttk.LabelFrame(self.left_frame, text="Item Counts", padding="5")
         self.counters_frame.pack(fill="x", pady=5)
@@ -401,84 +560,119 @@ class LootSystemGUI(tk.Frame):
         
         self.inventory_scroll.config(command=self.inventory_display.yview)
     
-    def buy_key(self):
-        if self.coins >= self.key_price:
-            self.coins -= self.key_price
-            self.keys += 1
-            self.update_economy_display()
+    def buy_key(self, tier):
+        price = self.chest_tiers[tier]["price"]
+        amount = 10 if self.bulk_var.get() else 1
+        total_price = price * amount
+        
+        if self.stats['coins'] >= total_price:
+            self.stats['coins'] -= total_price
+            self.stats['coins_spent'] += total_price
+            self.keys[tier] += amount
+            self.update_stats_display()  # Changed from update_economy_display
         else:
             messagebox.showwarning("Not Enough Coins", 
-                                 f"You need {self.key_price} coins to buy a key!")
-    
+                                f"You need {total_price} coins to buy {amount} {tier} key(s)!")
+            
+            
     def sell_items(self):
         selected_indices = self.inventory_display.curselection()
         if not selected_indices:
             return
         
         total_value = 0
-        # Convert display indices to inventory indices and sort in reverse order
         inventory_indices = sorted([self.filtered_indices[i] for i in selected_indices], reverse=True)
         
-        # Remove items using inventory indices
         for index in inventory_indices:
             item = self.inventory[index]
             rarity = item.split(":")[0].lower().replace(" item", "")
             value = self.price_multipliers[rarity]
             total_value += value
-            
-            # Remove item from inventory
             del self.inventory[index]
         
-        self.coins += total_value
+        # Update stats
+        self.stats['coins'] += total_value
+        self.stats['coins_earned'] += total_value
+        self.stats['items_sold'] += len(inventory_indices)
+        
         self.update_inventory_display()
-        self.update_economy_display()
+        self.update_stats_display()
         self.update_counters()
         messagebox.showinfo("Items Sold", f"Sold items for {total_value} coins!")
-    
-    def raritySys(self, numItems=1):
+
+
+    def raritySys(self, numItems=1, tier="Basic"):
         opened_items = []
+        multipliers = self.chest_tiers[tier]["rarity_multipliers"]
+        
+        # Base rarity chances
+        base_chances = {
+            "common": 0.515,
+            "uncommon": 0.215,
+            "rare": 0.065,
+            "epic": 0.015,
+            "legendary": 0.005,
+            "mythic": 0.0005,
+            "divine": 0.00005,
+            "unspoken": 0.00005
+        }
+        
+        # Adjust chances using multipliers
+        adjusted_chances = {
+            rarity: base_chances[rarity] * multiplier
+            for rarity, multiplier in multipliers.items()
+        }
+        
+        # Remove excluded rarities (multiplier = 0) and normalize remaining chances
+        total_chance = sum(adjusted_chances.values())
+        normalized_chances = {
+            rarity: chance / total_chance for rarity, chance in adjusted_chances.items() if chance > 0
+        }
+        
+        # Cumulative probability mapping
+        cumulative = []
+        current = 0.0
+        for rarity, prob in normalized_chances.items():
+            current += prob
+            cumulative.append((current, rarity))
+        
+        # Draw items
         for _ in range(numItems):
-            drawNum = rand.random()
-            rarity = None
-            if drawNum <= 0.00005:      # 0.005%
-                rarity = "unspoken"
-            elif drawNum <= 0.0005:     # 0.05%
-                rarity = "divine"
-            elif drawNum <= 0.005:      # 0.5%
-                rarity = "mythic"
-            elif drawNum <= 0.015:      # 1% 
-                rarity = "legendary"
-            elif drawNum <= 0.065:      # 5% 
-                rarity = "epic"
-            elif drawNum <= 0.215:      # 15%
-                rarity = "rare"
-            elif drawNum <= 0.515:      # 30%
-                rarity = "uncommon"
-            else:                       # Remaining ~48.445%
-                rarity = "common"
+            draw = rand.random()
+            rarity = next(r for c, r in cumulative if draw <= c)
             
-            # Randomly select item type and name
             item_type = rand.choice(list(self.items[rarity].keys()))
             item_name = rand.choice(self.items[rarity][item_type])
             opened_items.append(f"{rarity.capitalize()} Item: {item_name}")
+        
         return opened_items
 
+
     
-    def open_chest(self):
-        if self.keys <= 0:
-            messagebox.showwarning("No Keys", "You need a key to open a chest!")
-            return
+    def open_chest(self, tier):
+        amount = 10 if self.bulk_var.get() else 1
+        
+        if self.keys[tier] >= amount:
+            self.keys[tier] -= amount
+            new_items = self.raritySys(amount, tier)
+            self.inventory.extend(new_items)
             
-        self.keys -= 1
-        new_items = self.raritySys()
-        self.inventory.extend(new_items)
-        self.update_inventory_display()
-        self.update_economy_display()
-        self.update_counters()
-    
-    def update_economy_display(self):
-        self.coins_label.config(text=f"Coins: {self.coins}")
-        self.keys_label.config(text=f"Keys: {self.keys}")
+            # Update stats
+            self.stats['chests_opened'][tier] += amount
+            self.stats['total_chests_opened'] += amount
+            
+            # Count rarities
+            for item in new_items:
+                rarity = item.split(":")[0].lower().replace(" item", "")
+                self.stats['rarities_found'][rarity] += 1
+            
+            self.update_inventory_display()
+            self.update_stats_display()  # Changed from update_economy_display
+            self.update_counters()
+        else:
+            messagebox.showwarning("Not Enough Keys", 
+                                f"You need {amount} {tier} key(s) to open this chest!")
+
     
     def update_inventory_display(self):
         self.inventory_display.delete(0, tk.END)
@@ -537,7 +731,7 @@ class LootSystemGUI(tk.Frame):
         self.update_inventory_display()
 
     def create_character_frame(self):
-        self.character_frame = ttk.LabelFrame(self.left_frame, text="Character", padding="5")
+        self.character_frame = ttk.LabelFrame(self.right_frame, text="Character", padding="5")
         self.character_frame.pack(fill="x", pady=5)
         
         self.level_label = ttk.Label(self.character_frame, 
@@ -551,6 +745,24 @@ class LootSystemGUI(tk.Frame):
         self.stats_label = ttk.Label(self.character_frame,
                                    text=self.get_stats_text())
         self.stats_label.pack(side="left", padx=5)
+
+
+    def create_equipment_frame(self):
+        self.equipment_frame = ttk.LabelFrame(self.right_frame, text="Equipment", padding="5")
+        self.equipment_frame.pack(fill="x", pady=5)
+        
+        self.equipment_labels = {}
+        for slot in ["armor", "weapon", "shield", "ring", "gloves", "necklace"]:
+            frame = ttk.Frame(self.equipment_frame)
+            frame.pack(fill="x", pady=2)
+            
+            self.equipment_labels[slot] = ttk.Label(frame, text=f"{slot.capitalize()}: None")
+            self.equipment_labels[slot].pack(side="left", padx=5)
+            
+            ttk.Button(frame, 
+                    text="Unequip",
+                    command=lambda s=slot: self.unequip_item(s)).pack(side="right", padx=5)
+
 
     def create_adventure_frame(self):
         # Adventure container
@@ -585,22 +797,6 @@ class LootSystemGUI(tk.Frame):
         combat_scroll.pack(side="right", fill="y")
         self.combat_log.config(yscrollcommand=combat_scroll.set)
     
-    def create_equipment_frame(self):
-        self.equipment_frame = ttk.LabelFrame(self.left_frame, text="Equipment", padding="5")
-        self.equipment_frame.pack(fill="x", pady=5)
-        
-        self.equipment_labels = {}
-        for slot in ["armor", "weapon", "shield", "ring", "gloves", "necklace"]:
-            frame = ttk.Frame(self.equipment_frame)
-            frame.pack(fill="x", pady=2)
-            
-            self.equipment_labels[slot] = ttk.Label(frame, text=f"{slot.capitalize()}: None")
-            self.equipment_labels[slot].pack(side="left", padx=5)
-            
-            ttk.Button(frame, 
-                    text="Unequip",
-                    command=lambda s=slot: self.unequip_item(s)).pack(side="right", padx=5)
-
     def unequip_item(self, slot):
         if self.character.equipped[slot]:
             item = self.character.equipped[slot]
@@ -624,8 +820,10 @@ class LootSystemGUI(tk.Frame):
         if not selected_indices:
             return
         
-        item_index = selected_indices[0]
-        item_text = self.inventory[item_index]
+        # Get the actual inventory index using filtered_indices
+        display_index = selected_indices[0]
+        inventory_index = self.filtered_indices[display_index]
+        item_text = self.inventory[inventory_index]
         
         # Create Item object from inventory text
         name = item_text.split(":")[1].strip()
@@ -659,11 +857,38 @@ class LootSystemGUI(tk.Frame):
             foreground=self.rarity_colors[rarity]
         )
         
-        # Remove equipped item from inventory
-        del self.inventory[item_index]
+        # Remove equipped item from inventory using the correct index
+        del self.inventory[inventory_index]
         self.update_inventory_display()
         self.update_character_display()
         self.update_counters()
+
+
+    def update_stats_display(self):
+        # Update economy stats
+        self.coins_label.config(text=f"Coins: {self.stats['coins']}")
+        self.spent_label.config(text=f"Coins Spent: {self.stats['coins_spent']}")
+        self.earned_label.config(text=f"Coins Earned: {self.stats['coins_earned']}")
+        self.items_sold_label.config(text=f"Items Sold: {self.stats['items_sold']}")
+        
+        # Update chest stats
+        self.total_chests_label.config(text=f"Total Opened: {self.stats['total_chests_opened']}")
+        for tier in self.chest_tiers:
+            self.chest_labels[tier].config(text=f"{tier}: {self.stats['chests_opened'][tier]}")
+            # Update key counts
+            self.key_labels[tier].config(text=f"{self.keys[tier]}")
+        
+        # Update rarity stats
+        for rarity in self.items.keys():
+            self.rarity_labels[rarity].config(
+                text=f"{rarity.capitalize()}: {self.stats['rarities_found'][rarity]}"
+            )
+        
+        # Update adventure stats
+        self.adventures_label.config(text=f"Adventures Completed: {self.stats['adventures_completed']}")
+        self.enemies_label.config(text=f"Total Enemies Defeated: {self.stats['total_enemies_defeated']}")
+        self.total_exp_label.config(text=f"Total EXP Earned: {self.stats['total_exp_earned']}")
+
 
 
     def add_to_combat_log(self, message):
@@ -677,9 +902,9 @@ class LootSystemGUI(tk.Frame):
             
         zone = self.adventure.zones[zone_name]
         
-        # if self.character.level < zone["level"]:
-        #     self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
-        #     return
+        if self.character.level < zone["level"]:
+            self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
+            return
         
         # Clear previous combat log
         self.combat_log.delete(1.0, tk.END)
@@ -744,7 +969,12 @@ class LootSystemGUI(tk.Frame):
         if self.adventure.current_adventure and self.combat_manager.combat_active:
             self.root.after(1000, self.combat_tick)  # Combat tick every 1 second
 
+
     def complete_adventure(self):
+        self.root.after(0, self._complete_adventure)
+
+    
+    def _complete_adventure(self):
         self.combat_manager.combat_active = False
         zone = self.adventure.zones[self.adventure.current_adventure]
         
@@ -764,7 +994,12 @@ class LootSystemGUI(tk.Frame):
         coins_earned = math.floor(base_coins * (1 + self.combat_manager.enemies_defeated * 0.2))
         exp_earned = math.floor(base_exp * (1 + self.combat_manager.enemies_defeated * 0.2))
         
-        self.coins += coins_earned
+        # Update stats and coins
+        self.stats['coins'] += coins_earned
+        self.stats['coins_earned'] += coins_earned
+        self.stats['adventures_completed'] += 1
+        self.stats['total_enemies_defeated'] += self.combat_manager.enemies_defeated
+        self.stats['total_exp_earned'] += exp_earned
         self.character.gain_exp(exp_earned)
         
         # Heal player
@@ -776,7 +1011,9 @@ class LootSystemGUI(tk.Frame):
         
         self.adventure.current_adventure = None
         self.update_character_display()
-        self.update_economy_display()
+        self.update_stats_display()
+
+
 
 
     def update_character_display(self):
