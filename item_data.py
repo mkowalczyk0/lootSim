@@ -18,7 +18,7 @@ ITEM_DETAILS = {
         "base_stats": {"attack": 10000} # <==== Might look into this later for cooler shit
     },
     "Staff of the Voidseer": {
-        "description": "dildo",
+        "description": "very cool sexy staff",
         "type": "staff",
         "base_stats": {"attack": 1000000}
     },
