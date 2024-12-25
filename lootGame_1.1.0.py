@@ -120,10 +120,10 @@ class Enemy:
     def __init__(self, name, level):
         self.name = name
         self.level = level
-        self.health = 50 * level
-        self.max_health = 50 * level
-        self.attack = 5 * level
-        self.defense = 3 * level
+        self.health = 75 * level
+        self.max_health = 75 * level
+        self.attack = 9 * level
+        self.defense = 5 * level
 
     def is_alive(self):
         return self.health > 0
@@ -137,28 +137,28 @@ class Adventure:
                 "enemies": ["Training Dummy", "Novice Warrior"],
                 "coin_reward": (10, 20),
                 "exp_reward": (20, 40),
-                "time": 30  # seconds
+                "time": 15  # seconds
             },
             "Forest": {
                 "level": 5,
                 "enemies": ["Wolf", "Bandit", "Dark Elf"],
                 "coin_reward": (40, 80),
                 "exp_reward": (60, 100),
-                "time": 60
+                "time": 15
             },
             "Dark Cave": {
                 "level": 10,
                 "enemies": ["Troll", "Dark Beast", "Shadow Knight"],
                 "coin_reward": (100, 200),
                 "exp_reward": (150, 250),
-                "time": 120
+                "time": 15
             },
             "Dragon's Lair": {
                 "level": 20,
                 "enemies": ["Dragon Cultist", "Dragon Spawn", "Ancient Dragon"],
                 "coin_reward": (300, 600),
                 "exp_reward": (400, 800),
-                "time": 300
+                "time": 15
             }
         }
         self.current_adventure = None
@@ -349,10 +349,14 @@ class LootSystemGUI(tk.Frame):
                 "necklace": ["Necklace of the Forgotten", "Amulet of the Unspoken"]
             }
         }
+        
+        self.max_adventures = 1
+        self.current_adventures = 0
+        self.upgrade_cost = 100000
 
         # starting stats
         self.stats = {
-            "coins": 1000,
+            "coins": 1500,
             "chests_opened": {tier: 0 for tier in self.chest_tiers},  # Track per tier
             "total_chests_opened": 0,
             "coins_spent": 0,
@@ -362,14 +366,16 @@ class LootSystemGUI(tk.Frame):
             "adventures_completed": 0,
             "total_enemies_defeated": 0,
             "total_exp_earned": 0,
+            "active_adventures": 0,
+            "max_adventures": self.max_adventures
         }
         
         self.inventory = []
         self.create_widgets()
         self.update_counters()
+        self.create_adventure_frame()
         self.create_character_frame()
         self.create_equipment_frame()
-        self.create_adventure_frame()
         self.filtered_items = []
         self.filtered_indices = []
 
@@ -385,58 +391,11 @@ class LootSystemGUI(tk.Frame):
         
         self.right_frame = ttk.Frame(self.root, padding="10")
         self.right_frame.pack(side="right", fill="both", expand=True)
-        
-         # Create frame for chest controls
-        self.chest_controls_frame = ttk.LabelFrame(self.top_frame, text="Chest Controls", padding="5")
-        self.chest_controls_frame.pack(side="left", padx=5)
-        
-        # Create inner frame for controls
-        chest_inner_frame = ttk.Frame(self.chest_controls_frame)
-        chest_inner_frame.grid(row=0, column=0, padx=5, pady=5)
 
-
-        # Bulk opening toggle
-        self.bulk_var = tk.BooleanVar(value=False)
-        self.bulk_check = ttk.Checkbutton(chest_inner_frame, 
-                                        text="Open 10x", 
-                                        variable=self.bulk_var)
-        self.bulk_check.grid(row=0, column=3, columnspan=4, pady=5)
-
-        # Create header labels
-        ttk.Label(chest_inner_frame, text="Tier", width=15).grid(row=1, column=0, padx=5)
-        ttk.Label(chest_inner_frame, text="Keys", width=10).grid(row=1, column=1, padx=5)
-        ttk.Label(chest_inner_frame, text="Actions", width=20).grid(row=1, column=2, columnspan=2, padx=5)
-
-        # Create frames for each chest tier
-        self.key_labels = {}
-        for i, (tier, info) in enumerate(self.chest_tiers.items(), 2):
-            # Tier name
-            ttk.Label(chest_inner_frame, 
-                    text=f"{tier}", 
-                    width=15).grid(row=i, column=0, padx=5, pady=2)
-            
-            # Key count
-            self.key_labels[tier] = ttk.Label(chest_inner_frame, 
-                                            text=f"{self.keys[tier]}", 
-                                            width=10)
-            self.key_labels[tier].grid(row=i, column=1, padx=5, pady=2)
-            
-            # Buy button
-            ttk.Button(chest_inner_frame,
-                    text=f"Buy ({info['price']})",
-                    width=15,
-                    command=lambda t=tier: self.buy_key(t)).grid(row=i, column=2, padx=5, pady=2)
-            
-            # Open button
-            ttk.Button(chest_inner_frame,
-                    text="Open",
-                    width=15,
-                    command=lambda t=tier: self.open_chest(t)).grid(row=i, column=3, padx=5, pady=2)
-     
      
         # stats frame:
-        self.stats_frame = ttk.LabelFrame(self.top_frame, text="Game Stats", padding="5")
-        self.stats_frame.pack(side="right", padx=5, fill="x", expand=True)
+        self.stats_frame = ttk.LabelFrame(self.left_frame, text="Game Stats", padding="5")
+        self.stats_frame.pack(side="top", padx=5, fill="x", expand=True)
 
         # Create three columns for stats
         left_stats = ttk.Frame(self.stats_frame)
@@ -489,6 +448,55 @@ class LootSystemGUI(tk.Frame):
         self.enemies_label.pack(anchor="w", pady=2)
         self.total_exp_label = ttk.Label(far_right_stats, text=f"Total EXP Earned: {self.stats['total_exp_earned']}")
         self.total_exp_label.pack(anchor="w", pady=2)
+        
+        
+        # Create frame for chest controls
+        self.chest_controls_frame = ttk.LabelFrame(self.left_frame, text="Chest Controls", padding="5")
+        self.chest_controls_frame.pack(side="top", padx=5, expand=True)
+        
+        # Create inner frame for controls
+        chest_inner_frame = ttk.Frame(self.chest_controls_frame)
+        chest_inner_frame.grid(row=0, column=0, padx=5, pady=5)
+
+
+        # Bulk opening toggle
+        self.bulk_var = tk.BooleanVar(value=False)
+        self.bulk_check = ttk.Checkbutton(chest_inner_frame, 
+                                        text="Open 10x", 
+                                        variable=self.bulk_var)
+        self.bulk_check.grid(row=0, column=3, columnspan=4, pady=5)
+
+        # Create header labels
+        ttk.Label(chest_inner_frame, text="Tier", width=15).grid(row=1, column=0, padx=5)
+        ttk.Label(chest_inner_frame, text="Keys", width=10).grid(row=1, column=1, padx=5)
+        ttk.Label(chest_inner_frame, text="Actions", width=20).grid(row=1, column=2, columnspan=2, padx=5)
+
+        # Create frames for each chest tier
+        self.key_labels = {}
+        for i, (tier, info) in enumerate(self.chest_tiers.items(), 2):
+            # Tier name
+            ttk.Label(chest_inner_frame, 
+                    text=f"{tier}", 
+                    width=15).grid(row=i, column=0, padx=5, pady=2)
+            
+            # Key count
+            self.key_labels[tier] = ttk.Label(chest_inner_frame, 
+                                            text=f"{self.keys[tier]}", 
+                                            width=10)
+            self.key_labels[tier].grid(row=i, column=1, padx=5, pady=2)
+            
+            # Buy button
+            ttk.Button(chest_inner_frame,
+                    text=f"Buy ({info['price']})",
+                    width=15,
+                    command=lambda t=tier: self.buy_key(t)).grid(row=i, column=2, padx=5, pady=2)
+            
+            # Open button
+            ttk.Button(chest_inner_frame,
+                    text="Open",
+                    width=15,
+                    command=lambda t=tier: self.open_chest(t)).grid(row=i, column=3, padx=5, pady=2)
+     
         
         # Filters
         self.filter_frame = ttk.LabelFrame(self.left_frame, text="Filters", padding="5")
@@ -730,6 +738,75 @@ class LootSystemGUI(tk.Frame):
     def apply_filters(self, event=None):
         self.update_inventory_display()
 
+
+
+    def create_adventure_frame(self):
+        # Adventure container
+        adventure_container = ttk.Frame(self.right_frame)
+        adventure_container.pack(fill="both", expand=True)
+        
+        # Adventures
+        self.adventure_frame = ttk.LabelFrame(adventure_container, text="Adventures", padding="5")
+        self.adventure_frame.pack(fill="x", pady=5)
+        
+        
+           
+        # Add adventure status
+        self.adventure_status = ttk.Label(self.adventure_frame, 
+                                        text=f"Active Adventures: {self.current_adventures}/{self.max_adventures}")
+        self.adventure_status.pack(pady=5)
+        
+        # Add upgrade button
+        self.upgrade_button = ttk.Button(self.adventure_frame,
+                                   text=f"Upgrade Max Adventures ({self.upgrade_cost:,} coins)",
+                                   command=self.upgrade_max_adventures)
+        self.upgrade_button.pack(pady=5)
+        
+        
+        for zone_name, zone_info in self.adventure.zones.items():
+            frame = ttk.Frame(self.adventure_frame)
+            frame.pack(fill="x", pady=2)
+            
+            ttk.Label(frame, text=f"{zone_name} (Level {zone_info['level']}+)").pack(side="left", padx=5)
+            ttk.Label(frame, 
+                    text=f"Rewards: {zone_info['coin_reward'][0]}-{zone_info['coin_reward'][1]} coins, "
+                        f"{zone_info['exp_reward'][0]}-{zone_info['exp_reward'][1]} exp").pack(side="left", padx=5)
+            
+            ttk.Button(frame, 
+                    text=f"Start ({zone_info['time']}s)", 
+                    command=lambda z=zone_name: self.start_adventure(z)).pack(side="right", padx=5)
+        
+        # Combat Log
+        self.combat_log_frame = ttk.LabelFrame(adventure_container, text="Combat Log", padding="5")
+        self.combat_log_frame.pack(fill="both", expand=True, pady=5)
+        
+        self.combat_log = tk.Text(self.combat_log_frame, wrap=tk.WORD, height=20)
+        self.combat_log.pack(fill="both", expand=True)
+        
+        combat_scroll = ttk.Scrollbar(self.combat_log_frame, command=self.combat_log.yview)
+        combat_scroll.pack(side="right", fill="y")
+        self.combat_log.config(yscrollcommand=combat_scroll.set)
+        
+        
+    def upgrade_max_adventures(self):
+        if self.stats['coins'] >= self.upgrade_cost:
+            self.stats['coins'] -= self.upgrade_cost
+            self.stats['coins_spent'] += self.upgrade_cost
+            self.max_adventures += 1
+            self.stats['max_adventures'] = self.max_adventures
+            
+            # Update the upgrade cost for next time
+            self.upgrade_cost = math.floor(self.upgrade_cost * 1.5)  # Increase by 50% each time
+            # Update the button text with new cost
+            self.upgrade_button.config(text=f"Upgrade Max Adventures ({self.upgrade_cost:,} coins)")
+            
+            self.update_stats_display()
+            messagebox.showinfo("Upgrade Successful", 
+                            f"Maximum adventures increased to {self.max_adventures}!")
+        else:
+            messagebox.showwarning("Not Enough Coins",
+                                f"You need {self.upgrade_cost:,} coins to upgrade!")
+        
     def create_character_frame(self):
         self.character_frame = ttk.LabelFrame(self.right_frame, text="Character", padding="5")
         self.character_frame.pack(fill="x", pady=5)
@@ -762,40 +839,10 @@ class LootSystemGUI(tk.Frame):
             ttk.Button(frame, 
                     text="Unequip",
                     command=lambda s=slot: self.unequip_item(s)).pack(side="right", padx=5)
+     
+        
 
 
-    def create_adventure_frame(self):
-        # Adventure container
-        adventure_container = ttk.Frame(self.right_frame)
-        adventure_container.pack(fill="both", expand=True)
-        
-        # Adventures
-        self.adventure_frame = ttk.LabelFrame(adventure_container, text="Adventures", padding="5")
-        self.adventure_frame.pack(fill="x", pady=5)
-        
-        for zone_name, zone_info in self.adventure.zones.items():
-            frame = ttk.Frame(self.adventure_frame)
-            frame.pack(fill="x", pady=2)
-            
-            ttk.Label(frame, text=f"{zone_name} (Level {zone_info['level']}+)").pack(side="left", padx=5)
-            ttk.Label(frame, 
-                    text=f"Rewards: {zone_info['coin_reward'][0]}-{zone_info['coin_reward'][1]} coins, "
-                        f"{zone_info['exp_reward'][0]}-{zone_info['exp_reward'][1]} exp").pack(side="left", padx=5)
-            
-            ttk.Button(frame, 
-                    text=f"Start ({zone_info['time']}s)", 
-                    command=lambda z=zone_name: self.start_adventure(z)).pack(side="right", padx=5)
-        
-        # Combat Log
-        self.combat_log_frame = ttk.LabelFrame(adventure_container, text="Combat Log", padding="5")
-        self.combat_log_frame.pack(fill="both", expand=True, pady=5)
-        
-        self.combat_log = tk.Text(self.combat_log_frame, wrap=tk.WORD, height=20)
-        self.combat_log.pack(fill="both", expand=True)
-        
-        combat_scroll = ttk.Scrollbar(self.combat_log_frame, command=self.combat_log.yview)
-        combat_scroll.pack(side="right", fill="y")
-        self.combat_log.config(yscrollcommand=combat_scroll.set)
     
     def unequip_item(self, slot):
         if self.character.equipped[slot]:
@@ -888,6 +935,9 @@ class LootSystemGUI(tk.Frame):
         self.adventures_label.config(text=f"Adventures Completed: {self.stats['adventures_completed']}")
         self.enemies_label.config(text=f"Total Enemies Defeated: {self.stats['total_enemies_defeated']}")
         self.total_exp_label.config(text=f"Total EXP Earned: {self.stats['total_exp_earned']}")
+        # Update adventure status
+        self.adventure_status.config(text=f"Active Adventures: {self.current_adventures}/{self.max_adventures}")
+
 
 
 
@@ -896,15 +946,19 @@ class LootSystemGUI(tk.Frame):
         self.combat_log.see(tk.END)
 
     def start_adventure(self, zone_name):
-        if self.adventure.current_adventure:
-            self.add_to_combat_log("Adventure already in progress!")
+        if self.current_adventures >= self.max_adventures:
+            self.add_to_combat_log(f"Cannot start new adventure. Maximum of {self.max_adventures} concurrent adventures reached!")
             return
             
         zone = self.adventure.zones[zone_name]
         
-        if self.character.level < zone["level"]:
-            self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
-            return
+        self.current_adventures += 1
+        self.stats["active_adventures"] = self.current_adventures
+        self.update_stats_display()
+        
+        # if self.character.level < zone["level"]:
+        #     self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
+        #     return
         
         # Clear previous combat log
         self.combat_log.delete(1.0, tk.END)
@@ -977,6 +1031,10 @@ class LootSystemGUI(tk.Frame):
     def _complete_adventure(self):
         self.combat_manager.combat_active = False
         zone = self.adventure.zones[self.adventure.current_adventure]
+        
+        self.current_adventures -= 1
+        self.stats["active_adventures"] = self.current_adventures
+        self.update_stats_display()
         
         # Check if player survived
         if self.character.computed_stats["health"] <= 0:
