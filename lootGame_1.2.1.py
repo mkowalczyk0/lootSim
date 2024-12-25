@@ -367,7 +367,7 @@ class LootSystemGUI(tk.Frame):
 
         # starting stats
         self.stats = {
-            "coins": 200000,
+            "coins": 2000,
             "chests_opened": {tier: 0 for tier in self.chest_tiers},  # Track per tier
             "total_chests_opened": 0,
             "coins_spent": 0,
@@ -798,7 +798,6 @@ class LootSystemGUI(tk.Frame):
         
         # Store selected item index
         self.selected_item_index = index
-        a
 
     def update_counters(self):
         counts = {rarity: 0 for rarity in self.items.keys()}
