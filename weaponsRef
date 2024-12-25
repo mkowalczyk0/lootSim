@@ -1,0 +1,74 @@
+{
+    "common": {
+        "weapon": ["Wooden Sword", "Wooden Axe", "Wooden Mace"],
+        "armor": ["Wooden Armor", "Leather Armor", "Cotton Robes"],
+        "shield": ["Wooden Shield", "Leather Shield"],
+        "staff": ["Apprentice Staff", "Wooden Wand"],
+        "ring": ["Copper Ring", "Wooden Ring"],
+        "gloves": ["Leather Gloves", "Cotton Gloves"],
+        "necklace": ["Hemp Necklace", "Wooden Pendant"]
+    },
+    "uncommon": {
+        "weapon": ["Iron Sword", "Bronze Axe", "Steel Mace"],
+        "armor": ["Iron Chestplate", "Padded Leather Armor", "Hardened Robes"],
+        "shield": ["Iron Shield", "Reinforced Leather Shield"],
+        "staff": ["Initiate Staff", "Oak Wand"],
+        "ring": ["Bronze Ring", "Iron Band"],
+        "gloves": ["Iron Gauntlets", "Stitched Leather Gloves"],
+        "necklace": ["Copper Chain", "Iron Pendant"]
+    },
+    "rare": {
+        "weapon": ["Steel Longsword", "Runed Battleaxe", "Spiked Morningstar"],
+        "armor": ["Steel Armor", "Enchanted Leather Vest", "Silken Robes"],
+        "shield": ["Steel Shield", "Runed Buckler"],
+        "staff": ["Mage’s Staff", "Crystal Wand"],
+        "ring": ["Silver Ring", "Runed Band"],
+        "gloves": ["Steel Gauntlets", "Silken Gloves"],
+        "necklace": ["Silver Amulet", "Crystal Pendant"]
+    },
+    "epic": {
+        "weapon": ["Fiery Blade", "Shadow Cleaver", "Thunder Hammer"],
+        "armor": ["Dragonhide Vest", "Shadowforged Plate", "Mystic Robes"],
+        "shield": ["Dragon Scale Shield", "Aegis of Shadows"],
+        "staff": ["Arcane Staff", "Eldritch Wand"],
+        "ring": ["Ring of Flames", "Moonstone Band"],
+        "gloves": ["Gauntlets of Power", "Spellwoven Gloves"],
+        "necklace": ["Amulet of the Phoenix", "Runed Locket"]
+    },
+    "legendary": {
+        "weapon": ["Sword of Heroes", "Axe of the Forgotten King", "Hammer of the Titans"],
+        "armor": ["Celestial Plate", "Eternal Vestments", "Dragonweave Robes"],
+        "shield": ["Aegis of Eternity", "Shield of the Colossus"],
+        "staff": ["Staff of the Archmage", "Wand of Infinite Wisdom"],
+        "ring": ["Ring of the Ancients", "Band of Eternity"],
+        "gloves": ["Gloves of the Flamekeeper", "Voidforged Gauntlets"],
+        "necklace": ["Necklace of Everlasting Light", "Amulet of the Eternal"]
+    },
+    "mythic": {
+        "weapon": ["Blade of Infinite Stars", "Axe of the Cosmos", "Hammer of Eternal Fury"],
+        "armor": ["Armor of the Void", "Cosmic Vestments", "Robes of the Archon"],
+        "shield": ["Barrier of Infinity", "Bulwark of the Eternal"],
+        "staff": ["Staff of the Voidseer", "Wand of the Cosmos"],
+        "ring": ["Mythril Ring", "Band of Infinity"],
+        "gloves": ["Gauntlets of the Cosmos", "Gloves of the Unseen"],
+        "necklace": ["Pendant of Infinity", "Amulet of the Beyond"]
+    },
+    "divine": {
+        "weapon": ["Heavenly Blade", "Axe of Divine Wrath", "Hammer of the Holy"],
+        "armor": ["Raiment of the Heavens", "Divine Plate", "Robes of the Seraphim"],
+        "shield": ["Shield of the Archangel", "Aegis of Divinity"],
+        "staff": ["Staff of Celestial Power", "Wand of the Seraph"],
+        "ring": ["Halo Ring", "Celestial Band"],
+        "gloves": ["Gloves of Divinity", "Gauntlets of the Heavens"],
+        "necklace": ["Amulet of the Angels", "Necklace of Celestial Grace"]
+    },
+    "unspoken": {
+        "weapon": ["Nameless Blade", "Axe of the Unseen", "Hammer of Forgotten Oaths"],
+        "armor": ["Shroud of the Unspoken", "Armor of the Veil", "Ethereal Robes"],
+        "shield": ["Shield of Silent Promises", "Aegis of Whispers"],
+        "staff": ["Staff of the Nameless", "Wand of Eternal Mystery"],
+        "ring": ["Ring of the Unknown", "Band of Silent Eternity"],
+        "gloves": ["Veiled Gauntlets", "Gloves of Hidden Truths"],
+        "necklace": ["Necklace of the Forgotten", "Amulet of the Unspoken"]
+    }
+}
