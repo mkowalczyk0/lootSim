@@ -358,7 +358,7 @@ class LootSystemGUI(tk.Frame):
 
         # starting stats
         self.stats = {
-            "coins": 150000000,
+            "coins": 2000,
             "chests_opened": {tier: 0 for tier in self.chest_tiers},  # Track per tier
             "total_chests_opened": 0,
             "coins_spent": 0,
@@ -944,8 +944,15 @@ class LootSystemGUI(tk.Frame):
         if self.current_adventures >= self.max_adventures:
             self.add_to_combat_log(f"Cannot start new adventure. Maximum of {self.max_adventures} concurrent adventures reached!")
             return
-            
+        
+        
         zone = self.adventure.zones[zone_name]
+
+        # LEVEL REQ.
+        if self.character.level < zone["level"]:
+            self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
+            return
+
         
         # Create unique identifier for this adventure
         adventure_id = f"{zone_name}_{self.current_adventures}"
@@ -955,10 +962,6 @@ class LootSystemGUI(tk.Frame):
         self.update_stats_display()
         
 
-        
-        # if self.character.level < zone["level"]:
-        #     self.add_to_combat_log(f"Need level {zone['level']} to enter {zone_name}!")
-        #     return
         
 
         # Initialize combat manager for this adventure
