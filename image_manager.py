@@ -17,7 +17,7 @@ class ImageManager:
                 
         # Load default image for items without specific images
         try:
-            default_image = Image.open("assets\images\items\missingTex.png")
+            default_image = Image.open("assets/images/items/missingTex.png")
             self.default_image = ImageTk.PhotoImage(default_image.resize(size))
         except:
             print("Failed to load default image")
