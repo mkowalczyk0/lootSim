@@ -3,11 +3,21 @@
 
 ITEM_IMAGES = {
   
+    # Rare
+    "Steel Longsword": "assets/images/items/rare/weapon/Steel Longsword.png",
+
+    # Epic
+
     # Legendary
-    "Staff of the Archmage": "assets\images\items\legendary\staff\Staff of the Archmage.png",
+    "Staff of the Archmage": "assets/images/items/legendary/staff/Staff of the Archmage.png",
 
     # Mythic
-    "Staff of the Voidseer": "assets\images\items\mythic\staff\Staff of the Voidseer.png"
+    "Staff of the Voidseer": "assets/images/items/mythic/staff/Staff of the Voidseer.png",
+
+    # Divine
+
+    # Unspoken
+    "Nameless Blade": "assets/images/items/unspoken/weapon/Nameless Blade.png"
 }
 
 # You can also define item stats, descriptions, etc. here
