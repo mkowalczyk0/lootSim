@@ -3,9 +3,11 @@ import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import { addStats, zeroStats, type Item, type Stats } from "./item";
 
 /** Base stats at level 1, before gear. */
-const BASE: Stats = { attack: 10, defense: 6, maxHealth: 120, power: 0, haste: 0 };
+const BASE: Stats = { attack: 10, defense: 8, maxHealth: 140, power: 0, haste: 0 };
 /** Per-level growth, applied additively so gear stays the dominant source of power. */
-const GROWTH: Stats = { attack: 2.5, defense: 1.5, maxHealth: 18, power: 0, haste: 0 };
+const GROWTH: Stats = { attack: 2.2, defense: 1.35, maxHealth: 18, power: 0, haste: 0 };
+/** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
+const LEVEL_UP_HEAL = 0.6;
 
 export type Equipment = Record<EquipSlot, Item | null>;
 
@@ -105,8 +107,8 @@ export class Player {
       this.xp -= this.xpNeeded;
       this.level++;
       levels++;
-      // A level-up tops you off — it's the reward for grinding through a bad floor.
-      this.health = this.maxHealth;
+      // A level-up patches you up mid-fight, but it won't rescue a bad dive.
+      this.health = Math.min(this.maxHealth, this.health + this.maxHealth * LEVEL_UP_HEAL);
     }
     return levels;
   }

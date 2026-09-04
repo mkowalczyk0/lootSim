@@ -46,6 +46,12 @@ export interface Enemy extends Body {
   /** Elites are tinted by a rarity and drop noticeably better loot. */
   elite: Rarity | null;
   facing: number;
+  /** Immunity window after a hazard hits it, so one spike plate can't chain-kill. */
+  trapCooldown: number;
+  /** Rises while a wall is in the way; drives the sidestep that gets it unstuck. */
+  stuckTimer: number;
+  /** Which way this one sidesteps when blocked, so a crowd splits around a pillar. */
+  dodgeDir: number;
 }
 
 export interface Projectile extends Body {

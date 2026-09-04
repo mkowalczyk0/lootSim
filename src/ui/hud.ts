@@ -77,12 +77,16 @@ export class Hud {
     ctx.fillStyle = "#e8eef7";
     ctx.fillText(`DEPTH ${d.profile.depth} — ${d.profile.name}`, cx, 18);
 
+    // The layout name is the only clue that the floor was generated, so it earns a line.
     ctx.font = `11px ${MONO}`;
+    ctx.fillStyle = "#6b7480";
+    ctx.fillText(d.level.label.toUpperCase(), cx, 38);
+
     if (d.phase === "fighting") {
       ctx.fillStyle = "#9aa4b2";
       ctx.fillText(
         `Wave ${Math.min(d.wave, d.profile.waves)} / ${d.profile.waves}   •   ${d.enemiesRemaining} left`,
-        cx, 40,
+        cx, 56,
       );
     }
   }

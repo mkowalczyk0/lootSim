@@ -97,6 +97,16 @@ function consumeEvents(d: Dungeon): void {
       case "shake":
         fx.addShake(ev.amount);
         break;
+      case "trap": {
+        // Hazards get their own colored puff so a hit reads as "the floor did that".
+        const color = ev.trap === "flame" ? "#ff8a3c"
+          : ev.trap === "turret" ? "#fca5a5"
+          : ev.trap === "mire" ? "#4ade80"
+          : "#e2e8f0";
+        fx.burst(ev.x, ev.y, color, ev.trap === "flame" ? 18 : 10, ev.trap === "flame" ? 150 : 110);
+        fx.ring(ev.x, ev.y, ev.radius, color, 2);
+        break;
+      }
       case "wave":
         fx.text(d.avatar.x, d.avatar.y - 56, `WAVE ${ev.wave}`, "#fbbf24", 16);
         break;

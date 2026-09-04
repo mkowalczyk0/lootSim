@@ -1,18 +1,20 @@
 import type { Input } from "../core/input";
 import { clamp, formatNumber } from "../core/math";
 import { CHESTS, CHEST_TIERS } from "../data/chests";
+import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
+import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS } from "../data/items";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
 import { itemScore, statLine, type Item } from "../game/item";
-import type { GameState } from "../game/state";
+import { POTION_CAP, POTION_PRICE, sellPrice, type GameState } from "../game/state";
 
 const TABS = ["Dive", "Chests", "Stash", "Hero", "Records"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Per-tab footer legend. E is always the primary action, Q the secondary. */
 const TAB_HELP: Record<Tab, string> = {
-  Dive: "W/S choose depth · E dive",
+  Dive: "W/S choose depth · E dive · Q buy a potion",
   Chests: "W/S choose chest · E open · Q buy key · A/D bulk 1↔10",
   Stash: "W/S select · A/D filter rarity · E equip · Q sell · ; sell all junk",
   Hero: "W/S select slot · E unequip",
@@ -167,6 +169,16 @@ export class TownUI {
 
   private secondary(): void {
     switch (this.tab) {
+      case "Dive": {
+        if (this.state.potions >= POTION_CAP) {
+          this.notify("Your belt is full. Nine is plenty.", "#9aa4b2");
+        } else if (this.state.buyPotion()) {
+          this.notify(`Bought a potion — ${this.state.potions} in the belt`, "#4ade80");
+        } else {
+          this.notify(`Need ${POTION_PRICE} coins for a potion`, "#ef4444");
+        }
+        break;
+      }
       case "Chests": {
         const tier = CHEST_TIERS[this.cursor]!;
         const count = this.bulk ? 10 : 1;
@@ -274,6 +286,9 @@ export class TownUI {
           </div>
         </div>`);
     }
+    const depth = Math.min(this.cursor + 1, this.state.maxUnlockedDepth);
+    const biome = biomeFor(depth);
+    const hazards = trapsFor(depth, biome.traps).map((t) => t.label);
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
         <h3>The dive</h3>
@@ -281,7 +296,12 @@ export class TownUI {
         richer loot, or <b>extract</b> to bank what you're carrying.</p>
         <p class="danger">Die and you lose every coin, key and item you picked up on the
         way down. XP is always kept.</p>
-        <p>Clearing a floor unlocks the next one for a direct dive.</p>
+        <h3>${escapeHtml(biome.name)}</h3>
+        <p class="muted">No two floors are laid out the same. Watch the ground.</p>
+        <p>Hazards: ${hazards.length ? escapeHtml(hazards.join(", ")) : "none yet. Enjoy it."}</p>
+        <h3>Belt</h3>
+        <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
+        <span class="muted">· [Q] buys one for ${POTION_PRICE}c</span></p>
       </aside>`;
   }
 
@@ -334,7 +354,7 @@ export class TownUI {
             <span class="name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
             <span class="badge">${it.slot}</span>
           </div>
-          <div class="row-side">${statLine(it)} · ilvl ${it.ilvl} · ${formatNumber(it.value)}c</div>
+          <div class="row-side">${statLine(it)} · ilvl ${it.ilvl} · sells ${formatNumber(sellPrice(it))}c</div>
         </div>`;
     }).join("");
 

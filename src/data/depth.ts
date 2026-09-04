@@ -3,6 +3,9 @@
  * how hard floor N is comes from here, so tuning lives in one place.
  */
 
+import { clamp } from "../core/math";
+import { biomeFor } from "./biomes";
+
 export interface DepthProfile {
   readonly depth: number;
   readonly name: string;
@@ -16,23 +19,13 @@ export interface DepthProfile {
   readonly maxAlive: number;
   readonly coinMultiplier: number;
   readonly xpMultiplier: number;
+  /** Multiplies enemy attack cooldowns: deep floors swing more often. */
+  readonly aggression: number;
+  /** Multiplies the wind-up before a hit lands: deep floors telegraph less. */
+  readonly telegraph: number;
   readonly isBoss: boolean;
   /** Recommended character level; below it you take a visible beating. */
   readonly recommendedLevel: number;
-}
-
-const BIOMES = [
-  { name: "Training Grounds", tint: "#2c3040" },
-  { name: "Whispering Forest", tint: "#1e3326" },
-  { name: "Dark Cave", tint: "#241f2e" },
-  { name: "Ashen Wastes", tint: "#33241d" },
-  { name: "Dragon's Lair", tint: "#3a1c1c" },
-  { name: "The Veil", tint: "#2a1836" },
-] as const;
-
-export function biomeFor(depth: number): { name: string; tint: string } {
-  const i = Math.min(BIOMES.length - 1, Math.floor((depth - 1) / 5));
-  return BIOMES[i]!;
 }
 
 export function profileFor(depth: number): DepthProfile {
@@ -40,13 +33,14 @@ export function profileFor(depth: number): DepthProfile {
   const isBoss = d % 5 === 0;
   const biome = biomeFor(d);
 
-  // Health grows geometrically to stay ahead of the 2^n rarity ladder on gear, but
-  // gently enough that fights stay short — a long fight is what actually kills you,
-  // because damage taken accumulates while damage dealt does not.
-  const enemyHealth = 26 * Math.pow(1.2, d - 1);
-  // Damage stays linear so a deep floor is survivable with good play, not a one-shot.
-  const enemyDamage = 5 + 2.6 * (d - 1);
-  const enemySpeed = 52 + Math.min(26, 1.4 * (d - 1));
+  // Health grows geometrically to stay ahead of the 2^n rarity ladder on gear. Fights
+  // are meant to be long enough to hurt: damage taken accumulates over a fight while
+  // damage dealt does not, so length is most of the difficulty.
+  const enemyHealth = 28 * Math.pow(1.22, d - 1);
+  // Damage starts gentle and accelerates: the first few floors have to be learnable
+  // with no gear at all, while depth 20 should genuinely frighten a geared character.
+  const enemyDamage = 5 + 2.8 * (d - 1) + 0.22 * (d - 1) * (d - 1);
+  const enemySpeed = 54 + Math.min(52, 2.4 * (d - 1));
 
   return {
     depth: d,
@@ -55,13 +49,18 @@ export function profileFor(depth: number): DepthProfile {
     enemyHealth,
     enemyDamage,
     enemySpeed,
-    waves: isBoss ? 2 : Math.min(5, 2 + Math.floor(d / 4)),
-    enemiesPerWave: Math.min(12, 3 + Math.floor(d * 0.6)),
-    maxAlive: Math.min(18, 5 + Math.floor(d * 0.7)),
-    coinMultiplier: Math.pow(1.35, d - 1),
-    xpMultiplier: Math.pow(1.3, d - 1),
+    waves: isBoss ? 2 : Math.min(4, 2 + Math.floor(d / 5)),
+    enemiesPerWave: Math.min(10, 3 + Math.floor(d * 0.5)),
+    maxAlive: Math.min(22, 5 + Math.floor(d * 0.9)),
+    coinMultiplier: Math.pow(1.22, d - 1),
+    xpMultiplier: Math.pow(1.22, d - 1),
+    // Numbers alone can't threaten a player who dodges well, so the deeper floors
+    // squeeze the thing skill actually spends: reaction time.
+    aggression: clamp(1 - (d - 1) * 0.014, 0.55, 1),
+    telegraph: clamp(1 - (d - 1) * 0.012, 0.58, 1),
     isBoss,
-    recommendedLevel: 1 + Math.floor((d - 1) * 1.6),
+    // Levelling now tracks depth closely, so the advice should too.
+    recommendedLevel: Math.max(1, Math.round(d * 0.9)),
   };
 }
 
@@ -70,12 +69,16 @@ function romanize(n: number): string {
   return NUMERALS[n - 1] ?? String(n);
 }
 
-/** Coins dropped by one kill at this depth, before the archetype's loot weight. */
+/**
+ * Coins dropped by one kill at this depth, before the archetype's loot weight.
+ * Deliberately stingy: coins are the pressure that keeps you diving, and a player who
+ * can buy a Legendary key after two floors has nothing left to want.
+ */
 export function coinDropFor(depth: number): number {
-  return 6 * profileFor(depth).coinMultiplier;
+  return 3.5 * profileFor(depth).coinMultiplier;
 }
 
 /** XP granted by one kill at this depth, before the archetype's xp multiplier. */
 export function xpDropFor(depth: number): number {
-  return 9 * profileFor(depth).xpMultiplier;
+  return 7 * profileFor(depth).xpMultiplier;
 }

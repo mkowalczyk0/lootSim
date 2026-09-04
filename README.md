@@ -35,16 +35,37 @@ No mouse. Left hand on WASD, right hand on the home row.
 
 ## The loop
 
-Pick a depth and dive. Waves spawn automatically and get bigger; clear them all and the
-portal lights up for the descent. Every fifth floor is a boss.
+Pick a depth and dive. Waves spawn automatically and get bigger; clear them all and a
+cache drops at the portal, which is where most of a floor's pay actually comes from.
+Every fifth floor is a boss.
 
 The portal is a live exit for the entire floor, so you can always run for it — and you
 should, because **dying loses every coin, key and item you picked up on the way down.**
 XP is the one thing you always keep.
 
-Back in town: open chests with the keys you found, compare drops against what you're
-wearing, sell the junk, and go deeper. Depth is the only difficulty dial, and it raises
-enemy health, damage and count while shifting the loot odds toward the top of the ladder.
+Back in town: buy potions, open chests with the keys you found, compare drops against what
+you're wearing, sell the junk, and go deeper. Depth is the difficulty dial — it raises enemy
+health, damage, speed and count, tightens their attack telegraphs, adds hazards, and shifts
+the loot odds toward the top of the ladder.
+
+## Floors
+
+No two floors are the same. Each one is generated from a seed: a layout — open hall,
+pillared hall, broken chambers, the gauntlet, collapsed warren, sealed rotunda — scattered
+through one of six biomes, with hazards that multiply as you descend.
+
+Hazards hurt monsters too, which is the whole reason to learn where they are:
+
+| | |
+| --- | --- |
+| **Spike Plate** | Cycles. Telegraphs in red, then fires. |
+| **Tar Pool** | Always on. Slows you to a crawl and chews on you. |
+| **Flame Vent** | Cycles, wide and hot. |
+| **Blade Runner** | Always live, and it patrols. The only hazard that comes to you. |
+| **Bone Turret** | Fires a bolt down a fixed lane on a timer. |
+
+Walls block movement, shots and line of sight. Monsters that lose sight of you path around
+them rather than giving up, so a corridor is cover, not an exploit.
 
 ## Rarities
 
@@ -63,7 +84,9 @@ npm run build    # typecheck + bundle to dist/
 ```
 
 `npm run smoke` drives the actual game simulation with a scripted bot, no browser
-involved, and prints the depth curve and a twelve-floor progression run. It's the fastest
-way to see whether a balance change made the game unplayable.
+involved. It plays two twenty-dive campaigns — one player who dodges telegraphs and one
+who never does — checks that every generated floor has a reachable portal, and prints the
+depth curve and chest odds. It's the fastest way to see whether a balance change made the
+game unplayable, or a new layout unfinishable.
 
 See `CLAUDE.md` for architecture and the rules the code follows.

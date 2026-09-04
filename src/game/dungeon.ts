@@ -6,8 +6,13 @@ import { ARCHETYPES, bossName, type EnemyArchetype, type EnemyKind } from "../da
 import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
 import { ITEM_TYPES, type ItemType } from "../data/items";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
+import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
 import type { Avatar, Enemy, Pickup, Projectile } from "./entities";
 import { rollItem, type Item } from "./item";
+import {
+  circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
+  type Level, type Trap,
+} from "./level";
 import type { GameState } from "./state";
 
 // --- tuning ---------------------------------------------------------------
@@ -20,15 +25,16 @@ const DASH_COOLDOWN = 0.75;
 const SWING_TIME = 0.13;
 const SWING_ARC = Math.PI * 0.75;
 const SWING_REACH = 46;
-const HIT_INVULN = 0.7;
+const HIT_INVULN = 0.65;
 const MAGNET_RANGE = 78;
 const PICKUP_RANGE = 16;
-const ARENA_PAD = 60;
-/** Keeps bodies far enough from the wall that their sprites don't overlap the border. */
+/** Keeps bodies far enough from the arena edge that sprites don't overlap the border. */
 const WALL_PAD = 16;
 const SPECIAL_RADIUS = 130;
-/** Kills needed to fill the special. Low enough that it's a rhythm, not a once-a-floor button. */
-const SPECIAL_KILLS = 12;
+/** Kills needed to fill the special. High enough that it's a decision, not a rotation. */
+const SPECIAL_KILLS = 16;
+/** Fraction of max health a potion restores. */
+const POTION_HEAL = 0.45;
 
 export type RunPhase = "fighting" | "cleared" | "dead";
 
@@ -49,6 +55,7 @@ export type RunEvent =
   | { kind: "shake"; amount: number }
   | { kind: "nova"; x: number; y: number; radius: number }
   | { kind: "wave"; wave: number; total: number }
+  | { kind: "trap"; x: number; y: number; trap: TrapKind; radius: number }
   | { kind: "cleared" }
   | { kind: "playerDied" };
 
@@ -63,6 +70,8 @@ function emptyKeys(): Record<ChestTier, number> {
  */
 export class Dungeon {
   readonly profile: DepthProfile;
+  /** The generated floor: walls, hazards, decoration, and where the exit is. */
+  readonly level: Level;
   readonly width: number;
   readonly height: number;
   readonly avatar: Avatar;
@@ -82,7 +91,10 @@ export class Dungeon {
   private spawnTimer = 0;
   private readonly rng: Rng;
   private readonly state: GameState;
-  /** Position of the extraction portal, which only opens once the floor is cleared. */
+  /** Routes monsters around walls when they can't see the player directly. */
+  private readonly flow: FlowField;
+  private flowTimer = 0;
+  /** Position of the extraction portal. Live all floor; descent needs a clear. */
   readonly portal: { x: number; y: number };
   elapsed = 0;
 
@@ -91,20 +103,22 @@ export class Dungeon {
     this.profile = profileFor(depth);
     this.rng = new Rng(seed);
 
-    // Arenas grow with depth so bigger swarms still have room to flank you.
-    const size = 620 + Math.min(360, depth * 22);
-    this.width = size;
-    this.height = Math.round(size * 0.72);
+    // Every floor is generated: layout, hazards and decoration all come from here.
+    this.level = generateLevel(depth, this.rng);
+    this.width = this.level.width;
+    this.height = this.level.height;
 
+    const { x, y } = this.level.start;
     this.avatar = {
-      x: this.width / 2, y: this.height - 90,
-      px: this.width / 2, py: this.height - 90,
+      x, y, px: x, py: y,
       radius: PLAYER_RADIUS,
       vx: 0, vy: 0, facing: -Math.PI / 2,
       attackTimer: 0, swingTimer: 0, swingAngle: 0,
       dashTimer: 0, dashCooldown: 0, invulnTimer: 0, hitFlash: 0,
     };
-    this.portal = { x: this.width / 2, y: 70 };
+    this.portal = this.level.portal;
+    this.flow = new FlowField(this.level);
+    this.flow.update(this.level, x, y);
     this.startNextWave();
   }
 
@@ -151,18 +165,26 @@ export class Dungeon {
       archetype = ARCHETYPES[this.rng.weighted(weights)];
     }
 
-    // Spawn away from the player so nothing materializes on top of you.
-    let x = 0;
-    let y = 0;
-    for (let tries = 0; tries < 24; tries++) {
-      x = this.rng.range(ARENA_PAD, this.width - ARENA_PAD);
-      y = this.rng.range(ARENA_PAD, this.height - ARENA_PAD);
-      if (dist(x, y, this.avatar.x, this.avatar.y) > 190) break;
-    }
+    // Spawn on open floor, away from the player, and never inside a hazard.
+    const hazards = this.level.traps.map((t) => ({ x: t.x, y: t.y, d: t.radius + 20 }));
+    const spot =
+      randomOpenPoint(this.level, this.rng, {
+        clearance: archetype.radius > 16 ? 2 : 1,
+        away: [{ x: this.avatar.x, y: this.avatar.y, d: 200 }, ...hazards],
+        tries: 40,
+      }) ??
+      // A cramped floor may have nowhere far away; settle for anywhere walkable.
+      randomOpenPoint(this.level, this.rng, {
+        away: [{ x: this.avatar.x, y: this.avatar.y, d: 110 }],
+        tries: 30,
+      }) ??
+      this.level.start;
+    const x = spot.x;
+    const y = spot.y;
 
     // Elites scale with depth: deeper floors roll higher tints and much fatter loot.
     let elite: Rarity | null = null;
-    const eliteChance = isBossWave ? 1 : clamp(0.04 + this.profile.depth * 0.008, 0, 0.28);
+    const eliteChance = isBossWave ? 1 : clamp(0.03 + this.profile.depth * 0.008, 0, 0.3);
     if (this.rng.chance(eliteChance)) {
       const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
       elite = RARITIES[this.rng.int(1, maxTier)]!;
@@ -178,7 +200,7 @@ export class Dungeon {
       health, maxHealth: health,
       damage: this.profile.enemyDamage * archetype.damage * (elite ? 1 + rarityIndex(elite) * 0.12 : 1),
       speed: this.profile.enemySpeed * archetype.speed,
-      attackTimer: this.rng.range(0, archetype.attackCooldown),
+      attackTimer: this.rng.range(0, archetype.attackCooldown * this.profile.aggression),
       windup: 0,
       state: "spawning",
       spawnTimer: 0.45,
@@ -186,6 +208,9 @@ export class Dungeon {
       knockX: 0, knockY: 0,
       elite,
       facing: 0,
+      trapCooldown: 0,
+      stuckTimer: 0,
+      dodgeDir: this.rng.chance(0.5) ? 1 : -1,
     });
   }
 
@@ -196,6 +221,8 @@ export class Dungeon {
     if (this.phase === "dead") return;
 
     this.updateAvatar(dt, input);
+    this.updateFlow(dt);
+    this.updateTraps(dt);
     this.updateSpawning(dt);
     this.updateEnemies(dt);
     this.updateProjectiles(dt);
@@ -203,6 +230,7 @@ export class Dungeon {
 
     if (this.phase === "fighting" && this.enemiesRemaining === 0 && this.wave >= this.profile.waves) {
       this.phase = "cleared";
+      this.dropClearCache();
       this.events.push({ kind: "cleared" });
     }
   }
@@ -219,6 +247,109 @@ export class Dungeon {
     this.spawnOne();
     this.queued--;
     this.spawnTimer = 0.28;
+  }
+
+  /** The pathing field only needs to be roughly current, so it runs a few times a second. */
+  private updateFlow(dt: number): void {
+    this.flowTimer -= dt;
+    if (this.flowTimer > 0) return;
+    this.flowTimer = 0.25;
+    this.flow.update(this.level, this.avatar.x, this.avatar.y);
+  }
+
+  // --- hazards ------------------------------------------------------------
+
+  /**
+   * Hazards run on their own clocks, independent of the wave director. Most cycle
+   * idle -> telegraph -> live, which is what makes them dodgeable rather than a tax;
+   * saws patrol a lane and tar pools are simply always there.
+   *
+   * Almost everything on the floor can be killed by them, which is the point: a spike
+   * plate is a weapon if you can walk a Juggernaut over it at the right moment.
+   */
+  private updateTraps(dt: number): void {
+    for (const t of this.level.traps) {
+      switch (t.kind) {
+        case "saw": {
+          // Ping-pong along the track; the blade is live for its whole patrol.
+          const len = Math.hypot(t.bx - t.ax, t.by - t.ay);
+          const speed = len > 0 ? 92 / len : 0;
+          t.t += t.dir * speed * dt;
+          if (t.t > 1) { t.t = 1; t.dir = -1; }
+          if (t.t < 0) { t.t = 0; t.dir = 1; }
+          t.x = t.ax + (t.bx - t.ax) * t.t;
+          t.y = t.ay + (t.by - t.ay) * t.t;
+          t.spin += dt * 14;
+          t.state = "active";
+          this.applyTrapDamage(t);
+          break;
+        }
+        case "mire": {
+          t.state = "active";
+          // The slow is applied during movement; this is the chip damage on top.
+          t.timer += dt;
+          if (t.timer >= 0.5) {
+            t.timer = 0;
+            this.applyTrapDamage(t);
+          }
+          break;
+        }
+        default: {
+          const { cycle, warn, active } = t.spec;
+          t.timer += dt;
+          if (t.timer >= cycle) {
+            t.timer -= cycle;
+            t.fired = false;
+          }
+          const warnAt = cycle - warn - active;
+          t.state = t.timer >= warnAt + warn ? "active" : t.timer >= warnAt ? "warn" : "idle";
+          if (t.state === "active" && !t.fired) {
+            t.fired = true;
+            this.events.push({ kind: "trap", x: t.x, y: t.y, trap: t.kind, radius: t.radius });
+            if (t.kind === "turret") this.fireTurret(t);
+          }
+          if (t.state === "active" && t.kind !== "turret") this.applyTrapDamage(t);
+          break;
+        }
+      }
+    }
+  }
+
+  /** Hits everything standing in a live hazard, the player included. */
+  private applyTrapDamage(t: Trap): void {
+    const damage = this.profile.enemyDamage * t.spec.damage;
+    const a = this.avatar;
+    if (dist(a.x, a.y, t.x, t.y) <= t.radius + a.radius) this.hurtPlayer(damage);
+
+    if (!t.spec.hitsEnemies) return;
+    // Snapshot: damageEnemy can splice the list while we're walking it.
+    const caught = this.enemies.filter(
+      (e) => e.state !== "spawning" && e.trapCooldown <= 0 && dist(e.x, e.y, t.x, t.y) <= t.radius + e.radius,
+    );
+    for (const e of caught) {
+      e.trapCooldown = TRAP_ENEMY_COOLDOWN;
+      this.damageEnemy(e, damage, Math.atan2(e.y - t.y, e.x - t.x));
+    }
+  }
+
+  private fireTurret(t: Trap): void {
+    const speed = 230;
+    this.events.push({ kind: "trap", x: t.x, y: t.y, trap: t.kind, radius: t.radius });
+    this.projectiles.push({
+      x: t.x, y: t.y, px: t.x, py: t.y, radius: 5,
+      vx: Math.cos(t.angle) * speed, vy: Math.sin(t.angle) * speed,
+      damage: this.profile.enemyDamage * t.spec.damage,
+      friendly: false, life: 4, color: "#fca5a5",
+    });
+  }
+
+  /** Movement multiplier at a point — 1 on clean floor, much less in tar. */
+  private mireSlowAt(x: number, y: number): number {
+    for (const t of this.level.traps) {
+      if (t.kind !== "mire") continue;
+      if (dist(x, y, t.x, t.y) <= t.radius) return MIRE_SLOW;
+    }
+    return 1;
   }
 
   private updateAvatar(dt: number, input: Input): void {
@@ -248,12 +379,17 @@ export class Dungeon {
     }
 
     if (a.dashTimer <= 0) {
-      a.vx = move.x * PLAYER_SPEED;
-      a.vy = move.y * PLAYER_SPEED;
+      // Tar slows a walk to a crawl but never a dash — the dash stays the way out.
+      const slow = this.mireSlowAt(a.x, a.y);
+      a.vx = move.x * PLAYER_SPEED * slow;
+      a.vy = move.y * PLAYER_SPEED * slow;
     }
 
     a.x = clamp(a.x + a.vx * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
     a.y = clamp(a.y + a.vy * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
+    const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
+    a.x = fixed.x;
+    a.y = fixed.y;
 
     if (input.wasPressed("attack") && a.attackTimer <= 0) this.attack();
     if (input.wasPressed("potion")) this.drinkPotion();
@@ -314,7 +450,7 @@ export class Dungeon {
   private drinkPotion(): void {
     if (this.state.potions <= 0 || this.player.health >= this.player.maxHealth) return;
     this.state.potions--;
-    const healed = this.player.heal(this.player.maxHealth * 0.4);
+    const healed = this.player.heal(this.player.maxHealth * POTION_HEAL);
     this.events.push({
       kind: "pickup", x: this.avatar.x, y: this.avatar.y,
       label: `+${Math.round(healed)} HP`, color: "#4ade80",
@@ -357,19 +493,23 @@ export class Dungeon {
     const coins = Math.round(coinDropFor(this.profile.depth) * lootMult * this.rng.range(0.8, 1.25));
     this.dropPickup(e.x, e.y, { kind: "coin", value: coins });
 
-    // Keys are the bridge back to the chest gambling — they should feel common enough
-    // that every dive funds a few pulls.
-    if (this.rng.chance(clamp(0.16 + lootMult * 0.03, 0, 0.6))) {
+    // Keys are the bridge back to the chest gambling. A dive should fund a couple of
+    // pulls, not a spree — the chests are the slot machine, not the payout.
+    if (this.rng.chance(clamp(0.075 + lootMult * 0.014, 0, 0.4))) {
       const tier = keyDropTier(this.profile.depth, this.rng.next());
       this.dropPickup(e.x, e.y, { kind: "key", keyTier: tier });
     }
 
-    if (this.rng.chance(0.035 + lootMult * 0.006)) {
+    if (this.rng.chance(0.02 + lootMult * 0.004)) {
       this.dropPickup(e.x, e.y, { kind: "potion" });
     }
 
     // Direct gear drops. Elites and bosses roll several, weighted deeper by floor.
-    const rolls = e.archetype.kind === "boss" ? 4 : e.elite ? (this.rng.chance(0.6) ? 2 : 1) : this.rng.chance(clamp(0.14 + lootMult * 0.05, 0, 0.55)) ? 1 : 0;
+    const rolls = e.archetype.kind === "boss"
+      ? 3
+      : e.elite
+        ? (this.rng.chance(0.3) ? 2 : 1)
+        : this.rng.chance(clamp(0.07 + lootMult * 0.025, 0, 0.34)) ? 1 : 0;
     for (let i = 0; i < rolls; i++) {
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + (e.elite ? rarityIndex(e.elite) * 2 : 0)));
       const item = rollItem({
@@ -380,6 +520,31 @@ export class Dungeon {
       });
       this.dropPickup(e.x, e.y, { kind: "item", item, rarity });
     }
+  }
+
+  /**
+   * The reward for clearing, spilled around the portal. Per-kill drops are deliberately
+   * thin, so this is where a floor actually pays: it can only be earned by finishing,
+   * and it's still lost if you die on the way to the exit.
+   */
+  private dropClearCache(): void {
+    const { x, y } = this.portal;
+    const coins = Math.round(coinDropFor(this.profile.depth) * 9 * this.rng.range(0.9, 1.15));
+    this.dropPickup(x, y, { kind: "coin", value: coins });
+
+    const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2));
+    const item = rollItem({
+      rarity,
+      type: this.rng.pick(ITEM_TYPES) as ItemType,
+      ilvl: this.profile.depth,
+      rng: this.rng,
+    });
+    this.dropPickup(x, y, { kind: "item", item, rarity });
+
+    if (this.rng.chance(0.7)) {
+      this.dropPickup(x, y, { kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()) });
+    }
+    if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }
 
   private dropPickup(
@@ -419,13 +584,17 @@ export class Dungeon {
       const toPlayer = Math.atan2(a.y - e.y, a.x - e.x);
       e.facing = toPlayer;
 
+      // With a wall in the way nothing holds its ground: ranged types reposition for a
+      // shot and everything else takes the long way around, instead of standing there.
+      const hasLos = !lineBlocked(this.level, e.x, e.y, a.x, a.y);
+
       // Ranged types hold a standoff distance; melee types close.
       let moveAngle = toPlayer;
       let move = true;
-      if (e.archetype.ranged) {
+      if (e.archetype.ranged && hasLos) {
         if (d < e.archetype.standoff * 0.75) moveAngle = toPlayer + Math.PI;
         else if (d < e.archetype.standoff * 1.15) move = false;
-      } else if (d < e.radius + a.radius) {
+      } else if (!e.archetype.ranged && d < e.radius + a.radius) {
         move = false;
       }
 
@@ -436,10 +605,19 @@ export class Dungeon {
         move = false;
       }
 
+      e.trapCooldown = Math.max(0, e.trapCooldown - dt);
+
       if (move) {
-        const dir = normalize(Math.cos(moveAngle), Math.sin(moveAngle));
-        e.x += dir.x * e.speed * dt;
-        e.y += dir.y * e.speed * dt;
+        const speed = e.speed * this.mireSlowAt(e.x, e.y);
+        // With a clear line, charge straight in; otherwise follow the route around.
+        let dir = normalize(Math.cos(moveAngle), Math.sin(moveAngle));
+        if (!hasLos || e.stuckTimer > 0.18) {
+          const routed = this.flow.direction(this.level, e.x, e.y);
+          if (routed) dir = routed;
+          else if (e.stuckTimer > 0.22) dir = normalize(Math.cos(moveAngle + e.dodgeDir * 1.05), Math.sin(moveAngle + e.dodgeDir * 1.05));
+        }
+        e.x += dir.x * speed * dt;
+        e.y += dir.y * speed * dt;
       }
 
       // Knockback decays fast so it reads as a hit reaction, not a launch.
@@ -450,11 +628,22 @@ export class Dungeon {
 
       e.x = clamp(e.x, e.radius + WALL_PAD, this.width - e.radius - WALL_PAD);
       e.y = clamp(e.y, e.radius + WALL_PAD, this.height - e.radius - WALL_PAD);
+      const fixed = resolveCircle(this.level, e.x, e.y, e.radius);
+      const shoved = Math.hypot(fixed.x - e.x, fixed.y - e.y) > 0.05;
+      e.x = fixed.x;
+      e.y = fixed.y;
+      if (move && shoved) {
+        e.stuckTimer += dt;
+        // Flip the sidestep occasionally so nothing grinds forever on one corner.
+        if (e.stuckTimer > 1.6) { e.stuckTimer = 0; e.dodgeDir *= -1; }
+      } else {
+        e.stuckTimer = Math.max(0, e.stuckTimer - dt * 2);
+      }
 
       e.attackTimer -= dt;
-      if (e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange) {
-        e.windup = e.archetype.ranged ? 0.35 : 0.28;
-        e.attackTimer = e.archetype.attackCooldown;
+      if (e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
+        e.windup = (e.archetype.ranged ? 0.35 : 0.28) * this.profile.telegraph;
+        e.attackTimer = e.archetype.attackCooldown * this.profile.aggression;
       }
     }
     this.separateEnemies();
@@ -524,7 +713,7 @@ export class Dungeon {
       p.life -= dt;
 
       const outOfBounds = p.x < 0 || p.y < 0 || p.x > this.width || p.y > this.height;
-      if (p.life <= 0 || outOfBounds) {
+      if (p.life <= 0 || outOfBounds || circleHitsWall(this.level, p.x, p.y, p.radius)) {
         this.projectiles.splice(i, 1);
         continue;
       }
@@ -568,6 +757,10 @@ export class Dungeon {
 
       p.x = clamp(p.x + p.vx * dt, 8, this.width - 8);
       p.y = clamp(p.y + p.vy * dt, 8, this.height - 8);
+      // A drop that lands in a block would be unreachable, so shove it back out.
+      const clear = resolveCircle(this.level, p.x, p.y, p.radius);
+      p.x = clear.x;
+      p.y = clear.y;
 
       if (p.life > 0.3 && d < PICKUP_RANGE) {
         this.collect(p);

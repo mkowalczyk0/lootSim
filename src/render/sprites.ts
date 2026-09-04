@@ -175,6 +175,61 @@ const GEM: Grid = [
   "........",
 ];
 
+/** Wall torch: a bracket and a flame. Placed against blocks by the level generator. */
+const TORCH: Grid = [
+  "..55..",
+  ".5775.",
+  ".5775.",
+  "..77..",
+  "..44..",
+  "..44..",
+  "..44..",
+  "..44..",
+  "..44..",
+];
+
+const BONES: Grid = [
+  "..........",
+  ".##....##.",
+  "..######..",
+  ".##....##.",
+  "..........",
+  "..........",
+];
+
+const MUSHROOM: Grid = [
+  "..####..",
+  ".######.",
+  "##5##5##",
+  ".######.",
+  "...44...",
+  "...44...",
+  "..4444..",
+  "........",
+];
+
+/** Tinted to the biome accent at draw time, so one grid covers every cave. */
+const CRYSTAL: Grid = [
+  "...##...",
+  "..####..",
+  ".######.",
+  ".##55##.",
+  ".######.",
+  "..####..",
+  "..####..",
+  "...##...",
+];
+
+const ROCK: Grid = [
+  "..........",
+  "...####...",
+  "..######..",
+  ".########.",
+  ".########.",
+  "..######..",
+  "..........",
+];
+
 const CHEST: Grid = [
   "................",
   "..############..",
@@ -203,13 +258,19 @@ const P = {
   potion: { "#": "#cfd8e3", "7": "#4ade80" },
   gem: { "#": "#ffffff", "5": "#ffffff" },
   chest: { "#": "#5a3b22", "4": "#c8912f" },
+  torch: { "4": "#5a3b22", "5": "#ffe9a8", "7": "#ff8a3c" },
+  bones: { "#": "#d9d4c5" },
+  mushroom: { "#": "#b23a48", "4": "#e6d6b8", "5": "#f7e3d0" },
+  crystal: { "#": "#8b5cf6", "5": "#e9d5ff" },
+  rock: { "#": "#6b7280" },
 } satisfies Record<string, Palette>;
 
 // --- baked atlas ----------------------------------------------------------
 
 export type SpriteName =
   | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster" | "boss"
-  | "coin" | "key" | "potion" | "gem" | "chest";
+  | "coin" | "key" | "potion" | "gem" | "chest"
+  | "torch" | "bones" | "mushroom" | "crystal" | "rock";
 
 let atlas: Record<SpriteName, HTMLCanvasElement> | null = null;
 
@@ -228,6 +289,11 @@ export function buildSprites(): void {
     potion: bake(POTION, P.potion),
     gem: bake(GEM, P.gem),
     chest: bake(CHEST, P.chest),
+    torch: bake(TORCH, P.torch),
+    bones: bake(BONES, P.bones),
+    mushroom: bake(MUSHROOM, P.mushroom),
+    crystal: bake(CRYSTAL, P.crystal),
+    rock: bake(ROCK, P.rock),
   };
 }
 

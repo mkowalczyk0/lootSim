@@ -1,7 +1,9 @@
 import { clamp, lerp, TAU } from "../core/math";
+import type { PropKind } from "../data/biomes";
 import { RARITY_COLORS } from "../data/rarity";
 import type { Dungeon } from "../game/dungeon";
 import type { Body, Enemy, Pickup } from "../game/entities";
+import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { silhouette, sprite, tinted, type SpriteName } from "./sprites";
 
@@ -40,10 +42,17 @@ function drawSprite(
   ctx.restore();
 }
 
+const PROP_SPRITES: Record<PropKind, SpriteName> = {
+  torch: "torch", bones: "bones", mushroom: "mushroom", crystal: "crystal", rock: "rock",
+};
+
 export class WorldRenderer {
   private camX = 0;
   private camY = 0;
   private initialized = false;
+  /** The floor is static for the life of a level, so it's painted once and blitted. */
+  private floorCanvas: HTMLCanvasElement | null = null;
+  private floorFor: Level | null = null;
 
   /** Draws the whole dungeon. `alpha` is the fixed-timestep interpolation factor. */
   render(
@@ -80,6 +89,9 @@ export class WorldRenderer {
     ctx.translate(-this.camX + shake.x, -this.camY + shake.y);
 
     this.drawFloor(ctx, dungeon);
+    this.drawTraps(ctx, dungeon);
+    this.drawWalls(ctx, dungeon.level);
+    this.drawProps(ctx, dungeon.level);
     this.drawPortal(ctx, dungeon);
     this.drawPickups(ctx, dungeon, alpha);
     this.drawActors(ctx, dungeon, alpha);
@@ -90,33 +102,53 @@ export class WorldRenderer {
   }
 
   private drawFloor(ctx: CanvasRenderingContext2D, d: Dungeon): void {
-    const { width, height, profile } = d;
-
-    ctx.fillStyle = profile.tint;
-    ctx.fillRect(0, 0, width, height);
-
-    // A coarse grid gives the eye something to judge speed and distance against.
-    const cell = 48;
-    ctx.strokeStyle = "rgba(255,255,255,0.035)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 0; x <= width; x += cell) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+    if (this.floorFor !== d.level || !this.floorCanvas) {
+      this.floorCanvas = bakeFloor(d.level);
+      this.floorFor = d.level;
     }
-    for (let y = 0; y <= height; y += cell) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-    }
-    ctx.stroke();
+    const floor = this.floorCanvas;
+    if (floor) ctx.drawImage(floor, 0, 0);
+  }
 
-    // Vignette-ish inner border so the arena bounds are unmistakable.
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5, 5, width - 10, height - 10);
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, width - 2, height - 2);
+  /** Solid blocks, drawn with a face and a shadow so they read as things you can't cross. */
+  private drawWalls(ctx: CanvasRenderingContext2D, level: Level): void {
+    const { wall, wallSide } = level.biome;
+    for (const w of level.walls) {
+      ctx.fillStyle = "rgba(0,0,0,0.38)";
+      ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h);
+      ctx.fillStyle = wallSide;
+      ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.fillStyle = wall;
+      ctx.fillRect(w.x, w.y, w.w, Math.max(4, w.h - 7));
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(w.x, w.y, w.w, 2);
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1);
+    }
+  }
+
+  private drawProps(ctx: CanvasRenderingContext2D, level: Level): void {
+    for (const p of level.props) {
+      const name = PROP_SPRITES[p.kind];
+      // Crystals and rubble take the biome's colors; the rest are authored as-is.
+      const canvas =
+        p.kind === "crystal" ? tinted(name, level.biome.accent, 0.5)
+        : p.kind === "rock" ? tinted(name, level.biome.wall, 0.65)
+        : sprite(name);
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      if (p.kind === "torch") {
+        ctx.shadowColor = "#ff8a3c";
+        ctx.shadowBlur = 14;
+      }
+      drawSprite(ctx, canvas, p.x, p.y, false, 1.25 * p.scale);
+      ctx.restore();
+    }
+  }
+
+  private drawTraps(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    for (const t of d.level.traps) drawTrap(ctx, t, d.elapsed);
   }
 
   private drawPortal(ctx: CanvasRenderingContext2D, d: Dungeon): void {
@@ -302,6 +334,197 @@ export class WorldRenderer {
   reset(): void {
     this.initialized = false;
   }
+}
+
+/**
+ * Paints the floor of a level once into an offscreen canvas: base color, a scatter of
+ * darker tiles for texture, and the arena border. It never changes during a run, so
+ * there's no reason to redraw a few hundred rectangles every frame.
+ */
+function bakeFloor(level: Level): HTMLCanvasElement {
+  const { width, height, biome } = level;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+
+  ctx.fillStyle = biome.tint;
+  ctx.fillRect(0, 0, width, height);
+
+  // Deterministic from the level seed, so a floor always looks like itself.
+  let hash = level.seed >>> 0;
+  const rand = () => {
+    hash = (hash * 1664525 + 1013904223) >>> 0;
+    return hash / 4294967296;
+  };
+
+  const cell = 24;
+  ctx.fillStyle = biome.floorAlt;
+  for (let y = 0; y < height; y += cell) {
+    for (let x = 0; x < width; x += cell) {
+      if (rand() < 0.22) ctx.fillRect(x, y, cell, cell);
+    }
+  }
+
+  // Scratches and grit, so the tiling doesn't read as a checkerboard.
+  ctx.strokeStyle = "rgba(0,0,0,0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < Math.floor(width / 6); i++) {
+    const x = rand() * width;
+    const y = rand() * height;
+    const len = 6 + rand() * 16;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + len, y + (rand() - 0.5) * 4);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.03)";
+  ctx.beginPath();
+  for (let x = 0; x <= width; x += 48) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
+  for (let y = 0; y <= height; y += 48) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
+  ctx.stroke();
+
+  // Border, so the arena bounds are unmistakable.
+  ctx.strokeStyle = "rgba(0,0,0,0.55)";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(5, 5, width - 10, height - 10);
+  ctx.strokeStyle = biome.wall;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, width - 2, height - 2);
+  return canvas;
+}
+
+/**
+ * Hazards are drawn procedurally rather than as sprites because their whole job is to
+ * telegraph: the player has to be able to read "about to fire" at a glance, across a
+ * crowded room, without learning an icon.
+ */
+function drawTrap(ctx: CanvasRenderingContext2D, t: Trap, time: number): void {
+  const { x, y, radius } = t;
+  ctx.save();
+  switch (t.kind) {
+    case "spike": {
+      ctx.fillStyle = "rgba(10,10,14,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(x, y, radius, radius * 0.62, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = t.state === "idle" ? "rgba(180,180,200,0.25)" : "#ff5c5c";
+      ctx.lineWidth = t.state === "idle" ? 1 : 2;
+      ctx.stroke();
+      if (t.state === "warn") {
+        // Pulse faster as the plate is about to fire.
+        ctx.globalAlpha = 0.35 + Math.sin(time * 26) * 0.25;
+        ctx.fillStyle = "#ff5c5c";
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      if (t.state === "active") {
+        ctx.fillStyle = "#dde5ef";
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * TAU + 0.3;
+          const px = x + Math.cos(a) * radius * 0.55;
+          const py = y + Math.sin(a) * radius * 0.34;
+          ctx.beginPath();
+          ctx.moveTo(px - 3, py + 3);
+          ctx.lineTo(px, py - 9);
+          ctx.lineTo(px + 3, py + 3);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      break;
+    }
+    case "flame": {
+      ctx.fillStyle = "rgba(8,6,4,0.6)";
+      ctx.beginPath();
+      ctx.ellipse(x, y, radius * 0.55, radius * 0.34, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = t.state === "idle" ? "rgba(251,146,60,0.3)" : "#fb923c";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (t.state === "warn") {
+        ctx.globalAlpha = 0.4 + Math.sin(time * 30) * 0.3;
+        ctx.fillStyle = "#fb923c";
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.4, 0, TAU);
+        ctx.fill();
+      }
+      if (t.state === "active") {
+        for (let i = 3; i >= 1; i--) {
+          ctx.globalAlpha = 0.28 * i;
+          ctx.fillStyle = i === 1 ? "#fff3c4" : i === 2 ? "#ffb020" : "#ff5c1a";
+          ctx.beginPath();
+          ctx.arc(x, y, radius * (i / 3) * (0.9 + Math.sin(time * 18 + i) * 0.1), 0, TAU);
+          ctx.fill();
+        }
+      }
+      break;
+    }
+    case "saw": {
+      // The track first, so it's obvious where the blade is going to be next.
+      ctx.strokeStyle = "rgba(226,232,240,0.16)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(t.ax, t.ay);
+      ctx.lineTo(t.bx, t.by);
+      ctx.stroke();
+
+      ctx.translate(x, y);
+      ctx.rotate(t.spin);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * TAU;
+        const b = a + TAU / 16;
+        ctx.lineTo(Math.cos(a) * radius, Math.sin(a) * radius);
+        ctx.lineTo(Math.cos(b) * radius * 0.62, Math.sin(b) * radius * 0.62);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#64748b";
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.3, 0, TAU);
+      ctx.fill();
+      break;
+    }
+    case "turret": {
+      ctx.fillStyle = "#1f2430";
+      ctx.fillRect(x - radius * 0.7, y - radius, radius * 1.4, radius * 1.8);
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - radius * 0.7, y - radius, radius * 1.4, radius * 1.8);
+      const hot = t.state === "warn" ? 0.5 + Math.sin(time * 30) * 0.5 : t.state === "active" ? 1 : 0.25;
+      ctx.globalAlpha = 0.35 + hot * 0.65;
+      ctx.fillStyle = "#fca5a5";
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(t.angle) * radius * 0.5, y + Math.sin(t.angle) * radius * 0.4, 3.4, 0, TAU);
+      ctx.fill();
+      break;
+    }
+    case "mire": {
+      ctx.globalAlpha = 0.72;
+      ctx.fillStyle = "#141018";
+      ctx.beginPath();
+      ctx.ellipse(x, y, radius, radius * 0.66, 0, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = "#4ade80";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Lazy bubbles, so a pool doesn't look like a hole in the floor.
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = "#4ade80";
+      for (let i = 0; i < 3; i++) {
+        const p = (time * 0.5 + i * 0.37) % 1;
+        ctx.beginPath();
+        ctx.arc(x + Math.sin(i * 2.1 + time * 0.6) * radius * 0.45, y + (0.4 - p) * radius * 0.5, 2 + p * 2, 0, TAU);
+        ctx.fill();
+      }
+      break;
+    }
+  }
+  ctx.restore();
 }
 
 function pickupSprite(p: Pickup): HTMLCanvasElement {

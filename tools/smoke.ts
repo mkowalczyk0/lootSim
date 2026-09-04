@@ -5,8 +5,12 @@
  */
 import type { Action, Input } from "../src/core/input";
 import { Dungeon } from "../src/game/dungeon";
-import { GameState } from "../src/game/state";
+import { circleHitsWall, generateLevel, isWalkable } from "../src/game/level";
+import { itemScore } from "../src/game/item";
+import { GameState, POTION_PRICE } from "../src/game/state";
+import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { profileFor } from "../src/data/depth";
+import { Rng } from "../src/core/rng";
 
 class FakeInput {
   private down = new Set<Action>();
@@ -36,32 +40,92 @@ function check(label: string, ok: boolean, detail = "") {
 
 const DT = 1 / 60;
 
-/** Plays a floor with a bot that chases the nearest enemy and mashes attack. */
-function playFloor(state: GameState, depth: number, maxSeconds = 240) {
-  const d = new Dungeon(state, depth, 12345);
+/**
+ * Steers toward (or away from) a point without walking into a wall: it tries the
+ * straight line first, then progressively wider angles. Crude, but it's what a player
+ * does instinctively, and without it the bot pins itself on a pillar and dies there.
+ */
+function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
+  const a = d.avatar;
+  const sign = retreat ? -1 : 1;
+  const base = Math.atan2((ty - a.y) * sign, (tx - a.x) * sign);
+  for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3]) {
+    const ang = base + off;
+    const px = a.x + Math.cos(ang) * 34;
+    const py = a.y + Math.sin(ang) * 34;
+    if (px < 14 || py < 14 || px > d.width - 14 || py > d.height - 14) continue;
+    if (circleHitsWall(d.level, px, py, a.radius + 3)) continue;
+    return { x: Math.cos(ang), y: Math.sin(ang) };
+  }
+  return { x: Math.cos(base), y: Math.sin(base) };
+}
+
+/**
+ * Plays a floor with a bot that chases the nearest enemy and mashes attack.
+ * `dodge` is the fraction of telegraphs it reacts to, which is the single biggest
+ * difference between one player and another — see the campaign section below.
+ */
+function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 1000 + depth * 37, dodge = 0.55) {
+  const d = new Dungeon(state, depth, seed);
   const input = new FakeInput();
   let t = 0;
   let peakEnemies = 0;
+  // Input here is polled every tick, so an ungated press would chug the whole belt.
+  let potionCooldown = 0;
+  // Reaction rolls. A bot that dodges every telegraph perfectly walks the whole ladder
+  // untouched, and a bot that never dodges dies on floor two; a real player is neither,
+  // so each fresh telegraph gets a coin flip.
+  const reflexes = new Rng((seed ^ 0x5f3759df) >>> 0);
+  let threatSeen = false;
+  let willDodge = false;
 
   while (t < maxSeconds && d.phase === "fighting") {
     input.beginTick();
-    const target = d.enemies.filter((e) => e.state !== "spawning")[0];
     for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
-    const hurt = state.player.health < state.player.maxHealth * 0.4;
+
+    // Nearest live enemy, which is what a player would actually be swinging at.
+    let target = null as (typeof d.enemies)[number] | null;
+    let gap = Infinity;
+    for (const e of d.enemies) {
+      if (e.state === "spawning") continue;
+      const dd = Math.hypot(e.x - d.avatar.x, e.y - d.avatar.y);
+      if (dd < gap) { gap = dd; target = e; }
+    }
+
+    // Back off when hurt, but only from something close enough to be the threat, and
+    // only while there's a potion left to buy time with. Retreating with an empty belt
+    // never resolves: the player outruns everything, so the floor would never end.
+    const hurt = state.player.health < state.player.maxHealth * 0.4
+      && state.potions > 0
+      && gap < 70;
+    // Dodging a telegraph is the skill the game is actually asking for, so the bot
+    // has to do it: anything winding up within reach gets dashed away from.
+    const incoming = d.enemies.some(
+      (e) => e.windup > 0 && Math.hypot(e.x - d.avatar.x, e.y - d.avatar.y) < e.archetype.attackRange + 24,
+    );
+    if (incoming && !threatSeen) willDodge = reflexes.chance(dodge);
+    threatSeen = incoming;
+    const threat = incoming && willDodge;
+
     if (target) {
-      // Kite when hurt, close when healthy — roughly what a mediocre player does.
-      const sign = hurt ? -1 : 1;
-      const dx = (target.x - d.avatar.x) * sign;
-      const dy = (target.y - d.avatar.y) * sign;
-      if (hurt || Math.hypot(dx, dy) > 26) {
-        if (Math.abs(dx) > 4) input.hold(dx > 0 ? "right" : "left", true);
-        if (Math.abs(dy) > 4) input.hold(dy > 0 ? "down" : "up", true);
+      if (hurt || gap > 26) {
+        const dir = steer(d, target.x, target.y, hurt);
+        if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+        if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+      } else if (threat) {
+        const away = steer(d, target.x, target.y, true);
+        if (Math.abs(away.x) > 0.25) input.hold(away.x > 0 ? "right" : "left", true);
+        if (Math.abs(away.y) > 0.25) input.hold(away.y > 0 ? "down" : "up", true);
       }
       input.press("attack");
-      if (hurt) input.press("dash");
+      if (hurt || threat) input.press("dash");
     }
     if (d.specialCharge >= 1) input.press("special");
-    if (hurt) input.press("potion");
+    potionCooldown -= DT;
+    if (state.player.health < state.player.maxHealth * 0.5 && potionCooldown <= 0) {
+      input.press("potion");
+      potionCooldown = 2;
+    }
 
     d.update(DT, input as unknown as Input);
     d.drainEvents();
@@ -69,6 +133,33 @@ function playFloor(state: GameState, depth: number, maxSeconds = 240) {
     t += DT;
   }
   return { d, seconds: t, peakEnemies };
+}
+
+/** What a player does between dives: restock, gamble the purse, wear the best of it. */
+function townVisit(state: GameState): void {
+  state.player.fullHeal();
+  while (state.potions < 5 && state.coins >= POTION_PRICE * 2) {
+    if (!state.buyPotion()) break;
+  }
+  // Buy the best chest tier the purse can stand, keeping a little back for potions.
+  for (const tier of ["Elite", "Advanced", "Basic"] as ChestTier[]) {
+    while (state.coins > CHESTS[tier].price * 2) {
+      if (!state.buyKey(tier)) break;
+    }
+  }
+  for (const tier of CHEST_TIERS) {
+    if (state.keys[tier] > 0) state.openChests(tier, state.keys[tier]);
+  }
+  // Wear the best of everything, then sell what's strictly worse than what's worn.
+  for (const item of [...state.inventory].sort((a, b) => itemScore(b) - itemScore(a))) {
+    const worn = state.player.equipment[item.slot];
+    if (!worn || itemScore(item) > itemScore(worn)) state.equipFromInventory(item.id);
+  }
+  const junk = state.inventory.filter((it) => {
+    const worn = state.player.equipment[it.slot];
+    return worn ? itemScore(it) < itemScore(worn) : false;
+  });
+  if (junk.length) state.sell(junk.map((i) => i.id));
 }
 
 console.log("\n=== depth curve ===");
@@ -99,35 +190,90 @@ console.log("\n=== floor 1 with a fresh character ===");
   check("clearing unlocks the next depth", state.maxUnlockedDepth >= 2, `unlocked ${state.maxUnlockedDepth}`);
 }
 
-console.log("\n=== a full geared progression, depths 1..12 ===");
-{
-  const state = new GameState();
-  let died = 0;
-  for (let depth = 1; depth <= 12; depth++) {
-    state.player.fullHeal();
-    // Auto-equip the best thing in the stash for each slot, like a player would.
-    for (const item of [...state.inventory]) {
-      const worn = state.player.equipment[item.slot];
-      if (!worn || item.stats.attack + item.stats.defense + item.stats.maxHealth >
-          worn.stats.attack + worn.stats.defense + worn.stats.maxHealth) {
-        state.equipFromInventory(item.id);
+/**
+ * Twenty dives the way a player actually spends them: clear a floor and push one
+ * deeper, die and try the same floor again, fail it twice and drop back to farm
+ * something survivable. Marching 1..12 regardless of outcome — which is what this
+ * test used to do — measures nothing, because a death costs the loot that would have
+ * paid for the next floor and the run never recovers.
+ */
+function campaign(seed: number, dodge: number, dives = 20, log = false) {
+  const state = new GameState(seed);
+  let target = 1;
+  let deepest = 0;
+  let deaths = 0;
+  let failsHere = 0;
+  let unfinished = 0;
+
+  for (let dive = 0; dive < dives; dive++) {
+    townVisit(state);
+    const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge);
+    if (log) {
+      console.log(
+        `  dive ${String(dive + 1).padStart(2)} → depth ${String(target).padStart(2)} ` +
+        `${d.phase.padEnd(8)} ${seconds.toFixed(0).padStart(3)}s ${d.level.layout.padEnd(9)} ` +
+        `traps=${String(d.level.traps.length).padStart(2)} lv${String(state.player.level).padStart(2)} ` +
+        `kills=${String(d.loot.kills).padStart(3)} coins=${String(d.loot.coins).padStart(6)} ` +
+        `atk=${String(state.player.stats.attack).padStart(4)}`,
+      );
+    }
+    if (d.phase === "cleared") {
+      d.bankLoot();
+      deepest = Math.max(deepest, target);
+      target++;
+      failsHere = 0;
+    } else {
+      if (d.phase === "dead") deaths++;
+      else unfinished++;
+      failsHere++;
+      if (failsHere >= 2 && target > 1) {
+        target--;
+        failsHere = 0;
       }
     }
-    const { d, seconds } = playFloor(state, depth);
-    if (d.phase === "dead") died++;
-    console.log(
-      `  d${String(depth).padStart(2)} ${d.phase.padEnd(8)} ${seconds.toFixed(0).padStart(3)}s ` +
-      `lv${String(state.player.level).padStart(2)} kills=${String(d.loot.kills).padStart(3)} ` +
-      `coins=${String(d.loot.coins).padStart(7)} items=${String(d.loot.items.length).padStart(2)} ` +
-      `atk=${String(state.player.stats.attack).padStart(4)} hp=${state.player.maxHealth}`,
-    );
-    if (d.phase === "cleared") d.bankLoot();
   }
-  check("progression is survivable with gear", died <= 3, `died on ${died} of 12 floors`);
-  check("character leveled up", state.player.level > 1, `level ${state.player.level}`);
-  check("stash accumulated loot", state.inventory.length > 0, `${state.inventory.length} items`);
-  check("keys dropped in the dungeon",
-    Object.values(state.keys).some((n) => n > 0), JSON.stringify(state.keys));
+  return { state, deepest, deaths, unfinished };
+}
+
+console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraphs) ===");
+{
+  const runs = [4242, 991, 7777].map((seed, i) => campaign(seed, 0.55, 20, i === 0));
+  for (const [i, r] of runs.entries()) {
+    console.log(
+      `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
+      `level ${r.state.player.level}, attack ${r.state.player.stats.attack}, ` +
+      `earned ${r.state.stats.coinsEarned} coins`,
+    );
+  }
+  const deepest = runs.reduce((a, r) => a + r.deepest, 0) / runs.length;
+  const first = runs[0]!.state;
+  const worn = Object.values(first.player.equipment).filter(Boolean).length;
+  check("skilled play makes real progress", deepest >= 10, `average deepest depth ${deepest.toFixed(1)}`);
+  check("gear is found and worn", worn >= 4, `${worn} slots filled`);
+  check("chests get opened along the way",
+    Object.values(first.stats.chestsOpened).some((n) => n > 0), JSON.stringify(first.stats.chestsOpened));
+  check("floors resolve in reasonable time",
+    runs.every((r) => r.unfinished <= 2), runs.map((r) => r.unfinished).join("/"));
+}
+
+console.log("\n=== a campaign: 20 dives, a reckless player (never dodges) ===");
+{
+  const runs = [4242, 991, 7777].map((seed) => campaign(seed, 0, 20));
+  for (const [i, r] of runs.entries()) {
+    console.log(
+      `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
+      `level ${r.state.player.level}, attack ${r.state.player.stats.attack}, ` +
+      `earned ${r.state.stats.coinsEarned} coins`,
+    );
+  }
+  const deepest = runs.reduce((a, r) => a + r.deepest, 0) / runs.length;
+  const deaths = runs.reduce((a, r) => a + r.deaths, 0);
+  // Standing in the open and trading hits has to cost you. It also has to leave the
+  // early floors learnable, or a new character can never get started at all.
+  check("ignoring telegraphs gets you killed", deaths >= 6, `${deaths} deaths across 60 dives`);
+  check("the descent still has teeth for a careless player", deepest <= 12,
+    `average deepest depth ${deepest.toFixed(1)}`);
+  check("the early floors stay learnable", deepest >= 3, `average deepest depth ${deepest.toFixed(1)}`);
 }
 
 console.log("\n=== boss floor (depth 5) ===");
@@ -180,6 +326,80 @@ console.log("\n=== extracting mid-fight ===");
   const before = state.coins;
   d.bankLoot();
   check("extracting mid-fight banks what you carried", state.coins >= before);
+}
+
+console.log("\n=== generated floors ===");
+{
+  const rng = new Rng(20260903);
+  const layouts: Record<string, number> = {};
+  let unreachablePortals = 0;
+  let trapsInWalls = 0;
+  let crampedFloors = 0;
+  let totalTraps = 0;
+  let totalWalls = 0;
+  let floors = 0;
+
+  for (let depth = 1; depth <= 30; depth++) {
+    for (let i = 0; i < 8; i++) {
+      const level = generateLevel(depth, rng);
+      floors++;
+      layouts[level.layout] = (layouts[level.layout] ?? 0) + 1;
+      totalTraps += level.traps.length;
+      totalWalls += level.walls.length;
+
+      // The one promise the generator makes: you can always walk to the exit.
+      if (!isWalkable(level, level.portal.x, level.portal.y)) unreachablePortals++;
+      if (!isWalkable(level, level.start.x, level.start.y)) unreachablePortals++;
+      for (const t of level.traps) {
+        if (!isWalkable(level, t.x, t.y)) trapsInWalls++;
+      }
+      // A floor that's mostly wall would be a maze, not an arena.
+      const openRatio = level.openCells.length / (level.cols * level.rows);
+      if (openRatio < 0.3) crampedFloors++;
+    }
+  }
+
+  check("every generated floor has a reachable portal", unreachablePortals === 0, `${unreachablePortals} bad of ${floors}`);
+  check("no hazard is buried inside a wall", trapsInWalls === 0, `${trapsInWalls} buried`);
+  check("floors stay open enough to fight in", crampedFloors === 0, `${crampedFloors} cramped`);
+  check("layouts actually vary", Object.keys(layouts).length >= 4, JSON.stringify(layouts));
+  console.log(`  ${floors} floors: ${(totalWalls / floors).toFixed(1)} walls and ${(totalTraps / floors).toFixed(1)} hazards on average`);
+}
+
+console.log("\n=== hazards ===");
+{
+  const state = new GameState(77);
+  state.player.level = 20;
+  const d = new Dungeon(state, 14, 555);
+  const input = new FakeInput();
+  let fired = 0;
+  let t = 0;
+  while (t < 20) {
+    input.beginTick();
+    d.update(DT, input as unknown as Input);
+    for (const ev of d.drainEvents()) if (ev.kind === "trap") fired++;
+    t += DT;
+  }
+  check("a deep floor is trapped", d.level.traps.length > 0, `${d.level.traps.length} hazards`);
+  check("hazards cycle on their own", fired > 0, `${fired} activations in 20s`);
+
+  // Stand on a hazard and confirm the floor bites. Saws and tar are always live;
+  // the timed ones need a cycle or two, hence the generous window.
+  const state2 = new GameState(78);
+  const d2 = new Dungeon(state2, 14, 555);
+  const trap = d2.level.traps[0]!;
+  const before = state2.player.health;
+  let t2 = 0;
+  while (t2 < 12 && state2.player.health === before) {
+    input.beginTick();
+    d2.avatar.x = trap.x;
+    d2.avatar.y = trap.y;
+    d2.update(DT, input as unknown as Input);
+    d2.drainEvents();
+    t2 += DT;
+  }
+  check("standing in a hazard hurts", state2.player.health < before,
+    `${before} -> ${state2.player.health.toFixed(0)} (${trap.kind})`);
 }
 
 console.log("\n=== chest odds over 200k pulls ===");

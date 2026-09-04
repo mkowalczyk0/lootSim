@@ -32,10 +32,25 @@ function freshStats(): RunStats {
   };
 }
 
+/**
+ * What a vendor pays, as a fraction of an item's worth. Town is not a business: selling
+ * junk should top up a chest key, not replace diving as a way to make money.
+ */
+export const SELL_RATE = 0.4;
+
+/** What the apothecary charges, and how many potions you're allowed to hoard. */
+export const POTION_PRICE = 75;
+export const POTION_CAP = 9;
+
+/** Coins paid out for an item at the vendor's rate. */
+export function sellPrice(item: Item): number {
+  return Math.max(1, Math.round(item.value * SELL_RATE));
+}
+
 /** Everything that persists between dives. */
 export class GameState {
   player = new Player();
-  coins = 500;
+  coins = 250;
   keys: Record<ChestTier, number> = Object.fromEntries(
     CHEST_TIERS.map((t) => [t, 0]),
   ) as Record<ChestTier, number>;
@@ -45,7 +60,12 @@ export class GameState {
   maxUnlockedDepth = 1;
   /** Potions carried into a dive. Refilled by picking them up in the dungeon. */
   potions = 3;
-  private readonly rng = new Rng();
+  private readonly rng: Rng;
+
+  /** The seed is only ever passed by tests, so a run of chest pulls is reproducible. */
+  constructor(seed?: number) {
+    this.rng = new Rng(seed);
+  }
 
   static INVENTORY_CAP = 200;
 
@@ -58,6 +78,16 @@ export class GameState {
     if (this.coins < n) return false;
     this.coins -= n;
     this.stats.coinsSpent += n;
+    return true;
+  }
+
+  /** Potions are the other thing coins are for. Capped, so you can't buy immortality. */
+  buyPotion(count = 1): boolean {
+    const room = POTION_CAP - this.potions;
+    const n = Math.min(count, room);
+    if (n <= 0) return false;
+    if (!this.spendCoins(POTION_PRICE * n)) return false;
+    this.potions += n;
     return true;
   }
 
@@ -104,7 +134,7 @@ export class GameState {
       this.inventory.sort((a, b) => b.value - a.value);
       const dumped = this.inventory.splice(GameState.INVENTORY_CAP);
       // Auto-sell the overflow rather than silently vanishing it.
-      for (const it of dumped) this.addCoins(it.value);
+      for (const it of dumped) this.addCoins(sellPrice(it));
       this.stats.itemsSold += dumped.length;
     }
   }
@@ -114,7 +144,7 @@ export class GameState {
     let total = 0;
     this.inventory = this.inventory.filter((it) => {
       if (!idSet.has(it.id)) return true;
-      total += it.value;
+      total += sellPrice(it);
       return false;
     });
     if (total > 0) {
