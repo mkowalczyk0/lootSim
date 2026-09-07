@@ -1118,11 +1118,15 @@ export class Dungeon implements CombatHost {
       const caught = this.enemies.filter(
         (e) => !e.boss && e.state !== "spawning" && dist(e.x, e.y, g.x, g.y) <= g.radius + e.radius,
       );
+      const zoneOwner = g.packet ? this.heroByHostId(g.packet.source.actorId) : undefined;
       for (const e of caught) {
-        this.damageEnemy(e, g.damage, this.rng.angle(), g.element);
+        const ail = STATUS_FOR_ELEMENT[g.element];
+        const hadAil = ail ? e.sc.has(ail) : false;
+        const dealt = this.damageEnemy(e, g.damage, this.rng.angle(), g.element);
+        this.creditIndirectHit(g.packet, e, dealt, !!ail && !hadAil && e.sc.has(ail));
         if (g.status && e.health > 0) {
           e.sc.apply(g.status, {
-            hitDamage: g.damage, sourceActorId: -1, chance: 1, roll: () => this.rng.next(),
+            hitDamage: g.damage, sourceActorId: zoneOwner ? zoneOwner.index : -1, chance: 1, roll: () => this.rng.next(),
           });
         }
       }
@@ -2008,6 +2012,24 @@ export class Dungeon implements CombatHost {
     return dealt;
   }
 
+  /**
+   * Feed an indirect hit — a skill projectile or a damage-zone tick — back into the
+   * firing hero's resources. `damageEnemy` handles those hits but knows nothing about
+   * `src/combat`, so this closes the loop: `packet.source` carries the ability's tags
+   * (so `requireTags` generation fires) and its `fromUltimate` flag (so THE ULTIMATE
+   * RULE holds, enforced inside `creditResourcesForHit`). `sawAilment` is whether this
+   * hit newly landed the element's ailment, for `on: "ailmentInflicted"` rules.
+   */
+  private creditIndirectHit(packet: DamagePacket | undefined, e: Enemy, dealt: number, sawAilment: boolean): void {
+    if (!packet || dealt <= 0) return;
+    const hero = this.heroByHostId(packet.source.actorId);
+    if (!hero) return;
+    creditResourcesForHit(this.heroHost(hero), { ...packet, amount: dealt }, dealt, {
+      killed: e.health <= 0,
+      ailmentInflicted: sawAilment,
+    });
+  }
+
   private killEnemy(e: Enemy, source: Hero, fromUltimate = false): void {
     const idx = this.enemies.indexOf(e);
     if (idx >= 0) this.enemies.splice(idx, 1);
@@ -2506,8 +2528,13 @@ export class Dungeon implements CombatHost {
           // A staff bolt *is* your attack, so it earns crits, leech and triggers.
           if (p.basic && owner) {
             this.weaponStrike(owner, e, p.damage, angle, weaponAbilityFor(owner.player.weaponFamily), 60);
+          } else {
+            const ail = STATUS_FOR_ELEMENT[p.element];
+            const hadAil = ail ? e.sc.has(ail) : false;
+            const dealt = this.damageEnemy(e, p.damage, angle, p.element, { ailment: p.ailment, source: owner });
+            // A skill bolt feeds the caster's resources; a basic bolt already did, above.
+            this.creditIndirectHit(p.packet, e, dealt, !!ail && !hadAil && e.sc.has(ail));
           }
-          else this.damageEnemy(e, p.damage, angle, p.element, { ailment: p.ailment, source: owner });
           if (p.hits.size > p.pierce) { spent = true; break; }
         }
         if (spent) this.projectiles.splice(i, 1);
@@ -2910,6 +2937,8 @@ export class Dungeon implements CombatHost {
       color: ELEMENT_COLORS[req.damage.type], element: req.damage.type,
       pierce: req.pierce, hits: new Set(), ailment: req.damage.inflict?.chance ?? 0,
       basic: false, owner: owner?.index ?? -1,
+      // A skill bolt keeps its packet so its hits feed the caster's resources.
+      ...(owner ? { packet: req.damage } : {}),
     });
     return this.projectiles.length - 1;
   }
@@ -2929,6 +2958,8 @@ export class Dungeon implements CombatHost {
       ...(benefit ? { benefit } : {}),
       ...(req.follows && owner ? { follows: owner.index } : {}),
       ...(req.status ? { status: req.status.id } : {}),
+      // A hero's damage zone keeps its packet so each tick feeds the caster's resources.
+      ...(owner && req.damage ? { packet: req.damage } : {}),
     });
     return this.ground.length - 1;
   }

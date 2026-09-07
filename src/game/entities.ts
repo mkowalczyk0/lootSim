@@ -1,4 +1,5 @@
 import type { BossAbilityId, BossSpec, TelegraphShape } from "../data/bosses";
+import type { DamagePacket } from "../combat/damage";
 import type { Element, Resists } from "../data/elements";
 import type { EnemyArchetype } from "../data/enemies";
 import type { Rarity } from "../data/rarity";
@@ -218,6 +219,14 @@ export interface Projectile extends Body {
    * triggers all apply to a caster exactly as they do to somebody with an axe.
    */
   basic: boolean;
+  /**
+   * The originating ability's damage packet, for a skill projectile. Carries the
+   * `source` (tags, abilityId, `fromUltimate`) so a hit can be fed back into the
+   * caster's resources — a Stormcaller's chakram builds Storm Charge, a Magician's
+   * bolt feeds the meter — with THE ULTIMATE RULE intact. Absent on basic bolts
+   * (they credit through `weaponStrike`) and on hostile projectiles.
+   */
+  packet?: DamagePacket;
 }
 
 /**
@@ -274,6 +283,12 @@ export interface GroundZone extends Body {
   follows?: number;
   /** Status id a zone re-applies to whoever stands in it each tick (a pure status zone). */
   status?: string;
+  /**
+   * The originating ability's damage packet, for a hero-cast damage zone. Its `source`
+   * feeds each tick's hit back into the caster's resources (Shaman totems, Stormcaller
+   * fields, Alchemist pools), with THE ULTIMATE RULE intact. Absent on boss lingers.
+   */
+  packet?: DamagePacket;
 }
 
 /**

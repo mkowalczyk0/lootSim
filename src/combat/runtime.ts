@@ -167,6 +167,18 @@ export class AbilityRuntime {
         });
         // resourceSpent is itself an event some resources feed on (Technique on spend).
         caster.resources?.broadcast({ type: "resourceSpent", amount: spent.fromResource });
+        // Mana specifically also emits `manaSpent` (with the fraction fields), which is
+        // what a `perUnit: "manaFraction"` rule reads — Magician builds Overcharge and
+        // the Astral meter entirely off how much of the bar a cast burned.
+        if (pool.spec.id === "mana") {
+          caster.resources?.broadcast({
+            type: "manaSpent",
+            manaSpent: spent.fromResource,
+            maxMana: pool.max,
+            tags: ability.tags,
+            ...(abilityBlocksUltimateCharge(ability) ? { fromUltimate: true } : {}),
+          });
+        }
       }
     }
 
