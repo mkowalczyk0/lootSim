@@ -41,6 +41,12 @@ export interface AvatarInput {
    * to facing whichever way it's walking, which is the exclusive-keyboard scheme.
    */
   aimAngle(x: number, y: number): number | null;
+  /**
+   * The exact world point this character is aiming at — the cursor position in mouse-aim
+   * mode — or null when only a direction is known (keyboard scheme, a remote player).
+   * A ground-placed AoE lands here rather than at a fixed distance along the facing.
+   */
+  aimPoint?(x: number, y: number): { x: number; y: number } | null;
 }
 
 /**
@@ -111,6 +117,12 @@ export class Input {
   aimAngle(x: number, y: number): number | null {
     if (!this.usesMouseAim || !this.mouseWorld) return null;
     return Math.atan2(this.mouseWorld.y - y, this.mouseWorld.x - x);
+  }
+
+  /** `AvatarInput`: the cursor's world point, or null in keyboard-only mode. */
+  aimPoint(_x: number, _y: number): { x: number; y: number } | null {
+    if (!this.usesMouseAim || !this.mouseWorld) return null;
+    return { x: this.mouseWorld.x, y: this.mouseWorld.y };
   }
 
   /** Left button always attacks; right fires whatever `settings.mouseSecondary` names. */

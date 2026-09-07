@@ -264,6 +264,12 @@ export class Hero {
   flow: FlowField | null = null;
   /** Recent positions, newest first — for abilities that snap back to where you were. */
   readonly posHistory: { x: number; y: number }[] = [];
+  /**
+   * The world point this hero is aiming at this tick — the cursor, in mouse-aim mode.
+   * Null when only a facing is known (keyboard scheme, a remote player), in which case a
+   * ground-placed ability falls back to a fixed distance along `avatar.facing`.
+   */
+  aimPoint: { x: number; y: number } | null = null;
 
   constructor(setup: HeroSetup, index: number, avatar: Avatar) {
     this.index = index;
@@ -1167,6 +1173,9 @@ export class Dungeon implements CombatHost {
     const aim = input.aimAngle(a.x, a.y);
     if (aim !== null) a.facing = aim;
     else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
+    // Cursor world-point for ground-placed abilities — a heal circle or an acid pool
+    // lands where the mouse is, not at a fixed reach along the facing.
+    hero.aimPoint = input.aimPoint?.(a.x, a.y) ?? null;
 
     if (a.dashTimer > 0) {
       a.dashTimer -= dt;
@@ -1444,7 +1453,21 @@ export class Dungeon implements CombatHost {
     const a = hero.avatar;
     const bm = hero.sc.modsContribution();
     const reach = ability?.range && ability.range > 0 ? ability.range : 140;
-    const aim = { x: a.x + Math.cos(a.facing) * reach, y: a.y + Math.sin(a.facing) * reach };
+    // A ground-placed ability (heal circle, acid pool, meteor mark) lands at the cursor
+    // when we have one, clamped to the ability's own range so it still can't reach across
+    // the room. Without a cursor (keyboard scheme, a remote player) it lands a fixed
+    // distance ahead along the facing, as before.
+    let aim: { x: number; y: number };
+    if (hero.aimPoint) {
+      const dx = hero.aimPoint.x - a.x;
+      const dy = hero.aimPoint.y - a.y;
+      const d = Math.hypot(dx, dy);
+      aim = d <= reach || d === 0
+        ? { x: hero.aimPoint.x, y: hero.aimPoint.y }
+        : { x: a.x + (dx / d) * reach, y: a.y + (dy / d) * reach };
+    } else {
+      aim = { x: a.x + Math.cos(a.facing) * reach, y: a.y + Math.sin(a.facing) * reach };
+    }
     const target = this.nearestEnemyTo(a.x, a.y, Math.max(reach, 700));
     const dmgBuff = 1 + bm.meleeDamage + bm.skillDamage;
     const ultMult = ability?.isUltimate ? p.ultimateMult * ULTIMATE_POWER : 1;
