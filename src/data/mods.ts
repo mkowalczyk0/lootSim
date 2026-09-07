@@ -40,6 +40,7 @@ export const COMBAT_MOD_KEYS = [
   "skillDamage", "meleeDamage", "projectileDamage", "elementalDamage",
   "wardPower", "thorns", "ultimateBounces", "ultimateProjectiles",
   "healthPercent", "defensePercent", "manaRegen",
+  "evasion", "blockChance",
 ] as const;
 export type CombatModKey = (typeof COMBAT_MOD_KEYS)[number];
 
@@ -95,7 +96,7 @@ export const PERCENT_MODS = new Set<ModKey>([
   "critChance", "critDamage", "attackSpeed", "moveSpeed", "areaSize",
   "ailmentChance", "ailmentPotency", "cooldownRate", "ultimateRate", "ultimatePower",
   "skillDamage", "meleeDamage", "projectileDamage", "elementalDamage", "wardPower",
-  "healthPercent", "defensePercent",
+  "healthPercent", "defensePercent", "evasion", "blockChance",
   ...DAMAGE_MOD_KEYS,
 ]);
 
@@ -127,6 +128,8 @@ export const MOD_LABELS: Record<ModKey, string> = {
   healthPercent: "maximum health",
   defensePercent: "defense",
   manaRegen: "mana regeneration",
+  evasion: "evasion",
+  blockChance: "block chance",
   fireDamage: "fire damage", coldDamage: "cold damage",
   lightningDamage: "lightning damage", poisonDamage: "poison damage",
   voidDamage: "void damage", holyDamage: "holy damage",

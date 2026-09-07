@@ -251,6 +251,7 @@ const MOD_SCORE: Record<ModKey, number> = {
   skillDamage: 140, meleeDamage: 150, projectileDamage: 120, elementalDamage: 130,
   wardPower: 50, thorns: 2, ultimateBounces: 200, ultimateProjectiles: 60,
   healthPercent: 200, defensePercent: 150, manaRegen: 20,
+  evasion: 220, blockChance: 160,
   fireDamage: 130, coldDamage: 130, lightningDamage: 130, poisonDamage: 130, voidDamage: 130,
   holyDamage: 130, arcaneDamage: 130, natureDamage: 130,
   fireResist: 1.1, coldResist: 1.1, lightningResist: 1.1, poisonResist: 1.1, voidResist: 1.1,

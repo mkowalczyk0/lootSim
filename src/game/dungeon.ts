@@ -2,7 +2,9 @@ import { angleDelta, approach, circlesOverlap, clamp, dist, normalize, TAU } fro
 import { Rng } from "../core/rng";
 import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP, bossFor } from "../data/bosses";
 import { challengerRewardMult } from "../data/challenger";
-import { SKILL_POWER, ULTIMATE_POWER } from "../data/combat-tuning";
+import {
+  BLOCK_CHANCE_CAP, BLOCK_MITIGATION, EVASION_CAP, SKILL_POWER, ULTIMATE_POWER,
+} from "../data/combat-tuning";
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
 import {
   AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, LOOT_ELEMENTS, STATUS_FOR_ELEMENT,
@@ -347,6 +349,13 @@ export class Dungeon implements CombatHost {
   readonly events: RunEvent[] = [];
   /** Deterministic randomness for the whole floor. The boss brain draws from it too. */
   readonly rng: Rng;
+  /**
+   * A separate deterministic stream for the hero evasion / block rolls, seeded off the
+   * floor seed. Kept apart from `rng` on purpose: a class with no evasion never draws
+   * from it, so adding the avoid-the-hit layer does not shift the main stream and the
+   * rest of the sim (spawns, boss telegraphs, loot) stays byte-identical.
+   */
+  readonly defenseRng: Rng;
   /** The typed combat event bus the `src/combat` executor and resource rules ride on.
    *  Wired to `fireTriggers` so item triggers still see hits and kills. */
   readonly bus = new EventBus();
@@ -386,12 +395,13 @@ export class Dungeon implements CombatHost {
    */
   constructor(state: GameState, depth: number | RunConfig, opts: number | DungeonOptions = {}) {
     const options: DungeonOptions = typeof opts === "number" ? { seed: opts } : opts;
-    const seed = options.seed;
+    const seed = options.seed ?? ((Math.random() * 2 ** 32) >>> 0);
     this.role = options.role ?? "solo";
     this.state = state;
     this.config = typeof depth === "number" ? delveConfig(depth) : depth;
     this.profile = profileFor(this.config.depth, this.config);
     this.rng = new Rng(seed);
+    this.defenseRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
 
     // Every floor is generated: layout, hazards and decoration all come from here. A
     // planet expedition brings its own biome, a bigger room graph, and resource nodes
@@ -2381,7 +2391,44 @@ export class Dungeon implements CombatHost {
     const a = hero.avatar;
     if (a.invulnTimer > 0) return;
     a.invulnTimer = HIT_INVULN;
-    this.applyPlayerDamage(hero, amount, element, ailment);
+    const rolled = this.rollAvoidance(hero, amount);
+    if (rolled === null) return; // evaded outright
+    if (rolled < amount) ailment *= 0.5; // a blocked hit is less likely to land its rider
+    this.applyPlayerDamage(hero, rolled, element, ailment);
+  }
+
+  /**
+   * The avoid-the-hit layer, rolled only on an ordinary dodgeable hit (`hurtPlayer`) —
+   * never a boss mechanic and never a DoT tick. Evasion first: the hit is avoided
+   * outright (returns `null`, fires `dodge`). Then block: the hit lands at
+   * `BLOCK_MITIGATION` (returns the reduced amount, fires `block`). Chances are summed
+   * from the class base, the resolved build, and any active guard status
+   * (`sword_parry` carries `blockChance` in its `mods`), then clamped to the caps.
+   * This is where Duelist's whole meter and the Counterblade / Sentinel `{ on: "block" }`
+   * nodes actually get fed.
+   */
+  private rollAvoidance(hero: Hero, amount: number): number | null {
+    const bm = hero.sc.modsContribution();
+    const m = hero.player.mods;
+    const a = hero.avatar;
+    const evtBase = { maxHealth: hero.player.maxHealth };
+
+    const evade = clamp(m.evasion + bm.evasion, 0, EVASION_CAP);
+    if (evade > 0 && this.defenseRng.chance(evade)) {
+      hero.resources.broadcast({ type: "dodge", ...evtBase });
+      this.events.push({ kind: "pickup", x: a.x, y: a.y - 24, label: "dodge", color: "#c4b5fd" });
+      return null;
+    }
+
+    const block = clamp(m.blockChance + bm.blockChance, 0, BLOCK_CHANCE_CAP);
+    if (block > 0 && this.defenseRng.chance(block)) {
+      const turned = amount * (1 - BLOCK_MITIGATION);
+      hero.resources.broadcast({ type: "block", damage: turned, ...evtBase });
+      this.events.push({ kind: "pickup", x: a.x, y: a.y - 24, label: "block", color: "#93c5fd" });
+      return amount - turned;
+    }
+
+    return amount;
   }
 
   /**

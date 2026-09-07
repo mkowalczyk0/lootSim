@@ -148,7 +148,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     playstyle: "Stand where the floor is worst, absorb everything, break the ground open.",
     base: {
       attack: 11, defense: 12, maxHealth: 190, maxMana: 40,
-      meleeDamage: 0.12, defensePercent: 0.05, thorns: 2,
+      meleeDamage: 0.12, defensePercent: 0.05, thorns: 2, blockChance: 0.14,
     },
     growth: { attack: 2.3, defense: 1.8, maxHealth: 26, maxMana: 3 },
     affinity: ["hammer"], affinityBonus: 0.2,
@@ -162,6 +162,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     base: {
       attack: 9, defense: 6, maxHealth: 124, maxMana: 55,
       critChance: 0.07, attackSpeed: 0.08, critDamage: 0.12,
+      evasion: 0.10, blockChance: 0.06,
     },
     growth: { attack: 2.1, defense: 1.15, maxHealth: 16, maxMana: 4 },
     affinity: ["rapier"], affinityBonus: 0.2,
@@ -188,6 +189,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     base: {
       attack: 9, defense: 8, maxHealth: 142, maxMana: 65,
       attackSpeed: 0.1, lifeOnHit: 2, critChance: 0.04,
+      evasion: 0.05, blockChance: 0.04,
     },
     growth: { attack: 2.0, defense: 1.35, maxHealth: 17, maxMana: 4 },
     affinity: ["fists"], affinityBonus: 0.2,
@@ -226,7 +228,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     playstyle: "Dart in on the crit, dart out before the answer, blink through the rest.",
     base: {
       attack: 9, defense: 5, maxHealth: 108, maxMana: 50,
-      critChance: 0.09, critDamage: 0.18, moveSpeed: 0.09,
+      critChance: 0.09, critDamage: 0.18, moveSpeed: 0.09, evasion: 0.12,
     },
     growth: { attack: 2.0, defense: 1.0, maxHealth: 13, maxMana: 3 },
     affinity: ["claws"], affinityBonus: 0.2,
@@ -269,7 +271,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     playstyle: "Bind to whoever's about to die, eat their damage, spend the meter keeping them up.",
     base: {
       attack: 10, defense: 11, maxHealth: 182, maxMana: 55,
-      defensePercent: 0.05, lifeOnHit: 1, healthPercent: 0.02,
+      defensePercent: 0.05, lifeOnHit: 1, healthPercent: 0.02, blockChance: 0.08,
     },
     growth: { attack: 2.2, defense: 1.7, maxHealth: 24, maxMana: 4 },
     affinity: ["sword", "hammer"], affinityBonus: 0.2,
@@ -321,7 +323,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     playstyle: "Mark the contract, open from the shadow, execute, disappear.",
     base: {
       attack: 10, defense: 5, maxHealth: 110, maxMana: 50,
-      critChance: 0.1, critDamage: 0.24, moveSpeed: 0.08,
+      critChance: 0.1, critDamage: 0.24, moveSpeed: 0.08, evasion: 0.06,
     },
     growth: { attack: 2.3, defense: 1.05, maxHealth: 12, maxMana: 3 },
     affinity: ["daggers", "claws"], affinityBonus: 0.2,
