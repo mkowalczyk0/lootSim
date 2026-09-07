@@ -30,7 +30,18 @@ export const ENGINEER_SCRAP: ResourceSpec = {
   ],
 };
 
-/** Siege Engine is earned by keeping infrastructure running — construct hits, never a personal kill. */
+/**
+ * Siege Engine is earned by keeping infrastructure running — deploying constructs and
+ * landing your own construct-tagged hits, never a personal kill.
+ *
+ * The `damageDealt` term is deliberately tiny and tag-gated: a construct's zone tick or
+ * shell carries the ability's `construct` tag, so it counts, but at a rate where even a
+ * fully built-out engineer needs the constructs to work for a while. Turret auto-attacks
+ * carry no ability tags and so never feed this — which is the point: an early draft ran
+ * this rule untagged at 0.2/damage and every turret hit (crediting the owner) fed the
+ * meter, so 8 turrets refilled it in under a second and the ultimate looped on its own
+ * damage. Tag-gated + 0.03 breaks that loop.
+ */
 export const ENGINEER_ULTIMATE_METER: ResourceSpec = {
   id: "ultimate",
   label: "Siege Engine",
@@ -40,7 +51,7 @@ export const ENGINEER_ULTIMATE_METER: ResourceSpec = {
   isUltimateMeter: true,
   generation: [
     { on: "skillUse", amount: 5, requireTags: ["construct"] },
-    { on: "damageDealt", amount: 0.2, perUnit: "damage" },
+    { on: "damageDealt", amount: 0.03, perUnit: "damage", requireTags: ["construct"] },
   ],
 };
 
