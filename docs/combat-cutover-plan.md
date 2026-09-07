@@ -275,23 +275,40 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >         necromancer, trickster, paladin, bard, alchemist, engineer, warden, corsair)
 >         either use `damage` steps, or charge on `skillUse` / `crit` / `kill` /
 >         `damageTaken` / `dashStart` / `move` — none of which touch the broken path.
->       - **This is a combat-seam wiring fix, not a tuning number — high blast radius**
->         (every projectile/zone skill would suddenly feed meters and resources; smoke
->         campaign + boss numbers will move; a rebalance pass follows). **Surfaced to the
->         owner before landing** per §4 / the "write the imbalance + evidence + fix first"
->         rule. Proposed fix: thread a `DamageSource` (carrying `ability.tags` +
->         `abilityId` + `fromUltimate`) through `ProjectileRequest` / `ZoneRequest` and
->         onto the stored projectile/zone, and route projectile/zone hits through
->         `dealDamage` (or an explicit `creditResourcesForHit`) so THE ULTIMATE RULE and
->         the tag gates both hold. Then broadcast `manaSpent` (with `manaSpent`/`maxMana`)
->         on mana payment, and `dodge` / `block` / `statusApplied` from their resolution
->         sites.
+>       - **FIXED** (commit "Stage 11: skill projectiles and zones feed the caster's
+>         resources"). `ProjectileRequest.damage` / `ZoneRequest.damage` are already
+>         `DamagePacket`s; the dungeon now keeps the packet on a hero-owned projectile /
+>         ground zone, and `Dungeon.creditIndirectHit` feeds each projectile hit and zone
+>         tick back through `creditResourcesForHit` (THE ULTIMATE RULE rides the packet's
+>         own `source.fromUltimate`). `manaSpent` is now broadcast with the fraction
+>         fields on mana payment. Zone `status` re-application is attributed to the owner.
+>         After: Stormcaller 0→55 Storm Charge / 31 Tempest in 4s; Magician 0→66
+>         Overcharge / 44 Astral; arena meter-fill magician 17s / stormcaller 19s / ranger
+>         6s (all previously "never"). Smoke campaign + raid boss **byte-identical** (the
+>         bot plays Swordsman — melee `damage` steps — which never used the broken path),
+>         full `npm test` green.
+>       - **Still dead — needs a mechanic or a per-class look, not the wiring fix:**
+>         - `dodge` / `block` events have no site to fire from — there is no evasion or
+>           parry mechanic in the hero damage path, only the ward absorb (which already
+>           fires `damagePrevented`). Duelist's entire meter (`dodge`+`block`) and
+>           Juggernaut's `block` nodes are stranded until such a mechanic exists.
+>         - `statusApplied` is never broadcast anywhere — Shaman's `{ on: "statusApplied" }`
+>           meter rule and Assassin's `Inside Job` node. Needs a broadcast at each
+>           hero-sourced `sc.apply` site.
+>         - Reaper (`kill`/`hitDealt` `requireTags: ["execute"]`) and Assassin
+>           (`hitDealt` `["mark"]`, `ailmentInflicted` `["poison"]`) still read 0 in the
+>           arena — the probe's targets are full-health and unmarked, so this may be
+>           working as designed (you charge by executing / by marking). Confirm against
+>           the class fantasy before touching.
+>         - Lancer reads 0 because the arena hero only strafes a 40px orbit; `on: "move"`
+>           wants real traversal. Harness limitation, not a bug.
 >
->     - **Still TODO (after the wiring fix, since it moves every number):** the full
->       12-axis × 21-class table; build differentiation (3 builds/class); hybrid/keystone/
->       mythic detectable-impact sweep; early-vs-late power curve; raid-scale hazards
->       (§4 list — redirect/taunt caps, party-wide guardsDeath, summon caps incl. the
->       engineer outlier above, zone-merge, threat math); planet-floor pacing.
+>     - **Still TODO:** the full 12-axis × 21-class table; the `dodge`/`block` mechanic
+>       question + `statusApplied` broadcast; build differentiation (3 builds/class);
+>       hybrid/keystone/mythic detectable-impact sweep; early-vs-late power curve;
+>       raid-scale hazards (§4 list — redirect/taunt caps, party-wide guardsDeath, summon
+>       caps **incl. the engineer outlier: 7.3k ST / 100k AoE dps on a pinned target**,
+>       zone-merge, threat math); planet-floor pacing.
 
 ### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
 Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to
