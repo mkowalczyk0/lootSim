@@ -102,6 +102,13 @@ const REVIVE_HEALTH = 0.4;
 
 /** Seconds between damage ticks from a patch of burning ground. */
 const GROUND_TICK = 0.5;
+/** Palette for a friendly zone, by what it grants. Greens and golds read as "safe". */
+const BENEFIT_COLORS: Record<"heal" | "shield" | "haste", string> = {
+  heal: "#4ade80", shield: "#93c5fd", haste: "#fcd34d",
+};
+/** Per-tick payout of a benefit zone, as a fraction of the standing hero's max health. */
+const BENEFIT_HEAL_FRACTION = 0.02;
+const BENEFIT_SHIELD_FRACTION = 0.12;
 /** Fraction of a mechanic's damage that its leftover ground deals per tick. */
 const GROUND_DAMAGE = 0.28;
 
@@ -1071,9 +1078,23 @@ export class Dungeon implements CombatHost {
       const g = this.ground[i]!;
       g.remaining -= dt;
       if (g.remaining <= 0) { this.ground.splice(i, 1); continue; }
+      // A `follows` zone rides its owner (Bard's march, a Shaman totem's aura).
+      if (g.follows !== undefined) {
+        const owner = this.heroes[g.follows];
+        if (owner) { g.x = owner.avatar.x; g.y = owner.avatar.y; }
+      }
       g.tickTimer -= dt;
       if (g.tickTimer > 0) continue;
       g.tickTimer += GROUND_TICK;
+
+      if (g.benefit) {
+        for (const hero of this.heroes) {
+          if (!hero.alive) continue;
+          const a = hero.avatar;
+          if (dist(a.x, a.y, g.x, g.y) <= g.radius + a.radius) this.applyZoneBenefit(hero, g);
+        }
+        continue;
+      }
 
       if (g.hitsPlayer) {
         for (const hero of this.heroes) {
@@ -1091,7 +1112,14 @@ export class Dungeon implements CombatHost {
       const caught = this.enemies.filter(
         (e) => !e.boss && e.state !== "spawning" && dist(e.x, e.y, g.x, g.y) <= g.radius + e.radius,
       );
-      for (const e of caught) this.damageEnemy(e, g.damage, this.rng.angle(), g.element);
+      for (const e of caught) {
+        this.damageEnemy(e, g.damage, this.rng.angle(), g.element);
+        if (g.status && e.health > 0) {
+          e.sc.apply(g.status, {
+            hitDamage: g.damage, sourceActorId: -1, chance: 1, roll: () => this.rng.next(),
+          });
+        }
+      }
     }
   }
 
@@ -2335,6 +2363,24 @@ export class Dungeon implements CombatHost {
     if (hero.downed) return 0;
     const a = hero.avatar;
     const p = hero.player;
+
+    // A Guardian's Oath / Fortress Call binding hands a slice of this hit to whoever
+    // swore to soak it, before the ward hero's own mitigation runs on the rest.
+    const bind = this.redirects.get(hero.index);
+    if (bind && !this.inRedirect) {
+      if (this.elapsed >= bind.until) {
+        this.redirects.delete(hero.index);
+      } else {
+        const protector = this.heroes[bind.protector];
+        if (protector && !protector.downed) {
+          const moved = amount * bind.fraction;
+          amount -= moved;
+          this.inRedirect = true;
+          try { this.applyPlayerDamage(protector, moved, element, 0); }
+          finally { this.inRedirect = false; }
+        }
+      }
+    }
     // The ward eats damage before health does, and counts as resistance while it holds.
     const extraResist = hero.ward > 0 ? WARD_RESIST : 0;
     let incoming = p.mitigate(amount, element, extraResist);
@@ -2845,15 +2891,41 @@ export class Dungeon implements CombatHost {
   }
 
   spawnZone(req: ZoneRequest): number {
+    const benefit = req.benefit;
+    const owner = this.heroByHostId(req.ownerId);
     this.ground.push({
       x: req.x, y: req.y, px: req.x, py: req.y, radius: req.radius,
       element: req.damage?.type ?? "physical",
       damage: req.damage ? req.damage.amount * (req.tickInterval || 0.5) : 0,
       remaining: req.duration, tickTimer: req.tickInterval || 0.5,
-      hitsPlayer: false, hitsEnemies: true,
-      color: ELEMENT_COLORS[req.damage?.type ?? "physical"],
+      hitsPlayer: false,
+      // A benefit zone only ever helps; a damage / status zone catches enemies.
+      hitsEnemies: !benefit,
+      color: benefit ? BENEFIT_COLORS[benefit] : ELEMENT_COLORS[req.damage?.type ?? "physical"],
+      ...(benefit ? { benefit } : {}),
+      ...(req.follows && owner ? { follows: owner.index } : {}),
+      ...(req.status ? { status: req.status.id } : {}),
     });
     return this.ground.length - 1;
+  }
+
+  /** One tick of a friendly zone on one hero standing in it. */
+  private applyZoneBenefit(hero: Hero, g: GroundZone): void {
+    const p = hero.player;
+    switch (g.benefit) {
+      case "heal":
+        p.heal(p.maxHealth * BENEFIT_HEAL_FRACTION);
+        break;
+      case "shield":
+        hero.ward = Math.max(hero.ward, p.maxHealth * BENEFIT_SHIELD_FRACTION);
+        hero.wardTimer = Math.max(hero.wardTimer, GROUND_TICK * 3);
+        break;
+      case "haste":
+        hero.sc.apply("hasted", {
+          hitDamage: 0, sourceActorId: hero.index, chance: 1, roll: () => this.rng.next(),
+        });
+        break;
+    }
   }
 
   spawnMinion(req: MinionRequest): number[] {
@@ -2970,10 +3042,29 @@ export class Dungeon implements CombatHost {
     return take;
   }
 
-  redirectDamage(_protectorId: number, _wardId: number, _fraction: number, _duration: number): void {
-    // Damage redirection (Paladin's Guardian's Oath, Juggernaut's Fortress Call) needs
-    // a binding the hero-damage path reads. Lands with the ability cutover.
+  /**
+   * Damage redirection — Paladin's Guardian's Oath, Juggernaut's Fortress Call. Binds
+   * one protector per ward; `applyPlayerDamage` reads the binding and passes a fraction
+   * of the ward's incoming hit to the protector (through their own mitigation and ward).
+   * Solo this is a no-op — there is no ally to bind — so it only ever matters in co-op.
+   * The raid-scale caps (N protectors on one tank, an A→B→A cycle) are still on the
+   * Stage 11 hazard list; this is the single-binding version.
+   */
+  redirectDamage(protectorId: number, wardId: number, fraction: number, duration: number): void {
+    const protector = this.heroByHostId(protectorId);
+    const ward = this.heroByHostId(wardId);
+    if (!protector || !ward || protector.index === ward.index) return;
+    this.redirects.set(ward.index, {
+      protector: protector.index,
+      fraction: clamp(fraction, 0, 0.9),
+      until: this.elapsed + duration,
+    });
   }
+
+  /** ward hero index → who is soaking a slice of their damage, and until when. */
+  private readonly redirects = new Map<number, { protector: number; fraction: number; until: number }>();
+  /** Re-entrancy guard so a redirected hit can't bounce back down the same path. */
+  private inRedirect = false;
 
   emitFx(ref: string, x: number, y: number): void {
     this.events.push({ kind: "cast", x, y: y - 20, label: ref, color: "#ffffff" });

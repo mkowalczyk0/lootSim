@@ -191,6 +191,13 @@ const BASELINE: StatusSpec[] = [
     id: "stealth", label: "Hidden", glyph: "h", category: "buff", tags: ["stealth"],
     baseDuration: 6, maxStacks: 1, refreshRule: "refresh",
   },
+  {
+    // Granted by a `benefit: "haste"` zone (Bard's march, Shaman's Windfavor, Lancer's
+    // Warcry) — a short attack/move-speed buff re-applied while you stand in it.
+    id: "hasted", label: "Hasted", glyph: "»", category: "buff",
+    baseDuration: 2, maxStacks: 1, refreshRule: "refresh",
+    mods: { attackSpeed: 0.25, moveSpeed: 0.18 },
+  },
 ];
 
 const REGISTRY = new Map<StatusId, StatusSpec>();

@@ -268,6 +268,12 @@ export interface GroundZone extends Body {
   hitsPlayer: boolean;
   hitsEnemies: boolean;
   color: string;
+  /** A friendly zone: it heals / shields / hastes allies standing in it and never damages. */
+  benefit?: "heal" | "shield" | "haste";
+  /** Hero index the zone tracks, for a `follows` benefit zone (Bard's march, Shaman's totem). */
+  follows?: number;
+  /** Status id a zone re-applies to whoever stands in it each tick (a pure status zone). */
+  status?: string;
 }
 
 /**

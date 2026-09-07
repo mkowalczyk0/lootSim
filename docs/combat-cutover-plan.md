@@ -162,10 +162,16 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >      `["projectile"]` Corsair — currently all dead on basic attacks because the credit
 >      packet carries no tags) fills from swings. Real meter-economy change across ~6
 >      classes; needs the smoke campaign delta written up before it lands, per §4.
->    - **6b.2 — TODO:** `CombatHost.redirectDamage` real binding (Paladin Guardian's Oath,
->      Juggernaut Fortress Call — stub today, so those abilities do nothing live) +
->      benefit-zone support in `spawnZone` (heal/shield/haste — ignored today, so
->      Bard/Paladin/Warden support zones do nothing). Both additive, low drift.
+>    - **6b.2 — ✅ DONE (green: full `npm test` + classes + roster, smoke byte-identical).**
+>      `CombatHost.redirectDamage` is real: a `redirects` map (ward index → protector,
+>      fraction ≤ 0.9, expiry), read at the top of `applyPlayerDamage` behind an
+>      `inRedirect` re-entrancy guard; the protector takes the slice through their own
+>      mitigation + ward. Solo it is a no-op (no ally to bind). `spawnZone` now honours
+>      `benefit` (heal → `maxHealth * 0.02`/tick, shield → refresh ward to
+>      `maxHealth * 0.12`, haste → a new baseline `hasted` buff status), `follows` (the
+>      zone rides its owner), and `status` (re-applied to enemies each tick). Benefit
+>      zones never damage. `tools/classes.ts` already had the acceptance tests for both
+>      and they pass. Raid-scale redirect/zone-merge caps stay on the §4 hazard list.
 >    - **6b.3 — TODO (optional):** move gear triggers + leech off the inline
 >      `fireTriggers`/`p.heal` calls onto bus listeners so a skill hit fires `onHit` gear
 >      triggers too (another measured change).
