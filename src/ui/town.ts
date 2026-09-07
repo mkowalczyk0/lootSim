@@ -23,7 +23,7 @@ import {
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine } from "../data/items";
-import { CLASSES, CLASS_IDS } from "../data/classes";
+import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, modLine, type ModKey } from "../data/mods";
 import { ULTIMATES } from "../data/ultimates";
 import { WEAPONS } from "../data/weapons";
@@ -36,6 +36,7 @@ import {
   REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
 } from "../data/settings";
 import { SKILLS, SKILL_SLOTS, type SkillId } from "../data/skills";
+import { ALL_CLASSES, classMatrixRow, pathKeystones } from "../progression/index";
 import { cleanPlayerName } from "../data/settings";
 import type { Party } from "../net/party";
 import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
@@ -53,7 +54,7 @@ import { pixelImage } from "./pixelimage";
  * the Quartermaster's screen, browsed the old way with [I]/[O].
  */
 const CYCLE_TABS = [
-  "Chests", "Stash", "Hero", "Skills", "Tree", "Path", "Style", "Capsules", "Records", "Settings",
+  "Chests", "Stash", "Hero", "Skills", "Tree", "Path", "Style", "Capsules", "Codex", "Records", "Settings",
 ] as const;
 const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party"] as const;
 type StationTab = (typeof STATION_TABS)[number];
@@ -120,6 +121,7 @@ function tabHelp(tab: Tab, s: Settings): string {
     case "Path": return `${sel} choose a class · ${e} commit to it`;
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
+    case "Codex": return `${sel} browse the class roster · ${adj} switch view — the refactored 21-class design, not yet the live combat`;
     case "Records": return "Nothing to do here — just numbers.";
     case "Settings": return `${sel} select · ${e} toggle/rebind · ${q} resets a key/backs out · reset progress asks twice`;
   }
@@ -148,6 +150,8 @@ export class TownUI {
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
+  /** Codex tab: which slice of a class's design the side panel is showing. */
+  private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
   private toast: { text: string; color: string; until: number } | null = null;
@@ -377,6 +381,7 @@ export class TownUI {
       case "Path": return CLASS_IDS.length;
       case "Style": return STYLE_ROWS.length;
       case "Capsules": return CAPSULE_TIERS.length;
+      case "Codex": return ALL_CLASSES.length;
       case "Records": return 0;
       case "Settings": return this.resetIndex + 1;
     }
@@ -394,6 +399,10 @@ export class TownUI {
     }
     if (this.tab === "Path") {
       this.cursor = (this.cursor + dir + CLASS_IDS.length) % CLASS_IDS.length;
+      return true;
+    }
+    if (this.tab === "Codex") {
+      this.codexView = (((this.codexView + dir) % 3) + 3) % 3 as 0 | 1 | 2;
       return true;
     }
     if (this.tab === "Style") return this.cycleStyle(this.cursor, dir);
@@ -982,6 +991,7 @@ export class TownUI {
       case "Path": return this.renderPath();
       case "Style": return this.renderStyle();
       case "Capsules": return this.renderCapsules();
+      case "Codex": return this.renderCodex();
       case "Records": return this.renderRecords();
       case "Settings": return this.renderSettings();
     }
@@ -2123,6 +2133,88 @@ export class TownUI {
         <ul class="pulls">${pulls}</ul>
         <p class="muted">Duplicates come back as gems. <b>${owned}</b> / ${COSMETICS.length}
         collected.</p>
+      </aside>`;
+  }
+
+  /**
+   * The Codex — the class-refactor roster, in the game as a browsable reference.
+   *
+   * This reads entirely from `src/progression` (the 21-class design layer) and is
+   * deliberately not wired to `state.player`: the live dungeon still runs the shipped
+   * `data/classes` + `data/tree`. It's the matrix the refactor spec asks for —
+   * class → resource → role → damage → mechanic → ultimate → paths → hybrids — plus a
+   * drill-down into each class's ten skills and its hybrid/archetype builds.
+   */
+  private renderCodex(): string {
+    const VIEWS = ["Overview", "Skills", "Builds"] as const;
+    const rows = ALL_CLASSES.map((def, i) => {
+      const color = CLASSES[def.classId as ClassId]?.color ?? "#9aa4b2";
+      const m = classMatrixRow(def);
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="name" style="color:${color}">${escapeHtml(def.name)}</span>
+          </div>
+          <div class="row-side" style="color:#8b93a2">${escapeHtml(m.resource)}</div>
+        </div>`;
+    }).join("");
+
+    const def = ALL_CLASSES[this.cursor] ?? ALL_CLASSES[0]!;
+    const color = CLASSES[def.classId as ClassId]?.color ?? "#9aa4b2";
+    const m = classMatrixRow(def);
+    const ult = def.abilities.find((a) => a.isUltimate)!;
+    const tabs = VIEWS.map((v, i) =>
+      `<span class="chip ${i === this.codexView ? "on" : ""}" data-action="${i === 0 ? "left" : "right"}">${v}</span>`,
+    ).join(" ");
+
+    let body: string;
+    if (this.codexView === 0) {
+      const keystones = pathKeystones(def).map((p) =>
+        `<li>${escapeHtml(p.path)} <em>→ ${escapeHtml(p.keystone)} · ${escapeHtml(p.blurb)}</em></li>`).join("");
+      body = `
+        <table class="cmp">
+          <tr><td>Resource</td><td>${escapeHtml(m.resource)}</td></tr>
+          <tr><td>Damage identity</td><td>${escapeHtml(m.damageIdentity)}</td></tr>
+          <tr><td>Ultimate</td><td>${escapeHtml(m.ultimate)}</td></tr>
+        </table>
+        <h3>Unique mechanic</h3>
+        <p>${escapeHtml(m.mechanic)}</p>
+        <p class="muted">${escapeHtml(def.fantasy)}</p>
+        <h3>Five paths <span class="muted">→ keystone</span></h3>
+        <ul class="pulls">${keystones}</ul>`;
+    } else if (this.codexView === 1) {
+      const skills = def.abilities.map((a) => {
+        const tags = a.tags.slice(0, 4).join(" · ");
+        return `<li${a.isUltimate ? ' style="color:' + color + '"' : ""}>
+          ${escapeHtml(a.name)}${a.isUltimate ? " — ULTIMATE" : ""}
+          <em>${escapeHtml(a.description)}${tags ? ` <span class="muted">[${escapeHtml(tags)}]</span>` : ""}</em></li>`;
+      }).join("");
+      body = `
+        <p class="muted">Nine skills and one ultimate, unique to this class — no skill is shared
+        with any other class in the roster.</p>
+        <ul class="pulls">${skills}</ul>`;
+    } else {
+      const hybrids = def.unlocks.filter((u) => u.tier === "hybrid").map((u) =>
+        `<li>${escapeHtml(u.name)} <em>${escapeHtml(u.requires.map((r) => `${r.path} ${r.points}`).join(" + "))} — ${escapeHtml(u.description)}</em></li>`).join("");
+      const archs = def.unlocks.filter((u) => u.tier === "mythic").map((u) =>
+        `<li style="color:${color}">${escapeHtml(u.name)} <em>${escapeHtml(u.requires.map((r) => `${r.path} ${r.points}`).join(" + "))} — ${escapeHtml(u.description)}</em></li>`).join("");
+      body = `
+        <h3>Cross-path hybrids</h3>
+        <ul class="pulls">${hybrids}</ul>
+        <h3>Mythic Archetype${def.unlocks.filter((u) => u.tier === "mythic").length > 1 ? "s" : ""}</h3>
+        <ul class="pulls">${archs}</ul>`;
+    }
+
+    return `<div class="list">${rows}</div>
+      <aside class="side">
+        <h3 style="color:${color}">${escapeHtml(def.name)}</h3>
+        <p class="muted">${escapeHtml(m.role)}</p>
+        <p>${tabs}</p>
+        ${body}
+        <p class="muted">${escapeHtml(ult.flavor ?? "")}</p>
+        <p class="danger">Reference only — the live dungeon still runs the shipped 15-class
+        combat. This is the refactored 21-class design (spec: <b>${ALL_CLASSES.length} classes</b>,
+        ${ALL_CLASSES.length * 10} unique skills, ${ALL_CLASSES.length * 6} hybrids).</p>
       </aside>`;
   }
 

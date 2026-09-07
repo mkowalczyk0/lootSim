@@ -21,7 +21,11 @@ npm run host    # the same, on 0.0.0.0 — how you play multiplayer with people 
 npm run build   # typecheck + bundle to dist/
 npm run check   # typecheck only (tsc --noEmit)
 npm run smoke   # headless simulation test (tools/smoke.ts)
-npm run test    # check + smoke
+npm run vocab   # combat-vocabulary acceptance test (tools/vocab.ts)
+npm run prog    # progression-architecture acceptance test (tools/progression.ts)
+npm run classes # pilot-class acceptance test — 6 classes against the live combat runtime (tools/classes.ts)
+npm run roster  # full 21-class roster + anti-overlap audit (tools/roster.ts)
+npm run test    # check + vocab + prog + classes + smoke
 npm run art     # render every sprite to art-sheet.png (tools/artsheet.ts)
 npm run relay   # the party relay on its own, for serving a built dist/
 ```
@@ -263,6 +267,18 @@ The tree deals almost entirely in **percentages and whole extra behaviours**, ne
 stats — gear scales 2^n by rarity and would out-scale a flat node by epic. Respeccing is
 free and always will be, and only ever touches the tree — it never changes what class
 you're playing.
+
+The class-refactor replacement for this lives in `src/progression/` (skill-mutation
+framework, behaviour-driven nodes, cross-path hybrids, Mythic Archetypes) but is not
+wired into combat yet — `src/data/tree.ts` is still the live tree for all 15 legacy
+classes. **All 21 canonical classes** are now built on that framework as data —
+resources, 10 skills each, five behaviour-driven paths, six hybrids and a Mythic
+Archetype — in `src/progression/<class>.ts` (`ALL_CLASSES`; `PILOT_CLASSES` stays the
+original six that `npm run classes` drives against the live combat runtime). The full
+roster is proven by `npm run roster` (`tools/roster.ts`), which runs `validateClass`,
+`validateRoster`, the anti-overlap audit (`src/progression/audit.ts`), and the
+hybrid/archetype threshold checks. It is browsable in-game read-only via the
+**Codex** tab (Quartermaster). See `docs/progression-architecture.md`.
 
 ### Every class has its own save
 
@@ -618,6 +634,19 @@ src/
   game/     state, player, level generation + pathfinding, the dungeon run and the party
             of heroes in it, the ship hub (hub.ts), ailment bookkeeping (combat.ts),
             the boss brain (boss.ts)
+  combat/   the class-refactor combat vocabulary (Phase 1): damage packets + channels,
+            the status/DoT framework, the generic resource model, the event bus,
+            targeting, the Ability/EffectStep schema and the generic runEffect executor.
+            Pure, DOM-free, dungeon-free — see docs/combat-vocabulary.md. Not yet wired
+            into game/dungeon.ts; that migration is a later phase.
+  progression/ the class-refactor build layer (Phase 2): the skill-mutation framework
+            (rewrite an ability in place, no second skill id), skill tree v2 (nodes that
+            alter behaviour, not just stats), cross-path hybrids and three-path Mythic
+            Archetypes. resolveBuild/applyBuild is the seam. Pure. All 21 canonical
+            classes are built here as data (ALL_CLASSES; PILOT_CLASSES is the original
+            six), plus audit.ts (anti-overlap checks) and matrix.ts (the class matrix).
+            Not wired into combat yet; browsable via the Codex tab. See
+            docs/progression-architecture.md.
   net/      protocol.ts — wire types and room codes, pure, no DOM and no simulation
             client.ts   — one WebSocket to the relay: rooms, peers, nothing about games
             sync.ts     — snapshot encode/apply, and a remote player as an AvatarInput

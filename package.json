@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "smoke": "esbuild tools/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/smoke.mjs --log-level=error && node node_modules/.cache/smoke.mjs",
-    "test": "npm run check && npm run smoke",
+    "vocab": "esbuild tools/vocab.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/vocab.mjs --log-level=error && node node_modules/.cache/vocab.mjs",
+    "prog": "esbuild tools/progression.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/progression.mjs --log-level=error && node node_modules/.cache/progression.mjs",
+    "classes": "esbuild tools/classes.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/classes.mjs --log-level=error && node node_modules/.cache/classes.mjs",
+    "roster": "esbuild tools/roster.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/roster.mjs --log-level=error && node node_modules/.cache/roster.mjs",
+    "test": "npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run smoke",
     "art": "esbuild tools/artsheet.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/artsheet.mjs --log-level=error && node node_modules/.cache/artsheet.mjs",
     "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs"
   },
