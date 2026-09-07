@@ -12,7 +12,7 @@ import { GameState } from "./game/state";
 import { WorldRenderer } from "./render/draw";
 import { Fx } from "./render/fx";
 import { renderHub } from "./render/hub";
-import { buildSprites } from "./render/sprites";
+import { buildSprites, preloadArt } from "./render/sprites";
 import { Hud } from "./ui/hud";
 import { LootBanner } from "./ui/lootbanner";
 import { PUNCH } from "./ui/rarityfx";
@@ -530,7 +530,16 @@ window.addEventListener("focusout", () => {
 });
 
 applySettings();
-enterHub();
-new GameLoop(update, render).start();
+
+// The pipeline PNGs (`render/atlas/`) decode asynchronously. Hold the first frame until
+// they're in so a boss never flashes its procedural stand-in; anything that fails to load
+// just stays procedural rather than blocking the game. (No top-level await — Vite's build
+// target doesn't allow it.)
+preloadArt()
+  .catch((err) => console.error(err))
+  .finally(() => {
+    enterHub();
+    new GameLoop(update, render).start();
+  });
 
 window.addEventListener("beforeunload", () => state.save());

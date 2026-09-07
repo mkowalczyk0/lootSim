@@ -9,8 +9,8 @@ import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entitie
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import {
-  heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, tinted, weaponGlow,
-  weaponGrip, weaponSprite, type SpriteName,
+  heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
+  tinted, weaponGlow, weaponGrip, weaponSprite, type SpriteName,
 } from "./sprites";
 
 /**
@@ -52,14 +52,17 @@ export function drawSprite(
   x: number, y: number,
   flip: boolean,
   scale = SPRITE_SCALE,
+  feet = 0.22,
 ): void {
   const w = canvas.width * scale;
   const h = canvas.height * scale;
   ctx.save();
   ctx.translate(x, y);
   if (flip) ctx.scale(-1, 1);
-  // Anchored at the feet so taller sprites stand on the same ground line.
-  ctx.drawImage(canvas, -w / 2, -h + h * 0.22, w, h);
+  // Anchored at the feet so taller sprites stand on the same ground line. Procedural
+  // grids carry ~22% empty space under the feet; a trimmed atlas PNG passes its own
+  // (near-zero) fraction so it doesn't hover.
+  ctx.drawImage(canvas, -w / 2, -h + h * feet, w, h);
   ctx.restore();
 }
 
@@ -550,7 +553,11 @@ export class WorldRenderer {
 
   private drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x0: number, y0: number, time: number): void {
     const name: SpriteName = e.boss ? e.boss.spec.sprite : ENEMY_SPRITES[e.archetype.kind] ?? "grunt";
-    const scale = e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE;
+    // A pipeline sprite carries its own world scale and feet offset; a procedural one
+    // rides the global constant (or the boss's own tuned `spriteScale`).
+    const atlasScale = spriteWorldScale(name);
+    const scale = atlasScale ?? (e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE);
+    const feet = spriteFeet(name) ?? 0.22;
     // A slow bob, phase-shifted by position so a pack doesn't breathe in unison. The
     // shadow stays put: it's the body that hops, not the monster's footing.
     const x = x0;
@@ -568,7 +575,7 @@ export class WorldRenderer {
       ctx.arc(x, y, e.radius * (2.4 - t * 1.4), 0, TAU);
       ctx.stroke();
       ctx.globalAlpha = t * 0.6;
-      drawSprite(ctx, sprite(name), x, y, false, scale);
+      drawSprite(ctx, sprite(name), x, y, false, scale, feet);
       ctx.restore();
       return;
     }
@@ -594,21 +601,21 @@ export class WorldRenderer {
       // A boss is being hit constantly. A full white silhouette would strobe for the
       // entire fight and hide the thing you're supposed to be reading, so it only
       // brightens.
-      drawSprite(ctx, tinted(name, "#ffffff", 0.4), x, y, flip, scale);
+      drawSprite(ctx, tinted(name, "#ffffff", 0.4), x, y, flip, scale, feet);
     } else if (e.hitFlash > 0) {
-      drawSprite(ctx, silhouette(name), x, y, flip, scale);
+      drawSprite(ctx, silhouette(name), x, y, flip, scale, feet);
     } else if (casting) {
-      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale);
+      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale, feet);
     } else if (e.windup > 0) {
       // Flash red while winding up — this is the player's cue to dash.
-      drawSprite(ctx, silhouette(name, "#ff8a5c"), x, y, flip, scale);
+      drawSprite(ctx, silhouette(name, "#ff8a5c"), x, y, flip, scale, feet);
     } else if (e.elite) {
-      drawSprite(ctx, tinted(name, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale);
+      drawSprite(ctx, tinted(name, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale, feet);
     } else if (e.element !== "physical") {
       // Infused monsters wear their element, so you can tell what is about to hit you.
-      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale);
+      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale, feet);
     } else {
-      drawSprite(ctx, sprite(name), x, y, flip, scale);
+      drawSprite(ctx, sprite(name), x, y, flip, scale, feet);
     }
 
     // The boss's own health lives on the frame at the top of the screen, not over its

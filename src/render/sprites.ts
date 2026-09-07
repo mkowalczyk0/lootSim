@@ -14,6 +14,8 @@
  */
 
 import { CHESTS, type ChestTier } from "../data/chests";
+import { atlasCanvas, loadAtlas } from "./atlas";
+import { ATLAS, SPRITE_OVERRIDES } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
@@ -107,9 +109,39 @@ export function buildSprites(): void {
   };
 }
 
+/**
+ * Loads the pipeline PNGs (`render/atlas/`). Call once after `buildSprites()` and before
+ * the first frame. Sprites with a loaded PNG override the procedural bake; anything that
+ * fails to load quietly stays procedural, so a missing asset degrades rather than crashes.
+ */
+export async function preloadArt(): Promise<void> {
+  await loadAtlas();
+}
+
 export function sprite(name: SpriteName): HTMLCanvasElement {
   if (!atlas) throw new Error("buildSprites() must run before rendering");
+  const overrideId = SPRITE_OVERRIDES[name];
+  if (overrideId) {
+    const png = atlasCanvas(overrideId);
+    if (png) return png;
+  }
   return atlas[name];
+}
+
+/**
+ * World units per art pixel for a pipeline sprite, or null if `name` is still procedural.
+ * `render/draw.ts` uses this in place of the global `SPRITE_SCALE` / boss `spriteScale`
+ * so an atlas sprite keeps its predecessor's world footprint at a higher art resolution.
+ */
+export function spriteWorldScale(name: SpriteName): number | null {
+  const id = SPRITE_OVERRIDES[name];
+  return id ? ATLAS[id]?.worldScale ?? null : null;
+}
+
+/** Fraction of an atlas sprite's height that sits below the feet anchor, or null. */
+export function spriteFeet(name: SpriteName): number | null {
+  const id = SPRITE_OVERRIDES[name];
+  return id ? ATLAS[id]?.feet ?? null : null;
 }
 
 // --- characters -----------------------------------------------------------

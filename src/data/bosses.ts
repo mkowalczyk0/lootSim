@@ -203,6 +203,10 @@ export const BOSSES: readonly BossSpec[] = [
   {
     id: "choir", name: "The Hollow Choir", title: "Several voices, no mouths.",
     element: "void", sprite: "bossChoir",
+    // `bossChoir` is now atlas-backed (the corrupted saint, art-style-guide §5 Heresy) —
+    // its on-screen scale comes from `render/atlas/manifest.ts` (`boss.corrupted-saint`,
+    // worldScale 1.85). `spriteScale` here is only the fallback if that PNG ever fails to
+    // load; it still governs the procedural `BOSS_CHOIR` grid the smoke test walks.
     health: 80, damage: 2.5, speed: 0.8, radius: 40, spriteScale: 3.54, selfResist: 160,
     phases: [
       { at: 1.0, name: "First Verse", abilities: ["volley", "slam"], haste: 1, speed: 1, addsOnEnter: 0 },

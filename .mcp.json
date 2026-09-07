@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "aseprite": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "${HOME}/.claude/mcp-servers/aseprite-mcp",
+        "run",
+        "-m",
+        "aseprite_mcp"
+      ],
+      "env": {
+        "ASEPRITE_PATH": "${ASEPRITE_PATH:-/Applications/Aseprite.app/Contents/MacOS/aseprite}"
+      }
+    }
+  }
+}
