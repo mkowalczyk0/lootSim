@@ -585,9 +585,17 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   Authored greyscale +x; `weaponSprite` tints the loaded PNG toward the rarity colour at
   draw time. A cosmetic weapon **skin** still falls back to the procedural grid.
 
+- **All six dungeon props** (`torch`/`bones`/`mushroom`/`crystal`/`rock`/`chest`) and
+  **all ten drop icons** (`coin`/`key`/`potion`/`gem`/`capsule` + the five gear-slot
+  icons `armor`/`shield`/`ring`/`gloves`/`necklace`). Props draw through `drawProps` at
+  `worldScale × p.scale`; icons through `pickupSprite` in-world and `pixelImageFit` in
+  the UI (chest roll, loot banner, chest shop, class cards).
+
 Animation runtime is **not** built yet (deliberate — a later pass, ~UAT Chunk 2); every
 atlas sprite is a single still frame for now. Weapons and the hero still want a
 hand-finishing pass in Aseprite (the axe reads a touch blunt, the spearhead is thin).
+The whole procedural string-grid system (`render/pixels.ts`) is still present as the
+fallback and is what `npm run art` / the smoke grid-walk still exercise.
 - **Generation vs assembly:** PixelLab generates candidates from a §-derived prompt;
   aseprite-mcp forces them onto `art-palette.ts`, fixes dimensions, splits layers, adds
   the hot accent, assembles the atlas, exports. Claude writes the prompts, runs the

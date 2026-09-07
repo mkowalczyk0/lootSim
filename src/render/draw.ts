@@ -207,13 +207,17 @@ export class WorldRenderer {
         p.kind === "crystal" ? tinted(name, level.biome.accent, 0.5)
         : p.kind === "rock" ? tinted(name, level.biome.wall, 0.65)
         : sprite(name);
+      // A pipeline prop carries its own world scale and feet; a procedural one rides the
+      // old fixed 1.25.
+      const scale = (spriteWorldScale(name) ?? 1.25) * p.scale;
+      const feet = spriteFeet(name) ?? 0.22;
       ctx.save();
       ctx.globalAlpha = 0.9;
       if (p.kind === "torch") {
         ctx.shadowColor = "#ff8a3c";
         ctx.shadowBlur = 14;
       }
-      drawSprite(ctx, canvas, p.x, p.y, false, 1.25 * p.scale);
+      drawSprite(ctx, canvas, p.x, p.y, false, scale, feet);
       ctx.restore();
     }
   }

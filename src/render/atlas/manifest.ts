@@ -70,6 +70,30 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 87, worldScale: 1.54, feet: 0.03 },
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
   "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },
+
+  // --- props (§4, §8) --- drawn through drawProps at `worldScale × p.scale`. Legacy
+  // grids ~6–16 wide at the old fixed 1.25; worldScale ≈ old world width / new art width,
+  // nudged up ~1.1× for legibility. feet ≈ 0 (trimmed, on the ground).
+  "prop.chest":    { id: "prop.chest",    w: 36, h: 29, worldScale: 0.61, feet: 0.05 },
+  "prop.torch":    { id: "prop.torch",    w: 12, h: 39, worldScale: 0.58, feet: 0.03 },
+  "prop.bones":    { id: "prop.bones",    w: 34, h: 22, worldScale: 0.47, feet: 0.06 },
+  "prop.mushroom": { id: "prop.mushroom", w: 30, h: 28, worldScale: 0.44, feet: 0.06 },
+  "prop.crystal":  { id: "prop.crystal",  w: 24, h: 36, worldScale: 0.44, feet: 0.05 },
+  "prop.rock":     { id: "prop.rock",     w: 35, h: 26, worldScale: 0.46, feet: 0.06 },
+
+  // --- item / drop icons (§12) --- drawn through pickupSprite at `worldScale` (fixed
+  // 1.4 before). Legacy icon grids ~8–12 wide. In UI they flow through pixelImageFit,
+  // which normalises by width, so worldScale here is only the in-world drop size.
+  "icon.coin":     { id: "icon.coin",     w: 26, h: 26, worldScale: 0.50, feet: 0.15 },
+  "icon.key":      { id: "icon.key",      w: 12, h: 28, worldScale: 0.55, feet: 0.15 },
+  "icon.potion":   { id: "icon.potion",   w: 18, h: 23, worldScale: 0.66, feet: 0.12 },
+  "icon.gem":      { id: "icon.gem",      w: 20, h: 19, worldScale: 0.60, feet: 0.15 },
+  "icon.capsule":  { id: "icon.capsule",  w: 25, h: 22, worldScale: 0.66, feet: 0.15 },
+  "icon.armor":    { id: "icon.armor",    w: 22, h: 28, worldScale: 0.72, feet: 0.12 },
+  "icon.shield":   { id: "icon.shield",   w: 30, h: 30, worldScale: 0.48, feet: 0.12 },
+  "icon.ring":     { id: "icon.ring",     w: 20, h: 20, worldScale: 0.55, feet: 0.15 },
+  "icon.gloves":   { id: "icon.gloves",   w: 20, h: 26, worldScale: 0.66, feet: 0.12 },
+  "icon.necklace": { id: "icon.necklace", w: 28, h: 29, worldScale: 0.50, feet: 0.12 },
 };
 
 /**
@@ -92,6 +116,22 @@ export const SPRITE_OVERRIDES: Record<string, string> = {
   bossColossus: "boss.gravebound-colossus",
   bossHerald: "boss.herald-unspoken",
   bossNameless: "boss.nameless",
+  torch: "prop.torch",
+  bones: "prop.bones",
+  mushroom: "prop.mushroom",
+  crystal: "prop.crystal",
+  rock: "prop.rock",
+  chest: "prop.chest",
+  coin: "icon.coin",
+  key: "icon.key",
+  potion: "icon.potion",
+  gem: "icon.gem",
+  capsule: "icon.capsule",
+  armor: "icon.armor",
+  shield: "icon.shield",
+  ring: "icon.ring",
+  gloves: "icon.gloves",
+  necklace: "icon.necklace",
 };
 
 // --- weapons -------------------------------------------------------------
