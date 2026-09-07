@@ -176,7 +176,10 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >      `fireTriggers`/`p.heal` calls onto bus listeners so a skill hit fires `onHit` gear
 >      triggers too (another measured change).
 > 7. Town: class select, Path, Tree (v2 editable, hybrid/archetype badges), Skills —
->    ✅ DONE. TODO: "you unlocked X" toast on threshold; `treePointsRefunded` notice.
+>    ✅ DONE, including the two follow-ups: allocating a node that crosses a path-pair
+>    threshold now fires a louder `announce()` toast ("Hybrid unlocked — …" / "Mythic
+>    Archetype — …"), and `TownUI.show()` surfaces `GameState.treePointsRefunded` once on
+>    the first town visit after a pre-v14 save loads, then clears the flag and saves.
 > 8. Save migration `SAVE_VERSION` 13 → 14 — ✅ DONE (per-class allocated + skills reset,
 >    account-wide + level/xp/gear/depth kept, legacy `item.grant` dropped).
 > 9. `net/sync.ts` lightweight pass — ✅ DONE per C3 (dead `ul`/`ut`/`bt` fields kept for

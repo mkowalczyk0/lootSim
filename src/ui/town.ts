@@ -240,6 +240,19 @@ export class TownUI {
    *  rift portal you actually walked into rather than whichever was last selected. */
   show(tab?: Tab, riftMode?: RunModeId): void {
     this.root.hidden = false;
+    // A pre-v14 save's tree was built on node ids that no longer exist, so the
+    // class-refactor migration cleared every allocation and handed the points back.
+    // Say so once, then clear the flag — respec is free, nothing is lost.
+    if (this.state.treePointsRefunded > 0) {
+      const n = this.state.treePointsRefunded;
+      this.state.treePointsRefunded = 0;
+      this.state.save();
+      this.announce(
+        `The class update rebuilt the skill tree. ${n} point${n === 1 ? "" : "s"} refunded — `
+          + `spend them however you like, respec is still free.`,
+        "#7dd3fc",
+      );
+    }
     this.cursor = 0;
     this.resetArmed = false;
     // A class is the first real decision in the game, so a new character lands on it
@@ -275,6 +288,12 @@ export class TownUI {
 
   notify(text: string, color = "#e8eef7"): void {
     this.toast = { text, color, until: performance.now() + 3200 };
+    if (!this.root.hidden) this.render();
+  }
+
+  /** A longer, louder toast for a milestone — a hybrid coming online, a migration notice. */
+  announce(text: string, color = "#e8eef7"): void {
+    this.toast = { text, color, until: performance.now() + 7000 };
     if (!this.root.hidden) this.render();
   }
 
@@ -686,16 +705,33 @@ export class TownUI {
         break;
       }
       case "Tree": {
-        const node = treeNodeAt(this.state.player.tree, this.treeBranch, this.cursor);
+        const p = this.state.player;
+        const node = treeNodeAt(p.tree, this.treeBranch, this.cursor);
         if (!node) break;
-        if (this.state.player.allocated.includes(node.id)) {
+        if (p.allocated.includes(node.id)) {
           this.notify("Already yours. Points don't come back one at a time.", "#9aa4b2");
-        } else if (this.state.player.allocate(node)) {
-          this.notify(`${node.name} taken`, this.state.heroClass.color);
-        } else if (this.state.player.treePoints < node.cost) {
-          this.notify(`Needs ${node.cost} point${node.cost > 1 ? "s" : ""}. Go and earn them.`, "#ef4444");
         } else {
-          this.notify("Take the node above it first.", "#ef4444");
+          const before = unlockIds(p.build);
+          if (p.allocate(node)) {
+            this.notify(`${node.name} taken`, this.state.heroClass.color);
+            // Lighting this node may have crossed a path-pair threshold — a cross-path
+            // hybrid, or a three-path Mythic Archetype. That is the real "you unlocked
+            // something" moment in the tree, so it gets its own louder line.
+            for (const u of p.build.archetypes) {
+              if (!before.has(u.id)) {
+                this.announce(`Mythic Archetype — ${u.name}. Your kit just changed shape.`, "#ff1493");
+              }
+            }
+            for (const u of p.build.hybrids) {
+              if (!before.has(u.id)) {
+                this.announce(`Hybrid unlocked — ${u.name}.`, this.state.heroClass.color);
+              }
+            }
+          } else if (p.treePoints < node.cost) {
+            this.notify(`Needs ${node.cost} point${node.cost > 1 ? "s" : ""}. Go and earn them.`, "#ef4444");
+          } else {
+            this.notify("Take the node above it first.", "#ef4444");
+          }
         }
         break;
       }
@@ -2307,6 +2343,14 @@ function abilityCostLine(a: Ability, p: { cooldownMult: number }): string {
 /** The v2 node at a path/row, or null. */
 function treeNodeAt(tree: readonly TreeNodeV2[], path: number, row: number): TreeNodeV2 | null {
   return tree.find((n) => n.path === path && n.row === row) ?? null;
+}
+
+/** Ids of every hybrid and Mythic Archetype a resolved build currently has active. */
+function unlockIds(build: {
+  hybrids: readonly { id: string }[];
+  archetypes: readonly { id: string }[];
+}): Set<string> {
+  return new Set([...build.hybrids, ...build.archetypes].map((u) => u.id));
 }
 
 /** A short readout of a behaviour node — its stat line if it has one, else its role. */
