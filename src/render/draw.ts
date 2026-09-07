@@ -279,7 +279,7 @@ export class WorldRenderer {
       const { x, y } = lerpPos(p, alpha);
       // Gentle bob so drops read as loose objects rather than floor decals.
       const bob = Math.sin((d.elapsed + p.life) * 6) * 2;
-      const canvas = pickupSprite(p);
+      const { canvas, scale } = pickupSprite(p);
       ctx.save();
       if (p.rarity) {
         ctx.shadowColor = RARITY_COLORS[p.rarity];
@@ -293,9 +293,9 @@ export class WorldRenderer {
       if (flat) {
         ctx.translate(x, y + bob);
         ctx.rotate(-0.35);
-        drawSprite(ctx, canvas, 0, 0, false, 1.0);
+        drawSprite(ctx, canvas, 0, 0, false, scale);
       } else {
-        drawSprite(ctx, canvas, x, y + bob, false, 1.4);
+        drawSprite(ctx, canvas, x, y + bob, false, scale);
       }
       ctx.restore();
     }
@@ -910,25 +910,38 @@ function drawTrap(ctx: CanvasRenderingContext2D, t: Trap, time: number): void {
  * a dropped sword is now a sword, which is the difference between "loot appeared" and
  * "a sword appeared" from twenty feet away.
  */
-function pickupSprite(p: Pickup): HTMLCanvasElement {
+/**
+ * A dropped thing and the world scale to draw it at. A procedural icon rides the old
+ * fixed `1.4` (or `1.0` for a weapon lying flat); a pipeline sprite carries its own
+ * scale so a 69px atlas sword doesn't land three times its predecessor's size.
+ */
+function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
+  const named = (name: SpriteName): { canvas: HTMLCanvasElement; scale: number } => ({
+    canvas: sprite(name), scale: spriteWorldScale(name) ?? 1.4,
+  });
   switch (p.kind) {
-    case "coin": return sprite("coin");
-    case "key": return sprite("key");
-    case "potion": return sprite("potion");
-    case "gem": return sprite("gem");
+    case "coin": return named("coin");
+    case "key": return named("key");
+    case "potion": return named("potion");
+    case "gem": return named("gem");
     // No dedicated art for materials — a gem tinted by the element it's made of reads
     // clearly enough at a glance, and it keeps every planet from needing its own icon.
-    case "material": return p.element ? tinted("gem", ELEMENT_COLORS[p.element], 0.75) : sprite("gem");
+    case "material": return p.element
+      ? { canvas: tinted("gem", ELEMENT_COLORS[p.element], 0.75), scale: spriteWorldScale("gem") ?? 1.4 }
+      : named("gem");
     case "item": {
       const item = p.item;
-      if (!item) return sprite("capsule");
-      if (item.family) return weaponSprite(item.family, null, item.rarity);
+      if (!item) return named("capsule");
+      if (item.family) return {
+        canvas: weaponSprite(item.family, null, item.rarity),
+        scale: weaponWorldScale(item.family) ?? 1.0,
+      };
       const icon = ITEM_ICONS[item.type];
       return icon
-        ? tinted(icon, RARITY_COLORS[item.rarity], 0.4)
-        : tinted("capsule", RARITY_COLORS[item.rarity], 0.6);
+        ? { canvas: tinted(icon, RARITY_COLORS[item.rarity], 0.4), scale: spriteWorldScale(icon) ?? 1.4 }
+        : { canvas: tinted("capsule", RARITY_COLORS[item.rarity], 0.6), scale: spriteWorldScale("capsule") ?? 1.4 };
     }
-    default: return sprite("coin");
+    default: return named("coin");
   }
 }
 

@@ -223,6 +223,16 @@ export function heroSprite(appearance: Appearance): HeroSprite {
       return { canvas: png, scale: meta?.worldScale ?? PROC_HERO.scale, feet: meta?.feet ?? PROC_HERO.feet };
     }
   }
+  return { canvas: heroComposite(appearance), ...PROC_HERO };
+}
+
+/**
+ * The procedurally composed character, always — every cosmetic layer stacked, cached
+ * against the appearance. The town wardrobe preview uses this directly (not `heroSprite`)
+ * so it keeps showing the layered look and a stable aspect ratio while the pipeline base
+ * only carries the plain body.
+ */
+export function heroComposite(appearance: Appearance): HTMLCanvasElement {
   const key = appearanceKey(appearance);
   let canvas = heroCache.get(key);
   if (!canvas) {
@@ -232,7 +242,7 @@ export function heroSprite(appearance: Appearance): HeroSprite {
     if (heroCache.size > 64) heroCache.clear();
     heroCache.set(key, canvas);
   }
-  return { canvas, ...PROC_HERO };
+  return canvas;
 }
 
 /** Cache key for anything derived from an appearance, so tints can be cached too. */

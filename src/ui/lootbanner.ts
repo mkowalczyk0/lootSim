@@ -27,7 +27,7 @@
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import { statLine, type Item } from "../game/item";
 import { itemIcon } from "../render/sprites";
-import { pixelImage } from "./pixelimage";
+import { pixelImageFit } from "./pixelimage";
 import { atLeast, CINEMATIC_FLOOR, HALT_FLOOR, PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
 /** Floor on how long a cinematic stays up, before `Punch.hold` adds to it. */
@@ -111,7 +111,7 @@ export class LootBanner {
     this.el.hidden = false;
     this.fx.reset();
 
-    this.art.src = pixelImage(itemIcon(item.type, item.rarity), 7, `loot:${item.type}:${item.rarity}`);
+    this.art.src = pixelImageFit(itemIcon(item.type, item.rarity), 120, `loot:${item.type}:${item.rarity}`);
     this.name.textContent = item.name;
     this.name.style.color = RARITY_COLORS[item.rarity];
     this.line.textContent = statLine(item);

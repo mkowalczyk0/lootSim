@@ -28,7 +28,7 @@ import { ITEM_TYPES } from "../data/items";
 import { RARITIES, RARITY_COLORS, rarityIndex, type Rarity } from "../data/rarity";
 import type { Item } from "../game/item";
 import { itemIcon } from "../render/sprites";
-import { pixelImage } from "./pixelimage";
+import { pixelImageFit } from "./pixelimage";
 import { PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
 /** Milliseconds between two faces while a reel is spinning — the "bang bang bang". */
@@ -243,14 +243,14 @@ export class ChestRoll {
   private spinFace(reel: Reel): void {
     const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)]!;
     const rarity = RARITIES[Math.floor(Math.random() * RARITIES.length)]!;
-    reel.face.src = pixelImage(itemIcon(type, rarity), 6, `roll:${type}:${rarity}`);
+    reel.face.src = pixelImageFit(itemIcon(type, rarity), 96, `roll:${type}:${rarity}`);
   }
 
   /** A reel arriving on its real item. `react` is false when a skip lands ten at once. */
   private land(reel: Reel, react: boolean): void {
     const { item } = reel;
     reel.locked = true;
-    reel.face.src = pixelImage(itemIcon(item.type, item.rarity), 6, `roll:${item.type}:${item.rarity}`);
+    reel.face.src = pixelImageFit(itemIcon(item.type, item.rarity), 96, `roll:${item.type}:${item.rarity}`);
     reel.label.textContent = item.name;
     reel.label.style.color = RARITY_COLORS[item.rarity];
     reel.cell.style.setProperty("--r", RARITY_COLORS[item.rarity]);

@@ -48,9 +48,9 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroSprite, weaponSprite } from "../render/sprites";
+import { chestIcon, cosmeticPreview, heroComposite, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
-import { pixelImage } from "./pixelimage";
+import { pixelImage, pixelImageFit } from "./pixelimage";
 
 /**
  * Reached by walking to a station in the ship hub and never by cycling — the dive, each
@@ -1492,7 +1492,7 @@ export class TownUI {
 
     const cards = cat.tiers.map((tier, i) => {
       const info = CHESTS[tier];
-      const icon = pixelImage(chestIcon(tier), 5, tier);
+      const icon = pixelImageFit(chestIcon(tier), 72, tier);
       return `
         <div class="chest-card row ${i === this.cursor ? "on" : ""}" data-index="${i}" style="--chest-color:${info.color}">
           <div class="chest-card-art"><img src="${icon}" alt=""></div>
@@ -1855,7 +1855,7 @@ export class TownUI {
       const playing = this.state.classChosen && this.state.activeClassId === id;
       const untouched = pc.level === 1 && pc.xp === 0 && pc.allocated.length === 0
         && (Object.values(pc.equipment) as (Item | null)[]).every((it) => it === null);
-      const icon = pixelImage(weaponSprite(cls.affinity[0]!, null, null), 4, `path-${id}`);
+      const icon = pixelImageFit(weaponSprite(cls.affinity[0]!, null, null), 64, `path-${id}`);
       return `
         <div class="class-card row ${i === this.cursor ? "on" : ""}" data-index="${i}"
           style="--class-color:${cls.color}">
@@ -2110,9 +2110,9 @@ export class TownUI {
 
     const a = this.state.appearance;
     const held = this.state.player.equipment.weapon;
-    const portrait = pixelImage(heroSprite(a).canvas, 7);
-    const weapon = pixelImage(
-      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 4);
+    const portrait = pixelImage(heroComposite(a), 7);
+    const weapon = pixelImageFit(
+      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 72);
     const selected = STYLE_ROWS[this.cursor];
     const info = selected ? this.styleRowInfo(selected) : null;
     const owned = this.state.cosmetics.length;
