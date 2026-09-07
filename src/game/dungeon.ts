@@ -1399,19 +1399,20 @@ export class Dungeon implements CombatHost {
       }
     }
 
-    // Fill this hero's own meter for a landed basic attack — a plain swing carries no
-    // ability tags, so a class whose generation gates on a tag (Lancer, …) correctly
-    // gains nothing here and everyone else gains from the hit itself.
-    // The swing's resource credit is deliberately still tagless and counted once per
-    // swing (not per element). Threading `ability.tags` in here would let tag-gated
-    // generation rules (Berserker/Monk `requireTags: ["melee"]`, …) fill from basic
-    // attacks for the first time — a real meter-economy change that belongs in the
-    // Stage 11 measured tuning pass, not this refactor. See docs/combat-cutover-plan.md.
+    // Fill this hero's own meter for a landed basic attack, counted once per swing (not
+    // per element). The swing carries the weapon family's pattern tags (`melee` / `slash`
+    // / `thrust` / `heavy` / `projectile` / …), so a class whose generation gates on one
+    // of those — Berserker/Monk base rage/chi and ultimate meter (`requireTags: ["melee"]`
+    // / `["heavy"]`), or a tree node that explicitly makes basic attacks feed a resource
+    // (Duelist Blood Price, Juggernaut Momentum of Mass, Corsair Press-Gang, …) — is fed
+    // by the swing exactly as its spec intends. Tags that a plain swing never carries
+    // (`charge`, `holy`, `mark`, `execute`, an elemental rider) still gain nothing here.
+    // See docs/combat-cutover-plan.md §6b.1b for the measured meter-economy write-up.
     creditResourcesForHit(
       this.heroHost(hero),
       makeDamagePacket({
         amount: dealt, type: "physical", crit,
-        source: { actorId: hero.index, actorKind: "hero" },
+        source: { actorId: hero.index, actorKind: "hero", tags: ability.tags },
       }),
       dealt,
       { killed: e.health <= 0, ailmentInflicted },

@@ -156,12 +156,33 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >      amount, angle, ability, knockOverride?)`, one choke point for every melee pattern
 >      and the staff/bow bolt. Pure refactor: RNG order, once-per-swing leech + on-hit
 >      trigger, and **tagless** once-per-swing resource credit all preserved exactly.
->    - **6b.1b — TODO (measured):** thread `ability.tags` into the swing's resource-credit
->      packet so tag-gated generation (`requireTags: ["melee"]` on Berserker/Monk base
->      rage/chi, `["thrust"]` Duelist, `["slash"]` Reaper, `["heavy"]` Juggernaut,
->      `["projectile"]` Corsair — currently all dead on basic attacks because the credit
->      packet carries no tags) fills from swings. Real meter-economy change across ~6
->      classes; needs the smoke campaign delta written up before it lands, per §4.
+>    - **6b.1b — ✅ DONE (green: full `npm test` + roster; smoke campaign + boss
+>      byte-identical to cb4170f).** `weaponStrike` now stamps the weapon family's
+>      pattern tags (`melee` / `slash` / `thrust` / `heavy` / `projectile` / …) onto the
+>      once-per-swing resource-credit packet's `source.tags`, so tag-gated generation
+>      fires from basic attacks exactly as each spec intends.
+>      - **Smoke delta: zero.** The live default class (Swordsman) and every class the
+>        campaign / boss sections exercise charge via `crit` / `skillUse` / `damageTaken`
+>        — none tag-gated — so the two 20-dive campaigns (13.8 / 9.4) and the raid-boss
+>        bill (863 dmg / 54 s vs 1004 / 25 s) are unchanged to the digit.
+>      - **What it actually fixes (isolated probe, depth-16 god-mode, basic attacks only,
+>        seconds-of-fighting → meter):** *Monk* — Chi and Heavenly Fist were **dead**
+>        (0 % at 60 s; the whole economy is `hitDealt·melee` + `dodge` / `skillUse`),
+>        now fill to 100 % by ~15 s. *Berserker* — no observable change (Rage + meter
+>        already reachable via `damageTaken·60 %`; the `hitDealt·heavy +1.5` term is
+>        additive insurance). *Swordsman / Juggernaut / Duelist / Corsair* — unchanged in
+>        the probe: Swordsman/Jugg gate on `crit` / non-basic tags, and the Duelist /
+>        Corsair / Warden / Shaman / Reaper / Lancer tagged rules are **opt-in tree
+>        nodes** whose stated purpose is "basic attacks feed this resource" — now live
+>        when chosen, as designed.
+>      - This is a dead-rule fix, not a rebalance. Monk's ~15 s (god-mode, constant
+>        target stream) is a touch under the §4 20 s floor; real-play travel/spawn gaps
+>        put it ~25–35 s. Flagged for the Stage 11 meter-fill-window axis — not tuned
+>        reflexively.
+>      - **Known gap (Stage 11):** the credit packet is `type: "physical"` regardless of
+>        gear elemental conversion, so a lightning-converted staff bolt still does not
+>        feed Stormcaller `hitDealt·lightning`. Per-element basic-attack credit is a
+>        separate, larger question — noted, not in 6b.
 >    - **6b.2 — ✅ DONE (green: full `npm test` + classes + roster, smoke byte-identical).**
 >      `CombatHost.redirectDamage` is real: a `redirects` map (ward index → protector,
 >      fraction ≤ 0.9, expiry), read at the top of `applyPlayerDamage` behind an
