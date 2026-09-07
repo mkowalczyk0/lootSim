@@ -287,7 +287,8 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >         6s (all previously "never"). Smoke campaign + raid boss **byte-identical** (the
 >         bot plays Swordsman — melee `damage` steps — which never used the broken path),
 >         full `npm test` green.
->       - **Still dead — needs a mechanic or a per-class look, not the wiring fix:**
+>       - **Still dead after the wiring fix — resolutions recorded in the entries below
+>         this list (`dodge`/`block` → evasion layer; `statusApplied` → broadcast added):**
 >         - `dodge` / `block` events have no site to fire from — there is no evasion or
 >           parry mechanic in the hero damage path, only the ward absorb (which already
 >           fires `damagePrevented`). Duelist's entire meter (`dodge`+`block`) and
@@ -303,12 +304,116 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >         - Lancer reads 0 because the arena hero only strafes a 40px orbit; `on: "move"`
 >           wants real traversal. Harness limitation, not a bug.
 >
->     - **Still TODO:** the full 12-axis × 21-class table; the `dodge`/`block` mechanic
->       question + `statusApplied` broadcast; build differentiation (3 builds/class);
->       hybrid/keystone/mythic detectable-impact sweep; early-vs-late power curve;
->       raid-scale hazards (§4 list — redirect/taunt caps, party-wide guardsDeath, summon
->       caps **incl. the engineer outlier: 7.3k ST / 100k AoE dps on a pinned target**,
->       zone-merge, threat math); planet-floor pacing.
+>     - **`dodge` / `block` — RESOLVED (owner picked option a).** A real evasion/block
+>       layer: two `Mods` keys (`evasion`, `blockChance`), rolled in `Dungeon.hurtPlayer`
+>       on a separate `defenseRng` (seeded off the floor seed) so a class with no evasion
+>       never draws from it and the main RNG stream stays byte-identical — smoke campaign
+>       13.8/9.4 and boss 863·54s/1004·25s unchanged. Evasion → 0 damage + `dodge`;
+>       block → half damage + `block`. Never on `hurtPlayerMechanic` (a telegraph is meant
+>       to land) or `hurtPlayerRaw` (no dodging a burn). Class-intrinsic amounts only for
+>       the identity classes: duelist ev.10/bl.06, trickster ev.12, monk ev.05/bl.04,
+>       juggernaut bl.14, paladin bl.08, assassin ev.06. Caps `EVASION_CAP` 0.4 /
+>       `BLOCK_CHANCE_CAP` 0.5, block lands at `BLOCK_MITIGATION` 0.5, all in
+>       `combat-tuning.ts`. Gear affixes for evasion/block are a deliberate later
+>       itemization pass. Probe: Juggernaut Fortify + Paladin Conviction now fill from
+>       real hits (~25s / ~21s in the arena fair fight); Duelist's dodge/block meter
+>       charges but the *rate* wants a better incoming-hit harness to tune — flagged.
+>
+>     - **`statusApplied` — FIXED.** `runEffect`'s `status` step applied the status but
+>       never told the caster's resources. Now a hero-side caster landing a `status` step
+>       on a hostile actor broadcasts `{ type: "statusApplied", tags, fromUltimate? }`.
+>       Elemental ailments keep their own `ailmentInflicted` event and never route through
+>       the step, so no double-count. Shaman Hex of Withering now adds +2 Spirit World per
+>       cast; Assassin's Contract feeds Inside Job once the node is allocated.
+>
+>     - **Two ultimate-meter generation loops found and cut** (both `{ on: "damageDealt",
+>       perUnit: "damage" }`, untagged, huge coefficient — after the projectile/zone-credit
+>       fix every construct/zone tick credits the owner's `damageDealt`):
+>       - **Engineer** `0.2/damage` → the 100-point Siege Engine meter filled in <1s from
+>         8 turrets + stacked zones; the ultimate (siege minion + follow-zone) fired every
+>         ~1.4s, each cast stacking another long-lived zone that fed the meter — a closed
+>         loop. The "7.3k ST / 100k AoE" arena outlier was almost entirely stacked
+>         ultimate zones. **Fixed:** tag-gated `requireTags: ["construct"]` + `0.2 → 0.03`.
+>         Turret auto-attacks carry no ability tags so they no longer feed it; a
+>         construct's own shells/zone ticks still do, slowly. Arena after: 395 ST / 1384
+>         AoE — the loop is gone (that is now *low*; exact rate wants a real-play pass).
+>       - **Warlock** `0.3/damage` → Damnation up on cooldown (arena "meter full 0.0s";
+>         ~half its measured sustained ST was the ultimate firing repeatedly). THE
+>         ULTIMATE RULE blocks a true self-loop but the rate was far under the 20s floor.
+>         **Fixed:** `0.3 → 0.03`; `ailmentInflicted +3` stays the primary driver.
+>       - Audited the rest of the roster (`grep "perUnit: \"damage\""`): only these two.
+>         The `damageTaken · maxHealthFraction` tank-charge rules (Berserker, Juggernaut,
+>         Paladin, Warlock Soul Debt, Magician tree) are bounded by "you only have so much
+>         health to lose" and are the intended pattern — left alone.
+>
+>     - **12-axis read (`npm run arena`, level 18, geared; + static kit census).** The
+>       arena measures output and incoming-damage tolerance well; it systematically
+>       *over-fills* every meter because the driver cast-spams with infinite resources and
+>       never travels, kites or dies, so the meter-fill column is a floor, not a real
+>       cadence. Do **not** flatten these — a support/mechanic class deals less by design
+>       (spec §31).
+>
+>       | class | ST dps | burst3 | AoE dps | per-tgt | census (heal/shld/mit/mob/ctrl/sup/sum/exec) | notes |
+>       |---|--:|--:|--:|--:|---|---|
+>       | juggernaut | 229 | 1413 | 1559 | 260 | 0/4/4/1/0/3/0/0 | tank — lowest damage by design; shield+mitigation kit |
+>       | paladin | 390 | 1485 | 1478 | 246 | 4/3/1/1/0/5/0/0 | support/guardian — low damage by design |
+>       | corsair | 458 | 1775 | 455 | 76 | 0/0/0/2/1/2/1/0 | **flag: lowest AoE + low ST, skirmisher archetype — not an obvious low-damage role** |
+>       | shaman | 596 | 1789 | 1386 | 231 | 1/0/0/0/0/1/4/0 | ailment/totem — damage is the DoTs + totems, arena under-reads it |
+>       | swordsman | 662 | 2527 | 2273 | 379 | 0/1/0/2/1/3/0/2 | baseline bruiser |
+>       | berserker | 661 | 2656 | 5436 | 906 | 0/1/1/0/1/6/0/1 | strong AoE (Whirlwind), by design |
+>       | lancer | 602 | 2007 | 697 | 116 | 0/1/0/6/2/2/0/0 | most mobile kit (mob 6); single-lane damage |
+>       | bard | 758 | 2362 | 3004 | 501 | 2/0/0/0/1/9/0/0 | support (sup 9) — deals more than expected, fine |
+>       | monk | 758 | 2564 | 3275 | 546 | 2/0/0/3/0/8/0/0 | ramps — burst < sustained, intended |
+>       | alchemist | 769 | 2570 | 2598 | 433 | 2/1/0/0/1/3/0/0 | zone-layering generalist |
+>       | ranger | 966 | 1686 | 4667 | 778 | 0/0/0/1/2/2/1/0 | AoE >> burst — Arrow Storm; kiter |
+>       | stormcaller | 991 | 2876 | 4676 | 779 | 0/1/0/1/2/0/0/0 | mobile caster, good AoE |
+>       | trickster | 1219 | 3069 | 1532 | 255 | 0/0/0/7/0/3/5/1 | mob 7 + sum 5 (decoys) — evasion/chaos |
+>       | warden | 1338 | 4766 | 2873 | 479 | 1/0/1/1/0/2/1/0 | bruiser/terrain — healthy numbers |
+>       | assassin | 1433 | 3951 | 2016 | 336 | 0/0/1/3/0/3/0/3 | exec 3 — priority-target killer, high ST |
+>       | reaper | 1499 | 3662 | 5814 | 969 | 1/1/0/3/2/0/1/3 | widest AoE + execution — on identity |
+>       | necromancer | 571 | 1668 | 2467 | 411 | 3/0/1/1/0/0/5/0 | **flag: weak late scaling (see curve) — summon inheritance doesn't keep up with gear** |
+>       | warlock | 1165 | 4719 | 2169 | 362 | 1/0/0/0/2/1/0/0 | glass caster (post loop-fix) |
+>       | magician | 2463 | 7137 | 4390 | 732 | 1/0/0/1/2/2/1/1 | top DPS glass cannon, by design |
+>       | engineer | 395 | 1330 | 1384 | 231 | 0/2/0/0/0/0/5/0 | post loop-fix — now low; wants a real-play meter-rate + turret-power pass |
+>
+>       - **ST span (non-caster):** ~230 (juggernaut) … ~1500 (reaper). Casters
+>         2200–2500. That is a healthy ~6× spread with the tanks/supports at the bottom
+>         *on purpose*.
+>       - **Census gaps worth a look:** nobody has a `heal` + `mit` + `shield` all-zero
+>         *and* bottom-quartile damage (that would be a class with no answer to anything).
+>         Corsair is closest (0/0/0/2/1/2/1/0, 458 ST) — its identity is reach + mobility,
+>         but the numbers don't yet say "skirmisher", they say "underpowered". Flagged.
+>
+>     - **Early vs late curve (`scratchpad/curve.ts`: ST arena at L3/keys2 vs L50/keys40).**
+>       L3 dps span 141–849, L50 span 973–5114 — the spread stays ~5–6× at both ends and
+>       **no class inverts or falls off a cliff.** Scaling ratio (L50/L3) is 3.0–7.6×;
+>       **necromancer is the low outlier at 3.0×** (and 2nd-lowest L50 at 1196) — minion
+>       damage inherits a *fraction* of the owner and doesn't ride the gear curve the way a
+>       direct hit does. The opposite failure mode from Engineer's (summons too weak late
+>       vs summons+zones too strong). Both point at the same lever: summon power scaling.
+>       Nobody is unplayable at L3.
+>
+>     - **Still TODO (needs dedicated tooling, not arena-only):**
+>       - **Build differentiation** — 3 allocations/class through the smoke bot, must play
+>         differently (spec §35). Needs a smoke-bot mode that allocates a named path and
+>         reports a behaviour fingerprint (skill mix, positioning, meter cadence).
+>       - **Hybrid / keystone / Mythic detectable-impact sweep** — each must change a
+>         number or a behaviour the bot can see; archetypes must change an ability's
+>         effect list. `npm run roster` already gates thresholds/ids; this is the
+>         *does-it-do-anything* pass.
+>       - **Raid-scale (10–20)** — redirect/taunt stacking cap + cycle guard; party-wide
+>         `guardsDeath` diminishing returns / single-source rule; summon caps are in
+>         (`MINION_CAP_PER_OWNER` 8, `MINION_CAP_GLOBAL` 28) but the raid layer wants its
+>         own lower per-owner number; zone-merge total-radius cap; a real threat system
+>         (`setThreat` is only an aggro override today); resource-share hybrids (Bard
+>         Rallying Chorus, Warlock Soul Gate) checked for generation loops — the two
+>         `damageDealt` loops above are the pattern to watch for.
+>       - **Necromancer / Engineer summon power scaling** — the two ends of the same lever.
+>       - **Corsair** — bottom-quartile ST *and* AoE without a defensive/support identity
+>         to justify it; wants a numbers pass or a clearer role.
+>       - **Planet-floor pacing** — bigger floors, longer exposure; the smoke test already
+>         needs more generous gearing to clear a planet than an equal-depth delve. Wants a
+>         density/curve pass with real playtesting.
 
 ### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
 Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to
