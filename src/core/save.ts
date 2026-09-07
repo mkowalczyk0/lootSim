@@ -54,8 +54,20 @@ const KEY = "lootsim.save.v2";
  * rolls on its gear (the modifier record fills missing keys with zero). Nothing is
  * lost; a version 12 character simply starts with none of the new materials, exactly
  * like a brand new one.
+ *
+ * Version 14 replaced the whole class layer — 15 hand-written `HeroClass`es with a fixed
+ * `SkillId` pool and one `UltimateId` each — with the 21-class progression system
+ * (`src/progression`): every class is a resource model, ten abilities, and a five-path
+ * behaviour tree. A pre-v14 character keeps its per-class level, XP, deepest depth and
+ * equipped gear, plus everything account-wide (stash, coins, materials, cosmetics,
+ * stats, settings). What it loses is the build: the old tree `allocated` node ids and
+ * the old equipped `skills` mean nothing in the new system, so both are cleared and the
+ * class's first abilities are auto-slotted, exactly as for a fresh character. The town
+ * shows a one-time "your build was reset — N points to spend" notice
+ * (`GameState.treePointsRefunded`). An old `item.grant` (a legacy `SkillId`) is dropped
+ * on load by `normalizeItem`, since the ability ids it named no longer exist.
  */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 
 export interface SavedGame {
   readonly version: number;

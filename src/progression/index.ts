@@ -52,6 +52,7 @@ export * from "./warden";
 export * from "./audit";
 export * from "./matrix";
 
+import type { Ability } from "../combat/ability";
 import type { PilotClass } from "./class";
 import { LANCER } from "./lancer";
 import { BERSERKER } from "./berserker";
@@ -123,3 +124,29 @@ export const CLASS_BY_ID: Readonly<Record<string, PilotClass>> = Object.fromEntr
 
 /** @deprecated use {@link CLASS_BY_ID}. */
 export const PILOT_CLASS_BY_ID = CLASS_BY_ID;
+
+/** Every ability across the whole roster, by id — so a gear-granted skill from another
+ *  class still resolves for whoever is wearing the item. */
+export const ABILITY_BY_ID: Readonly<Record<string, Ability>> = Object.fromEntries(
+  ALL_CLASSES.flatMap((c) => c.abilities.map((a) => [a.id, a] as const)),
+);
+
+/**
+ * The pool a gear grant rolls from — one flashy, self-contained ability per class,
+ * biased toward the ones that read well on someone who isn't that class. Deliberately a
+ * curated shortlist, not "any of 210 abilities".
+ */
+export const GRANTABLE_ABILITY_IDS: readonly string[] = [
+  "magician.arc_spark",
+  "ranger.arrow_volley",
+  "necromancer.corpse_bomb",
+  "shaman.flame_totem",
+  "warlock.void_bolt",
+  "berserker.leap_slam",
+  "stormcaller.chain_lightning",
+  "paladin.consecrated_ground",
+  "engineer.auto_turret",
+  "alchemist.volatile_flask",
+  "assassin.poison_needle",
+  "warden.vine_snare",
+].filter((id) => id in ABILITY_BY_ID);

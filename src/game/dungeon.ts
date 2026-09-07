@@ -2,14 +2,13 @@ import { angleDelta, approach, circlesOverlap, clamp, dist, normalize, TAU } fro
 import { Rng } from "../core/rng";
 import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP, bossFor } from "../data/bosses";
 import { challengerRewardMult } from "../data/challenger";
+import { SKILL_POWER, ULTIMATE_POWER } from "../data/combat-tuning";
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
 import {
   AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, LOOT_ELEMENTS, STATUS_FOR_ELEMENT,
   zeroResists, type Element,
 } from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
-import type { ChargeRules } from "../data/classes";
-import { ULTIMATES, type UltimateId, type UltimateKind, type UltimateSpec } from "../data/ultimates";
 import {
   BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
 } from "../data/weapons";
@@ -20,22 +19,21 @@ import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materi
 import { delveConfig, type RunConfig } from "../data/modes";
 import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
-import {
-  SKILLS, TOTEM_PULSE, TOTEM_TARGETS, WARD_RESIST, type SkillId,
-} from "../data/skills";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
 import { updateBoss } from "./boss";
+import { mitigateWithResists } from "./combat";
 import {
-  amplifyFrom, applyStatus, manaBurnFrom, mitigateWithResists, slowFrom, tickStatuses,
-  type StatusInstance,
-} from "./combat";
-import {
-  AbilityRuntime, EventBus, ResourceSet, StatusContainer,
-  type CombatHost, type DamagePacket, type HostActor,
-  type MinionRequest, type MoveRequest, type ProjectileRequest, type TargetActor,
+  AbilityRuntime, EventBus, ResourceSet, StatusContainer, creditResourcesForHit,
+  isUltimateSourced, makeDamagePacket,
+  type Ability, type CastInput, type CombatHost, type DamagePacket, type HostActor,
+  type MinionRequest, type MoveRequest, type ProjectileRequest, type StatusInstance, type TargetActor,
   type TerrainRequest, type ZoneRequest, type MinionCommand,
 } from "../combat/index";
-import { CLASS_BY_ID, makeClassResources } from "../progression/index";
+import { applyRuleFx, runBuildGrants, type BuildRuleContext } from "./abilities";
+
+/** Fraction of a ward's pool that also counts as flat resistance while it holds — was
+ *  `data/skills.ts` before the ability cutover. */
+const WARD_RESIST = 60;
 // Registers burn/chill/shock/venom/drain/sear/sunder on the unified status registry so
 // `Hero.sc` / `Enemy.sc` mean the same thing the legacy ailment list does.
 import "../combat/legacy-ailments";
@@ -84,24 +82,6 @@ const WAVE_HEALTH_MULT = 0.75;
  */
 const TRASH_REWARD_MULT = 0.5;
 
-/**
- * How much of your own movement you keep while an ultimate is happening. A Comet
- * Charge steers itself and a whirlwind slows you down; a Cataclysm is cast and then
- * you are free to run, because the meteors are not aimed at you.
- */
-const ULT_MOVE: Record<UltimateKind, number> = {
-  charge: 0, spin: 0.8, storm: 0.7, impact: 1, totem: 1,
-};
-
-/** Ultimates that own the attack button while they run. */
-const ULT_BUSY: Record<UltimateKind, boolean> = {
-  charge: true, spin: true, storm: true, impact: false, totem: false,
-};
-
-/** Seconds between a whirlwind's bursts of projectiles. */
-const WHIRL_EMIT = 0.42;
-/** Radians a bladestorm sweep advances each time it swings. */
-const STORM_STEP = 2.1;
 /** How far from you a thorns retort reaches. */
 const THORNS_RANGE = 64;
 /** Fraction of max health a potion restores. */
@@ -174,7 +154,7 @@ export type RunEvent =
   | { kind: "bossPhase"; name: string; phase: number; total: number }
   | { kind: "bossCast"; name: string; time: number }
   | { kind: "bossDown"; x: number; y: number }
-  | { kind: "ultimate"; id: UltimateId; name: string; color: string; x: number; y: number }
+  | { kind: "ultimate"; id: string; name: string; color: string; x: number; y: number }
   | { kind: "trail"; x: number; y: number; color: string }
   | { kind: "totem"; x: number; y: number; color: string }
   | { kind: "cleared" }
@@ -227,10 +207,8 @@ export class Hero {
   readonly player: Player;
   readonly appearance: Appearance;
   readonly avatar: Avatar;
-  /** Legacy elemental ailments on this hero. Being migrated onto `sc`. */
-  readonly statuses: StatusInstance[] = [];
-  /** Unified status container for the `src/combat` executor. Parallel to `statuses`
-   *  during the cutover; see the note on `Enemy.sc`. */
+  /** Every timed effect on this hero — DoTs, CC, buffs — the unified container the
+   *  ability executor reads and writes. */
   readonly sc: StatusContainer;
   /** This hero's class resources — Momentum, Rage, Mana, the ultimate meter, … —
    *  built from the progression `PilotClass` for the class they're playing. */
@@ -246,10 +224,9 @@ export class Hero {
   ward = 0;
   wardTimer = 0;
   /**
-   * 0..1. Fills the way this hero's class says it does; spending it fires the ultimate.
-   * Backed by the class's `isUltimateMeter` resource pool, so the meter is one object
-   * the eventual `src/combat` ultimate path and the legacy `ChargeRules` both move.
-   * `_specialCharge` is the fallback for a class with no resolved pilot class.
+   * 0..1, for the HUD and the renderer. Backed by the class's `isUltimateMeter`
+   * resource pool, which the class's own generation rules fill; `_specialCharge` is a
+   * fallback for a class with no resolved pilot class.
    */
   private _specialCharge = 0;
   get specialCharge(): number {
@@ -277,6 +254,8 @@ export class Hero {
   readonly itemsPending: Item[] = [];
   /** Routes monsters to this hero when they can't see them directly. */
   flow: FlowField | null = null;
+  /** Recent positions, newest first — for abilities that snap back to where you were. */
+  readonly posHistory: { x: number; y: number }[] = [];
 
   constructor(setup: HeroSetup, index: number, avatar: Avatar) {
     this.index = index;
@@ -288,8 +267,7 @@ export class Hero {
     this.local = setup.local;
     this.avatar = avatar;
     this.sc = new StatusContainer(index);
-    const pilot = CLASS_BY_ID[setup.player.classId];
-    this.resources = pilot ? makeClassResources(pilot) : new ResourceSet();
+    this.resources = setup.player.makeResources();
   }
 
   get alive(): boolean {
@@ -437,6 +415,13 @@ export class Dungeon implements CombatHost {
       this.heroes.push(hero);
     }
     this.localHero = this.heroes.find((h) => h.local) ?? this.heroes[0]!;
+    for (const hero of this.heroes) {
+      runBuildGrants(
+        this.bus, hero.player.build, this, hero.rt, hero.index,
+        () => this.castInputFor(hero),
+        () => hero.avatar.facing,
+      );
+    }
     this.portal = this.level.portal;
     this.startNextWave();
   }
@@ -456,7 +441,7 @@ export class Dungeon implements CombatHost {
   }
 
   get playerStatuses(): StatusInstance[] {
-    return this.localHero.statuses;
+    return this.localHero.sc.list;
   }
 
   get skillCooldowns(): number[] {
@@ -654,8 +639,7 @@ export class Dungeon implements CombatHost {
       dodgeDir: this.rng.chance(0.5) ? 1 : -1,
       element,
       resists,
-      statuses: [],
-      sc: new StatusContainer(1_000_000 + this.nextEnemyId - 1),
+      sc: new StatusContainer(Dungeon.ENEMY_ID_BASE + this.nextEnemyId - 1),
       knockResist: 1,
       boss: null,
       summoned: opts.summoned ?? false,
@@ -837,7 +821,7 @@ export class Dungeon implements CombatHost {
     hero.reviveProgress = 0;
     hero.player.health = Math.max(1, Math.round(hero.player.maxHealth * REVIVE_HEALTH));
     hero.avatar.invulnTimer = Math.max(hero.avatar.invulnTimer, 1.2);
-    hero.statuses.length = 0;
+    hero.sc.list.length = 0;
     this.events.push({ kind: "nova", x: hero.avatar.x, y: hero.avatar.y, radius: 70 });
     this.events.push({
       kind: "pickup", x: hero.avatar.x, y: hero.avatar.y - 26,
@@ -1124,8 +1108,12 @@ export class Dungeon implements CombatHost {
     a.invulnTimer = Math.max(0, a.invulnTimer - dt);
     a.dashInvuln = Math.max(0, a.dashInvuln - dt);
     a.hitFlash = Math.max(0, a.hitFlash - dt);
+    // Mirror the ability runtime's cooldowns into the flat array the HUD and the
+    // snapshot read — cooldowns themselves live on `hero.rt`, keyed by ability id.
+    const active = hero.player.activeAbilities;
     for (let i = 0; i < hero.skillCooldowns.length; i++) {
-      hero.skillCooldowns[i] = Math.max(0, hero.skillCooldowns[i]! - dt);
+      const ab = active[i];
+      hero.skillCooldowns[i] = ab ? hero.rt.cooldownRemaining(ab.id) : 0;
     }
     if (hero.wardTimer > 0) {
       hero.wardTimer = Math.max(0, hero.wardTimer - dt);
@@ -1134,33 +1122,26 @@ export class Dungeon implements CombatHost {
     // Mana comes back slowly enough that a skill is a decision, not a rotation filler.
     player.restoreMana(player.manaRegen * dt);
 
-    // Buffs run on their own clock and simply end.
-    if (a.buffTimer > 0) {
-      a.buffTimer = Math.max(0, a.buffTimer - dt);
-      if (a.buffTimer === 0) {
-        a.buffAttackSpeed = 0;
-        a.buffLifeOnHit = 0;
-      }
-    }
+    // Self-buff statuses (Frenzy, Blessed, Inspired, …) feed the legacy attack path
+    // through the same two fields the old buff skills used, plus a damage multiplier the
+    // skill / ultimate casts pick up via `castInputFor`.
+    const bm = hero.sc.modsContribution();
+    a.buffAttackSpeed = bm.attackSpeed;
+    a.buffLifeOnHit = bm.lifeOnHit;
 
     const move = input.moveVector();
-    const steered = this.ultLocksMovement(hero);
+    const disabled = hero.sc.disables();
     // In mouse-aim mode, facing (and so every attack and skill) points at the cursor
     // regardless of which way you're walking — movement and aim are separate axes,
     // same as any twin-aim action game. Exclusive keyboard keeps the original behavior:
     // you face whichever way you're moving, because there's nothing else to aim with.
-    if (!steered) {
-      const aim = input.aimAngle(a.x, a.y);
-      if (aim !== null) a.facing = aim;
-      else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
-    }
-
-    // The ultimate is the one thing that can take the character off you.
-    if (a.ultimate) this.updateUltimate(hero, dt);
+    const aim = input.aimAngle(a.x, a.y);
+    if (aim !== null) a.facing = aim;
+    else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
 
     if (a.dashTimer > 0) {
       a.dashTimer -= dt;
-    } else if (input.wasPressed("dash") && a.dashCooldown <= 0 && !steered) {
+    } else if (input.wasPressed("dash") && a.dashCooldown <= 0 && !disabled.move) {
       a.dashTimer = DASH_TIME;
       a.dashCooldown = DASH_COOLDOWN;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
@@ -1170,52 +1151,52 @@ export class Dungeon implements CombatHost {
       a.vx = dir.x * DASH_SPEED;
       a.vy = dir.y * DASH_SPEED;
       this.fireTriggers(hero, "onDash", a.x, a.y);
+      hero.resources.broadcast({ type: "dashStart" });
     }
 
-    if (a.dashTimer <= 0 && !steered) {
+    if (a.dashTimer <= 0) {
       // Tar slows a walk to a crawl but never a dash — the dash stays the way out.
-      const slow = this.mireSlowAt(a.x, a.y) * slowFrom(hero.statuses);
-      const spin = a.ultimate ? ULT_MOVE[ULTIMATES[a.ultimate].kind] : 1;
-      const speed = PLAYER_SPEED * player.moveMult * slow * spin;
+      const slow = disabled.move ? 0 : this.mireSlowAt(a.x, a.y) * hero.sc.slowMultiplier();
+      const speed = PLAYER_SPEED * player.moveMult * (1 + bm.moveSpeed) * slow;
       a.vx = move.x * speed;
       a.vy = move.y * speed;
     }
 
-    if (steered) {
-      // A comet charge steers itself and comes off the walls.
-      this.stepCharge(hero, dt);
-    } else {
-      a.x = clamp(a.x + a.vx * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
-      a.y = clamp(a.y + a.vy * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
-      const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
-      a.x = fixed.x;
-      a.y = fixed.y;
-    }
+    const beforeX = a.x;
+    const beforeY = a.y;
+    a.x = clamp(a.x + a.vx * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
+    a.y = clamp(a.y + a.vy * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
+    const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
+    a.x = fixed.x;
+    a.y = fixed.y;
+    const travelled = dist(beforeX, beforeY, a.x, a.y);
+    if (travelled > 0.01) hero.resources.broadcast({ type: "move", distance: travelled });
+    hero.posHistory.unshift({ x: a.x, y: a.y });
+    if (hero.posHistory.length > 90) hero.posHistory.length = 90;
 
-    // While an ultimate is swinging for you, your own buttons are not available.
-    const busy = a.ultimate ? ULT_BUSY[ULTIMATES[a.ultimate].kind] : false;
-    if (!busy && input.wasPressed("attack") && a.attackTimer <= 0) this.attack(hero);
+    if (input.wasPressed("attack") && a.attackTimer <= 0 && !disabled.attack) this.attack(hero);
     if (input.wasPressed("potion")) this.drinkPotion(hero);
     if (input.wasPressed("special")) this.useUltimate(hero);
-    if (!busy) {
-      if (input.wasPressed("skill1")) this.castSkill(hero, 0);
-      if (input.wasPressed("skill2")) this.castSkill(hero, 1);
-      if (input.wasPressed("skill3")) this.castSkill(hero, 2);
-      if (input.wasPressed("skill4")) this.castSkill(hero, 3);
-    }
+    if (input.wasPressed("skill1")) this.castSkill(hero, 0);
+    if (input.wasPressed("skill2")) this.castSkill(hero, 1);
+    if (input.wasPressed("skill3")) this.castSkill(hero, 2);
+    if (input.wasPressed("skill4")) this.castSkill(hero, 3);
   }
 
   /** Ailments on a hero tick here, along with the mana a void hit tears out. */
   private updateHeroStatuses(hero: Hero, dt: number): void {
     if (hero.downed) return;
-    const burn = manaBurnFrom(hero.statuses);
+    const burn = hero.sc.manaBurnPerSecond();
     if (burn > 0) hero.player.drainMana(burn * dt);
-    tickStatuses(hero.statuses, dt, (damage, element) => {
-      this.hurtPlayerRaw(hero, damage, element, 0);
-    });
-    // The src/combat containers run in parallel during the cutover — see Hero.sc.
     hero.sc.tick(dt, { onDamage: (p) => this.dealDamage(hero.index, p) });
-    hero.resources.tick(dt);
+    hero.resources.tick(dt, {
+      fireEffect: (id) => this.emitFx(id, hero.avatar.x, hero.avatar.y),
+      spendHealth: (amount) => {
+        const before = hero.player.health;
+        this.applyPlayerDamage(hero, amount, "physical", 0);
+        return before - hero.player.health;
+      },
+    });
     hero.rt.tick(dt, this);
   }
 
@@ -1286,7 +1267,7 @@ export class Dungeon implements CombatHost {
 
     this.events.push({
       kind: "swing", x: a.x, y: a.y - 8, angle: a.swingAngle,
-      arc: w.arc, reach: w.reach, pattern: w.pattern, ultimate: a.ultimate !== null,
+      arc: w.arc, reach: w.reach, pattern: w.pattern, ultimate: false,
       element: p.attackElement,
     });
   }
@@ -1354,27 +1335,41 @@ export class Dungeon implements CombatHost {
     const p = hero.player;
     const crit = this.rng.chance(p.critChance);
     const rolled = amount * (crit ? p.critMultiplier : 1) * this.rng.range(0.92, 1.08);
-    this.damageEnemy(e, rolled, angle, "physical", {
+    let dealt = this.damageEnemy(e, rolled, angle, "physical", {
       crit,
       knock: knock === undefined ? undefined : knock * (crit ? 1.5 : 1),
       source: hero,
     });
-    if (crit) this.gainCharge(hero, this.chargeRules(hero).perCrit);
 
     // What landing a hit gives back, counted once per swing rather than per element.
     const life = p.mods.lifeOnHit + hero.avatar.buffLifeOnHit;
     if (life > 0) p.heal(life);
     if (p.mods.manaOnHit > 0) p.restoreMana(p.mods.manaOnHit);
 
+    let ailmentInflicted = false;
     if (e.health > 0) {
       for (const [element, fraction] of Object.entries(p.elementalDamage) as [Element, number][]) {
         if (!fraction) continue;
-        this.damageEnemy(e, rolled * fraction, angle, element, {
+        dealt += this.damageEnemy(e, rolled * fraction, angle, element, {
           ailment: this.ailmentChance(hero, AILMENT_CHANCE), knock: 0, source: hero,
         });
+        ailmentInflicted = true;
         if (e.health <= 0) break;
       }
     }
+
+    // Fill this hero's own meter for a landed basic attack — a plain swing carries no
+    // ability tags, so a class whose generation gates on a tag (Lancer, …) correctly
+    // gains nothing here and everyone else gains from the hit itself.
+    creditResourcesForHit(
+      this.heroHost(hero),
+      makeDamagePacket({
+        amount: dealt, type: "physical", crit,
+        source: { actorId: hero.index, actorKind: "hero" },
+      }),
+      dealt,
+      { killed: e.health <= 0, ailmentInflicted },
+    );
     this.fireTriggers(hero, "onHit", e.x, e.y);
   }
 
@@ -1389,309 +1384,92 @@ export class Dungeon implements CombatHost {
     return 1 + hero.player.mods.ailmentPotency;
   }
 
-  // --- the ultimate -------------------------------------------------------
+  // --- casting abilities -------------------------------------------------
 
-  /** How the class a hero is playing fills its meter. */
-  private chargeRules(hero: Hero): ChargeRules {
-    return hero.player.heroClass.charge;
+  /**
+   * What the ability executor needs to know about the caster for one cast: where it is
+   * aimed, which enemy is the "current target", and the damage / crit / cooldown numbers
+   * the hero's build produces. Self-buff statuses fold their offensive contribution in
+   * here so a Frenzy or a Blessed actually shows up on the skill that follows it.
+   */
+  private castInputFor(hero: Hero, ability?: Ability): CastInput {
+    const p = hero.player;
+    const a = hero.avatar;
+    const bm = hero.sc.modsContribution();
+    const reach = ability?.range && ability.range > 0 ? ability.range : 140;
+    const aim = { x: a.x + Math.cos(a.facing) * reach, y: a.y + Math.sin(a.facing) * reach };
+    const target = this.nearestEnemyTo(a.x, a.y, Math.max(reach, 700));
+    const dmgBuff = 1 + bm.meleeDamage + bm.skillDamage;
+    const ultMult = ability?.isUltimate ? p.ultimateMult * ULTIMATE_POWER : 1;
+    return {
+      aim,
+      currentTargetId: target ? Dungeon.ENEMY_ID_BASE + target.id : undefined,
+      cooldownMult: p.cooldownMult,
+      attackDamage: p.attackDamage * dmgBuff * ultMult * SKILL_POWER,
+      spellDamage: p.spellDamage * (1 + bm.skillDamage) * ultMult * SKILL_POWER,
+      ailmentPotency: 1 + p.mods.ailmentPotency,
+      critChance: p.critChance,
+      positionHistory: hero.posHistory,
+    };
   }
 
-  /** Adds to a hero's ultimate meter. `units` is measured in kill-equivalents. */
-  private gainCharge(hero: Hero, units: number): void {
-    if (units <= 0) return;
-    hero.specialCharge = Math.min(1, hero.specialCharge + units / hero.player.ultimateCost);
-  }
-
-  /** True while an ultimate is driving the character instead of the player. */
-  private ultLocksMovement(hero: Hero): boolean {
-    const id = hero.avatar.ultimate;
-    return id !== null && ULTIMATES[id].kind === "charge";
-  }
-
-  /** Damage of one ultimate hit. Your weapon powers it, so a build carries into it. */
-  private ultimateDamage(hero: Hero, mult: number): number {
-    return hero.player.attackDamage * mult * hero.player.ultimateMult;
+  /** Cast one of the three chosen abilities (slot 0-2) or the gear-granted one (slot 3). */
+  private castSkill(hero: Hero, slot: number): void {
+    if (hero.sc.disables().cast) return;
+    const base = hero.player.activeAbilities[slot];
+    if (!base) return;
+    const ability = hero.player.resolvedAbility(base);
+    if (!hero.rt.ready(ability)) return;
+    const a = hero.avatar;
+    const res = hero.rt.castAbility(this, hero.index, ability, this.castInputFor(hero, ability));
+    if (!res.ok) {
+      if (res.failure === "cannot-afford") {
+        this.events.push({ kind: "pickup", x: a.x, y: a.y - 20, label: "no resource", color: "#60a5fa" });
+      }
+      return;
+    }
+    this.events.push({
+      kind: "cast", x: a.x, y: a.y - 34, label: ability.name, color: hero.player.heroClass.color,
+    });
+    applyRuleFx(this.ruleContext(hero), ability);
   }
 
   /**
-   * Spends a full meter. Every class does something completely different here, and
-   * that is the entire point of picking one.
+   * Spends a full ultimate meter. The ultimate is a normal `Ability` (`isUltimate`) cast
+   * through the same executor as any skill; THE ULTIMATE RULE is enforced inside the
+   * executor and the resource layer, so nothing it does can refill the meter.
    */
   useUltimate(hero: Hero = this.localHero): void {
-    const a = hero.avatar;
     const p = hero.player;
-    if (hero.specialCharge < 1 || a.ultimate) return;
-    hero.specialCharge = 0;
+    const a = hero.avatar;
+    const base = p.ultimateAbility;
+    const meter = hero.resources.ultimateMeter();
+    if (!base || !meter || meter.fraction < 1) return;
+    const ability = p.resolvedAbility(base);
+    if (!hero.rt.ready(ability)) return;
 
-    const spec = ULTIMATES[p.heroClass.ultimate];
-    a.ultimate = spec.id;
-    a.ultTimer = spec.duration;
-    a.ultTotal = spec.duration;
-    a.ultTick = 0;
-    a.ultAngle = a.facing;
-    a.ultBounces = spec.bounces + Math.max(0, Math.round(p.mods.ultimateBounces));
-    a.ultHits = new Set();
-    a.ultEmits = 0;
-    a.ultPending = spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles));
-
-    this.events.push({
-      kind: "ultimate", id: spec.id, name: spec.name, color: spec.color, x: a.x, y: a.y,
-    });
-    this.events.push({ kind: "shake", amount: 12 });
-
-    switch (spec.kind) {
-      case "charge":
-        a.vx = Math.cos(a.facing) * spec.speed;
-        a.vy = Math.sin(a.facing) * spec.speed;
-        break;
-      case "totem": {
-        // Planted at once; after that the totems are on their own and so are you.
-        const count = Math.max(1, a.ultPending);
-        for (let i = 0; i < count; i++) {
-          const angle = a.facing + (i - (count - 1) / 2) * 0.9;
-          this.plantTotem(hero, a.x + Math.cos(angle) * 44, a.y + Math.sin(angle) * 44, {
-            damage: this.ultimateDamage(hero, spec.damage),
-            duration: spec.duration,
-            interval: spec.tick,
-            range: spec.radius * p.areaMult,
-            targets: TOTEM_TARGETS + 1,
-            element: p.attackElement,
-            ailment: this.ailmentChance(hero, 0.7),
-          });
-        }
-        // Nothing left for the avatar itself to do.
-        a.ultTimer = 0.25;
-        a.ultTotal = 0.25;
-        break;
-      }
-      default:
-        break;
+    meter.value = 0;
+    const res = hero.rt.castAbility(this, hero.index, ability, this.castInputFor(hero, ability));
+    if (!res.ok) {
+      meter.value = meter.max; // couldn't fire — hand the meter back
+      return;
     }
+    this.events.push({
+      kind: "ultimate", id: ability.id, name: ability.name, color: p.heroClass.color, x: a.x, y: a.y,
+    });
+    this.events.push({ kind: "shake", amount: 14 });
+    applyRuleFx(this.ruleContext(hero), ability);
     this.fireTriggers(hero, "onUltimate", a.x, a.y);
   }
 
-  private updateUltimate(hero: Hero, dt: number): void {
-    const a = hero.avatar;
-    const id = a.ultimate;
-    if (!id) return;
-    const spec = ULTIMATES[id];
-    a.ultTimer -= dt;
-    a.ultTick -= dt;
-
-    switch (spec.kind) {
-      case "charge":
-        // Nothing touches you while you are the spear. The movement itself is in
-        // `stepCharge`, because it has to happen after the input pass.
-        a.invulnTimer = Math.max(a.invulnTimer, 0.15);
-        a.dashInvuln = Math.max(a.dashInvuln, 0.15);
-        this.events.push({ kind: "trail", x: a.x, y: a.y, color: spec.color });
-        break;
-
-      case "spin": {
-        if (a.ultTick <= 0) {
-          a.ultTick += spec.tick;
-          const radius = spec.radius * hero.player.areaMult;
-          for (const e of this.meleeTargets(hero, a.facing, radius, TAU)) {
-            this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), Math.atan2(e.y - a.y, e.x - a.x), 60);
-          }
-          this.events.push({ kind: "trail", x: a.x, y: a.y, color: spec.color });
-        }
-        // The sparks come out on a slower clock than the grinding does.
-        const elapsed = a.ultTotal - a.ultTimer;
-        if (elapsed >= (a.ultEmits + 1) * WHIRL_EMIT) {
-          a.ultEmits++;
-          this.whirlBurst(hero, spec);
-        }
-        break;
-      }
-
-      case "storm": {
-        if (a.ultTick <= 0) {
-          a.ultTick += spec.tick;
-          a.ultAngle += STORM_STEP;
-          a.swingAngle = a.ultAngle;
-          a.swingTimer = Math.max(a.swingTimer, spec.tick);
-          const radius = spec.radius * hero.player.areaMult;
-          for (const e of this.meleeTargets(hero, a.ultAngle, radius, Math.PI * 0.9)) {
-            this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), a.ultAngle, 90);
-          }
-          this.events.push({
-            kind: "swing", x: a.x, y: a.y - 8, angle: a.ultAngle,
-            arc: Math.PI * 0.9, reach: radius, pattern: "arc", ultimate: true,
-            element: hero.player.attackElement,
-          });
-        }
-        break;
-      }
-
-      case "impact": {
-        if (a.ultPending > 0 && a.ultTick <= 0) {
-          a.ultTick += spec.tick;
-          a.ultPending--;
-          this.dropMeteor(hero, spec);
-        }
-        break;
-      }
-
-      case "totem":
-        break;
-    }
-
-    if (a.ultTimer <= 0) this.endUltimate(hero, spec.id);
-  }
-
-  private endUltimate(hero: Hero, id: UltimateId): void {
-    const a = hero.avatar;
-    const spec = ULTIMATES[id];
-    // A storm ends by throwing every blade it was holding.
-    if (spec.kind === "storm") this.launchBlades(hero, spec);
-    a.ultimate = null;
-    a.ultTimer = 0;
-    a.ultTick = 0;
-    a.ultPending = 0;
-    a.ultEmits = 0;
-    a.ultHits.clear();
-    a.vx = 0;
-    a.vy = 0;
-  }
-
-  /**
-   * Any `charge`-kind ultimate: it moves itself, runs through everything in the lane,
-   * and comes off the walls — and each bounce is a fresh pass, so the bodies it already
-   * ran through are fair game again on the way back. Shared by the Lancer's Comet
-   * Charge and every other class whose ultimate reuses this mechanism.
-   */
-  private stepCharge(hero: Hero, dt: number): void {
-    const a = hero.avatar;
-    const id = a.ultimate;
-    // The charge can end mid-tick (updateUltimate runs before this and may null it
-    // out) — `steered` was latched before that, so bail rather than read a dead spec.
-    if (!id) return;
-    const spec = ULTIMATES[id];
-    const r = a.radius;
-    const minX = r + WALL_PAD;
-    const maxX = this.width - r - WALL_PAD;
-    const minY = r + WALL_PAD;
-    const maxY = this.height - r - WALL_PAD;
-
-    let nx = a.x + a.vx * dt;
-    let ny = a.y + a.vy * dt;
-    let bounced = false;
-    if (nx < minX || nx > maxX || circleHitsWall(this.level, nx, a.y, r)) {
-      a.vx = -a.vx;
-      nx = a.x;
-      bounced = true;
-    }
-    if (ny < minY || ny > maxY || circleHitsWall(this.level, a.x, ny, r)) {
-      a.vy = -a.vy;
-      ny = a.y;
-      bounced = true;
-    }
-    a.x = clamp(nx, minX, maxX);
-    a.y = clamp(ny, minY, maxY);
-    const fixed = resolveCircle(this.level, a.x, a.y, r);
-    a.x = fixed.x;
-    a.y = fixed.y;
-    if (a.vx !== 0 || a.vy !== 0) a.facing = Math.atan2(a.vy, a.vx);
-
-    const reach = spec.radius * hero.player.areaMult;
-    for (const e of [...this.enemies]) {
-      if (e.state === "spawning" || e.health <= 0 || a.ultHits.has(e.id)) continue;
-      if (dist(a.x, a.y, e.x, e.y) > reach + e.radius) continue;
-      a.ultHits.add(e.id);
-      this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), a.facing, 240);
-    }
-
-    if (!bounced) return;
-    this.events.push({ kind: "boom", x: a.x, y: a.y, radius: reach, color: spec.color });
-    this.events.push({ kind: "shake", amount: 8 });
-    if (a.ultBounces <= 0) {
-      a.ultTimer = 0;
-      return;
-    }
-    a.ultBounces--;
-    a.ultHits.clear();
-  }
-
-  /** A ring of whatever your gear is made of, thrown out of a whirlwind. */
-  private whirlBurst(hero: Hero, spec: UltimateSpec): void {
-    const a = hero.avatar;
-    const p = hero.player;
-    const count = Math.max(1, spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles)));
-    const element = p.attackElement;
-    const color = ELEMENT_COLORS[element];
-    const base = a.ultAngle;
-    a.ultAngle += 0.7;
-    for (let i = 0; i < count; i++) {
-      const angle = base + (TAU / count) * i;
-      this.projectiles.push({
-        x: a.x, y: a.y, px: a.x, py: a.y, radius: 6,
-        vx: Math.cos(angle) * spec.speed, vy: Math.sin(angle) * spec.speed,
-        damage: this.ultimateDamage(hero, spec.damage * 1.7),
-        friendly: true, life: 1, color, element,
-        pierce: 1 + Math.max(0, Math.round(p.mods.pierce)),
-        hits: new Set(), ailment: this.ailmentChance(hero, 0.6), basic: false, owner: hero.index,
-      });
-    }
-  }
-
-  /** Everything the swordsman was holding leaves at once. */
-  private launchBlades(hero: Hero, spec: UltimateSpec): void {
-    const a = hero.avatar;
-    const p = hero.player;
-    const count = Math.max(1, spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles)));
-    const element = p.attackElement;
-    const color = ELEMENT_COLORS[element];
-    this.events.push({ kind: "nova", x: a.x, y: a.y, radius: spec.radius * p.areaMult });
-    for (let i = 0; i < count; i++) {
-      const angle = a.ultAngle + (TAU / count) * i;
-      this.projectiles.push({
-        x: a.x, y: a.y, px: a.x, py: a.y, radius: 6,
-        vx: Math.cos(angle) * spec.speed, vy: Math.sin(angle) * spec.speed,
-        damage: this.ultimateDamage(hero, spec.damage * 1.2),
-        friendly: true, life: 1.3, color, element,
-        pierce: 2 + Math.max(0, Math.round(p.mods.pierce)),
-        hits: new Set(), ailment: this.ailmentChance(hero, 0.4), basic: false, owner: hero.index,
-      });
-    }
-  }
-
-  /** One impact of a Cataclysm, telegraphed just long enough to be sporting. */
-  private dropMeteor(hero: Hero, spec: UltimateSpec): void {
-    const a = hero.avatar;
-    const p = hero.player;
-    const element = p.attackElement;
-    let x = a.x;
-    let y = a.y;
-    // It prefers to fall where the bodies are, but it will happily wreck an empty room.
-    const live = this.enemies.filter((e) => e.health > 0);
-    if (live.length > 0) {
-      const target = this.rng.pick(live);
-      x = target.x + this.rng.range(-64, 64);
-      y = target.y + this.rng.range(-64, 64);
-    } else {
-      const spot = randomOpenPoint(this.level, this.rng, { tries: 12 });
-      if (spot) {
-        x = spot.x;
-        y = spot.y;
-      }
-    }
-    this.addTelegraph({
-      shape: "circle",
-      x: clamp(x, 30, this.width - 30),
-      y: clamp(y, 30, this.height - 30),
-      angle: 0,
-      radius: spec.radius * p.areaMult,
-      inner: 0, arc: 0, width: 0,
-      total: 0.55,
-      damage: this.ultimateDamage(hero, spec.damage),
-      element,
-      color: ELEMENT_COLORS[element],
-      hitsPlayer: false,
-      hitsEnemies: true,
-      linger: 2.4,
-      followId: null,
-    });
+  /** Context handed to the keystone/hybrid/archetype rule interpreter. */
+  private ruleContext(hero: Hero): BuildRuleContext {
+    return {
+      rules: hero.player.build.rules,
+      hero,
+      emit: (ev) => this.events.push(ev),
+      shake: (amount) => this.events.push({ kind: "shake", amount }),
+    };
   }
 
   // --- totems -------------------------------------------------------------
@@ -2029,134 +1807,16 @@ export class Dungeon implements CombatHost {
 
   // --- skills -------------------------------------------------------------
 
-  /** True if the slot holds a skill that's off cooldown and affordable right now. */
+  /** True if the slot holds an ability that's off cooldown and affordable right now. */
   canCast(slot: number, hero: Hero = this.localHero): boolean {
-    const id = hero.player.activeSkills[slot];
-    if (!id) return false;
-    return (hero.skillCooldowns[slot] ?? 0) <= 0 && hero.player.mana >= SKILLS[id].manaCost;
-  }
-
-  private castSkill(hero: Hero, slot: number): void {
-    const id = hero.player.activeSkills[slot] ?? null;
-    if (!id) return;
-    const skill = SKILLS[id];
-    const a = hero.avatar;
-    const p = hero.player;
-
-    if ((hero.skillCooldowns[slot] ?? 0) > 0) return;
-    if (p.mana < skill.manaCost) {
-      this.events.push({
-        kind: "pickup", x: a.x, y: a.y - 20, label: "no mana", color: "#60a5fa",
-      });
-      return;
+    const base = hero.player.activeAbilities[slot];
+    if (!base) return false;
+    if (!hero.rt.ready(base)) return false;
+    for (const c of base.costs ?? []) {
+      const pool = hero.resources.get(c.resource);
+      if (!pool || !pool.canAfford(c.amount)) return false;
     }
-    p.spendMana(skill.manaCost);
-    // Spending mana is how a Magician earns its sky.
-    this.gainCharge(hero, this.chargeRules(hero).perManaSpent * (skill.manaCost / Math.max(1, p.maxMana)));
-    hero.skillCooldowns[slot] = skill.cooldown * p.cooldownMult;
-    const color = ELEMENT_COLORS[skill.element];
-    this.events.push({ kind: "cast", x: a.x, y: a.y - 34, label: skill.name, color });
-
-    const power = p.spellDamage * skill.damage;
-    const area = p.areaMult;
-    const ailment = this.ailmentChance(hero, skill.ailment);
-    const extraProjectiles = Math.max(0, Math.round(p.mods.projectiles));
-    const pierce = skill.pierce + Math.max(0, Math.round(p.mods.pierce));
-
-    switch (skill.shape) {
-      case "bolt": {
-        const count = Math.max(1, skill.count) + extraProjectiles;
-        for (let i = 0; i < count; i++) {
-          const offset = count === 1 ? 0 : (i - (count - 1) / 2) * 0.13;
-          const angle = a.facing + offset;
-          this.projectiles.push({
-            x: a.x, y: a.y, px: a.x, py: a.y, radius: skill.radius,
-            vx: Math.cos(angle) * skill.speed, vy: Math.sin(angle) * skill.speed,
-            damage: power, friendly: true, life: 1.8, color,
-            element: skill.element, pierce, hits: new Set(), ailment, basic: false, owner: hero.index,
-          });
-        }
-        break;
-      }
-      case "cone": {
-        // A spray: the spread is wide enough that the edges miss a single target, so
-        // it's a crowd tool rather than a bigger bolt.
-        const spread = 0.95;
-        const count = skill.count + extraProjectiles;
-        for (let i = 0; i < count; i++) {
-          const t = count === 1 ? 0.5 : i / (count - 1);
-          const angle = a.facing - spread / 2 + spread * t;
-          this.projectiles.push({
-            x: a.x, y: a.y, px: a.x, py: a.y, radius: skill.radius,
-            vx: Math.cos(angle) * skill.speed * this.rng.range(0.85, 1.15),
-            vy: Math.sin(angle) * skill.speed * this.rng.range(0.85, 1.15),
-            damage: power, friendly: true, life: 0.75, color,
-            element: skill.element, pierce, hits: new Set(), ailment, basic: false, owner: hero.index,
-          });
-        }
-        break;
-      }
-      case "nova": {
-        this.novaAt(hero, a.x, a.y, skill.radius * area, power, skill.element, ailment, color);
-        break;
-      }
-      case "slam": {
-        // You go where you were pointing, and the floor objects when you land.
-        const landing = this.leapTo(hero, a.facing, skill.offset);
-        this.novaAt(hero, landing.x, landing.y, skill.radius * area, power, skill.element, ailment, color);
-        this.events.push({ kind: "shake", amount: 9 });
-        break;
-      }
-      case "chain": {
-        this.chainFrom(hero, a.x, a.y, skill.count, skill.radius, power, skill.element, ailment, color);
-        break;
-      }
-      case "ward": {
-        const pool = (p.maxHealth * 0.35 + p.spellDamage * 2) * (1 + p.mods.wardPower);
-        hero.ward = pool;
-        hero.wardTimer = skill.duration;
-        this.events.push({ kind: "nova", x: a.x, y: a.y, radius: 60 });
-        break;
-      }
-      case "buff": {
-        a.buffTimer = skill.duration;
-        a.buffAttackSpeed = skill.buffAttackSpeed;
-        a.buffLifeOnHit = skill.buffLifeOnHit;
-        this.events.push({ kind: "nova", x: a.x, y: a.y, radius: 54 });
-        break;
-      }
-      case "totem": {
-        const count = Math.max(1, skill.count);
-        for (let i = 0; i < count; i++) {
-          const angle = a.facing + (i - (count - 1) / 2) * 0.8;
-          this.plantTotem(hero, a.x + Math.cos(angle) * 34, a.y + Math.sin(angle) * 34, {
-            damage: power,
-            duration: skill.duration,
-            interval: TOTEM_PULSE,
-            range: skill.radius * area,
-            targets: TOTEM_TARGETS,
-            element: skill.element,
-            ailment,
-          });
-        }
-        break;
-      }
-    }
-  }
-
-  /** A circular burst centred anywhere. Novas, slams and ultimates all land through it. */
-  private novaAt(
-    hero: Hero,
-    x: number, y: number, radius: number, power: number,
-    element: Element, ailment: number, color: string,
-  ): void {
-    this.events.push({ kind: "nova", x, y, radius });
-    this.events.push({ kind: "boom", x, y, radius, color });
-    for (const e of [...this.enemies]) {
-      if (e.state === "spawning" || e.health <= 0) continue;
-      if (dist(x, y, e.x, e.y) > radius + e.radius) continue;
-      this.damageEnemy(e, power, Math.atan2(e.y - y, e.x - x), element, { ailment, source: hero });
-    }
+    return true;
   }
 
   /**
@@ -2237,10 +1897,12 @@ export class Dungeon implements CombatHost {
       crit?: boolean; ailment?: number; knock?: number; raw?: boolean;
       /** Who gets the kill, the charge and the on-kill triggers. */
       source?: Hero | null;
+      /** The hit that caused this was ultimate-sourced — no meter credit for the kill. */
+      fromUltimate?: boolean;
     } = {},
   ): number {
     if (e.health <= 0) return 0;
-    const amplified = amount * amplifyFrom(e.statuses);
+    const amplified = amount * e.sc.incomingDamageMultiplier();
     const mitigated = opts.raw ? amount : mitigateWithResists(amplified, element, e.resists);
     const dealt = Math.max(1, Math.round(mitigated));
     e.health -= dealt;
@@ -2257,17 +1919,26 @@ export class Dungeon implements CombatHost {
     // Anything with no obvious author — a hazard, an ailment tick — is credited to
     // whoever is standing closest, which in a solo dive is always the only hero there.
     const source = opts.source ?? this.nearestHero(e.x, e.y);
+    if (opts.source) {
+      this.bus.emit({
+        type: opts.crit ? "criticalHit" : "hit",
+        actorId: source.index,
+        targetId: Dungeon.ENEMY_ID_BASE + e.id,
+        x: e.x, y: e.y,
+      });
+    }
     const ailment = STATUS_FOR_ELEMENT[element];
     if (ailment && opts.ailment && this.rng.chance(opts.ailment)) {
-      applyStatus(e.statuses, ailment, dealt, this.ailmentPotency(source));
-      // Spreading rot is how a Shaman earns its totems.
-      this.gainCharge(source, this.chargeRules(source).perAilment);
+      e.sc.apply(ailment, {
+        hitDamage: dealt, potency: this.ailmentPotency(source),
+        sourceActorId: source.index, chance: 1, roll: () => this.rng.next(),
+      });
     }
-    if (e.health <= 0) this.killEnemy(e, source);
+    if (e.health <= 0) this.killEnemy(e, source, opts.fromUltimate ?? false);
     return dealt;
   }
 
-  private killEnemy(e: Enemy, source: Hero): void {
+  private killEnemy(e: Enemy, source: Hero, fromUltimate = false): void {
     const idx = this.enemies.indexOf(e);
     if (idx >= 0) this.enemies.splice(idx, 1);
 
@@ -2289,8 +1960,19 @@ export class Dungeon implements CombatHost {
 
     source.loot.kills++;
     if (source.local) this.state.stats.enemiesKilled++;
-    // Bosses and elites fill the bar faster so big fights aren't a charge drought.
-    this.gainCharge(source, this.chargeRules(source).perKill * (e.boss ? 6 : e.elite ? 3 : 1));
+    // Kill / death events for granted effects and gear triggers. The killing blow's own
+    // contribution to the meter is credited by `creditResourcesForHit` at the hit that
+    // landed it (so THE ULTIMATE RULE holds); this adds the "an elite is worth several
+    // ordinary kills" bonus the legacy charge economy had — never from an ultimate kill.
+    this.bus.emit({ type: "kill", actorId: source.index, x: e.x, y: e.y });
+    this.bus.emit({ type: "enemyDeath", actorId: Dungeon.ENEMY_ID_BASE + e.id, x: e.x, y: e.y });
+    if (!fromUltimate) {
+      const bonus = e.boss ? 5 : e.elite ? 2 : 0;
+      for (let n = 0; n < bonus; n++) {
+        source.resources.broadcast({ type: "kill" });
+        source.resources.broadcast({ type: "enemyDeath" });
+      }
+    }
     this.fireTriggers(source, "onKill", e.x, e.y);
     source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
@@ -2453,11 +2135,13 @@ export class Dungeon implements CombatHost {
       e.py = e.y;
       e.hitFlash = Math.max(0, e.hitFlash - dt);
 
-      tickStatuses(e.statuses, dt, (damage, element) => {
-        this.damageEnemy(e, damage, this.rng.angle(), element, { raw: true, knock: 0 });
-      });
       e.sc.tick(dt, { onDamage: (p) => this.dealDamage(Dungeon.ENEMY_ID_BASE + e.id, p) });
       if (e.health <= 0) continue;
+      if (e.sc.disables().move && e.sc.disables().attack) {
+        // Frozen / stunned: it stands there and takes it until the CC runs out.
+        e.px = e.x; e.py = e.y;
+        continue;
+      }
 
       if (e.state === "spawning") {
         e.spawnTimer -= dt;
@@ -2500,8 +2184,10 @@ export class Dungeon implements CombatHost {
 
       e.trapCooldown = Math.max(0, e.trapCooldown - dt);
 
+      if (e.sc.disables().move) move = false;
+
       if (move) {
-        const speed = e.speed * this.mireSlowAt(e.x, e.y) * slowFrom(e.statuses);
+        const speed = e.speed * this.mireSlowAt(e.x, e.y) * e.sc.slowMultiplier();
         // With a clear line, charge straight in; otherwise follow the route around.
         let dir = normalize(Math.cos(moveAngle), Math.sin(moveAngle));
         if (!hasLos || e.stuckTimer > 0.18) {
@@ -2646,20 +2332,26 @@ export class Dungeon implements CombatHost {
       if (hero.ward <= 0) hero.wardTimer = 0;
     }
 
+    const prevented = Math.round(amount) - Math.round(incoming);
     const dealt = Math.round(incoming);
     if (dealt > 0) {
       p.health = Math.max(0, p.health - dealt);
       a.hitFlash = 0.25;
-      // Getting hurt is a Berserker's resource, and armour with spikes on it answers back.
-      this.gainCharge(hero, this.chargeRules(hero).perHealthLost * (dealt / Math.max(1, p.maxHealth)));
       this.retaliate(hero);
       this.events.push({ kind: "damage", x: a.x, y: a.y - 14, amount: dealt, crit: false, onPlayer: true, element });
       this.events.push({ kind: "shake", amount: clamp(dealt / 8, 2, 12) });
     }
 
+    // Getting hurt — and stopping a hit — is how several classes fill their meter
+    // (Berserker's Rage, Paladin's Conviction, the Juggernaut).
+    const evtBase = { maxHealth: p.maxHealth };
+    hero.resources.broadcast({ type: "hitTaken", damage: dealt, ...evtBase });
+    if (dealt > 0) hero.resources.broadcast({ type: "damageTaken", damage: dealt, ...evtBase });
+    if (prevented > 0) hero.resources.broadcast({ type: "damagePrevented", damage: prevented, ...evtBase });
+
     const kind = STATUS_FOR_ELEMENT[element];
     if (kind && ailment > 0 && this.rng.chance(ailment)) {
-      applyStatus(hero.statuses, kind, Math.max(1, dealt));
+      hero.sc.apply(kind, { hitDamage: Math.max(1, dealt), sourceActorId: -1, chance: 1, roll: () => this.rng.next() });
     }
 
     if (!p.isAlive) this.downHero(hero);
@@ -2675,7 +2367,6 @@ export class Dungeon implements CombatHost {
     if (hero.downed) return;
     hero.downed = true;
     hero.reviveProgress = 0;
-    hero.avatar.ultimate = null;
     hero.avatar.vx = 0;
     hero.avatar.vy = 0;
     // Ailments are cleared when they get back up, not here — an ailment tick is often
@@ -3050,8 +2741,15 @@ export class Dungeon implements CombatHost {
         knock: packet.knockback,
         raw: packet.raw,
         source,
+        fromUltimate: isUltimateSourced(packet),
       });
       this.applyInflict(enemy.sc, packet);
+      if (source) {
+        creditResourcesForHit(this.heroHost(source), packet, dealt, {
+          killed: enemy.health <= 0,
+          ailmentInflicted: !!packet.inflict,
+        });
+      }
       return dealt;
     }
     const minion = this.minionByHostId(targetId);
@@ -3093,10 +2791,17 @@ export class Dungeon implements CombatHost {
     const hero = this.heroByHostId(id);
     if (!hero) return;
     const a = hero.avatar;
-    const angle = req.toPoint
-      ? Math.atan2(req.toPoint.y - a.y, req.toPoint.x - a.x)
+    let toPoint = req.toPoint;
+    if (!toPoint && req.toActorId !== undefined) {
+      const t = this.enemyByHostId(req.toActorId) ?? this.minionByHostId(req.toActorId);
+      if (t) toPoint = { x: t.x, y: t.y };
+    }
+    const angle = toPoint
+      ? Math.atan2(toPoint.y - a.y, toPoint.x - a.x)
       : a.facing;
-    const reach = req.distance ?? dist(a.x, a.y, req.toPoint?.x ?? a.x, req.toPoint?.y ?? a.y);
+    const reach = toPoint
+      ? Math.max(0, dist(a.x, a.y, toPoint.x, toPoint.y) - (a.radius + 10))
+      : req.distance ?? 120;
     const landing = this.leapTo(hero, angle, reach);
     a.x = landing.x;
     a.y = landing.y;
@@ -3292,9 +2997,7 @@ function makeAvatar(x: number, y: number): Avatar {
     vx: 0, vy: 0, facing: -Math.PI / 2,
     attackTimer: 0, swingTimer: 0, swingAngle: 0,
     dashTimer: 0, dashCooldown: 0, invulnTimer: 0, dashInvuln: 0, hitFlash: 0,
-    ultimate: null, ultTimer: 0, ultTotal: 0, ultTick: 0, ultBounces: 0,
-    ultAngle: 0, ultHits: new Set(), ultPending: 0, ultEmits: 0,
-    buffTimer: 0, buffAttackSpeed: 0, buffLifeOnHit: 0,
+    buffAttackSpeed: 0, buffLifeOnHit: 0,
   };
 }
 
@@ -3303,4 +3006,3 @@ function cap(s: string): string {
 }
 
 export { TAU };
-export type { SkillId };

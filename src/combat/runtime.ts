@@ -64,7 +64,7 @@ export interface PendingEffect {
   ctx: EffectContext;
 }
 
-interface EffectContext {
+export interface EffectContext {
   ability: Ability;
   casterId: number;
   targets: TargetResult;

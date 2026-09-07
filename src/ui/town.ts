@@ -25,18 +25,22 @@ import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, modLine, type ModKey } from "../data/mods";
-import { ULTIMATES } from "../data/ultimates";
 import { WEAPONS } from "../data/weapons";
-import {
-  TREE_BRANCH_COUNT, TREE_BRANCH_DEPTH, branchBlurb, branchName, treeNode,
-} from "../data/tree";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
 import {
   ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
   REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
 } from "../data/settings";
-import { SKILLS, SKILL_SLOTS, type SkillId } from "../data/skills";
-import { ALL_CLASSES, classMatrixRow, pathKeystones } from "../progression/index";
+import { SKILL_SLOTS } from "../game/player";
+import {
+  ALL_CLASSES, CLASS_BY_ID, classMatrixRow, pathKeystones,
+  type PilotClass, type TreeNodeV2,
+} from "../progression/index";
+import type { Ability } from "../combat/ability";
+
+/** Tree shape after the class refactor: five behaviour paths, five rows deep. */
+const TREE_PATH_COUNT = 5;
+const TREE_PATH_DEPTH = 5;
 import { cleanPlayerName } from "../data/settings";
 import type { Party } from "../net/party";
 import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
@@ -377,7 +381,7 @@ export class TownUI {
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length;
       case "Skills": return SKILL_SLOTS;
-      case "Tree": return TREE_BRANCH_DEPTH;
+      case "Tree": return TREE_PATH_DEPTH;
       case "Path": return CLASS_IDS.length;
       case "Style": return STYLE_ROWS.length;
       case "Capsules": return CAPSULE_TIERS.length;
@@ -434,7 +438,7 @@ export class TownUI {
       return true;
     }
     if (this.tab === "Tree") {
-      this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_BRANCH_COUNT - 1);
+      this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_PATH_COUNT - 1);
       return true;
     }
     if (this.tab === "Settings") {
@@ -460,9 +464,9 @@ export class TownUI {
     return false;
   }
 
-  /** Cycles the skill in a slot through everything unlocked, plus empty. */
+  /** Cycles the ability in a slot through everything unlocked, plus empty. */
   private cycleSkill(slot: number, dir: number): void {
-    const options: (SkillId | null)[] = [null, ...this.state.player.unlocked];
+    const options: (string | null)[] = [null, ...this.state.player.unlockedAbilities.map((a) => a.id)];
     const current = this.state.player.skills[slot] ?? null;
     const i = options.indexOf(current);
     const next = options[(i + dir + options.length) % options.length] ?? null;
@@ -682,7 +686,7 @@ export class TownUI {
         break;
       }
       case "Tree": {
-        const node = treeNode(this.state.player.classId, this.treeBranch, this.cursor);
+        const node = treeNodeAt(this.state.player.tree, this.treeBranch, this.cursor);
         if (!node) break;
         if (this.state.player.allocated.includes(node.id)) {
           this.notify("Already yours. Points don't come back one at a time.", "#9aa4b2");
@@ -1566,9 +1570,11 @@ export class TownUI {
           ${affine ? `<br><em>Your class was built for this.</em>` : "<br><em>Not your class's weapon; it hits a little softer.</em>"}</p>`
       : "";
 
-    const grant = item.grant
-      ? `<p style="color:#7dd3fc">Grants <b>${escapeHtml(SKILLS[item.grant].name)}</b>
-         — an extra skill on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}] while this is equipped.</p>`
+    const grantAbility = item.grant ? CLASS_BY_ID[item.grant.split(".")[0]!]?.abilities.find((a) => a.id === item.grant)
+      ?? ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === item.grant) : undefined;
+    const grant = grantAbility
+      ? `<p style="color:#7dd3fc">Grants <b>${escapeHtml(grantAbility.name)}</b>
+         — an extra ability on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}] while this is equipped.</p>`
       : "";
     const trigger = item.trigger
       ? `<p style="color:${ELEMENT_COLORS[item.trigger.element]}">${escapeHtml(triggerLine(item.trigger))}</p>`
@@ -1631,8 +1637,8 @@ export class TownUI {
       .join("");
 
     const weapon = p.weapon;
-    const ult = p.ultimate;
-    const granted = p.grantedSkill;
+    const ult = p.ultimateAbility;
+    const granted = p.grantedAbilityId ? p.abilityById(p.grantedAbilityId) : undefined;
 
     return `<div class="list">${rows}</div>
       <aside class="side">
@@ -1648,11 +1654,11 @@ export class TownUI {
         <p class="muted">${Math.round(p.attackDamage)} per hit${weapon.hits > 1 ? ` × ${weapon.hits}` : ""}
         ${p.hasAffinity ? ` · +${Math.round(cls.affinityBonus * 100)}% class affinity` : ""}</p>
         <h3>Ultimate</h3>
-        <p style="color:${ult.color}"><b>${escapeHtml(ult.name)}</b>
+        <p style="color:${cls.color}"><b>${escapeHtml(ult?.name ?? "—")}</b>
           <span class="muted">[${keyLabel(this.state.settings.keybinds.special ?? DEFAULT_KEYBINDS.special)}]</span></p>
-        <p class="muted">${escapeHtml(ult.blurb)}</p>
+        <p class="muted">${escapeHtml(ult?.description ?? "")}</p>
         ${granted ? `<h3>Granted by your gear</h3>
-          <p style="color:#7dd3fc">${escapeHtml(SKILLS[granted].name)}
+          <p style="color:#7dd3fc">${escapeHtml(granted.name)}
           <span class="muted">on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}]</span></p>` : ""}
         <h3>On your hits</h3>
         <p>${elementalLine}</p>
@@ -1668,56 +1674,52 @@ export class TownUI {
    */
   private renderSkills(): string {
     const p = this.state.player;
+    const cls = p.heroClass;
+    const byId = (id: string | null): Ability | undefined => (id ? p.abilityById(id) : undefined);
     const rows = Array.from({ length: SKILL_SLOTS }, (_, i) => {
-      const id = p.skills[i] ?? null;
-      const skill = id ? SKILLS[id] : null;
+      const ab = byId(p.skills[i] ?? null);
       return `
         <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
           <div class="row-main">
             <span class="slot">[${this.skillKeyLabels[i] ?? i + 1}]</span>
-            <span class="name" style="color:${skill ? ELEMENT_COLORS[skill.element] : "#5a6270"}">
-              ${skill ? escapeHtml(skill.name) : "— empty —"}</span>
+            <span class="name" style="color:${ab ? cls.color : "#5a6270"}">
+              ${ab ? escapeHtml(ab.name) : "— empty —"}</span>
           </div>
-          <div class="row-side">${skill
-            ? `${skill.manaCost} mana · ${(skill.cooldown * p.cooldownMult).toFixed(1)}s · ${ELEMENT_LABELS[skill.element]}`
-            : "A / D to pick one"}</div>
+          <div class="row-side">${ab ? abilityCostLine(ab, p) : "A / D to pick one"}</div>
         </div>`;
     }).join("");
 
     // The fourth slot isn't yours to choose — it's whatever your gear is handing you.
-    const granted = p.grantedSkill;
+    const granted = byId(p.grantedAbilityId);
     const grantedRow = granted
       ? `<div class="row">
           <div class="row-main">
             <span class="slot">[${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}]</span>
-            <span class="name" style="color:${ELEMENT_COLORS[SKILLS[granted].element]}">
-              ${escapeHtml(SKILLS[granted].name)}</span>
+            <span class="name" style="color:${cls.color}">${escapeHtml(granted.name)}</span>
             <span class="badge">from your gear</span>
           </div>
-          <div class="row-side">${SKILLS[granted].manaCost} mana · granted, not chosen</div>
+          <div class="row-side">${abilityCostLine(granted, p)} · granted, not chosen</div>
         </div>`
       : "";
 
-    const selId = p.skills[this.cursor] ?? null;
-    const sel = selId ? SKILLS[selId] : null;
-    const known = p.skillPool.map((id) => {
-      const skill = SKILLS[id];
-      const have = p.unlocked.includes(id);
-      const equipped = p.skills.includes(id);
-      return `<li style="color:${have ? ELEMENT_COLORS[skill.element] : "#4a515e"}">
-        ${escapeHtml(skill.name)} ${equipped ? "<em>equipped</em>" : have ? "" : `<em>lv ${skill.unlockLevel}</em>`}</li>`;
+    const sel = byId(p.skills[this.cursor] ?? null);
+    const known = p.abilityPool.map((a) => {
+      const lv = p.abilityUnlockLevel(a);
+      const have = lv <= p.level;
+      const equipped = p.skills.includes(a.id);
+      return `<li style="color:${have ? cls.color : "#4a515e"}">
+        ${escapeHtml(a.name)} ${equipped ? "<em>equipped</em>" : have ? "" : `<em>lv ${lv}</em>`}</li>`;
     }).join("");
 
     return `<div class="list">${rows}${grantedRow}</div>
       <aside class="side">
         ${sel ? `
-          <h3 style="color:${ELEMENT_COLORS[sel.element]}">${escapeHtml(sel.name)}</h3>
-          <p>${escapeHtml(sel.blurb)}</p>
+          <h3 style="color:${cls.color}">${escapeHtml(sel.name)}</h3>
+          <p>${escapeHtml(sel.description)}</p>
           <table class="cmp">
-            <tr><td>Element</td><td>${ELEMENT_LABELS[sel.element]}</td></tr>
-            <tr><td>Mana</td><td>${sel.manaCost}</td></tr>
+            <tr><td>Type</td><td>${escapeHtml(sel.category)}</td></tr>
+            <tr><td>Cost</td><td>${abilityCostLine(sel, p)}</td></tr>
             <tr><td>Cooldown</td><td>${(sel.cooldown * p.cooldownMult).toFixed(1)}s</td></tr>
-            ${sel.damage > 0 ? `<tr><td>Damage</td><td>${Math.round(p.spellDamage * sel.damage)}${sel.count > 1 ? ` × ${sel.count}` : ""}</td></tr>` : ""}
           </table>`
         : `<h3>Empty slot</h3><p class="muted">Press ${k(this.state.settings, "left")} or
           ${k(this.state.settings, "right")} to put something in it.</p>`}
@@ -1726,10 +1728,10 @@ export class TownUI {
           <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span>
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · clear slot</span>
         </p>
-        <h3>${escapeHtml(p.heroClass.name)} skills</h3>
+        <h3>${escapeHtml(cls.name)} abilities</h3>
         <ul class="pulls">${known}</ul>
-        <p class="muted">Your class decides what you can learn. Everything else on this
-        screen is your problem.</p>
+        <p class="muted">Nine abilities, unlocked by levelling. Pick three; the fourth is
+        whatever your gear grants.</p>
       </aside>`;
   }
 
@@ -1740,56 +1742,61 @@ export class TownUI {
   private renderTree(): string {
     const p = this.state.player;
     const cls = p.heroClass;
+    const def = p.pilotClass;
+    const tree = p.tree;
+    const build = p.build;
     const columns: string[] = [];
 
-    for (let b = 0; b < TREE_BRANCH_COUNT; b++) {
+    for (let b = 0; b < TREE_PATH_COUNT; b++) {
+      const pathName = def?.progression.paths[b]?.name ?? `Path ${b + 1}`;
       const nodes: string[] = [];
-      for (let row = 0; row < TREE_BRANCH_DEPTH; row++) {
-        const node = treeNode(p.classId, b, row);
+      for (let row = 0; row < TREE_PATH_DEPTH; row++) {
+        const node = treeNodeAt(tree, b, row);
         if (!node) continue;
         const taken = p.allocated.includes(node.id);
         const open = p.canAllocate(node);
         const here = b === this.treeBranch && row === this.cursor;
         const state = taken ? "taken" : open ? "open" : "locked";
         nodes.push(`
-          <div class="tree-node ${state} ${node.keystone ? "keystone" : ""} ${here ? "on" : ""}"
+          <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${here ? "on" : ""}"
                style="--accent:${cls.color}">
             <span class="tree-name">${escapeHtml(node.name)}</span>
-            <span class="tree-mods">${escapeHtml(nodeSummary(node.mods))}</span>
+            <span class="tree-mods">${escapeHtml(nodeEffectSummary(node))}</span>
           </div>`);
       }
       columns.push(`
         <div class="tree-col ${b === this.treeBranch ? "on" : ""}">
-          <h4>${escapeHtml(branchName(p.classId, b))}</h4>
+          <h4>${escapeHtml(pathName)}</h4>
           ${nodes.join("")}
         </div>`);
     }
 
-    const sel = treeNode(p.classId, this.treeBranch, this.cursor);
-    const taken = sel ? p.allocated.includes(sel.id) : false;
-    const totalTaken = p.allocated.length;
+    const sel = treeNodeAt(tree, this.treeBranch, this.cursor);
+    const selTaken = sel ? p.allocated.includes(sel.id) : false;
+    const path = def?.progression.paths[this.treeBranch];
+
+    const hybridBadges = build.hybrids.map((h) =>
+      `<span class="badge on" style="color:${cls.color};border-color:${cls.color}">${escapeHtml(h.ui?.badge ?? h.name)}</span>`).join(" ");
+    const archBadges = build.archetypes.map((a) =>
+      `<span class="badge on" style="color:#ff1493;border-color:#ff1493">${escapeHtml(a.ui?.badge ?? a.name)}</span>`).join(" ");
 
     return `<div class="list"><div class="tree">${columns.join("")}</div></div>
       <aside class="side">
         <h3 style="color:${cls.color}">${escapeHtml(cls.name)} · ${p.treePoints} points</h3>
-        <p class="muted">${totalTaken} nodes taken. One point a level, two on every fifth.</p>
+        <p class="muted">${p.allocated.length} nodes lit. One point a level, two on every fifth.
+        The tree deals in behaviours, not stat sticks.</p>
+        ${hybridBadges || archBadges ? `<p>Unlocked: ${archBadges} ${hybridBadges}</p>` : ""}
         ${sel ? `
-          <h3>${escapeHtml(sel.name)}${sel.keystone ? " <em>keystone</em>" : ""}</h3>
+          <h3>${escapeHtml(sel.name)} <em>${escapeHtml(sel.category)}${sel.cost > 1 ? " · 2 pts" : ""}</em></h3>
           <p>${escapeHtml(sel.blurb)}</p>
-          <table class="cmp">
-            ${Object.entries(sel.mods).map(([k, v]) =>
-              `<tr><td>${escapeHtml(shortLabel(k as ModKey))}</td>
-                <td class="up">${escapeHtml(modLine(k as ModKey, v as number))}</td></tr>`).join("")}
-            <tr><td>Cost</td><td>${sel.cost} point${sel.cost > 1 ? "s" : ""}</td></tr>
-          </table>
-          <p class="${taken ? "up" : p.canAllocate(sel) ? "" : "muted"}">
-            ${taken ? "Taken."
+          <p class="muted">${escapeHtml(nodeEffectSummary(sel))}</p>
+          <p class="${selTaken ? "up" : p.canAllocate(sel) ? "" : "muted"}">
+            ${selTaken ? "Lit."
               : p.canAllocate(sel) ? `Press ${k(this.state.settings, "confirm")} to take it.`
               : sel.requires && !p.allocated.includes(sel.requires) ? "Take the one above it first."
               : `Needs ${sel.cost} point${sel.cost > 1 ? "s" : ""}. Go and earn ${sel.cost > 1 ? "them" : "one"}.`}</p>
         ` : ""}
-        <h3>${escapeHtml(branchName(p.classId, this.treeBranch))}</h3>
-        <p class="muted">${escapeHtml(branchBlurb(p.classId, this.treeBranch))}</p>
+        ${path ? `<h3>${escapeHtml(path.name)}</h3><p class="muted">${escapeHtml(path.blurb)}</p>` : ""}
         <p class="muted">
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund the whole tree</span>
           free, any time. Nobody is going to charge you for changing your mind.</p>
@@ -1827,12 +1834,13 @@ export class TownUI {
     const sel = CLASSES[selId];
     const selChar = this.state.players[selId];
     const isCurrent = this.state.classChosen && selId === this.state.activeClassId;
-    const ult = ULTIMATES[sel.ultimate];
+    const def = CLASS_BY_ID[selId];
+    const ult = def?.abilities.find((a) => a.isUltimate);
     const weapons = sel.affinity.map((f) => WEAPONS[f].name).join(", ");
-    const skills = sel.skills.map((id) =>
-      `<li style="color:${ELEMENT_COLORS[SKILLS[id].element]}">${escapeHtml(SKILLS[id].name)}
-        <em>lv ${SKILLS[id].unlockLevel}</em></li>`).join("");
-    const charge = chargeSummary(sel.charge);
+    const skills = (def?.abilities.filter((a) => !a.isUltimate) ?? [])
+      .map((a) => `<li style="color:${sel.color}">${escapeHtml(a.name)}
+        <em>lv ${selChar.abilityUnlockLevel(a)}</em></li>`).join("");
+    const charge = def ? meterFillSummary(def) : "fighting";
     const equippedCount = (Object.values(selChar.equipment) as (Item | null)[]).filter(Boolean).length;
 
     return `<div class="carousel">
@@ -1850,9 +1858,9 @@ export class TownUI {
           <tr><td>Tree points spent</td><td>${selChar.allocated.length}</td></tr>
           <tr><td>Gear equipped</td><td>${equippedCount} / ${EQUIP_SLOTS.length}</td></tr>
         </table>
-        <h3 style="color:${ult.color}">${escapeHtml(ult.name)}</h3>
-        <p>${escapeHtml(ult.blurb)}</p>
-        <p class="muted">Charges by ${escapeHtml(charge)}.</p>
+        <h3 style="color:${sel.color}">${escapeHtml(ult?.name ?? "—")}</h3>
+        <p>${escapeHtml(ult?.description ?? "")}</p>
+        <p class="muted">Charges by ${escapeHtml(charge)}. ${escapeHtml(def?.question ?? "")}</p>
         <h3>Built for</h3>
         <p>${escapeHtml(weapons)} <span class="muted">· +${Math.round(sel.affinityBonus * 100)}% damage,
         and anything else hits a little softer</span></p>
@@ -2289,17 +2297,49 @@ function nodeSummary(mods: Record<string, number | undefined>): string {
     .join(", ");
 }
 
-/** Plain English for how a class fills its ultimate meter. */
-function chargeSummary(charge: {
-  perKill: number; perHealthLost: number; perManaSpent: number;
-  perCrit: number; perAilment: number;
-}): string {
-  const parts: string[] = ["kills"];
-  if (charge.perHealthLost > 0) parts.push("getting hurt");
-  if (charge.perManaSpent > 0) parts.push("spending mana");
-  if (charge.perCrit > 0) parts.push("critical hits");
-  if (charge.perAilment > 0) parts.push("inflicting ailments");
-  return parts.join(" and ");
+/** "12 Rage · 4s" style cost readout for an ability. */
+function abilityCostLine(a: Ability, p: { cooldownMult: number }): string {
+  const costs = (a.costs ?? []).map((c) => `${Math.round(c.amount)} ${c.resource}`);
+  const cd = a.cooldown > 0 ? `${(a.cooldown * p.cooldownMult).toFixed(1)}s` : "no cd";
+  return [...costs, cd].join(" · ");
+}
+
+/** The v2 node at a path/row, or null. */
+function treeNodeAt(tree: readonly TreeNodeV2[], path: number, row: number): TreeNodeV2 | null {
+  return tree.find((n) => n.path === path && n.row === row) ?? null;
+}
+
+/** A short readout of a behaviour node — its stat line if it has one, else its role. */
+function nodeEffectSummary(node: TreeNodeV2): string {
+  for (const eff of node.effects) {
+    if (eff.kind === "mods") return nodeSummary(eff.mods);
+  }
+  const label: Record<TreeNodeV2["category"], string> = {
+    foundation: "path foundation",
+    behavior: "changes how it plays",
+    resource: "resource rule",
+    mutation: "rewrites an ability",
+    keystone: "build rule",
+  };
+  return label[node.category];
+}
+
+/** Plain English for how a class fills its ultimate meter, read off its generation rules. */
+function meterFillSummary(def: PilotClass): string {
+  const meter = def.resources.find((r) => r.isUltimateMeter);
+  const on = new Set((meter?.generation ?? []).map((g) => g.on));
+  const parts: string[] = [];
+  if (on.has("kill") || on.has("enemyDeath")) parts.push("kills");
+  if (on.has("damageTaken") || on.has("hitTaken")) parts.push("taking hits");
+  if (on.has("damagePrevented") || on.has("block")) parts.push("preventing damage");
+  if (on.has("crit")) parts.push("critical hits");
+  if (on.has("ailmentInflicted")) parts.push("inflicting ailments");
+  if (on.has("move") || on.has("dashStart")) parts.push("covering ground");
+  if (on.has("hitDealt") || on.has("damageDealt")) parts.push("landing hits");
+  if (on.has("skillUse")) parts.push("casting");
+  if (on.has("resourceSpent") || on.has("manaSpent")) parts.push("spending your resource");
+  if (on.has("corpseCreated")) parts.push("leaving corpses");
+  return parts.length ? parts.join(" and ") : "fighting";
 }
 
 function escapeHtml(s: string): string {

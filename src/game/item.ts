@@ -11,7 +11,7 @@ import {
 } from "../data/mods";
 import type { Rarity } from "../data/rarity";
 import { RARITY_MULTIPLIERS, RARITY_VALUE, rarityIndex } from "../data/rarity";
-import { SKILL_IDS, type SkillId } from "../data/skills";
+import { GRANTABLE_ABILITY_IDS } from "../progression/index";
 import { WEAPON_FAMILIES, type WeaponFamily } from "../data/weapons";
 
 export type Stats = Record<StatKey, number>;
@@ -46,8 +46,8 @@ export interface Item {
   readonly stats: Stats;
   /** Rolled affixes. Rarity decides how many, and which are even possible. */
   readonly mods: readonly ItemMod[];
-  /** An extra castable skill, granted while this is equipped. Epic and up. */
-  readonly grant: SkillId | null;
+  /** An extra castable ability (its id), granted while this is equipped. Epic and up. */
+  readonly grant: string | null;
   /** Something that goes off on its own. Legendary and up. */
   readonly trigger: TriggerSpec | null;
   readonly value: number;
@@ -175,11 +175,11 @@ function rollMods(
 }
 
 /** Weapons, rings and necklaces can carry a whole extra skill from epic upward. */
-function rollGrant(type: ItemType, tier: number, rng: Rng): SkillId | null {
+function rollGrant(type: ItemType, tier: number, rng: Rng): string | null {
   const eligible = isWeaponType(type) || type === "ring" || type === "necklace";
   if (!eligible) return null;
   if (!rng.chance(grantChance(tier))) return null;
-  return rng.pick(SKILL_IDS as readonly SkillId[]);
+  return rng.pick(GRANTABLE_ABILITY_IDS as readonly string[]);
 }
 
 /** From legendary upward an item can do something on its own, without a key press. */

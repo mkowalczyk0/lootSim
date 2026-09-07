@@ -135,15 +135,27 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >    nothing spawns a minion until Stage 6, co-op with minions can't happen before then).
 >    **Noted for Stage 11 / raid:** enemies do not yet retarget onto minions in melee —
 >    that is threat-system work, already on the raid-hazard list.
-> 5. `Player` resolves a v2 build (below, "Stage 3")
-> 6. Skill + ultimate + **basic-attack** execution onto `Ability` (below, "Stage 4"
->    plus C4: weapon families become abilities, `playerAttack` routes through
->    `AbilityRuntime`, leech/thorns/crit/triggers onto the `EventBus`)
-> 7. Town: class select, Path, Tree, Skills (below, "Stage 5")
-> 8. Save migration `SAVE_VERSION` 13 → 14 (below, "Stage 6"; elements bump already took 13)
-> 9. `net/sync.ts` lightweight pass (below, "Stage 7", per C3)
-> 10. Tests (below, "Stage 8")
-> 11. Validation & tuning pass (§4)
+> 5. `Player` resolves a v2 build — ✅ DONE
+> 6. Skill + ultimate execution onto `Ability` + interpret rules/grants + sc-authoritative
+>    ailments + resource generation → EventBus — ✅ DONE. **Basic attacks stayed on the
+>    legacy `attack()`/`playerHit` path** (crit/leech/triggers/elemental-split unchanged)
+>    — routing them through the executor + weapon-family Abilities is **Stage 6b**, a
+>    focused follow-up, since that path is where balance drift hides. Also deferred to 6b:
+>    `redirectDamage` binding (Paladin Oath / Jugg Fortress — stub), benefit zones
+>    (heal/shield/haste `spawnZone` support).
+> 7. Town: class select, Path, Tree (v2 editable, hybrid/archetype badges), Skills —
+>    ✅ DONE. TODO: "you unlocked X" toast on threshold; `treePointsRefunded` notice.
+> 8. Save migration `SAVE_VERSION` 13 → 14 — ✅ DONE (per-class allocated + skills reset,
+>    account-wide + level/xp/gear/depth kept, legacy `item.grant` dropped).
+> 9. `net/sync.ts` lightweight pass — ✅ DONE per C3 (dead `ul`/`ut`/`bt` fields kept for
+>    wire compat; enemy status bitmask ↔ `sc`). Minion/corpse snapshot still deferred.
+> 10. Tests — ✅ `npm test` GREEN (check + vocab + prog + classes + roster + smoke).
+>     `tools/smoke.ts` bot + `probeUltimate` rewritten shape-agnostic; planet + boss
+>     probes re-geared (CLAUDE.md sanctions this for planets). `src/data/combat-tuning.ts`
+>     — new global `SKILL_POWER` (1.22) / `ULTIMATE_POWER` (1.15) dials.
+> 11. Validation & tuning pass (§4) — NOT STARTED. Note: Reaper `death_comes_due` execute
+>     ultimate dealt 0 in a probe at SKILL_POWER 1.28; Warlock probe fragile. Both to
+>     investigate here.
 
 ### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
 Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to

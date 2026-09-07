@@ -1,12 +1,18 @@
 import { combatHints, skillKeys } from "../core/input";
 import { clamp, formatNumber } from "../core/math";
 import { CHEST_TIERS } from "../data/chests";
-import { ELEMENT_COLORS, STATUSES } from "../data/elements";
+import { ELEMENT_COLORS } from "../data/elements";
 import { MATERIAL_NAMES } from "../data/materials";
 import { RARITY_COLORS } from "../data/rarity";
 import { DEFAULT_KEYBINDS, keyLabel, type RebindableAction, type Settings } from "../data/settings";
-import { SKILLS } from "../data/skills";
+import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon } from "../game/dungeon";
+
+/** A status colour: its damage element when it has one, otherwise a plain readout tint. */
+function statusColor(id: string): string {
+  const t = getStatusSpec(id)?.damageType;
+  return (t && (ELEMENT_COLORS as Record<string, string>)[t]) || "#cbd5e1";
+}
 
 /** Every prompt on screen reads the live binding, same rule as `combatHints`. */
 function k(settings: Settings, action: RebindableAction): string {
@@ -133,10 +139,11 @@ export class Hud {
     ctx.fillRect(x, y + 38, w * xpPct, 7);
 
     // Special charge
+    const ultColor = p.heroClass.color;
     ctx.fillStyle = "#1a1d26";
     ctx.fillRect(x, y + 49, w, 7);
     const charged = d.specialCharge >= 1;
-    ctx.fillStyle = charged ? p.ultimate.color : "#a855f7";
+    ctx.fillStyle = charged ? ultColor : "#a855f7";
     ctx.fillRect(x, y + 49, w * clamp(d.specialCharge, 0, 1), 7);
 
     ctx.textAlign = "left";
@@ -145,32 +152,29 @@ export class Hud {
     ctx.fillText(`LV ${p.level} ${p.heroClass.name}`, x, y + 60);
     // The meter is named after the thing it fires, because every class fires a
     // different thing and the name is half the reason you picked it.
-    const ult = p.ultimate;
-    ctx.fillStyle = d.avatar.ultimate ? ult.color : charged ? "#ff1493" : "#9aa4b2";
+    const ultName = p.ultimateAbility?.name ?? "Ultimate";
+    ctx.fillStyle = charged ? "#ff1493" : "#9aa4b2";
     ctx.fillText(
-      d.avatar.ultimate ? ult.name.toUpperCase() : charged ? `${ult.name.toUpperCase()}  [;]` : ult.name.toLowerCase(),
+      charged ? `${ultName.toUpperCase()}  [;]` : ultName.toLowerCase(),
       x + 120, y + 60,
     );
     ctx.fillStyle = "#4ade80";
     ctx.fillText(`Potions ${"◆".repeat(Math.min(6, d.potionCount))} (${d.potionCount})  [L]`, x, y + 76);
-    if (d.avatar.buffTimer > 0) {
-      ctx.fillStyle = "#ff2d2d";
-      ctx.fillText(`RAGE ${d.avatar.buffTimer.toFixed(1)}s`, x + 190, y + 76);
-    }
 
-    // Whatever is currently eating you.
+    // Whatever is currently on you — a burn, a chill, a buff.
     let bx = x;
     for (const s of d.playerStatuses) {
-      const spec = STATUSES[s.kind];
-      const label = `${spec.label}${s.stacks > 1 ? ` x${s.stacks}` : ""}`;
+      const spec = getStatusSpec(s.id);
+      const label = `${spec?.label ?? s.id}${s.stacks > 1 ? ` x${s.stacks}` : ""}`;
+      const col = statusColor(s.id);
       ctx.font = `bold 9px ${MONO}`;
       const tw = ctx.measureText(label).width + 8;
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(bx, y + 92, tw, 13);
-      ctx.strokeStyle = ELEMENT_COLORS[spec.element];
+      ctx.strokeStyle = col;
       ctx.lineWidth = 1;
       ctx.strokeRect(bx + 0.5, y + 92.5, tw - 1, 12);
-      ctx.fillStyle = ELEMENT_COLORS[spec.element];
+      ctx.fillStyle = col;
       ctx.fillText(label, bx + 4, y + 95);
       bx += tw + 4;
     }
@@ -181,8 +185,8 @@ export class Hud {
    * the box from the bottom; unaffordable ones go grey. No mouse, ever.
    */
   private drawSkills(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, h: number): void {
-    // The fourth box only exists while a piece of gear is granting you a skill.
-    const slots = d.player.activeSkills;
+    // The fourth box only exists while a piece of gear is granting you an ability.
+    const slots = d.player.activeAbilities;
     if (slots.every((s) => !s)) return;
     const keys = skillKeys(d.settings);
 
@@ -199,13 +203,13 @@ export class Hud {
       panel(ctx, x, y, boxW, boxH);
 
       if (id) {
-        const skill = SKILLS[id];
         const ready = d.canCast(i);
-        const color = ELEMENT_COLORS[skill.element];
+        const color = d.player.heroClass.color;
+        const cost = id.costs?.[0];
 
         if (cd > 0) {
           // Cooldown eats the box from the bottom up.
-          const frac = clamp(cd / skill.cooldown, 0, 1);
+          const frac = clamp(cd / Math.max(0.01, id.cooldown * d.player.cooldownMult), 0, 1);
           ctx.fillStyle = "rgba(0,0,0,0.62)";
           ctx.fillRect(x + 1, y + boxH - boxH * frac, boxW - 2, boxH * frac - 1);
         }
@@ -217,11 +221,14 @@ export class Hud {
 
         ctx.font = `10px ${MONO}`;
         ctx.fillStyle = ready ? "#e8eef7" : "#6b7480";
-        ctx.fillText(skill.name, x + 22, y + 6);
+        ctx.fillText(id.name, x + 22, y + 6);
 
         ctx.font = `9px ${MONO}`;
-        ctx.fillStyle = d.player.mana >= skill.manaCost ? "#60a5fa" : "#ef4444";
-        ctx.fillText(`${skill.manaCost} mana`, x + 7, y + 22);
+        if (cost) {
+          const pool = d.localHero.resources.get(cost.resource);
+          ctx.fillStyle = pool && pool.value >= cost.amount ? "#60a5fa" : "#ef4444";
+          ctx.fillText(`${Math.round(cost.amount)} ${pool?.spec.label ?? cost.resource}`, x + 7, y + 22);
+        }
 
         ctx.textAlign = "right";
         ctx.fillStyle = "#6b7480";

@@ -9,10 +9,16 @@ import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import {
   ELEMENT_RESIST_KEY, addMods, elementalFractions, zeroMods, type Mods,
 } from "../data/mods";
-import { SKILLS, SKILL_SLOTS, unlockedSkills, type SkillId } from "../data/skills";
-import { ULTIMATES, type UltimateSpec } from "../data/ultimates";
 import { WEAPONS, type WeaponFamily, type WeaponSpec } from "../data/weapons";
-import { canAllocate, nodeById, pruneAllocation, spentPoints, treeMods, type TreeNode } from "../data/tree";
+import type { Ability } from "../combat/ability";
+import { ResourceSet, type ResourceSpec } from "../combat/resources";
+import {
+  ABILITY_BY_ID, CLASS_BY_ID, applyBuild, installClass, patchResourceSpec, resolveClassBuild,
+  type ClassRuntime, type PilotClass, type ResolvedBuild,
+} from "../progression/index";
+import {
+  canAllocateV2, progNodeById, pruneAllocationV2, spentPointsV2, type TreeNodeV2,
+} from "../progression/nodes";
 import { itemMods, requiredLevel, zeroStats, type Item, type Stats } from "./item";
 
 /** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
@@ -21,6 +27,33 @@ const LEVEL_UP_HEAL = 0.6;
 const BASE_CRIT = 0.08;
 /** Critical multiplier before any `critDamage` modifier. */
 const BASE_CRIT_MULT = 1.8;
+
+/**
+ * When each of a class's nine normal abilities unlocks, by index into
+ * `PilotClass.abilities` (the ultimate is excluded and is always available once the
+ * meter is full). Deliberately front-loaded — three at level 1 so a brand new character
+ * has a real kit — and the last one comes in around the depth a rift opens.
+ */
+const ABILITY_UNLOCK_LEVELS: readonly number[] = [1, 1, 3, 5, 8, 11, 15, 20, 26];
+
+export const SKILL_SLOTS = 3;
+
+/**
+ * `installClass` registers a class's statuses on the shared registry and flattens its
+ * tree; doing it once per class and caching the result keeps `Player.build` cheap to
+ * recompute on every gear or tree change. Module-level, shared by every `Player` of the
+ * same class — the runtime is immutable data.
+ */
+const CLASS_RUNTIMES = new Map<string, ClassRuntime>();
+export function classRuntime(id: string): ClassRuntime | undefined {
+  const existing = CLASS_RUNTIMES.get(id);
+  if (existing) return existing;
+  const def = CLASS_BY_ID[id];
+  if (!def) return undefined;
+  const rt = installClass(def);
+  CLASS_RUNTIMES.set(id, rt);
+  return rt;
+}
 
 export type Equipment = Record<EquipSlot, Item | null>;
 
@@ -33,48 +66,57 @@ export function xpForLevel(level: number): number {
 }
 
 /**
- * One class's persistent character sheet: a level, a tree, and six pieces of gear.
- * Everything the simulation asks it — how hard do I hit, how often, how big is the
- * area, does this crit — resolves through one aggregated `Mods` record, so a class
- * bonus, a tree keystone and an affix on a ring are all the same kind of thing by the
- * time combat sees them.
+ * One class's persistent character sheet: a level, a behaviour tree, and six pieces of
+ * gear. Everything the simulation asks it — how hard do I hit, how big is the area, does
+ * this crit — resolves through one aggregated `Mods` record, so a class bonus, a
+ * resolved-build contribution and an affix on a ring are all the same kind of thing by
+ * the time combat sees them.
  *
- * Every class keeps its own `Player` (see `GameState.players`) — its class never
- * changes once created, because starting a fresh class means starting a fresh
- * character, not repainting this one.
- *
- * The in-run avatar (position, velocity, i-frames) lives in `dungeon.ts`.
+ * The class's *verbs* — its ten abilities, its resource model, its hybrids — come from
+ * the `PilotClass` in `src/progression/`; `Player` owns which of the nine normal
+ * abilities are slotted and which tree nodes are lit, and resolves the two into a
+ * `ResolvedBuild` the dungeon casts through.
  */
 export class Player {
   readonly classId: ClassId;
   level = 1;
   xp = 0;
   equipment: Equipment = emptyEquipment();
-  /** Allocated skill-tree node ids, for the current class. */
+  /** Allocated v2 behaviour-tree node ids (`<class>.<path>.<row>`), for the current class. */
   allocated: string[] = [];
-  /** This character's own deepest dive, separate from the account-wide record stat —
-   *  it's what chests and the forge roll item level against, so a fresh alt buying a
-   *  chest gets gear it can actually wear instead of whatever depth the main reached. */
   deepestDepth = 0;
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
-  /** Mana does too, and it is deliberately slow to come back. */
+  /** Legacy mana pool, kept for the HUD and potions. A class's real casting resource is
+   *  its own pool in the in-run `ResourceSet`; this shadows it for display. */
   mana = 60;
-  /** Equipped skills, one per key around the attack finger. Nulls are empty slots. */
-  skills: (SkillId | null)[] = [null, null, null];
+  /** Chosen ability ids, one per key around the attack finger. Nulls are empty slots. */
+  skills: (string | null)[] = [null, null, null];
 
-  /** Aggregated modifiers, rebuilt whenever anything that feeds them changes. */
   private cachedMods: Mods | null = null;
+  private cachedBuild: ResolvedBuild | null = null;
 
   constructor(classId: ClassId = DEFAULT_CLASS) {
     this.classId = classId;
-    this.autoSlotNewSkills();
+    this.autoSlotNewAbilities();
     this.health = this.maxHealth;
     this.mana = this.maxMana;
   }
 
   get heroClass(): HeroClass {
     return CLASSES[this.classId];
+  }
+
+  get pilotClass(): PilotClass | undefined {
+    return CLASS_BY_ID[this.classId];
+  }
+
+  get runtime(): ClassRuntime | undefined {
+    return classRuntime(this.classId);
+  }
+
+  get tree(): readonly TreeNodeV2[] {
+    return this.runtime?.tree ?? [];
   }
 
   get xpNeeded(): number {
@@ -84,11 +126,25 @@ export class Player {
   /** Call after anything changes gear, level, tree or class. */
   refresh(): void {
     this.cachedMods = null;
+    this.cachedBuild = null;
+  }
+
+  /** The tree + hybrids + archetypes, folded into one readable result the dungeon casts through. */
+  get build(): ResolvedBuild {
+    if (this.cachedBuild) return this.cachedBuild;
+    const rt = this.runtime;
+    this.cachedBuild = rt
+      ? resolveClassBuild(rt, this.allocated)
+      : {
+          classId: this.classId, allocated: [], mods: zeroMods(), mutations: [], grants: [],
+          resourcePatches: [], rules: new Set<string>(), hybrids: [], archetypes: [], pathPoints: [],
+        };
+    return this.cachedBuild;
   }
 
   /**
-   * Class base + per-level growth + every equipped item + every allocated tree node.
-   * One record, and the only place power is ever added up.
+   * Class base + per-level growth + every equipped item + the resolved build's stat
+   * contribution. One record, and the only place power is ever added up.
    */
   get mods(): Mods {
     if (this.cachedMods) return this.cachedMods;
@@ -107,7 +163,7 @@ export class Player {
       const item = this.equipment[slot];
       if (item) addMods(m, itemMods(item));
     }
-    addMods(m, treeMods(this.classId, this.allocated));
+    addMods(m, this.build.mods);
     this.cachedMods = m;
     return m;
   }
@@ -138,10 +194,28 @@ export class Player {
     return 4 + this.maxMana * 0.02 + this.mods.manaRegen;
   }
 
+  // --- the in-run resource model ---------------------------------------
+
+  /**
+   * The class's resource specs, with any tree `resourcePatches` folded on. Builds the
+   * `ResourceSet` a `Hero` carries for the run.
+   */
+  get resourceSpecs(): readonly ResourceSpec[] {
+    const def = this.pilotClass;
+    if (!def) return [];
+    const build = this.build;
+    return def.resources.map((spec) => patchResourceSpec(spec, build));
+  }
+
+  makeResources(): ResourceSet {
+    const def = this.pilotClass;
+    if (!def) return new ResourceSet();
+    return new ResourceSet(this.resourceSpecs, def.stances ?? []);
+  }
+
   // --- the weapon ---------------------------------------------------------
 
   get weaponFamily(): WeaponFamily {
-    // An empty hand is a fist, and a fist is a very bad sword.
     return this.equipment.weapon?.family ?? "sword";
   }
 
@@ -156,7 +230,6 @@ export class Player {
 
   /** Damage multiplier from holding — or not holding — the right kind of weapon. */
   get affinityMult(): number {
-    // An unarmed hero gets neither the bonus nor the penalty; it's bad enough already.
     if (!this.equipment.weapon) return 1;
     return this.hasAffinity ? 1 + this.heroClass.affinityBonus : 0.88;
   }
@@ -173,11 +246,6 @@ export class Player {
     return s.attack * (1 + s.power * 0.006);
   }
 
-  /**
-   * Damage of one landed basic attack. The weapon multiplier, the class affinity and
-   * whichever of the melee/projectile modifiers applies are all in here, which is why
-   * a great axe on a Berserker reads completely differently to one on a Magician.
-   */
   get attackDamage(): number {
     const w = this.weapon;
     const shapeBonus = w.pattern === "bolt"
@@ -200,12 +268,10 @@ export class Player {
     return (this.damage * 0.85 + s.power * 2.4) * (1 + this.mods.skillDamage);
   }
 
-  /** Multiplies every radius in the game that belongs to you. */
   get areaMult(): number {
     return 1 + this.mods.areaSize;
   }
 
-  /** Multiplies every cooldown you own. Recovery is stored as a rate, not a reduction. */
   get cooldownMult(): number {
     return 1 / (1 + this.mods.cooldownRate);
   }
@@ -214,13 +280,11 @@ export class Player {
     return 1 + this.mods.moveSpeed;
   }
 
-  /** Fraction of incoming damage removed by defense — asymptotic, never reaches 100%. */
   get damageReduction(): number {
     const def = this.stats.defense;
     return def / (def + 120);
   }
 
-  /** Flat resistance per element, summed from every modifier that grants any. */
   get resists(): Resists {
     const r = zeroResists();
     const m = this.mods;
@@ -231,11 +295,6 @@ export class Player {
     return r;
   }
 
-  /**
-   * Extra elemental damage carried by gear, as a fraction of your hit per element.
-   * A swing lands its physical damage and then each of these on top, which is how an
-   * ordinary attack ends up setting things on fire.
-   */
   get elementalDamage(): Partial<Record<Element, number>> {
     return elementalFractions(this.mods);
   }
@@ -243,8 +302,7 @@ export class Player {
   /**
    * The element your build actually is — the biggest elemental fraction on your gear,
    * or your class's own if you're carrying none. Ultimates and weapon effects take
-   * their colour and their ailment from this, which is the whole "lightning Lancer"
-   * promise: change the gear, change the character.
+   * their colour and their ailment from this.
    */
   get attackElement(): Element {
     let best: Element = this.heroClass.element;
@@ -258,28 +316,19 @@ export class Player {
     return best;
   }
 
-  // --- the ultimate -------------------------------------------------------
+  // --- the ultimate -----------------------------------------------------
 
-  get ultimate(): UltimateSpec {
-    return ULTIMATES[this.heroClass.ultimate];
-  }
-
-  /** Kill-equivalents needed to fill the meter, after charge-rate modifiers. */
-  get ultimateCost(): number {
-    return Math.max(1, this.ultimate.charge / (1 + this.mods.ultimateRate));
+  /** The one ability that is entirely this class's. Cast when the meter is full. */
+  get ultimateAbility(): Ability | undefined {
+    return this.runtime?.ultimate;
   }
 
   get ultimateMult(): number {
     return 1 + this.mods.ultimatePower;
   }
 
-  // --- damage and healing -------------------------------------------------
+  // --- damage and healing ----------------------------------------------
 
-  /**
-   * Mitigation, shared by every source of damage in the game. Armor answers physical
-   * hits and only half-answers elemental ones; resistance answers the rest. Neither
-   * ever reaches total immunity.
-   */
   mitigate(amount: number, element: Element = "physical", extraResist = 0): number {
     const armor = this.damageReduction * (element === "physical" ? 1 : 0.5);
     const resist = resistFraction(this.resists[element] + extraResist);
@@ -323,7 +372,6 @@ export class Player {
     return this.health > 0;
   }
 
-  /** Grants XP and returns how many levels were gained, for the "LEVEL UP" banner. */
   gainXp(amount: number): number {
     this.xp += amount;
     let levels = 0;
@@ -332,28 +380,26 @@ export class Player {
       this.level++;
       levels++;
       this.refresh();
-      // A level-up patches you up mid-fight, but it won't rescue a bad dive.
       this.health = Math.min(this.maxHealth, this.health + this.maxHealth * LEVEL_UP_HEAL);
       this.mana = this.maxMana;
     }
-    if (levels > 0) this.autoSlotNewSkills();
+    if (levels > 0) this.autoSlotNewAbilities();
     return levels;
   }
 
-  // --- class and tree -----------------------------------------------------
+  // --- class and tree ---------------------------------------------------
 
   /** Points earned by levelling, minus what the tree already holds. */
   get treePoints(): number {
-    return treePointsFor(this.level) - spentPoints(this.classId, this.allocated);
+    return treePointsFor(this.level) - spentPointsV2(this.tree, this.allocated);
   }
 
-  canAllocate(node: TreeNode): boolean {
-    // A node from somebody else's tree is never yours, however many points you have.
+  canAllocate(node: TreeNodeV2): boolean {
     if (node.classId !== this.classId) return false;
-    return canAllocate(this.allocated, node, this.treePoints);
+    return canAllocateV2(this.allocated, node, this.treePoints);
   }
 
-  allocate(node: TreeNode): boolean {
+  allocate(node: TreeNodeV2): boolean {
     if (!this.canAllocate(node)) return false;
     this.allocated.push(node.id);
     this.refresh();
@@ -369,35 +415,43 @@ export class Player {
     this.mana = Math.min(this.mana, this.maxMana);
   }
 
-  /** Drops nodes that don't belong to the current class, after a load. */
+  /** Drops nodes that don't belong to the current tree or have lost their prereq. */
   normalizeTree(): void {
-    this.allocated = pruneAllocation(this.classId, this.allocated);
-    // A save that predates a tree change could hold more points than the level allows.
-    // Deepest first, so refunding never orphans something above it.
+    this.allocated = pruneAllocationV2(this.tree, this.allocated);
     while (this.treePoints < 0 && this.allocated.length > 0) {
       const deepest = [...this.allocated]
-        .sort((a, b) => (nodeById(this.classId, b)?.row ?? 0) - (nodeById(this.classId, a)?.row ?? 0))[0]!;
+        .sort((a, b) => (progNodeById(this.tree, b)?.row ?? 0) - (progNodeById(this.tree, a)?.row ?? 0))[0]!;
       this.allocated = this.allocated.filter((id) => id !== deepest);
     }
     this.refresh();
   }
 
-  // --- skills -------------------------------------------------------------
+  // --- abilities ------------------------------------------------------
 
-  /** Every skill this class can ever learn, in the order it learns them. */
-  get skillPool(): readonly SkillId[] {
-    return this.heroClass.skills;
+  /** Every normal ability this class owns, in unlock order (ultimate excluded). */
+  get abilityPool(): readonly Ability[] {
+    return this.runtime?.normalAbilities ?? [];
   }
 
-  get unlocked(): SkillId[] {
-    return unlockedSkills(this.skillPool, this.level);
+  abilityUnlockLevel(ability: Ability): number {
+    const i = this.abilityPool.indexOf(ability);
+    return i < 0 ? 1 : ABILITY_UNLOCK_LEVELS[i] ?? 1;
+  }
+
+  /** The normal abilities the character's level has earned, in pool order. */
+  get unlockedAbilities(): Ability[] {
+    return this.abilityPool.filter((a) => this.abilityUnlockLevel(a) <= this.level);
+  }
+
+  abilityById(id: string): Ability | undefined {
+    return this.runtime?.abilitiesById.get(id) ?? ABILITY_BY_ID[id];
   }
 
   /**
-   * A skill your gear hands you, on top of the three you chose. Epic and better items
-   * can carry one; the weapon wins, because that's the piece you thought hardest about.
+   * An ability your gear hands you, on top of the three you chose. Epic and better
+   * items can carry one; the weapon wins.
    */
-  get grantedSkill(): SkillId | null {
+  get grantedAbilityId(): string | null {
     const weapon = this.equipment.weapon?.grant;
     if (weapon) return weapon;
     for (const slot of EQUIP_SLOTS) {
@@ -407,65 +461,60 @@ export class Player {
     return null;
   }
 
-  /** The three chosen slots plus the granted one, in key order. */
-  get activeSkills(): (SkillId | null)[] {
-    const granted = this.grantedSkill;
-    return granted ? [...this.skills, granted] : [...this.skills];
+  /** The three chosen slots plus the granted one, resolved to abilities in key order. */
+  get activeAbilities(): (Ability | null)[] {
+    const out: (Ability | null)[] = this.skills.map((id) => (id ? this.abilityById(id) ?? null : null));
+    const granted = this.grantedAbilityId;
+    if (granted) out.push(this.abilityById(granted) ?? null);
+    return out;
   }
 
-  /** Puts a newly unlocked skill into an empty slot, so a level-up is never a no-op. */
-  autoSlotNewSkills(): void {
-    this.normalizeSkills();
-    for (const id of this.unlocked) {
-      if (this.skills.includes(id)) continue;
+  /** The resolved-build version of an active ability, ready for the runtime to cast. */
+  resolvedAbility(ability: Ability): Ability {
+    return applyBuild(this.build, ability);
+  }
+
+  autoSlotNewAbilities(): void {
+    this.normalizeAbilities();
+    for (const a of this.unlockedAbilities) {
+      if (this.skills.includes(a.id)) continue;
       const empty = this.skills.indexOf(null);
       if (empty < 0) break;
-      this.skills[empty] = id;
+      this.skills[empty] = a.id;
     }
   }
 
-  /** Equips `id` in `slot`, swapping it out of whatever other slot already held it. */
-  setSkill(slot: number, id: SkillId | null): void {
-    this.normalizeSkills();
+  setSkill(slot: number, id: string | null): void {
+    this.normalizeAbilities();
     if (slot < 0 || slot >= SKILL_SLOTS) return;
-    if (id && !this.unlocked.includes(id)) return;
+    if (id && !this.unlockedAbilities.some((a) => a.id === id)) return;
     if (id) {
       const existing = this.skills.indexOf(id);
-      if (existing >= 0) this.skills[existing] = this.skills[slot];
+      if (existing >= 0) this.skills[existing] = this.skills[slot] ?? null;
     }
     this.skills[slot] = id;
   }
 
-  /** Mana cost of the skill in a slot, or null if the slot is empty. */
-  skillCost(slot: number): number | null {
-    const id = this.activeSkills[slot];
-    return id ? SKILLS[id].manaCost : null;
-  }
-
-  private normalizeSkills(): void {
-    const fixed: (SkillId | null)[] = [];
+  private normalizeAbilities(): void {
+    const ok = new Set(this.unlockedAbilities.map((a) => a.id));
+    const fixed: (string | null)[] = [];
     for (let i = 0; i < SKILL_SLOTS; i++) {
       const id = this.skills[i] ?? null;
-      fixed.push(id && this.unlocked.includes(id) ? id : null);
+      fixed.push(id && ok.has(id) ? id : null);
     }
     this.skills = fixed;
   }
 
-  /**
-   * Whether this character is a high enough level to wear `item`. The stash is shared
-   * across every class, so a fresh level-1 alt can't reach into a level-20 main's gear
-   * until it catches up — the item just sits in the stash waiting.
-   */
+  // --- gear ----------------------------------------------------------
+
   canEquip(item: Item): boolean {
     return this.level >= requiredLevel(item);
   }
 
-  /** Equips `item`, returning whatever was displaced so the caller can re-stash it. */
   equip(item: Item): Item | null {
     const prev = this.equipment[item.slot];
     this.equipment[item.slot] = item;
     this.refresh();
-    // Gear can raise max HP; keep current HP in range without free healing.
     this.health = Math.min(this.health, this.maxHealth);
     this.mana = Math.min(this.mana, this.maxMana);
     return prev;

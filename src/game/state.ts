@@ -21,7 +21,6 @@ import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
-import { SKILL_IDS, type SkillId } from "../data/skills";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { primeItemIds, randomItemType, rollItem, type Item, type ItemMod, type Stats } from "./item";
 import { Player, emptyEquipment } from "./player";
@@ -145,6 +144,12 @@ export class GameState {
    * the game and it shouldn't be made for you by a default.
    */
   classChosen = false;
+  /**
+   * Tree points handed back by the v14 class-refactor migration, summed across every
+   * class that had an old allocation. Non-zero exactly once, right after loading a
+   * pre-v14 save; the town shows a notice and something clears it.
+   */
+  treePointsRefunded = 0;
   /**
    * Cosmetic and control options. Never allowed to touch the simulation — see
    * `data/settings.ts`. Built through `normalizeSettings` rather than a plain spread of
@@ -506,10 +511,21 @@ export class GameState {
       state.classChosen = d.classChosen === true;
       state.settings = normalizeSettings(d.settings);
 
+      // Version 14 replaced the whole skill / ultimate / tree layer with the 21-class
+      // progression system. A pre-v14 save's `allocated` holds v1 branch-node ids that
+      // mean nothing in the v2 behaviour tree, and its `skills` hold v1 `SkillId`s —
+      // both are dropped and rebuilt from the new class's own kit. Level, XP, gear,
+      // deepest depth and everything account-wide survive untouched. `pruneAllocationV2`
+      // in `applyPlayerJSON` already drops the dead node ids; this tallies the refund so
+      // the town can tell the player once.
+      const preProgression = saved.version < 14;
+
       const playersRaw = d.players as Record<string, unknown> | undefined;
       if (playersRaw) {
         for (const id of CLASS_IDS) {
-          applyPlayerJSON(state.players[id], playersRaw[id] as Record<string, unknown> | undefined);
+          state.treePointsRefunded += applyPlayerJSON(
+            state.players[id], playersRaw[id] as Record<string, unknown> | undefined, preProgression,
+          );
         }
         state.activeClassId = isClassId(d.activeClassId) ? d.activeClassId : state.activeClassId;
       } else {
@@ -518,7 +534,7 @@ export class GameState {
         const p = d.player as Record<string, unknown> | undefined;
         if (p) {
           const legacyClass: ClassId = isClassId(p.classId) ? p.classId : DEFAULT_CLASS;
-          applyPlayerJSON(state.players[legacyClass], p);
+          state.treePointsRefunded += applyPlayerJSON(state.players[legacyClass], p, preProgression);
           state.activeClassId = legacyClass;
         }
       }
@@ -557,26 +573,34 @@ export function playerToJSON(p: Player) {
 /** Builds a character sheet from somebody else's `playerToJSON` blob. */
 export function playerFromJSON(classId: ClassId, raw: Record<string, unknown> | undefined): Player {
   const player = new Player(classId);
-  applyPlayerJSON(player, raw);
+  applyPlayerJSON(player, raw, false);
   return player;
 }
 
 /**
  * Applies one saved character sheet onto a fresh `Player` of the matching class. Used
  * once per class on a current save, and once for whichever class a pre-v10 save's
- * single shared character belonged to.
+ * single shared character belonged to. `preProgression` is true for a save older than
+ * v14, whose tree allocation and equipped skills predate the class refactor and are
+ * dropped rather than migrated; the return value is how many tree points that class got
+ * handed back, for a one-time town notice.
  */
-function applyPlayerJSON(p: Player, raw: Record<string, unknown> | undefined): void {
-  if (!raw) return;
+function applyPlayerJSON(
+  p: Player,
+  raw: Record<string, unknown> | undefined,
+  preProgression: boolean,
+): number {
+  if (!raw) return 0;
   p.level = Number(raw.level ?? 1);
   // Saves from before per-character progress existed (or a class that predates this
   // field) have no `deepestDepth` of their own — estimate one from level rather than
   // falling back to the account-wide record, which is exactly the bug this fixed: a
   // fresh alt would otherwise inherit the main's depth and get gear it can't wear.
   p.deepestDepth = Number(raw.deepestDepth ?? Math.max(0, p.level - 1));
-  p.allocated = Array.isArray(raw.allocated)
-    ? (raw.allocated as unknown[]).filter((id): id is string => typeof id === "string")
-    : [];
+  const hadAllocation = Array.isArray(raw.allocated) && (raw.allocated as unknown[]).length > 0;
+  p.allocated = preProgression || !Array.isArray(raw.allocated)
+    ? []
+    : (raw.allocated as unknown[]).filter((id): id is string => typeof id === "string");
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {
@@ -588,8 +612,9 @@ function applyPlayerJSON(p: Player, raw: Record<string, unknown> | undefined): v
   p.normalizeTree();
   p.health = Number(raw.health ?? p.maxHealth);
   p.mana = Number(raw.mana ?? p.maxMana);
-  p.skills = readSkills(raw.skills);
-  p.autoSlotNewSkills();
+  p.skills = preProgression ? [null, null, null] : readSkills(raw.skills);
+  p.autoSlotNewAbilities();
+  return preProgression && hadAllocation ? p.treePoints : 0;
 }
 
 /**
@@ -634,17 +659,14 @@ function normalizeItem(raw: Item): Item {
     family,
     stats,
     mods,
-    grant: raw.grant ?? null,
+    // A v14+ grant is a namespaced ability id (`class.name`); a legacy one is a bare
+    // `SkillId` that no longer exists, so it's dropped rather than kept as a dead grant.
+    grant: typeof raw.grant === "string" && raw.grant.includes(".") ? raw.grant : null,
     trigger: raw.trigger ?? null,
   };
 }
 
-function readSkills(raw: unknown): (SkillId | null)[] {
+function readSkills(raw: unknown): (string | null)[] {
   if (!Array.isArray(raw)) return [null, null, null];
-  return [0, 1, 2].map((i) => {
-    const id = raw[i];
-    return typeof id === "string" && (SKILL_IDS as readonly string[]).includes(id)
-      ? (id as SkillId)
-      : null;
-  });
+  return [0, 1, 2].map((i) => (typeof raw[i] === "string" ? (raw[i] as string) : null));
 }

@@ -24,7 +24,6 @@ import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { StatusContainer } from "../combat/status";
-import { ULTIMATES, type UltimateId } from "../data/ultimates";
 import type { Dungeon, Hero } from "../game/dungeon";
 import type { Enemy } from "../game/entities";
 import {
@@ -195,10 +194,13 @@ function encodeHero(hero: Hero): HeroSnap {
     x: r2(a.x), y: r2(a.y), f: r2(a.facing),
     hp: Math.round(p.health), mp: Math.round(p.mana), wd: Math.round(hero.ward),
     ch: r2(hero.specialCharge),
-    ul: a.ultimate ?? "",
-    ut: r2(a.ultTimer),
+    // `ul` / `ut` / `bt` are dead fields kept for wire compatibility — the ability
+    // cutover made ultimates instant casts and buffs into statuses, and the whole
+    // snapshot protocol is being replaced (see docs/combat-cutover-plan.md C3).
+    ul: "",
+    ut: 0,
     sw: r2(a.swingTimer), sa: r2(a.swingAngle),
-    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash), bt: r2(a.buffTimer),
+    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash), bt: 0,
     cd: hero.skillCooldowns.map(r2),
     pot: hero.potions,
     down: hero.downed,
@@ -213,7 +215,10 @@ function encodeHero(hero: Hero): HeroSnap {
 
 function encodeEnemy(e: Enemy): number[] {
   let statusBits = 0;
-  for (const s of e.statuses) statusBits |= 1 << STATUS_KINDS.indexOf(s.kind);
+  for (const s of e.sc.list) {
+    const i = STATUS_KINDS.indexOf(s.id as StatusKind);
+    if (i >= 0) statusBits |= 1 << i;
+  }
   return [
     e.id,
     ENEMY_KINDS.indexOf(e.archetype.kind),
@@ -286,9 +291,6 @@ function applyHero(d: Dungeon, hero: Hero, h: HeroSnap): void {
   a.dashTimer = h.dt;
   a.invulnTimer = h.iv;
   a.hitFlash = h.hf;
-  a.buffTimer = h.bt;
-  a.ultimate = h.ul === "" ? null : (h.ul as UltimateId);
-  a.ultTimer = h.ut;
 
   hero.player.health = h.hp;
   hero.player.mana = h.mp;
@@ -334,7 +336,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
         trapCooldown: 0, stuckTimer: 0, dodgeDir: 1,
-        element, resists: {} as Enemy["resists"], statuses: [],
+        element, resists: {} as Enemy["resists"],
         sc: new StatusContainer(1_000_000 + id!),
         knockResist: 1, boss: null, summoned: false,
       };
@@ -352,9 +354,14 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
     e.spawnTimer = spawnTimer!;
     e.windup = windup!;
     e.hitFlash = hitFlash!;
-    e.statuses = STATUS_KINDS
-      .filter((_, i) => (statusBits! & (1 << i)) !== 0)
-      .map((kindName) => ({ kind: kindName, remaining: 1, stacks: 1, dps: 0, tickTimer: 1 }));
+    // Client-side status pips are cosmetic — the host owns the real durations. Mirror
+    // the bitmask onto `sc` so the renderer's badge row still lights up.
+    e.sc.list.length = 0;
+    STATUS_KINDS.forEach((kindName, i) => {
+      if ((statusBits! & (1 << i)) !== 0) {
+        e!.sc.apply(kindName, { sourceActorId: -1, chance: 1, roll: () => 0 });
+      }
+    });
 
     if (isBoss && s.b) {
       const spec = BOSSES.find((b) => b.id === s.b!.sp) ?? bossFor(d.config.depth);
@@ -452,4 +459,4 @@ export function bossAbilityName(id: string): string {
   return id === "" ? "" : BOSS_ABILITIES[id as BossAbilityId]?.name ?? "";
 }
 
-export { TAU, ULTIMATES };
+export { TAU };

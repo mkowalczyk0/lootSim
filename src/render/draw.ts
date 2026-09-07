@@ -1,9 +1,9 @@
 import { clamp, lerp, TAU } from "../core/math";
 import type { PropKind } from "../data/biomes";
 import { COSMETICS_BY_ID } from "../data/cosmetics";
-import { ELEMENT_COLORS, STATUSES } from "../data/elements";
+import { ELEMENT_COLORS } from "../data/elements";
 import { RARITY_COLORS } from "../data/rarity";
-import { ULTIMATES } from "../data/ultimates";
+import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
 import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
 import type { Level, Trap } from "../game/level";
@@ -445,27 +445,6 @@ export class WorldRenderer {
     ctx.fill();
     ctx.restore();
 
-    // An ultimate gets a ring of its own colour so it is never in doubt.
-    if (a.ultimate) {
-      const spec = ULTIMATES[a.ultimate];
-      const areaMult = hero.player.areaMult;
-      ctx.save();
-      ctx.globalAlpha = 0.5 + Math.sin(d.elapsed * 22) * 0.18;
-      ctx.strokeStyle = spec.color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(x, y - 6, 18 + Math.sin(d.elapsed * 14) * 3, 0, TAU);
-      ctx.stroke();
-      if (spec.kind === "spin" || spec.kind === "storm") {
-        ctx.globalAlpha = 0.28;
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(x, y - 6, spec.radius * areaMult * 0.9, 0, TAU);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
     // The ward reads as a bubble, because that is what everyone expects a shield to
     // look like and this is not the place to be clever.
     if (hero.ward > 0) {
@@ -637,7 +616,7 @@ export class WorldRenderer {
     if (!e.boss && e.health < e.maxHealth) {
       healthBar(ctx, x, y - e.radius * 2.6, e.health / e.maxHealth, 26);
     }
-    if (e.statuses.length > 0) {
+    if (e.sc.list.length > 0) {
       statusPips(ctx, e, x, y - e.radius * 2.6 - (e.health < e.maxHealth ? 8 : 0));
     }
   }
@@ -1088,14 +1067,14 @@ function drawGroundZone(ctx: CanvasRenderingContext2D, g: GroundZone, time: numb
 
 /** Little coloured squares over a monster for whatever is currently eating it. */
 function statusPips(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number): void {
-  const pips = e.statuses.slice(0, 4);
+  const pips = e.sc.list.slice(0, 4);
   const size = 4;
   const gap = 2;
   const total = pips.length * (size + gap) - gap;
   ctx.save();
   pips.forEach((s, i) => {
-    const spec = STATUSES[s.kind];
-    ctx.fillStyle = ELEMENT_COLORS[spec.element];
+    const spec = getStatusSpec(s.id);
+    ctx.fillStyle = spec?.damageType ? ELEMENT_COLORS[spec.damageType as keyof typeof ELEMENT_COLORS] ?? "#e8eef7" : "#e8eef7";
     ctx.globalAlpha = 0.9;
     ctx.fillRect(x - total / 2 + i * (size + gap), y - size - 2, size, size);
     // A stacked ailment gets a brighter cap, so five stacks of poison is visible.

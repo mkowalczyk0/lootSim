@@ -1,9 +1,7 @@
 import type { BossAbilityId, BossSpec, TelegraphShape } from "../data/bosses";
-import type { UltimateId } from "../data/ultimates";
 import type { Element, Resists } from "../data/elements";
 import type { EnemyArchetype } from "../data/enemies";
 import type { Rarity } from "../data/rarity";
-import type { StatusInstance } from "./combat";
 import type { StatusContainer } from "../combat/status";
 import type { Item } from "./item";
 
@@ -37,27 +35,10 @@ export interface Avatar extends Body {
   dashInvuln: number;
   hitFlash: number;
   /**
-   * The class ultimate, while it is happening. This is the one piece of avatar state
-   * that takes the controls away from you: a Comet Charge steers itself, a Bladestorm
-   * sweeps on its own clock, and the fields below are how far through it we are.
+   * Self-buff contribution the dungeon copies out of the hero's status container each
+   * tick, so the legacy melee path can read a Frenzy or a Blessed without reaching into
+   * `src/combat` — attack-speed and life-on-hit only; damage buffs ride `castInputFor`.
    */
-  ultimate: UltimateId | null;
-  ultTimer: number;
-  ultTotal: number;
-  /** Countdown to the next sub-event: a whirlwind tick, a sweep, a meteor. */
-  ultTick: number;
-  /** Walls a charge has left to bounce off. */
-  ultBounces: number;
-  /** Direction a charge is travelling, or the angle a storm has swept to. */
-  ultAngle: number;
-  /** Bodies already hit by the current pass, so one charge can't hit twice. */
-  ultHits: Set<number>;
-  /** Sub-events still owed — meteors left to drop, sweeps left to make. */
-  ultPending: number;
-  /** Bursts a whirlwind has already thrown, so its slower clock stays honest. */
-  ultEmits: number;
-  /** Seconds left of a Blood Rage style buff, and what it's giving you. */
-  buffTimer: number;
   buffAttackSpeed: number;
   buffLifeOnHit: number;
 }
@@ -92,6 +73,7 @@ export interface BossState {
    * Both multipliers reset to 1 the instant the timer runs out.
    */
   buffTimer: number;
+  /** Enrage damage multiplier. */
   buffDamageMult: number;
   buffHasteMult: number;
 }
@@ -125,13 +107,8 @@ export interface Enemy extends Body {
   /** What its hits are made of. */
   element: Element;
   resists: Resists;
-  /** Legacy elemental ailments (burn/chill/…). Being migrated onto `sc`. */
-  statuses: StatusInstance[];
-  /**
-   * The unified status container the `src/combat` ability executor reads and writes.
-   * Runs in parallel with `statuses` during the combat cutover; every timed effect
-   * moves here as the skills that apply them migrate onto the executor.
-   */
+  /** Every timed effect on this monster — burn, chill, bleed, a stun, a curse — the
+   *  unified container the ability executor and the ailment path both read and write. */
   sc: StatusContainer;
   /** Multiplies knockback taken. Bosses are near-immovable. */
   knockResist: number;

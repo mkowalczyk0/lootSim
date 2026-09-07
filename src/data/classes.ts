@@ -1,52 +1,45 @@
 /**
  * Classes — who you are, before any of the loot.
  *
- * A class decides four things and nothing else: the numbers you start and grow with,
- * which weapons you're built for, which skills you can ever learn, and the one
- * ultimate that belongs to you alone. Everything past that comes off gear and the
- * tree, which is why two Lancers can look nothing alike.
+ * Since the class refactor a class is an *interaction system*, authored as a
+ * `PilotClass` in `src/progression/<class>.ts`: a resource model, ten abilities, a
+ * five-path behaviour tree, six hybrids and a Mythic Archetype. That is where a class's
+ * verbs and its build space live.
  *
- * The charge rules are the quiet half of the design. A Berserker fills its meter by
- * being hit, a Magician by spending mana, a Swordsman by critting, a Shaman by
- * spreading ailments — so the way you earn your ultimate is the way the class wants
- * you to fight.
+ * This file is the small half that stayed here: the *numbers* a class starts and grows
+ * with, the weapon families it was built for, and the element its ultimate falls back to
+ * when your gear carries none. Tuning data, in `src/data/` where tuning data belongs —
+ * `Player` folds `CLASS_STATS[classId]` into its `Mods` exactly as before, and the old
+ * `skills` / `ultimate` / `charge` fields moved onto the `PilotClass`.
+ *
+ * `CLASS_IDS` is the canonical 21-class roster, in the order
+ * `docs/classes_refactor.md` lists it, and must match `ALL_CLASSES` in
+ * `src/progression/index.ts` (asserted by `npm run roster`). `LEGACY_CLASS_IDS` is the
+ * original fifteen — every one survives the refactor by name; Oracle and Chronomancer
+ * are deliberately gone.
  *
  * Pure data.
  */
 
 import type { Element } from "./elements";
 import type { Mods } from "./mods";
-import type { SkillId } from "./skills";
-import type { UltimateId } from "./ultimates";
 import type { WeaponFamily } from "./weapons";
 
 export const CLASS_IDS = [
   "lancer", "berserker", "swordsman", "magician", "shaman",
   "ranger", "juggernaut", "duelist", "warlock", "monk",
   "necromancer", "corsair", "trickster", "reaper", "stormcaller",
+  "paladin", "bard", "alchemist", "engineer", "assassin", "warden",
 ] as const;
 export type ClassId = (typeof CLASS_IDS)[number];
 
-/**
- * How a class fills its ultimate meter. Everything is measured in kill-equivalents,
- * against the ultimate's `charge` cost.
- */
-export interface ChargeRules {
-  /** Units per ordinary kill. Elites and bosses are worth several. */
-  readonly perKill: number;
-  /** Units per full max-health worth of damage taken. */
-  readonly perHealthLost: number;
-  /** Units per full max-mana worth of mana spent. */
-  readonly perManaSpent: number;
-  /** Units per critical hit. */
-  readonly perCrit: number;
-  /** Units per ailment you inflict. */
-  readonly perAilment: number;
-}
-
-const NO_CHARGE: ChargeRules = {
-  perKill: 1, perHealthLost: 0, perManaSpent: 0, perCrit: 0, perAilment: 0,
-};
+/** The fifteen classes that predate the refactor. Used only by the dead-code v1 tree. */
+export const LEGACY_CLASS_IDS = [
+  "lancer", "berserker", "swordsman", "magician", "shaman",
+  "ranger", "juggernaut", "duelist", "warlock", "monk",
+  "necromancer", "corsair", "trickster", "reaper", "stormcaller",
+] as const;
+export type LegacyClassId = (typeof LEGACY_CLASS_IDS)[number];
 
 export interface HeroClass {
   readonly id: ClassId;
@@ -62,9 +55,6 @@ export interface HeroClass {
   readonly affinity: readonly WeaponFamily[];
   /** Damage bonus while holding a weapon of an affine family. */
   readonly affinityBonus: number;
-  readonly skills: readonly SkillId[];
-  readonly ultimate: UltimateId;
-  readonly charge: ChargeRules;
   /** Fallback tint when your gear carries no element at all. */
   readonly element: Element;
   /** One line on how it wants to be played, for the class-select screen. */
@@ -83,9 +73,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.3, defense: 1.25, maxHealth: 17, maxMana: 4 },
     affinity: ["spear"], affinityBonus: 0.2,
-    skills: ["piercethrow", "emberlance", "stormcall", "frostnova", "wardveil", "chainbolt", "ironskin"],
-    ultimate: "cometcharge",
-    charge: { ...NO_CHARGE, perKill: 1, perCrit: 0.15 },
     element: "lightning",
   },
   berserker: {
@@ -99,9 +86,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.5, defense: 1.5, maxHealth: 22, maxMana: 3 },
     affinity: ["axe"], affinityBonus: 0.2,
-    skills: ["leapslam", "bloodrage", "venomburst", "frostnova", "rallycry", "whirlingblades"],
-    ultimate: "whirlwind",
-    charge: { ...NO_CHARGE, perKill: 1, perHealthLost: 5 },
     element: "fire",
   },
   swordsman: {
@@ -115,9 +99,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.2, defense: 1.4, maxHealth: 18, maxMana: 4 },
     affinity: ["sword", "daggers"], affinityBonus: 0.18,
-    skills: ["bladewave", "emberlance", "stormcall", "bloodrage", "wardveil", "whirlingblades", "quickdraw"],
-    ultimate: "bladestorm",
-    charge: { ...NO_CHARGE, perKill: 1, perCrit: 0.12 },
     element: "physical",
   },
   magician: {
@@ -131,12 +112,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 1.5, defense: 1.1, maxHealth: 13, power: 1.6, maxMana: 8 },
     affinity: ["staff"], affinityBonus: 0.22,
-    skills: [
-      "emberlance", "frostnova", "stormcall", "venomburst", "voidlance", "wardveil",
-      "glacialspike", "chainbolt",
-    ],
-    ultimate: "cataclysm",
-    charge: { ...NO_CHARGE, perKill: 0.8, perManaSpent: 3 },
     element: "fire",
   },
   shaman: {
@@ -150,13 +125,8 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 1.9, defense: 1.25, maxHealth: 16, power: 0.9, maxMana: 6 },
     affinity: ["talisman", "staff"], affinityBonus: 0.18,
-    skills: ["stormtotem", "venomburst", "frostnova", "stormcall", "wardveil", "venomfang", "voidrift"],
-    ultimate: "ancestors",
-    charge: { ...NO_CHARGE, perKill: 0.9, perAilment: 0.18 },
     element: "poison",
   },
-
-  // --- the second wave -------------------------------------------------------
 
   ranger: {
     id: "ranger", name: "Ranger", title: "Distance and Patience", color: "#a5d8ff",
@@ -169,9 +139,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.0, defense: 1.15, maxHealth: 15, maxMana: 4 },
     affinity: ["bow"], affinityBonus: 0.2,
-    skills: ["piercethrow", "arrowvolley", "huntersmark", "glacialspike", "frostnova"],
-    ultimate: "arrowstorm",
-    charge: { ...NO_CHARGE, perKill: 0.9, perCrit: 0.18 },
     element: "cold",
   },
   juggernaut: {
@@ -185,9 +152,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.3, defense: 1.8, maxHealth: 26, maxMana: 3 },
     affinity: ["hammer"], affinityBonus: 0.2,
-    skills: ["leapslam", "rallycry", "ironskin", "bloodrage", "frostnova"],
-    ultimate: "groundbreaker",
-    charge: { ...NO_CHARGE, perKill: 0.8, perHealthLost: 6 },
     element: "physical",
   },
   duelist: {
@@ -201,9 +165,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.1, defense: 1.15, maxHealth: 16, maxMana: 4 },
     affinity: ["rapier"], affinityBonus: 0.2,
-    skills: ["quickdraw", "huntersmark", "stormlash", "bladewave", "emberlance"],
-    ultimate: "ripostestorm",
-    charge: { ...NO_CHARGE, perKill: 1, perCrit: 0.22 },
     element: "lightning",
   },
   warlock: {
@@ -217,9 +178,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 1.4, defense: 1.1, maxHealth: 12, power: 1.7, maxMana: 9 },
     affinity: ["staff"], affinityBonus: 0.22,
-    skills: ["voidlance", "voidrift", "soulharvest", "wardveil", "frostnova"],
-    ultimate: "abyssalrift",
-    charge: { ...NO_CHARGE, perKill: 0.7, perManaSpent: 2, perAilment: 0.1 },
     element: "void",
   },
   monk: {
@@ -233,9 +191,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.0, defense: 1.35, maxHealth: 17, maxMana: 4 },
     affinity: ["fists"], affinityBonus: 0.2,
-    skills: ["whirlingblades", "rallycry", "ironskin", "bloodrage", "leapslam"],
-    ultimate: "thousandstrikes",
-    charge: { ...NO_CHARGE, perKill: 0.9, perHealthLost: 3, perCrit: 0.08 },
     element: "fire",
   },
   necromancer: {
@@ -249,9 +204,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 1.5, defense: 1.15, maxHealth: 13, power: 1.4, maxMana: 7 },
     affinity: ["talisman"], affinityBonus: 0.2,
-    skills: ["voidrift", "soulharvest", "venomfang", "voidlance", "stormtotem"],
-    ultimate: "legionofthedead",
-    charge: { ...NO_CHARGE, perKill: 1.4, perAilment: 0.12 },
     element: "void",
   },
   corsair: {
@@ -265,9 +217,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.2, defense: 1.3, maxHealth: 17, maxMana: 4 },
     affinity: ["whip"], affinityBonus: 0.2,
-    skills: ["stormlash", "quickdraw", "arrowvolley", "rallycry", "bladewave"],
-    ultimate: "whipcrackfury",
-    charge: { ...NO_CHARGE, perKill: 1.1, perCrit: 0.15 },
     element: "lightning",
   },
   trickster: {
@@ -281,9 +230,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.0, defense: 1.0, maxHealth: 13, maxMana: 3 },
     affinity: ["claws"], affinityBonus: 0.2,
-    skills: ["venomfang", "whirlingblades", "huntersmark", "quickdraw", "bladewave"],
-    ultimate: "blinkrush",
-    charge: { ...NO_CHARGE, perKill: 0.9, perCrit: 0.2, perHealthLost: 2 },
     element: "poison",
   },
   reaper: {
@@ -297,9 +243,6 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 2.4, defense: 1.3, maxHealth: 18, maxMana: 4 },
     affinity: ["scythe"], affinityBonus: 0.2,
-    skills: ["soulharvest", "ironskin", "venomfang", "leapslam", "bloodrage"],
-    ultimate: "harvestofsouls",
-    charge: { ...NO_CHARGE, perKill: 1.6 },
     element: "poison",
   },
   stormcaller: {
@@ -314,10 +257,88 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     },
     growth: { attack: 1.8, defense: 1.2, maxHealth: 15, power: 1.2, maxMana: 6 },
     affinity: ["chakram"], affinityBonus: 0.18,
-    skills: ["chainbolt", "stormlash", "voidrift", "frostnova", "stormcall"],
-    ultimate: "thunderstep",
-    charge: { ...NO_CHARGE, perKill: 0.9, perManaSpent: 1.5, perAilment: 0.1 },
     element: "lightning",
+  },
+
+  // --- new with the class refactor ----------------------------------------
+
+  paladin: {
+    id: "paladin", name: "Paladin", title: "Saint of the Last Stand", color: "#fcd34d",
+    blurb: "Stands between the party and the hit. Every point of damage kept off someone "
+      + "else is Conviction, and Conviction is what makes the shield hold.",
+    playstyle: "Bind to whoever's about to die, eat their damage, spend the meter keeping them up.",
+    base: {
+      attack: 10, defense: 11, maxHealth: 182, maxMana: 55,
+      defensePercent: 0.05, lifeOnHit: 1, healthPercent: 0.02,
+    },
+    growth: { attack: 2.2, defense: 1.7, maxHealth: 24, maxMana: 4 },
+    affinity: ["sword", "hammer"], affinityBonus: 0.2,
+    element: "holy",
+  },
+  bard: {
+    id: "bard", name: "Bard", title: "Battlefield Conductor", color: "#f0abfc",
+    blurb: "Barely fights. Everyone standing near the Bard fights considerably harder "
+      + "than they should, and everything the Bard is pointed at fights worse.",
+    playstyle: "Keep the songs up, stack the party's buffs, break the enemy's tempo.",
+    base: {
+      attack: 7, defense: 6, maxHealth: 122, power: 3, maxMana: 90,
+      cooldownRate: 0.05, manaRegen: 1, areaSize: 0.06,
+    },
+    growth: { attack: 1.5, defense: 1.1, maxHealth: 13, power: 1.0, maxMana: 7 },
+    affinity: ["talisman", "chakram"], affinityBonus: 0.18,
+    element: "arcane",
+  },
+  alchemist: {
+    id: "alchemist", name: "Alchemist", title: "Improviser", color: "#4ade80",
+    blurb: "Turns the floor into a chemistry set. Fire here, frost there, and the "
+      + "interesting part is what happens where two of them overlap.",
+    playstyle: "Layer the zones, set off the reactions, keep a serum in reserve.",
+    base: {
+      attack: 7, defense: 6, maxHealth: 118, power: 6, maxMana: 100,
+      skillDamage: 0.12, areaSize: 0.08, cooldownRate: 0.03,
+    },
+    growth: { attack: 1.5, defense: 1.1, maxHealth: 13, power: 1.6, maxMana: 8 },
+    affinity: ["staff", "talisman"], affinityBonus: 0.2,
+    element: "fire",
+  },
+  engineer: {
+    id: "engineer", name: "Engineer", title: "Combat Builder", color: "#fb923c",
+    blurb: "Does very little personally. By the time the fight is a minute old there is "
+      + "a turret, a wall and a mine doing it instead, and none of them get tired.",
+    playstyle: "Spend the first seconds building, then keep the machines fed and aimed.",
+    base: {
+      attack: 8, defense: 8, maxHealth: 128, maxMana: 55,
+      projectileDamage: 0.1, skillDamage: 0.08, thorns: 1,
+    },
+    growth: { attack: 1.9, defense: 1.4, maxHealth: 16, maxMana: 4 },
+    affinity: ["bow", "hammer"], affinityBonus: 0.2,
+    element: "physical",
+  },
+  assassin: {
+    id: "assassin", name: "Assassin", title: "Priority Target Killer", color: "#94a3b8",
+    blurb: "Doesn't clear a room. Picks the one thing in it that matters and removes "
+      + "that, cleanly, before the room has finished noticing.",
+    playstyle: "Mark the contract, open from the shadow, execute, disappear.",
+    base: {
+      attack: 10, defense: 5, maxHealth: 110, maxMana: 50,
+      critChance: 0.1, critDamage: 0.24, moveSpeed: 0.08,
+    },
+    growth: { attack: 2.3, defense: 1.05, maxHealth: 12, maxMana: 3 },
+    affinity: ["daggers", "claws"], affinityBonus: 0.2,
+    element: "poison",
+  },
+  warden: {
+    id: "warden", name: "Warden", title: "Guardian of the Wild", color: "#65a30d",
+    blurb: "Turns the arena into terrain that fights on your side — walls of thorn, "
+      + "roots that hold, a grove that heals — and puts on a bear when the wall isn't enough.",
+    playstyle: "Wall off the room, root the crowd, hold the line in bear form.",
+    base: {
+      attack: 9, defense: 10, maxHealth: 178, power: 2, maxMana: 58,
+      defensePercent: 0.04, thorns: 3, elementalDamage: 0.06,
+    },
+    growth: { attack: 2.0, defense: 1.6, maxHealth: 23, power: 0.6, maxMana: 4 },
+    affinity: ["hammer", "staff"], affinityBonus: 0.2,
+    element: "nature",
   },
 };
 
