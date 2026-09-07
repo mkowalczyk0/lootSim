@@ -4,6 +4,7 @@ import type { Element, Resists } from "../data/elements";
 import type { EnemyArchetype } from "../data/enemies";
 import type { Rarity } from "../data/rarity";
 import type { StatusInstance } from "./combat";
+import type { StatusContainer } from "../combat/status";
 import type { Item } from "./item";
 
 /** Anything drawn with interpolation keeps its previous position for the render pass. */
@@ -124,7 +125,14 @@ export interface Enemy extends Body {
   /** What its hits are made of. */
   element: Element;
   resists: Resists;
+  /** Legacy elemental ailments (burn/chill/…). Being migrated onto `sc`. */
   statuses: StatusInstance[];
+  /**
+   * The unified status container the `src/combat` ability executor reads and writes.
+   * Runs in parallel with `statuses` during the combat cutover; every timed effect
+   * moves here as the skills that apply them migrate onto the executor.
+   */
+  sc: StatusContainer;
   /** Multiplies knockback taken. Bosses are near-immovable. */
   knockResist: number;
   /** Set for the one enemy that is a raid boss; null for everything else. */

@@ -29,6 +29,13 @@ import {
   amplifyFrom, applyStatus, manaBurnFrom, mitigateWithResists, slowFrom, tickStatuses,
   type StatusInstance,
 } from "./combat";
+import {
+  AbilityRuntime, EventBus, ResourceSet, StatusContainer,
+  type CombatHost, type DamagePacket, type HostActor,
+  type MinionRequest, type MoveRequest, type ProjectileRequest, type TargetActor,
+  type TerrainRequest, type ZoneRequest, type MinionCommand,
+} from "../combat/index";
+import { CLASS_BY_ID, makeClassResources } from "../progression/index";
 import type { Avatar, Enemy, GroundZone, Pickup, Projectile, Telegraph, Totem } from "./entities";
 import type { Appearance } from "../data/cosmetics";
 import type { AvatarInput } from "../core/input";
@@ -213,8 +220,16 @@ export class Hero {
   readonly player: Player;
   readonly appearance: Appearance;
   readonly avatar: Avatar;
-  /** Ailments on this hero. Monsters carry their own, same as always. */
+  /** Legacy elemental ailments on this hero. Being migrated onto `sc`. */
   readonly statuses: StatusInstance[] = [];
+  /** Unified status container for the `src/combat` executor. Parallel to `statuses`
+   *  during the cutover; see the note on `Enemy.sc`. */
+  readonly sc: StatusContainer;
+  /** This hero's class resources — Momentum, Rage, Mana, the ultimate meter, … —
+   *  built from the progression `PilotClass` for the class they're playing. */
+  readonly resources: ResourceSet;
+  /** Per-hero ability cooldowns and deferred (delay / reactive / follow-up) effects. */
+  readonly rt = new AbilityRuntime();
   /** One more than you equipped, for the slot a piece of gear can grant you. */
   readonly skillCooldowns = [0, 0, 0, 0];
   readonly loot: RunLoot = {
@@ -250,6 +265,9 @@ export class Hero {
     this.potions = setup.potions;
     this.local = setup.local;
     this.avatar = avatar;
+    this.sc = new StatusContainer(index);
+    const pilot = CLASS_BY_ID[setup.player.classId];
+    this.resources = pilot ? makeClassResources(pilot) : new ResourceSet();
   }
 
   get alive(): boolean {
@@ -286,7 +304,7 @@ export interface DungeonOptions {
  * Pure simulation — it never touches the DOM or the canvas. Anything the renderer
  * needs to react to is pushed onto `events` and drained once per frame.
  */
-export class Dungeon {
+export class Dungeon implements CombatHost {
   /** How this floor was configured: mode, rift tier, position in the run. */
   readonly config: RunConfig;
   readonly profile: DepthProfile;
@@ -311,6 +329,12 @@ export class Dungeon {
   readonly events: RunEvent[] = [];
   /** Deterministic randomness for the whole floor. The boss brain draws from it too. */
   readonly rng: Rng;
+  /** The typed combat event bus the `src/combat` executor and resource rules ride on.
+   *  Wired to `fireTriggers` so item triggers still see hits and kills. */
+  readonly bus = new EventBus();
+  /** Persistent `HostActor` adapters, keyed by host id, so a `StatusContainer` and a
+   *  `ResourceSet` keep their identity across a cast. Rebuilt lazily. */
+  private hostActors = new Map<number, HostActor>();
 
   phase: RunPhase = "fighting";
   wave = 0;
@@ -601,6 +625,7 @@ export class Dungeon {
       element,
       resists,
       statuses: [],
+      sc: new StatusContainer(1_000_000 + this.nextEnemyId - 1),
       knockResist: 1,
       boss: null,
       summoned: opts.summoned ?? false,
@@ -1143,6 +1168,10 @@ export class Dungeon {
     tickStatuses(hero.statuses, dt, (damage, element) => {
       this.hurtPlayerRaw(hero, damage, element, 0);
     });
+    // The src/combat containers run in parallel during the cutover — see Hero.sc.
+    hero.sc.tick(dt, { onDamage: (p) => this.dealDamage(hero.index, p) });
+    hero.resources.tick(dt);
+    hero.rt.tick(dt, this);
   }
 
   /**
@@ -1971,8 +2000,8 @@ export class Dungeon {
       /** Who gets the kill, the charge and the on-kill triggers. */
       source?: Hero | null;
     } = {},
-  ): void {
-    if (e.health <= 0) return;
+  ): number {
+    if (e.health <= 0) return 0;
     const amplified = amount * amplifyFrom(e.statuses);
     const mitigated = opts.raw ? amount : mitigateWithResists(amplified, element, e.resists);
     const dealt = Math.max(1, Math.round(mitigated));
@@ -1997,6 +2026,7 @@ export class Dungeon {
       this.gainCharge(source, this.chargeRules(source).perAilment);
     }
     if (e.health <= 0) this.killEnemy(e, source);
+    return dealt;
   }
 
   private killEnemy(e: Enemy, source: Hero): void {
@@ -2185,6 +2215,7 @@ export class Dungeon {
       tickStatuses(e.statuses, dt, (damage, element) => {
         this.damageEnemy(e, damage, this.rng.angle(), element, { raw: true, knock: 0 });
       });
+      e.sc.tick(dt, { onDamage: (p) => this.dealDamage(Dungeon.ENEMY_ID_BASE + e.id, p) });
       if (e.health <= 0) continue;
 
       if (e.state === "spawning") {
@@ -2355,8 +2386,8 @@ export class Dungeon {
     this.applyPlayerDamage(hero, amount, element, ailment);
   }
 
-  private applyPlayerDamage(hero: Hero, amount: number, element: Element, ailment: number): void {
-    if (hero.downed) return;
+  private applyPlayerDamage(hero: Hero, amount: number, element: Element, ailment: number): number {
+    if (hero.downed) return 0;
     const a = hero.avatar;
     const p = hero.player;
     // The ward eats damage before health does, and counts as resistance while it holds.
@@ -2391,6 +2422,7 @@ export class Dungeon {
     }
 
     if (!p.isAlive) this.downHero(hero);
+    return dealt;
   }
 
   /**
@@ -2611,6 +2643,304 @@ export class Dungeon {
 
   drainEvents(): RunEvent[] {
     return this.events.splice(0, this.events.length);
+  }
+
+  // --- CombatHost: the seam the src/combat ability executor talks to ---------
+  //
+  // The executor (`AbilityRuntime.castAbility` + `runEffect`) never touches the
+  // dungeon's arrays directly — it asks a `CombatHost` to deal a packet, spawn a
+  // projectile, move a body. This block is that host, implemented against the same
+  // entity arrays the legacy `castSkill` switch uses. Skills and ultimates move onto
+  // it in a later cutover stage; for now it exists, compiles and is exercised by the
+  // headless tests, but the live dungeon still runs the legacy paths.
+
+  /** Host id space: heroes 0..3, enemies 1_000_000+id, minions 2_000_000+id. */
+  private static readonly ENEMY_ID_BASE = 1_000_000;
+  private static readonly MINION_ID_BASE = 2_000_000;
+
+  now(): number {
+    return this.elapsed;
+  }
+
+  random(): number {
+    return this.rng.next();
+  }
+
+  private heroByHostId(id: number): Hero | undefined {
+    return id >= 0 && id < Dungeon.ENEMY_ID_BASE ? this.heroes[id] : undefined;
+  }
+
+  private enemyByHostId(id: number): Enemy | undefined {
+    if (id < Dungeon.ENEMY_ID_BASE || id >= Dungeon.MINION_ID_BASE) return undefined;
+    const realId = id - Dungeon.ENEMY_ID_BASE;
+    return this.enemies.find((e) => e.id === realId);
+  }
+
+  private heroHost(hero: Hero): HostActor {
+    const existing = this.hostActors.get(hero.index);
+    if (existing) return existing;
+    const host: HostActor = {
+      id: hero.index,
+      kind: "hero",
+      faction: "player",
+      statuses: hero.sc,
+      resources: hero.resources,
+      get x() { return hero.avatar.x; },
+      get y() { return hero.avatar.y; },
+      get health() { return hero.player.health; },
+      get maxHealth() { return hero.player.maxHealth; },
+      get alive() { return !hero.downed; },
+    };
+    this.hostActors.set(hero.index, host);
+    return host;
+  }
+
+  private enemyHost(e: Enemy): HostActor {
+    const hostId = Dungeon.ENEMY_ID_BASE + e.id;
+    const existing = this.hostActors.get(hostId);
+    if (existing) return existing;
+    const host: HostActor = {
+      id: hostId,
+      kind: e.summoned ? "minion" : "enemy",
+      faction: "enemy",
+      statuses: e.sc,
+      get x() { return e.x; },
+      get y() { return e.y; },
+      get health() { return e.health; },
+      get maxHealth() { return e.maxHealth; },
+      get alive() { return e.health > 0; },
+    };
+    this.hostActors.set(hostId, host);
+    return host;
+  }
+
+  actor(id: number): HostActor | undefined {
+    const hero = this.heroByHostId(id);
+    if (hero) return this.heroHost(hero);
+    const enemy = this.enemyByHostId(id);
+    if (enemy) return this.enemyHost(enemy);
+    return undefined;
+  }
+
+  *actors(): Iterable<TargetActor> {
+    for (const hero of this.heroes) yield this.heroHost(hero);
+    for (const e of this.enemies) if (e.health > 0) yield this.enemyHost(e);
+  }
+
+  *corpses(): Iterable<{ id: number; x: number; y: number }> {
+    // No corpse system yet — the Necromancer's corpse economy lands with the minion
+    // subsystem. An empty iterable makes corpse-targeted effects simply no-op.
+  }
+
+  *zones(): Iterable<{ id: number; x: number; y: number }> {
+    for (let i = 0; i < this.ground.length; i++) {
+      const g = this.ground[i]!;
+      yield { id: i, x: g.x, y: g.y };
+    }
+  }
+
+  *summonsOf(ownerId: number): Iterable<TargetActor> {
+    const hero = this.heroByHostId(ownerId);
+    if (!hero) return;
+    for (const e of this.enemies) {
+      if (e.health > 0 && e.summoned && e.boss === null && this.minionOwner.get(e.id) === hero.index) {
+        yield this.enemyHost(e);
+      }
+    }
+  }
+
+  /** Which hero owns a summoned minion (kill/threat credit). Populated by `spawnMinion`. */
+  private readonly minionOwner = new Map<number, number>();
+
+  markOf(actorId: number): number | undefined {
+    // `mark` lives on the target's own container; the executor's "marked" selector uses
+    // a per-caster mark instead. Not wired until abilities that mark land.
+    void actorId;
+    return this.markTargets.get(actorId);
+  }
+
+  private readonly markTargets = new Map<number, number>();
+
+  threatToward(actorId: number): number {
+    void actorId;
+    return 0;
+  }
+
+  // --- effects -----------------------------------------------------------
+
+  dealDamage(targetId: number, packet: DamagePacket): number {
+    const source = this.heroByHostId(packet.source.actorId) ?? null;
+    const hero = this.heroByHostId(targetId);
+    if (hero) {
+      const dealt = this.applyPlayerDamage(hero, packet.amount, packet.type, 0);
+      this.applyInflict(hero.sc, packet);
+      return dealt;
+    }
+    const enemy = this.enemyByHostId(targetId);
+    if (enemy) {
+      const angle = source
+        ? Math.atan2(enemy.y - source.avatar.y, enemy.x - source.avatar.x)
+        : this.rng.angle();
+      const dealt = this.damageEnemy(enemy, packet.amount, angle, packet.type, {
+        crit: packet.crit,
+        knock: packet.knockback,
+        raw: packet.raw,
+        source,
+      });
+      this.applyInflict(enemy.sc, packet);
+      return dealt;
+    }
+    return 0;
+  }
+
+  private applyInflict(sc: StatusContainer, packet: DamagePacket): void {
+    if (!packet.inflict || packet.inflict.chance <= 0) return;
+    sc.apply(packet.inflict.status, {
+      hitDamage: packet.amount,
+      potency: packet.inflict.potency ?? 1,
+      sourceActorId: packet.source.actorId,
+      chance: packet.inflict.chance,
+      roll: () => this.rng.next(),
+    });
+  }
+
+  healActor(targetId: number, amount: number, _sourceId: number, _overTime?: number): void {
+    const hero = this.heroByHostId(targetId);
+    if (hero) { hero.player.heal(amount); return; }
+    const enemy = this.enemyByHostId(targetId);
+    if (enemy) enemy.health = Math.min(enemy.maxHealth, enemy.health + amount);
+  }
+
+  shieldActor(targetId: number, amount: number, duration: number, _sourceId: number, _absorbOneHit?: boolean): void {
+    const hero = this.heroByHostId(targetId);
+    if (!hero) return;
+    // Reuse the Ward Veil pool — it is exactly "damage eaten before health".
+    hero.ward = Math.max(hero.ward, amount);
+    hero.wardTimer = Math.max(hero.wardTimer, duration);
+  }
+
+  moveActor(id: number, req: MoveRequest): void {
+    const hero = this.heroByHostId(id);
+    if (!hero) return;
+    const a = hero.avatar;
+    const angle = req.toPoint
+      ? Math.atan2(req.toPoint.y - a.y, req.toPoint.x - a.x)
+      : a.facing;
+    const reach = req.distance ?? dist(a.x, a.y, req.toPoint?.x ?? a.x, req.toPoint?.y ?? a.y);
+    const landing = this.leapTo(hero, angle, reach);
+    a.x = landing.x;
+    a.y = landing.y;
+    if (req.iframes) {
+      a.invulnTimer = Math.max(a.invulnTimer, req.iframes);
+      a.dashInvuln = Math.max(a.dashInvuln, req.iframes);
+    }
+  }
+
+  spawnProjectile(req: ProjectileRequest): number {
+    const owner = this.heroByHostId(req.ownerId);
+    this.projectiles.push({
+      x: req.x, y: req.y, px: req.x, py: req.y, radius: req.radius,
+      vx: Math.cos(req.angle) * req.speed, vy: Math.sin(req.angle) * req.speed,
+      damage: req.damage.amount, friendly: owner !== undefined, life: req.life,
+      color: ELEMENT_COLORS[req.damage.type], element: req.damage.type,
+      pierce: req.pierce, hits: new Set(), ailment: req.damage.inflict?.chance ?? 0,
+      basic: false, owner: owner?.index ?? -1,
+    });
+    return this.projectiles.length - 1;
+  }
+
+  spawnZone(req: ZoneRequest): number {
+    this.ground.push({
+      x: req.x, y: req.y, px: req.x, py: req.y, radius: req.radius,
+      element: req.damage?.type ?? "physical",
+      damage: req.damage ? req.damage.amount * (req.tickInterval || 0.5) : 0,
+      remaining: req.duration, tickTimer: req.tickInterval || 0.5,
+      hitsPlayer: false, hitsEnemies: true,
+      color: ELEMENT_COLORS[req.damage?.type ?? "physical"],
+    });
+    return this.ground.length - 1;
+  }
+
+  spawnMinion(req: MinionRequest): number[] {
+    // The full mobile-minion subsystem (pathing, targeting, caps) lands in the next
+    // stage. For now a summon reuses the totem infrastructure: a stationary body that
+    // pulses at nearby enemies, credited to its owner.
+    const owner = this.heroByHostId(req.ownerId);
+    if (!owner) return [];
+    const ids: number[] = [];
+    for (let i = 0; i < req.count; i++) {
+      const angle = (TAU / Math.max(1, req.count)) * i;
+      this.plantTotem(owner, req.x + Math.cos(angle) * 26, req.y + Math.sin(angle) * 26, {
+        damage: owner.player.attackDamage * (req.command.inheritPower ?? 0.5),
+        duration: req.duration || 8,
+        interval: TOTEM_PULSE,
+        range: 120,
+        targets: 1,
+        element: owner.player.attackElement,
+        ailment: 0,
+      });
+      ids.push(Dungeon.MINION_ID_BASE + this.nextTotemId - 1);
+    }
+    return ids;
+  }
+
+  spawnTerrain(_req: TerrainRequest): number {
+    // No player-built terrain yet (Necromancer's Ossuary Wall, Juggernaut's Anchor
+    // Rune). Lands with the minion/construct stage.
+    return -1;
+  }
+
+  consumeCorpses(_count: number | "all"): number {
+    return 0;
+  }
+
+  setThreat(targetId: number, op: "taunt" | "drop" | "generate", sourceId: number, _amount: number): void {
+    if (op !== "taunt") return;
+    const enemy = this.enemyByHostId(targetId);
+    const hero = this.heroByHostId(sourceId);
+    if (enemy && hero) this.taunts.set(enemy.id, hero.index);
+  }
+
+  /** Enemies forced to target a specific hero, by taunt. Read by the enemy brain. */
+  private readonly taunts = new Map<number, number>();
+
+  applyImpulse(targetId: number, fromX: number, fromY: number, force: number): void {
+    const enemy = this.enemyByHostId(targetId);
+    if (!enemy) return;
+    const angle = Math.atan2(enemy.y - fromY, enemy.x - fromX);
+    enemy.knockX += Math.cos(angle) * force * enemy.knockResist;
+    enemy.knockY += Math.sin(angle) * force * enemy.knockResist;
+  }
+
+  interruptCasts(x: number, y: number, radius: number): void {
+    for (const e of this.enemies) {
+      if (e.state === "windup" && dist(e.x, e.y, x, y) <= radius + e.radius) {
+        e.state = "active";
+        e.windup = 0;
+      }
+    }
+    const b = this.boss?.boss;
+    if (b && b.ability && this.boss && dist(this.boss.x, this.boss.y, x, y) <= radius + this.boss.radius) {
+      b.castTimer = 0;
+    }
+  }
+
+  commandSummons(ownerId: number, _behavior: MinionCommand["behavior"], _targetId?: number): void {
+    void ownerId;
+    // No-op until minions can be re-tasked (minion stage).
+  }
+
+  sacrificeSummons(_ownerId: number, _count: number): number {
+    return 0;
+  }
+
+  redirectDamage(_protectorId: number, _wardId: number, _fraction: number, _duration: number): void {
+    // Damage redirection (Paladin's Guardian's Oath, Juggernaut's Fortress Call) needs
+    // a binding the hero-damage path reads. Lands with the ability cutover.
+  }
+
+  emitFx(ref: string, x: number, y: number): void {
+    this.events.push({ kind: "cast", x, y: y - 20, label: ref, color: "#ffffff" });
   }
 }
 

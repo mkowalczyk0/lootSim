@@ -23,6 +23,7 @@ import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type 
 import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
+import { StatusContainer } from "../combat/status";
 import { ULTIMATES, type UltimateId } from "../data/ultimates";
 import type { Dungeon, Hero } from "../game/dungeon";
 import type { Enemy } from "../game/entities";
@@ -334,6 +335,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
         trapCooldown: 0, stuckTimer: 0, dodgeDir: 1,
         element, resists: {} as Enemy["resists"], statuses: [],
+        sc: new StatusContainer(1_000_000 + id!),
         knockResist: 1, boss: null, summoned: false,
       };
       d.enemies.push(e);
