@@ -261,8 +261,22 @@ function selectActorIds(host: CombatHost, ctx: EffectContext, to: EffectTargetSe
     case "target":
       return t.actorIds.length ? [t.actorIds[0]!] : [];
     case "allTargets":
-    case "enemies":
       return t.actorIds;
+    case "enemies": {
+      // "enemies" means every hostile around the caster — NOT the pre-resolved aim list.
+      // A self-targeted shout, a delayed ultimate, a reactive retaliation all resolve
+      // their victims here, at fire time, from where the caster actually is. Bounded by
+      // the ability's `shape.radius` when it has one, field-wide otherwise (a room-wide
+      // ultimate like Death Comes Due or Damnation).
+      const caster = host.actor(ctx.casterId);
+      if (!caster) return [];
+      const r = ctx.ability.shape?.radius;
+      const hostiles = [...host.actors()].filter((a) => a.alive && a.faction !== caster.faction);
+      const bounded = r === undefined
+        ? hostiles
+        : hostiles.filter((a) => Math.hypot(a.x - caster.x, a.y - caster.y) <= r);
+      return bounded.map((a) => a.id);
+    }
     case "allies": {
       const caster = host.actor(ctx.casterId);
       if (!caster) return [];

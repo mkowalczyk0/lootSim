@@ -731,7 +731,12 @@ function probeUltimate(classId: ClassId, seed = 8100) {
   let travelled = 0;
   let lastX = startX;
   let lastY = startY;
-  for (const ev of d.drainEvents()) if (ev.kind === "ultimate") fired = true;
+  // The cast tick itself carries the ultimate event AND — for an all-instant ultimate
+  // like Damnation — its entire damage. Count both here; don't drain them on the floor.
+  for (const ev of d.drainEvents()) {
+    if (ev.kind === "ultimate") fired = true;
+    if (ev.kind === "damage" && !ev.onPlayer) dealt += ev.amount;
+  }
 
   // A real player backs away from their own meteors; a probe that never touches the
   // keys again would just stand in them for five straight seconds and die of it. Only
