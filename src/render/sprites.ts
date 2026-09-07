@@ -15,7 +15,7 @@
 
 import { CHESTS, type ChestTier } from "../data/chests";
 import { atlasCanvas, loadAtlas } from "./atlas";
-import { ATLAS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import { ATLAS, ATLAS_WEAPONS, SPRITE_OVERRIDES } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
@@ -194,20 +194,45 @@ function appearanceKey(a: Appearance): string {
 
 const heroCache = new Map<string, HTMLCanvasElement>();
 
+/** How a hero body wants to be drawn: the canvas plus its world scale and feet offset. */
+export interface HeroSprite {
+  readonly canvas: HTMLCanvasElement;
+  readonly scale: number;
+  readonly feet: number;
+}
+
+/** The procedural composed character's draw params (matches `drawSprite`'s old defaults). */
+const PROC_HERO: Omit<HeroSprite, "canvas"> = { scale: 1.2, feet: 0.22 };
+
 /**
  * The player's body, composed and cached. An appearance only changes in town, so this
  * misses once per wardrobe edit and never during a dive.
+ *
+ * The pipeline base (`hero.legend-base`) stands in whenever the player isn't wearing a
+ * composited cosmetic layer (hat / ears / face / back). Those layers are still procedural
+ * until their own art pass, so a decorated character falls back to the old stacked look —
+ * consistent with itself, just not yet the new art.
  */
-export function heroSprite(appearance: Appearance): HTMLCanvasElement {
+export function heroSprite(appearance: Appearance): HeroSprite {
+  const plain = !appearance.hat && !appearance.ears && !appearance.face && !appearance.back;
+  if (plain) {
+    const id = SPRITE_OVERRIDES.hero;
+    const png = id ? atlasCanvas(id) : null;
+    if (png) {
+      const meta = id ? ATLAS[id] : undefined;
+      return { canvas: png, scale: meta?.worldScale ?? PROC_HERO.scale, feet: meta?.feet ?? PROC_HERO.feet };
+    }
+  }
   const key = appearanceKey(appearance);
-  const hit = heroCache.get(key);
-  if (hit) return hit;
-  const made = composeCharacter(appearance);
-  // A wardrobe session can produce a lot of one-off looks; keep the map from growing
-  // without bound while still holding everything anyone is actually wearing.
-  if (heroCache.size > 64) heroCache.clear();
-  heroCache.set(key, made);
-  return made;
+  let canvas = heroCache.get(key);
+  if (!canvas) {
+    canvas = composeCharacter(appearance);
+    // A wardrobe session can produce a lot of one-off looks; keep the map from growing
+    // without bound while still holding everything anyone is actually wearing.
+    if (heroCache.size > 64) heroCache.clear();
+    heroCache.set(key, canvas);
+  }
+  return { canvas, ...PROC_HERO };
 }
 
 /** Cache key for anything derived from an appearance, so tints can be cached too. */
@@ -229,6 +254,21 @@ export function weaponSprite(
   const hit = weaponCache.get(key);
   if (hit) return hit;
 
+  // Pipeline weapon: the authored greyscale PNG, tinted toward the rarity colour so a
+  // mythic axe still glows before anyone reads the word. A cosmetic weapon skin is a
+  // palette over the procedural grid, so those fall through to the bake below for now.
+  const aw = ATLAS_WEAPONS[family];
+  if (aw && !skinId) {
+    const png = atlasCanvas(aw.id);
+    if (png) {
+      const made = rarity
+        ? tintedCanvas(png, `atlasWeapon:${family}`, RARITY_COLORS[rarity], 0.26)
+        : png;
+      weaponCache.set(key, made);
+      return made;
+    }
+  }
+
   const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
   const skin = skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
   const made = bake(art.grid, weaponPalette(skin ?? rarityWeaponPalette(rarity)));
@@ -239,8 +279,19 @@ export function weaponSprite(
 
 /** Where the grip sits inside a weapon sprite, so it can be rotated around the hand. */
 export function weaponGrip(family: WeaponFamily): { x: number; y: number } {
+  const aw = ATLAS_WEAPONS[family];
+  if (aw && atlasCanvas(aw.id)) return { x: aw.gripX, y: aw.gripY };
   const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
   return { x: art.ax, y: art.ay };
+}
+
+/**
+ * World units per art pixel for a pipeline weapon, or null if `family` is still on the
+ * procedural grid. `render/draw.ts` uses this in place of the global `WEAPON_SCALE`.
+ */
+export function weaponWorldScale(family: WeaponFamily): number | null {
+  const aw = ATLAS_WEAPONS[family];
+  return aw && atlasCanvas(aw.id) ? aw.worldScale : null;
 }
 
 /** The bloom colour around a weapon, if it has one. Null for ordinary metal. */

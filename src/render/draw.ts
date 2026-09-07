@@ -10,7 +10,7 @@ import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import {
   heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
-  tinted, weaponGlow, weaponGrip, weaponSprite, type SpriteName,
+  tinted, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
 } from "./sprites";
 
 /**
@@ -395,6 +395,7 @@ export class WorldRenderer {
   private drawHero(ctx: CanvasRenderingContext2D, d: Dungeon, hero: Hero, x: number, y: number): void {
     const a = hero.avatar;
     const classColor = hero.player.heroClass.color;
+    const hs = heroSprite(hero.appearance);
     blob(ctx, x, y, 9);
 
     // A downed ally is a slumped, faded body with a revive meter over it. Standing on
@@ -402,7 +403,7 @@ export class WorldRenderer {
     if (hero.downed) {
       ctx.save();
       ctx.globalAlpha = 0.4;
-      drawSprite(ctx, heroSprite(hero.appearance), x, y + 4, false);
+      drawSprite(ctx, hs.canvas, x, y + 4, false, hs.scale, hs.feet);
       ctx.restore();
       const pct = clamp(hero.reviveProgress / REVIVE_TIME, 0, 1);
       ctx.save();
@@ -470,17 +471,17 @@ export class WorldRenderer {
     const behind = Math.sin(a.facing) < -0.25;
     if (behind) this.drawWeapon(ctx, hero, x, y);
 
-    const body = heroSprite(hero.appearance);
+    const body = hs.canvas;
     const key = heroKey(hero.appearance);
     // Blink during i-frames so it's obvious when you're safe.
     const blinking = a.invulnTimer > 0 && Math.floor(d.elapsed * 22) % 2 === 0;
     ctx.save();
     if (a.dashTimer > 0) ctx.globalAlpha = 0.65;
     if (a.hitFlash > 0) {
-      drawSprite(ctx, silhouetteCanvas(body, key, "#ff6b6b"), x, y, flip);
+      drawSprite(ctx, silhouetteCanvas(body, key, "#ff6b6b"), x, y, flip, hs.scale, hs.feet);
     } else {
       if (blinking) ctx.globalAlpha *= 0.45;
-      drawSprite(ctx, body, x, y, flip);
+      drawSprite(ctx, body, x, y, flip, hs.scale, hs.feet);
     }
     ctx.restore();
 
@@ -501,6 +502,9 @@ export class WorldRenderer {
     const canvas = weaponSprite(spec.id, skinId, rarity);
     const grip = weaponGrip(spec.id);
     const glow = weaponGlow(skinId, rarity);
+    // A pipeline weapon is authored much larger than a legacy grid; it carries its own
+    // world scale so its reach still matches the family it replaced.
+    const wscale = weaponWorldScale(spec.id) ?? WEAPON_SCALE;
 
     const swinging = a.swingTimer > 0;
     const t = swinging ? clamp(1 - a.swingTimer / SWING_DRAW_TIME, 0, 1) : 0;
@@ -545,8 +549,8 @@ export class WorldRenderer {
     if (Math.cos(angle) < 0) ctx.scale(1, -1);
     ctx.drawImage(
       canvas,
-      -grip.x * WEAPON_SCALE, -grip.y * WEAPON_SCALE,
-      canvas.width * WEAPON_SCALE, canvas.height * WEAPON_SCALE,
+      -grip.x * wscale, -grip.y * wscale,
+      canvas.width * wscale, canvas.height * wscale,
     );
     ctx.restore();
   }

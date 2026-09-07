@@ -47,7 +47,7 @@ export function renderHub(
   }
 
   const body = heroSprite(appearance);
-  drawSprite(ctx, body, hub.x, hub.y, Math.cos(hub.facing) < 0, 1.2);
+  drawSprite(ctx, body.canvas, hub.x, hub.y, Math.cos(hub.facing) < 0, body.scale, body.feet);
   ctx.restore();
 
   if (near) {
@@ -66,7 +66,8 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
   if (mate.appearance) {
     ctx.save();
     ctx.globalAlpha = 0.95;
-    drawSprite(ctx, heroSprite(mate.appearance), mate.x, mate.y, Math.cos(mate.facing) < 0, 1.2);
+    const mb = heroSprite(mate.appearance);
+    drawSprite(ctx, mb.canvas, mate.x, mate.y, Math.cos(mate.facing) < 0, mb.scale, mb.feet);
     ctx.restore();
   }
   ctx.save();

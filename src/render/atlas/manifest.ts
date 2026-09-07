@@ -44,6 +44,13 @@ export interface AtlasSprite {
  * you re-export a sprite at a new size, update the row (and re-check `worldScale`).
  */
 export const ATLAS: Record<string, AtlasSprite> = {
+  // §9 The Legends — the plain, calm base adventurer. Replaces the composed procedural
+  // character (30×26 grid at SPRITE_SCALE 1.2 ≈ 31 world units tall) while the player
+  // isn't wearing a composited cosmetic layer (hat/ears/face/back) — those layers are
+  // still procedural until their own art pass, so a decorated character keeps the old
+  // look for now. 50px × 0.64 ≈ 32, a hair taller for clarity per §1.3.
+  "hero.legend-base": { id: "hero.legend-base", w: 20, h: 50, worldScale: 0.64, feet: 0.04 },
+
   // §5 Circle VI (Heresy) — the corrupted saint. Replaces the `bossChoir` silhouette.
   // choir was BOSS_CHOIR (26×26) at spriteScale 3.54 ≈ 92 world units tall; this stands
   // a touch taller — bosses are the headline act — at 54px × 1.85 ≈ 100.
@@ -64,6 +71,47 @@ export const ATLAS: Record<string, AtlasSprite> = {
  * Plain strings on the value side so this module stays free of `sprites.ts`.
  */
 export const SPRITE_OVERRIDES: Record<string, string> = {
+  hero: "hero.legend-base",
   bossChoir: "boss.corrupted-saint",
   swarmer: "reliquary.monster.rot-scuttler",
+};
+
+// --- weapons -------------------------------------------------------------
+
+/**
+ * A pipeline-authored world weapon sprite. Like {@link AtlasSprite} but carries the
+ * **grip** (the authored pixel that sits in the character's hand — `render/draw.ts`
+ * rotates the sprite about this point along the swing) instead of a feet offset.
+ *
+ * Legacy weapon grids ride the global `WEAPON_SCALE` (1.5) in `render/draw.ts`; an atlas
+ * weapon is authored much larger, so `worldScale` here replaces that constant for it —
+ * tuned so the drawn weapon spans the same world reach its predecessor grid did (an axe
+ * bit wider than a torso, a spear out-reaching a sword — §13).
+ */
+export interface AtlasWeapon {
+  readonly id: string;
+  readonly w: number;
+  readonly h: number;
+  readonly worldScale: number;
+  /** Grip pixel in authored (art) coordinates — sits in the hand. */
+  readonly gripX: number;
+  readonly gripY: number;
+}
+
+/**
+ * Every pipeline weapon, keyed by `WeaponFamily` (`render/sprites.ts` reads this to
+ * override the greyscale procedural grid). Authored pointing **+x**. Rarity colour and
+ * cosmetic weapon skins are not baked in — `weaponSprite` tints the loaded PNG toward
+ * the rarity colour at draw time, and a cosmetic skin still falls back to the procedural
+ * grid until skins get their own pass.
+ */
+export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
+  // Target world reach ≈ predecessor grid width × WEAPON_SCALE (1.5):
+  //   sword 19→28 · axe 16→24 · spear 24→36 · daggers 14→21 · staff 19→28 · talisman 13→20
+  sword:    { id: "weapon.sword",    w: 69,  h: 15, worldScale: 0.41, gripX: 9,  gripY: 7 },
+  axe:      { id: "weapon.axe",      w: 67,  h: 19, worldScale: 0.36, gripX: 9,  gripY: 13 },
+  spear:    { id: "weapon.spear",    w: 118, h: 7,  worldScale: 0.31, gripX: 36, gripY: 3 },
+  daggers:  { id: "weapon.daggers",  w: 44,  h: 11, worldScale: 0.47, gripX: 7,  gripY: 5 },
+  staff:    { id: "weapon.staff",    w: 86,  h: 8,  worldScale: 0.33, gripX: 7,  gripY: 4 },
+  talisman: { id: "weapon.talisman", w: 20,  h: 36, worldScale: 0.55, gripX: 10, gripY: 9 },
 };

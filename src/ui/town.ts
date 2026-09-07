@@ -2110,7 +2110,7 @@ export class TownUI {
 
     const a = this.state.appearance;
     const held = this.state.player.equipment.weapon;
-    const portrait = pixelImage(heroSprite(a), 7);
+    const portrait = pixelImage(heroSprite(a).canvas, 7);
     const weapon = pixelImage(
       weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 4);
     const selected = STYLE_ROWS[this.cursor];

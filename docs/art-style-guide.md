@@ -566,12 +566,21 @@ src/render/atlas/             committed PNGs, loaded by Vite (import.meta.glob)
   items/named/<item-id>.png   named-item icons (the §12.3 pipeline drop point)
 tools/artsheet.ts             contact sheet — still procedural-only; extend to the atlas
 ```
-**Migration status.** Structure is stood up. First two sprites ported and live:
-`boss.corrupted-saint` (overrides `bossChoir`) and `reliquary.monster.rot-scuttler`
-(overrides `swarmer`). `sprite(name)` returns the PNG when one is mapped and loaded, and
-falls back to the procedural bake otherwise — so the two systems coexist and sprites move
-over one at a time. Animation runtime is **not** built yet (deliberate — a later pass,
-~UAT Chunk 2); every atlas sprite is a single still frame for now.
+**Migration status.** Structure is stood up; the two systems coexist and sprites move over
+one at a time. `sprite(name)` / `heroSprite()` / `weaponSprite()` return the PNG when one
+is mapped and loaded, and fall back to the procedural bake otherwise. Ported and live:
+- `boss.corrupted-saint` → `bossChoir`, `reliquary.monster.rot-scuttler` → `swarmer`.
+- `hero.legend-base` → the composed player, **while no cosmetic layer (hat/ears/face/back)
+  is worn** — a decorated character still gets the procedural stack until the cosmetic
+  layers get their own art pass. 8 PixelLab rotations are archived under
+  `art/characters/` for the eventual animation runtime; only `south` is wired.
+- All six weapon families (`ATLAS_WEAPONS` in `manifest.ts`, PNGs under `atlas/weapons/`).
+  Authored greyscale +x; `weaponSprite` tints the loaded PNG toward the rarity colour at
+  draw time. A cosmetic weapon **skin** still falls back to the procedural grid.
+
+Animation runtime is **not** built yet (deliberate — a later pass, ~UAT Chunk 2); every
+atlas sprite is a single still frame for now. Weapons and the hero still want a
+hand-finishing pass in Aseprite (the axe reads a touch blunt, the spearhead is thin).
 - **Generation vs assembly:** PixelLab generates candidates from a §-derived prompt;
   aseprite-mcp forces them onto `art-palette.ts`, fixes dimensions, splits layers, adds
   the hot accent, assembles the atlas, exports. Claude writes the prompts, runs the
