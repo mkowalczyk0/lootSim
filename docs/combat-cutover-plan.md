@@ -143,6 +143,32 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >    focused follow-up, since that path is where balance drift hides. Also deferred to 6b:
 >    `redirectDamage` binding (Paladin Oath / Jugg Fortress — stub), benefit zones
 >    (heal/shield/haste `spawnZone` support).
+> 6b. Basic attacks → one pipeline with spells. **In progress.** Owner decision (asked
+>    2026-09-07): **geometry-preserving hybrid** — the six/fourteen weapon families are
+>    real `Ability` data (`src/data/weapon-abilities.ts`: tags per pattern, a
+>    `DamageTemplate`, element, knockback), but `Dungeon.attack()` keeps `meleeTargets` /
+>    the bolt / the talisman spark as the target-selection step (zero targeting drift —
+>    reach-plus-radius, spear/whip pierce caps, dual's two offset sub-swings, the
+>    circle-plus-spark all stay bespoke). Every landed hit resolves through the shared
+>    `weaponStrike` choke point and the `dealDamage` + event-bus path a spell takes.
+>    - **6b.1a — ✅ DONE (green: full `npm test` + roster, smoke byte-identical to
+>      cb4170f).** `weapon-abilities.ts` added; `playerHit` → `weaponStrike(hero, e,
+>      amount, angle, ability, knockOverride?)`, one choke point for every melee pattern
+>      and the staff/bow bolt. Pure refactor: RNG order, once-per-swing leech + on-hit
+>      trigger, and **tagless** once-per-swing resource credit all preserved exactly.
+>    - **6b.1b — TODO (measured):** thread `ability.tags` into the swing's resource-credit
+>      packet so tag-gated generation (`requireTags: ["melee"]` on Berserker/Monk base
+>      rage/chi, `["thrust"]` Duelist, `["slash"]` Reaper, `["heavy"]` Juggernaut,
+>      `["projectile"]` Corsair — currently all dead on basic attacks because the credit
+>      packet carries no tags) fills from swings. Real meter-economy change across ~6
+>      classes; needs the smoke campaign delta written up before it lands, per §4.
+>    - **6b.2 — TODO:** `CombatHost.redirectDamage` real binding (Paladin Guardian's Oath,
+>      Juggernaut Fortress Call — stub today, so those abilities do nothing live) +
+>      benefit-zone support in `spawnZone` (heal/shield/haste — ignored today, so
+>      Bard/Paladin/Warden support zones do nothing). Both additive, low drift.
+>    - **6b.3 — TODO (optional):** move gear triggers + leech off the inline
+>      `fireTriggers`/`p.heal` calls onto bus listeners so a skill hit fires `onHit` gear
+>      triggers too (another measured change).
 > 7. Town: class select, Path, Tree (v2 editable, hybrid/archetype badges), Skills —
 >    ✅ DONE. TODO: "you unlocked X" toast on threshold; `treePointsRefunded` notice.
 > 8. Save migration `SAVE_VERSION` 13 → 14 — ✅ DONE (per-class allocated + skills reset,

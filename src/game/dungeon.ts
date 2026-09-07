@@ -12,6 +12,7 @@ import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from 
 import {
   BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
 } from "../data/weapons";
+import { weaponAbilityFor } from "../data/weapon-abilities";
 import type { TriggerKind, TriggerSpec } from "../data/items";
 import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
 import { EQUIP_SLOTS } from "../data/items";
@@ -1209,6 +1210,11 @@ export class Dungeon implements CombatHost {
     const a = hero.avatar;
     const p = hero.player;
     const w = p.weapon;
+    // The basic attack is an ability now (`data/weapon-abilities.ts`): the dungeon still
+    // owns the geometry below, but the hit it resolves — packet, element, tags,
+    // knockback — is that ability's, and it lands through the same pipeline a spell's
+    // hits do.
+    const ability = weaponAbilityFor(p.weaponFamily);
     a.attackTimer = p.attackCooldown / (1 + a.buffAttackSpeed);
     a.swingAngle = a.facing;
     const damage = p.attackDamage;
@@ -1230,7 +1236,7 @@ export class Dungeon implements CombatHost {
         // Reach and pierce. It runs down a lane and stops after so many bodies.
         const limit = 1 + w.pierce + Math.max(0, Math.round(p.mods.pierce));
         for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc).slice(0, limit)) {
-          this.playerHit(hero, e, damage, a.facing, w.knock);
+          this.weaponStrike(hero, e, damage, a.facing, ability);
         }
         a.swingTimer = SWING_TIME;
         break;
@@ -1240,7 +1246,7 @@ export class Dungeon implements CombatHost {
         for (let i = 0; i < w.hits; i++) {
           const angle = a.facing + (i === 0 ? -0.18 : 0.18);
           for (const e of this.meleeTargets(hero, angle, w.reach, w.arc)) {
-            this.playerHit(hero, e, damage, angle, w.knock);
+            this.weaponStrike(hero, e, damage, angle, ability);
           }
         }
         a.swingTimer = SWING_TIME * 0.8;
@@ -1249,7 +1255,7 @@ export class Dungeon implements CombatHost {
       case "orb": {
         // A full circle around you, and then a spark at something outside it.
         for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc)) {
-          this.playerHit(hero, e, damage, Math.atan2(e.y - a.y, e.x - a.x), w.knock);
+          this.weaponStrike(hero, e, damage, Math.atan2(e.y - a.y, e.x - a.x), ability);
         }
         this.talismanSpark(hero, damage);
         a.swingTimer = SWING_TIME;
@@ -1258,7 +1264,7 @@ export class Dungeon implements CombatHost {
       default: {
         // arc and cleave: everything inside the sweep, hit once.
         for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc)) {
-          this.playerHit(hero, e, damage, a.facing, w.knock);
+          this.weaponStrike(hero, e, damage, a.facing, ability);
         }
         a.swingTimer = SWING_TIME;
         break;
@@ -1327,12 +1333,19 @@ export class Dungeon implements CombatHost {
   }
 
   /**
-   * One landed player attack: the physical hit, then a separate hit for every element
-   * the gear carries. Splitting it is what makes an elemental roll readable — you see
-   * the orange number come off next to the white one, and the thing catches fire.
+   * One landed basic-attack hit, from a weapon-family `Ability` (`data/weapon-abilities.ts`).
+   * The physical hit, then a separate hit for every element the gear carries — splitting
+   * it is what makes an elemental roll readable: you see the orange number come off next
+   * to the white one, and the thing catches fire. Leech and the on-hit trigger are
+   * counted once per swing here, not once per element. Shared by every melee pattern and
+   * by the staff/bow bolt when it lands (`p.basic`).
    */
-  private playerHit(hero: Hero, e: Enemy, amount: number, angle: number, knock?: number): void {
+  private weaponStrike(
+    hero: Hero, e: Enemy, amount: number, angle: number, ability: Ability, knockOverride?: number,
+  ): void {
     const p = hero.player;
+    const step = ability.effects[0];
+    const knock = knockOverride ?? (step?.kind === "damage" ? step.damage.knockback : undefined);
     const crit = this.rng.chance(p.critChance);
     const rolled = amount * (crit ? p.critMultiplier : 1) * this.rng.range(0.92, 1.08);
     let dealt = this.damageEnemy(e, rolled, angle, "physical", {
@@ -1361,6 +1374,11 @@ export class Dungeon implements CombatHost {
     // Fill this hero's own meter for a landed basic attack — a plain swing carries no
     // ability tags, so a class whose generation gates on a tag (Lancer, …) correctly
     // gains nothing here and everyone else gains from the hit itself.
+    // The swing's resource credit is deliberately still tagless and counted once per
+    // swing (not per element). Threading `ability.tags` in here would let tag-gated
+    // generation rules (Berserker/Monk `requireTags: ["melee"]`, …) fill from basic
+    // attacks for the first time — a real meter-economy change that belongs in the
+    // Stage 11 measured tuning pass, not this refactor. See docs/combat-cutover-plan.md.
     creditResourcesForHit(
       this.heroHost(hero),
       makeDamagePacket({
@@ -2416,7 +2434,9 @@ export class Dungeon implements CombatHost {
           const angle = Math.atan2(p.vy, p.vx);
           const owner = this.heroes[p.owner] ?? null;
           // A staff bolt *is* your attack, so it earns crits, leech and triggers.
-          if (p.basic && owner) this.playerHit(owner, e, p.damage, angle, 60);
+          if (p.basic && owner) {
+            this.weaponStrike(owner, e, p.damage, angle, weaponAbilityFor(owner.player.weaponFamily), 60);
+          }
           else this.damageEnemy(e, p.damage, angle, p.element, { ailment: p.ailment, source: owner });
           if (p.hits.size > p.pierce) { spent = true; break; }
         }
