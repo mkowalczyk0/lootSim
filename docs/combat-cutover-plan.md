@@ -564,22 +564,44 @@ A support/mechanic class deals less and that is fine (spec §31).
 proposed data change fixes it. Numbers live in `src/progression/<class>.ts`,
 `src/data/`, `src/combat/` — never in the sim.
 
-### Raid-scale (10–20 player) hazards to flag now
-- **Redirect / taunt stacking** — Paladin Guardian's Oath, Juggernaut Fortress Call,
-  Bard, Warden. `CombatHost.redirectDamage` currently binds one protector per ward;
-  20 Paladins on one tank, or a redirect cycle (A→B→A), needs a cap + cycle guard.
-- **Party-wide `guardsDeath`** — Paladin Last Light, Berserker Last Stand fanned by an
-  archetype. 4 Last Lights = permanent raid immortality; needs a per-target single-source
-  rule or diminishing returns.
-- **Summon caps** — global vs per-owner; a 20-Necromancer raid at 8 skeletons each is
-  160 pathing entities. Hard global cap + owner fairness.
-- **Zone-merge blowups** — `mergeable` zones (spec's ignition example) across 20 casters
-  could merge into one arena-sized zone. Cap merge count / total radius.
-- **Threat math** — there is no real threat system yet (`setThreat` is an aggro
-  override). A raid needs one; scope it explicitly before Juggernaut/Paladin tank
-  identity depends on it.
-- **Resource-share hybrids** — any hybrid that moves resource between players (Bard
-  Rallying Chorus, Warlock Soul Gate) must not create a generation loop.
+### Raid-scale (10–20 player) hazards — current state (audited Stage 11)
+
+Multiplayer is delve-only and 4-player today, so none of these are urgent; the raid
+layer is explicitly future. Recorded here so it inherits the right constraints.
+
+- **Redirect / taunt stacking** — `Dungeon.redirects` is `Map<wardIndex, {protector,
+  fraction, until}>`: **already one protector per ward** (last Oath wins), and the
+  `inRedirect` re-entrancy guard **already bounds a cycle** (A→B→A) to a single hop. What
+  a raid still needs: a cap on `fraction` when several *different* wards all redirect onto
+  one protector (protector eats N×slices and dies instantly), and a total-redirected-
+  fraction clamp per hit. Not a loop, just unbounded soak.
+- **Party-wide `guardsDeath`** — **not wired at all.** `StatusContainer.guardsDeath()`
+  exists and reports true, but `applyPlayerDamage` never checks it, so Berserker Last
+  Stand / Paladin Last Light's "can't drop below 1 HP" does nothing live yet. This is a
+  Stage-6-class wiring gap. **When it is wired, build in the raid rule from the start:**
+  a guarded hit consumes/decays the guard (or a per-target single-source + short
+  cooldown), so 4 Last Lights can't = permanent immortality.
+- **Summon caps** — **in place:** `MINION_CAP_PER_OWNER` 8, `MINION_CAP_GLOBAL` 28
+  (`src/data/minions.ts`), enforced in `spawnMinion` (culls oldest, then clamps to global
+  room). `minions.ts` header already says the raid layer wants its own lower per-owner
+  number. Adequate for 4-player.
+- **Zone stacking** — `mergeable` is threaded to `ZoneRequest` but **`spawnZone` never
+  reads it** — zones never merge, they stack as independent `GroundZone`s and their
+  damage adds. No cap on count or total area. For a raid: cap concurrent hero zones
+  (per-owner + global) and/or implement the merge (`mergeable` zones within R combine,
+  radius/damage capped). The Engineer loop (§11) was the first taste of this.
+- **Threat math** — still none. `setThreat` taunts (writes `this.taunts`), `threatToward`
+  returns 0. A raid needs a real threat table before Juggernaut/Paladin tank identity can
+  mean anything. Scope explicitly.
+- **Resource-share hybrids** — Bard Rallying Chorus, Warlock Soul Gate move resource
+  between players; must not create a generation loop. The pattern to watch is the two
+  `{ on: "damageDealt", perUnit: "damage" }` ultimate loops found and cut in §11
+  (Engineer, Warlock) — any rule that both *consumes* a resource to deal damage and
+  *generates* it from damage dealt is a loop candidate.
+- **Summon power scaling** (not raid-specific but surfaced here) — Engineer's summons+
+  zones scaled *too hard* (the loop); Necromancer's scale *too weakly* late (L50/L3 ratio
+  3.0× vs the 5–7× norm — minions inherit a fixed fraction of owner attack and don't ride
+  the gear curve). Same lever, opposite ends.
 
 ---
 

@@ -2490,7 +2490,15 @@ export class Dungeon implements CombatHost {
     }
 
     const prevented = Math.round(amount) - Math.round(incoming);
-    const dealt = Math.round(incoming);
+    let dealt = Math.round(incoming);
+    // A death-guard status (Berserker's Last Stand, Paladin's Last Light) holds the
+    // bearer at 1 HP for as long as it is active — the window is the duration, not one
+    // hit, so it is not consumed here. Raid note (§4): a 20-player raid wants a
+    // single-source rule so a chain of Last Lights can't be permanent; at 4-player it's
+    // a non-issue and left as-is.
+    if (dealt >= p.health && hero.sc.deathGuarded) {
+      dealt = Math.max(0, Math.round(p.health) - 1);
+    }
     if (dealt > 0) {
       p.health = Math.max(0, p.health - dealt);
       a.hitFlash = 0.25;
