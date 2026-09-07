@@ -377,10 +377,12 @@ export function runEffect(
     }
 
     case "status": {
+      const caster = host.actor(ctx.casterId);
+      const heroCaster = !!caster && caster.kind !== "enemy" && !!caster.resources;
       for (const id of selectActorIds(host, ctx, step.to)) {
         const victim = host.actor(id);
         if (!victim) continue;
-        victim.statuses.apply(step.status, {
+        const landed = victim.statuses.apply(step.status, {
           hitDamage: scaledAmount(step.hitDamage ?? 1, step.scale ?? "attack", ctx.input),
           potency: (step.potency ?? 1) * (ctx.input.ailmentPotency ?? 1),
           sourceActorId: ctx.casterId,
@@ -390,6 +392,17 @@ export function runEffect(
           ...(step.stacks !== undefined ? { stacks: step.stacks } : {}),
           roll: () => host.random(),
         });
+        // A hostile status the hero *placed* (a hex, a mark, a slow) feeds
+        // `{ on: "statusApplied" }` rules — Shaman's Spirit World, Assassin's Inside
+        // Job. Elemental ailments have their own `ailmentInflicted` event and do not
+        // come through here, so the two never double-count.
+        if (landed && heroCaster && caster && victim.faction !== caster.faction) {
+          caster.resources!.broadcast({
+            type: "statusApplied",
+            tags: ctx.source.tags,
+            ...(ctx.source.fromUltimate ? { fromUltimate: true } : {}),
+          });
+        }
       }
       return;
     }
