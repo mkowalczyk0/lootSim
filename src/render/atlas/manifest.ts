@@ -51,15 +51,25 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // look for now. 50px × 0.64 ≈ 32, a hair taller for clarity per §1.3.
   "hero.legend-base": { id: "hero.legend-base", w: 20, h: 50, worldScale: 0.64, feet: 0.04 },
 
-  // §5 Circle VI (Heresy) — the corrupted saint. Replaces the `bossChoir` silhouette.
-  // choir was BOSS_CHOIR (26×26) at spriteScale 3.54 ≈ 92 world units tall; this stands
-  // a touch taller — bosses are the headline act — at 54px × 1.85 ≈ 100.
-  "boss.corrupted-saint": { id: "boss.corrupted-saint", w: 44, h: 54, worldScale: 1.85, feet: 0.04 },
-
-  // §8.2 The Rotting Garden — the rot-scuttler. Replaces the `swarmer` (MOB_CRAWLER,
-  // 17×13 at SPRITE_SCALE 1.2 ≈ 15.6 world units tall); 24px × 0.72 ≈ 17.3, slightly
-  // bigger and far more legible.
+  // --- monsters (§10) --- worldScale ≈ predecessor grid height × SPRITE_SCALE (1.2),
+  // then ~1.13× for legibility (the rot-scuttler precedent). Legacy grids: imp/ranger
+  // 22 tall, brute 24, crawler 13.
+  "reliquary.monster.rot-imp":     { id: "reliquary.monster.rot-imp",     w: 16, h: 41, worldScale: 0.73, feet: 0.05 },
+  "reliquary.monster.bone-archer": { id: "reliquary.monster.bone-archer", w: 26, h: 47, worldScale: 0.63, feet: 0.05 },
+  "reliquary.monster.iron-brute":  { id: "reliquary.monster.iron-brute",  w: 34, h: 39, worldScale: 0.83, feet: 0.05 },
+  "reliquary.monster.cult-caster": { id: "reliquary.monster.cult-caster", w: 22, h: 48, worldScale: 0.62, feet: 0.12 },
+  // §8.2 The Rotting Garden — replaces `swarmer` (MOB_CRAWLER, 17×13 ≈ 15.6 world tall);
+  // 24px × 0.72 ≈ 17.3, slightly bigger and far more legible.
   "reliquary.monster.rot-scuttler": { id: "reliquary.monster.rot-scuttler", w: 31, h: 24, worldScale: 0.72, feet: 0.06 },
+
+  // --- bosses (§11) --- worldScale lands the art on the full old grid extent
+  // (26 × spriteScale from data/bosses.ts): warden 100, choir 92, colossus 134,
+  // herald 110, nameless 112. feet ≈ 0 — trimmed, standing on the bottom row.
+  "boss.warden":              { id: "boss.warden",              w: 57, h: 89, worldScale: 1.12, feet: 0.03 },
+  "boss.corrupted-saint":     { id: "boss.corrupted-saint",     w: 76, h: 92, worldScale: 1.09, feet: 0.03 },
+  "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 87, worldScale: 1.54, feet: 0.03 },
+  "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
+  "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },
 };
 
 /**
@@ -72,8 +82,16 @@ export const ATLAS: Record<string, AtlasSprite> = {
  */
 export const SPRITE_OVERRIDES: Record<string, string> = {
   hero: "hero.legend-base",
-  bossChoir: "boss.corrupted-saint",
+  grunt: "reliquary.monster.rot-imp",
+  archer: "reliquary.monster.bone-archer",
+  brute: "reliquary.monster.iron-brute",
+  caster: "reliquary.monster.cult-caster",
   swarmer: "reliquary.monster.rot-scuttler",
+  boss: "boss.warden",
+  bossChoir: "boss.corrupted-saint",
+  bossColossus: "boss.gravebound-colossus",
+  bossHerald: "boss.herald-unspoken",
+  bossNameless: "boss.nameless",
 };
 
 // --- weapons -------------------------------------------------------------

@@ -569,7 +569,14 @@ tools/artsheet.ts             contact sheet — still procedural-only; extend to
 **Migration status.** Structure is stood up; the two systems coexist and sprites move over
 one at a time. `sprite(name)` / `heroSprite()` / `weaponSprite()` return the PNG when one
 is mapped and loaded, and fall back to the procedural bake otherwise. Ported and live:
-- `boss.corrupted-saint` → `bossChoir`, `reliquary.monster.rot-scuttler` → `swarmer`.
+- **All five monster silhouettes** (`grunt`/`archer`/`brute`/`caster`/`swarmer` →
+  `reliquary.monster.rot-imp` / `bone-archer` / `iron-brute` / `cult-caster` /
+  `rot-scuttler`) and **all five floor/raid bosses** (`boss`/`bossChoir`/`bossColossus`/
+  `bossHerald`/`bossNameless` → `boss.warden` / `corrupted-saint` / `gravebound-colossus`
+  / `herald-unspoken` / `nameless`) — kit unchanged, pixels replaced (§11.2). `worldScale`
+  lands each on its predecessor's world footprint; `data/bosses.ts` `spriteScale` stays
+  as the fallback for the procedural grids the smoke test still walks. 8 rotations per
+  monster archived under `art/monsters/rotations/`.
 - `hero.legend-base` → the composed player, **while no cosmetic layer (hat/ears/face/back)
   is worn** — a decorated character still gets the procedural stack until the cosmetic
   layers get their own art pass. 8 PixelLab rotations are archived under
