@@ -48,8 +48,13 @@ export const WARLOCK_ULTIMATE_METER: ResourceSpec = {
   ui: "meter",
   isUltimateMeter: true,
   generation: [
+    // Damnation is earned by spreading affliction, not by raw damage. The
+    // `damageDealt` term is a small top-up only: at 0.3/damage (an early draft) a
+    // Warlock's spell damage filled the 100-point meter in a few casts and the
+    // ultimate was up on cooldown — well under the 20s floor. 0.03 keeps it a
+    // contribution without making it the whole meter.
     { on: "ailmentInflicted", amount: 3 },
-    { on: "damageDealt", amount: 0.3, perUnit: "damage" },
+    { on: "damageDealt", amount: 0.03, perUnit: "damage" },
   ],
 };
 
