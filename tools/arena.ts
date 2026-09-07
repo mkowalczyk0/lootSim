@@ -174,6 +174,13 @@ function run(
   let ultCasts = 0;
   let t = 0;
   const LEASH = 130;
+  // A "fair fight" (dummies hitting back) is also the meter-fill and damage-taken read,
+  // so the dummies have to actually connect: they are kept at full health (persistent
+  // training dummies, never a spawn gap) and walked into melee contact every tick
+  // rather than left to path from a leash they rarely close. A pure-output run
+  // (`dummyDamage === 0`) keeps the old loose ring so movement-fed meters still read.
+  const fair = opts.dummyDamage > 0;
+  const strafe = fair ? 30 : 40;
 
   while (t < opts.seconds) {
     input.beginTick();
@@ -194,7 +201,17 @@ function run(
       const e = d.enemies[i]!;
       if (!mine.has(e.id)) continue;
       if (e.state === "spawning") { e.state = "active"; e.spawnTimer = 0; }
-      if (Math.hypot(e.x - cx, e.y - cy) > LEASH) {
+      if (fair) {
+        const hx = hero.avatar.x, hy = hero.avatar.y;
+        const reach = e.radius + hero.avatar.radius + 4;
+        const d2 = Math.hypot(e.x - hx, e.y - hy);
+        if (d2 > reach) {
+          const ang = (i / d.enemies.length) * Math.PI * 2;
+          const at = resolveCircle(d.level, hx + Math.cos(ang) * reach, hy + Math.sin(ang) * reach, e.radius);
+          e.x = at.x; e.y = at.y; e.px = at.x; e.py = at.y;
+          e.knockX = 0; e.knockY = 0;
+        }
+      } else if (Math.hypot(e.x - cx, e.y - cy) > LEASH) {
         const p = slot(i);
         const at = resolveCircle(d.level, p.x, p.y, e.radius);
         e.x = at.x; e.y = at.y; e.px = at.x; e.py = at.y;
@@ -205,7 +222,7 @@ function run(
     // Circle-strafe: nobody stands perfectly still, and movement-fed meters (Lancer,
     // Stormcaller's Static) would read as broken if the hero were a statue.
     const orbit = t * 1.4;
-    const want = { x: cx + Math.cos(orbit) * 40, y: cy + Math.sin(orbit) * 40 };
+    const want = { x: cx + Math.cos(orbit) * strafe, y: cy + Math.sin(orbit) * strafe };
     if (want.x > hero.avatar.x + 2) input.hold("right", true);
     else if (want.x < hero.avatar.x - 2) input.hold("left", true);
     if (want.y > hero.avatar.y + 2) input.hold("down", true);
@@ -352,7 +369,7 @@ const rows: Record<string, ArenaResult & { aoe: number; aoePerTarget: number; ce
 for (const classId of CLASS_IDS) {
   // Fair fight for the meter + resource read: geared kit online, dummies hitting back,
   // ultimate held so we can time it filling.
-  const fair = run(classId, { level: 18, keys: 14, seed: SEED, dummies: 4, dummyHp: 4, dummyDamage: 1, fireUlt: false, seconds: 120 });
+  const fair = run(classId, { level: 18, keys: 14, seed: SEED, dummies: 4, dummyHp: 4, dummyDamage: 4, fireUlt: false, seconds: 120 });
   // Geared single-target and AoE for the output read: ultimate dumped on cooldown, dummies inert.
   const st = run(classId, { level: 18, keys: 18, seed: SEED, dummies: 1, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
   const aoe = run(classId, { level: 18, keys: 18, seed: SEED, dummies: 6, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
@@ -363,6 +380,7 @@ for (const classId of CLASS_IDS) {
     meterEnd: fair.meterEnd,
     primaryMin: fair.primaryMin,
     primaryName: fair.primaryName,
+    dmgTaken: fair.dmgTaken,
     aoe: aoe.dps,
     aoePerTarget: aoe.dps / 6,
     census,
