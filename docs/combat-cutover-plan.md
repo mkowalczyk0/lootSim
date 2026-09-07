@@ -233,12 +233,65 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >     - **AoE-at-cursor** (separate ask): ground-placed abilities landed at a fixed reach
 >       along the facing, not the mouse. `castInputFor` now uses the cursor world point
 >       (clamped to the ability's range) via a new optional `AvatarInput.aimPoint`.
->     - **Still TODO:** the 12-axis × 21-class measurement table; meter-fill-window
->       characterisation with a controlled harness (Monk flagged from 6b.1b as ~15 s
->       god-mode, wants a real number); build differentiation (3 builds/class);
->       hybrid/keystone/mythic detectable-impact sweep; early-vs-late power curve;
->       raid-scale hazards (§4 list — redirect/taunt caps, party-wide guardsDeath,
->       summon caps, zone-merge, threat math); planet-floor pacing.
+>     - **Measurement harness — `tools/arena.ts` (`npm run arena`), committed.** Neutral
+>       pinned dummies around a god-mode hero; measures sustained ST / 3s burst / AoE
+>       (total + per-target) dps, ultimate meter-fill time, primary-resource low-water,
+>       plus a static effect-step census (heal/shield/mitigation/mobility/control/
+>       support/summon/execution). First run (level 18, depth-8 dummies):
+>       - **ST dps span** ~230 (juggernaut) … ~2200 (magician), with **engineer a hard
+>         outlier: 7.3k ST / 100k AoE (16.7k per-target)** — turret/summon stacking with
+>         perfect uptime on a stationary target. Flag for the summon-cap / raid work.
+>       - Burst leaders: warlock/magician ~7.1–7.3k in 3s. Monk's burst (2.6k) is *below*
+>         its sustained — it ramps, as intended.
+>
+>     - **HEADLINE FINDING — skill projectiles and zones are severed from the resource
+>       economy.** Isolated probe (`scratchpad/credit.ts`, 4 s of skills only, no basic
+>       attacks): Stormcaller deals 1775 skill damage and gains **0** Storm Charge / **0**
+>       Tempest; Magician spends 74 Mana and gains **0** Overcharge / **0** Astral;
+>       Swordsman (melee `damage` steps) correctly gains 52 Technique / 31 Eclipse.
+>       - `runEffect`'s **`damage` step** → `host.dealDamage(packet)` → `creditResourcesForHit`
+>         with `packet.source.tags = ability.tags`. Credited. ✅
+>       - `runEffect`'s **`projectile` / `zone` steps** → `host.spawnProjectile` /
+>         `spawnZone`, which store only `{amount, type}` — no `source`, no `tags`, no
+>         packet. Their eventual hits run through `Dungeon.damageEnemy`, which **never
+>         calls `creditResourcesForHit`**. Zero primary-resource and zero ultimate-meter
+>         generation from any damage that arrives as a projectile or a zone tick.
+>       - Consequently the ultimate meter never fills in 120 s of a fair fight for:
+>         **magician, shaman, stormcaller, assassin, reaper** (projectile/zone kits), and
+>         **duelist / juggernaut** (see next). lancer is also move-gated (`on: "move"`)
+>         and a stationary probe won't charge it — expected, not a bug.
+>       - **Two smaller wiring gaps in the same area:**
+>         - `manaSpent` resource event is **never broadcast** — the runtime emits
+>           `resourceSpent` (flat `amount`) on cost payment. Magician's meter *and*
+>           primary use `{ on: "manaSpent", perUnit: "manaFraction" }`, which reads
+>           `evt.manaSpent`/`evt.maxMana` — both undefined on a `resourceSpent` event.
+>           Dead.
+>         - `dodge`, `block`, `statusApplied` resource events are **never broadcast**
+>           anywhere. Kills Duelist's whole meter (`dodge`/`block`), Juggernaut's `block`
+>           nodes, Shaman's `{ on: "statusApplied" }` meter rule, and assorted path nodes.
+>           (`hitTaken`/`damageTaken`/`damagePrevented` *are* broadcast, so Juggernaut's
+>           meter is only half-dead.)
+>       - **Classes whose meter DOES fill** (berserker, swordsman, ranger, warlock, monk,
+>         necromancer, trickster, paladin, bard, alchemist, engineer, warden, corsair)
+>         either use `damage` steps, or charge on `skillUse` / `crit` / `kill` /
+>         `damageTaken` / `dashStart` / `move` — none of which touch the broken path.
+>       - **This is a combat-seam wiring fix, not a tuning number — high blast radius**
+>         (every projectile/zone skill would suddenly feed meters and resources; smoke
+>         campaign + boss numbers will move; a rebalance pass follows). **Surfaced to the
+>         owner before landing** per §4 / the "write the imbalance + evidence + fix first"
+>         rule. Proposed fix: thread a `DamageSource` (carrying `ability.tags` +
+>         `abilityId` + `fromUltimate`) through `ProjectileRequest` / `ZoneRequest` and
+>         onto the stored projectile/zone, and route projectile/zone hits through
+>         `dealDamage` (or an explicit `creditResourcesForHit`) so THE ULTIMATE RULE and
+>         the tag gates both hold. Then broadcast `manaSpent` (with `manaSpent`/`maxMana`)
+>         on mana payment, and `dodge` / `block` / `statusApplied` from their resolution
+>         sites.
+>
+>     - **Still TODO (after the wiring fix, since it moves every number):** the full
+>       12-axis × 21-class table; build differentiation (3 builds/class); hybrid/keystone/
+>       mythic detectable-impact sweep; early-vs-late power curve; raid-scale hazards
+>       (§4 list — redirect/taunt caps, party-wide guardsDeath, summon caps incl. the
+>       engineer outlier above, zone-merge, threat math); planet-floor pacing.
 
 ### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
 Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to
