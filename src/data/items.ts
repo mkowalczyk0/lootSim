@@ -12,7 +12,7 @@
  */
 
 import {
-  ELEMENT_SUFFIX, ELEMENT_WARD_SUFFIX, MAGIC_ELEMENTS, type Element,
+  ELEMENT_SUFFIX, ELEMENT_WARD_SUFFIX, LOOT_ELEMENTS, type Element,
 } from "./elements";
 import {
   ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY, type ModKey, type StatKey,
@@ -275,7 +275,7 @@ export interface ModRoll {
   readonly minTier: number;
 }
 
-const ELEMENTAL_MODS: readonly ModRoll[] = MAGIC_ELEMENTS.flatMap((e): ModRoll[] => [
+const ELEMENTAL_MODS: readonly ModRoll[] = LOOT_ELEMENTS.flatMap((e): ModRoll[] => [
   {
     id: `dmg-${e}`, key: ELEMENT_DAMAGE_KEY[e]!, kind: "suffix", label: ELEMENT_SUFFIX[e],
     base: 0.1, perTier: 0.55, scale: "linear", where: "offense", minTier: 0,

@@ -11,11 +11,24 @@
  * with exactly the same formula.
  */
 
-export const ELEMENTS = ["physical", "fire", "cold", "lightning", "poison", "void"] as const;
+export const ELEMENTS = [
+  "physical", "fire", "cold", "lightning", "poison", "void", "holy", "arcane", "nature",
+] as const;
 export type Element = (typeof ELEMENTS)[number];
 
-/** Everything except physical. Used when rolling an element for gear or a monster. */
+/** Everything except physical. */
 export const MAGIC_ELEMENTS = ELEMENTS.filter((e) => e !== "physical") as readonly Exclude<Element, "physical">[];
+
+/**
+ * The elements the *random* generators reach for — loot affixes, elite infusion, biome
+ * affinity. `holy`, `arcane` and `nature` are full elements (they have a resist stat, a
+ * material, an essence and an ailment) but are deliberately kept out of the random pool:
+ * they're the caster/holy/wild identities that should come from a class's own kit or a
+ * deliberate craft, not diluted across every dropped ring. Content or a later balance
+ * pass can widen this back to `MAGIC_ELEMENTS`.
+ */
+export const LOOT_ELEMENTS = ["fire", "cold", "lightning", "poison", "void"] as const;
+export type LootElement = (typeof LOOT_ELEMENTS)[number];
 
 export const ELEMENT_LABELS: Record<Element, string> = {
   physical: "Physical",
@@ -24,10 +37,14 @@ export const ELEMENT_LABELS: Record<Element, string> = {
   lightning: "Lightning",
   poison: "Poison",
   void: "Void",
+  holy: "Holy",
+  arcane: "Arcane",
+  nature: "Nature",
 };
 
 export const ELEMENT_SHORT: Record<Element, string> = {
   physical: "PHY", fire: "FIR", cold: "CLD", lightning: "LTG", poison: "PSN", void: "VOD",
+  holy: "HLY", arcane: "ARC", nature: "NAT",
 };
 
 export const ELEMENT_COLORS: Record<Element, string> = {
@@ -37,6 +54,9 @@ export const ELEMENT_COLORS: Record<Element, string> = {
   lightning: "#fde047",
   poison: "#84cc16",
   void: "#c084fc",
+  holy: "#fde68a",
+  arcane: "#f0abfc",
+  nature: "#34d399",
 };
 
 /** Adjective hung on an elementally infused monster. */
@@ -47,6 +67,9 @@ export const ELEMENT_PREFIX: Record<Element, string> = {
   lightning: "Storm-Touched",
   poison: "Venomous",
   void: "Veiled",
+  holy: "Hallowed",
+  arcane: "Runed",
+  nature: "Feral",
 };
 
 /** Suffix the item roller hangs on a piece of gear carrying an essence. */
@@ -57,6 +80,9 @@ export const ELEMENT_SUFFIX: Record<Element, string> = {
   lightning: "of Storms",
   poison: "of Rot",
   void: "of the Veil",
+  holy: "of Radiance",
+  arcane: "of Mysteries",
+  nature: "of the Wild",
 };
 
 /** Suffix for gear that wards against an element rather than dealing it. */
@@ -67,11 +93,14 @@ export const ELEMENT_WARD_SUFFIX: Record<Element, string> = {
   lightning: "of Storm Warding",
   poison: "of Rot Warding",
   void: "of Veil Warding",
+  holy: "of Light Warding",
+  arcane: "of Rune Warding",
+  nature: "of Wild Warding",
 };
 
 // --- ailments -------------------------------------------------------------
 
-export type StatusKind = "burn" | "chill" | "shock" | "venom" | "drain";
+export type StatusKind = "burn" | "chill" | "shock" | "venom" | "drain" | "sear" | "sunder";
 
 export interface StatusSpec {
   readonly kind: StatusKind;
@@ -115,6 +144,19 @@ export const STATUSES: Record<StatusKind, StatusSpec> = {
     kind: "drain", label: "Drained", glyph: "V", element: "void",
     duration: 4, dps: 0.13, slow: 1, amplify: 1.12, maxStacks: 2, manaBurn: 6,
   },
+  sear: {
+    // Holy's rider: a radiant burn. Same bite per tick as fire's burn but it doesn't
+    // stack — one clean judgement rather than a spreading fire, so it's the softer of
+    // the two damage-over-time riders overall.
+    kind: "sear", label: "Seared", glyph: "H", element: "holy",
+    duration: 2.8, dps: 0.3, slow: 1, amplify: 1, maxStacks: 1, manaBurn: 0,
+  },
+  sunder: {
+    // Arcane's rider: the target's defences come apart. No damage of its own; a milder
+    // shock that also eats a little mana, the way raw arcane force does.
+    kind: "sunder", label: "Sundered", glyph: "A", element: "arcane",
+    duration: 3, dps: 0, slow: 1, amplify: 1.16, maxStacks: 1, manaBurn: 2,
+  },
 };
 
 export const STATUS_FOR_ELEMENT: Record<Element, StatusKind | null> = {
@@ -124,6 +166,10 @@ export const STATUS_FOR_ELEMENT: Record<Element, StatusKind | null> = {
   lightning: "shock",
   poison: "venom",
   void: "drain",
+  holy: "sear",
+  arcane: "sunder",
+  // Nature shares poison's venom rider — the same creeping rot, a different name.
+  nature: "venom",
 };
 
 /** Chance an ordinary elemental hit inflicts its ailment. Skills and bosses override it. */
@@ -145,7 +191,10 @@ export function resistFraction(resist: number): number {
 export type Resists = Record<Element, number>;
 
 export function zeroResists(): Resists {
-  return { physical: 0, fire: 0, cold: 0, lightning: 0, poison: 0, void: 0 };
+  return {
+    physical: 0, fire: 0, cold: 0, lightning: 0, poison: 0, void: 0,
+    holy: 0, arcane: 0, nature: 0,
+  };
 }
 
 export function addResists(into: Resists, from: Partial<Resists>): Resists {

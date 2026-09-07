@@ -46,8 +46,16 @@ const KEY = "lootsim.save.v2";
  * Version 12 added multiplayer, which needed exactly one new persisted field: the name
  * the rest of the party sees over your head. An older save loads with it empty and the
  * Multiplayer screen asks for one the first time you open a room.
+ *
+ * Version 13 promoted holy, arcane and nature from combat-only damage types into full
+ * elements — each grew a damage and resist modifier key, a crafting material and an
+ * essence. An older save has no holy/arcane/nature materials (the bag merges with a
+ * fresh `emptyMaterials()`, so they load at zero) and no holy/arcane/nature resist
+ * rolls on its gear (the modifier record fills missing keys with zero). Nothing is
+ * lost; a version 12 character simply starts with none of the new materials, exactly
+ * like a brand new one.
  */
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 export interface SavedGame {
   readonly version: number;

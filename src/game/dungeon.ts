@@ -4,7 +4,7 @@ import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP, bossFor } from "../
 import { challengerRewardMult } from "../data/challenger";
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
 import {
-  AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, MAGIC_ELEMENTS, STATUS_FOR_ELEMENT,
+  AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, LOOT_ELEMENTS, STATUS_FOR_ELEMENT,
   zeroResists, type Element,
 } from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
@@ -609,7 +609,7 @@ export class Dungeon {
 
   /** Deep floors infuse their monsters with the local element; elites roll their own. */
   private rollElement(base: Element, elite: boolean): Element {
-    if (elite && this.rng.chance(0.45)) return this.rng.pick(MAGIC_ELEMENTS);
+    if (elite && this.rng.chance(0.45)) return this.rng.pick(LOOT_ELEMENTS);
     const local = this.level.biome.element;
     if (local !== "physical" && this.rng.chance(infusionChance(this.profile.depth))) return local;
     return base;

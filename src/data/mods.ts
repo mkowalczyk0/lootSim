@@ -45,9 +45,11 @@ export type CombatModKey = (typeof COMBAT_MOD_KEYS)[number];
 
 export const DAMAGE_MOD_KEYS = [
   "fireDamage", "coldDamage", "lightningDamage", "poisonDamage", "voidDamage",
+  "holyDamage", "arcaneDamage", "natureDamage",
 ] as const;
 export const RESIST_MOD_KEYS = [
   "fireResist", "coldResist", "lightningResist", "poisonResist", "voidResist",
+  "holyResist", "arcaneResist", "natureResist",
 ] as const;
 export type DamageModKey = (typeof DAMAGE_MOD_KEYS)[number];
 export type ResistModKey = (typeof RESIST_MOD_KEYS)[number];
@@ -64,11 +66,13 @@ export const ELEMENT_DAMAGE_KEY: Record<Element, DamageModKey | null> = {
   physical: null,
   fire: "fireDamage", cold: "coldDamage", lightning: "lightningDamage",
   poison: "poisonDamage", void: "voidDamage",
+  holy: "holyDamage", arcane: "arcaneDamage", nature: "natureDamage",
 };
 export const ELEMENT_RESIST_KEY: Record<Element, ResistModKey | null> = {
   physical: null,
   fire: "fireResist", cold: "coldResist", lightning: "lightningResist",
   poison: "poisonResist", void: "voidResist",
+  holy: "holyResist", arcane: "arcaneResist", nature: "natureResist",
 };
 
 export function zeroMods(): Mods {
@@ -125,10 +129,12 @@ export const MOD_LABELS: Record<ModKey, string> = {
   manaRegen: "mana regeneration",
   fireDamage: "fire damage", coldDamage: "cold damage",
   lightningDamage: "lightning damage", poisonDamage: "poison damage",
-  voidDamage: "void damage",
+  voidDamage: "void damage", holyDamage: "holy damage",
+  arcaneDamage: "arcane damage", natureDamage: "nature damage",
   fireResist: "fire resist", coldResist: "cold resist",
   lightningResist: "lightning resist", poisonResist: "poison resist",
-  voidResist: "void resist",
+  voidResist: "void resist", holyResist: "holy resist",
+  arcaneResist: "arcane resist", natureResist: "nature resist",
 };
 
 /** "+35% fire damage", "+12 attack". One formatter, used by every screen. */

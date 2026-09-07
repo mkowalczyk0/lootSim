@@ -1,5 +1,5 @@
 import { Rng } from "../core/rng";
-import { MAGIC_ELEMENTS, type Element } from "../data/elements";
+import { LOOT_ELEMENTS, type Element } from "../data/elements";
 import type { HeroClass } from "../data/classes";
 import {
   EQUIP_SLOTS, ITEM_NAMES, MOD_COUNTS, MOD_POOL, TRIGGER_SHAPES, TYPE_STATS,
@@ -186,7 +186,7 @@ function rollGrant(type: ItemType, tier: number, rng: Rng): SkillId | null {
 function rollTrigger(tier: number, rng: Rng): TriggerSpec | null {
   if (!rng.chance(triggerChance(tier))) return null;
   const shape = rng.pick(TRIGGER_SHAPES);
-  const element: Element = rng.pick(MAGIC_ELEMENTS);
+  const element: Element = rng.pick(LOOT_ELEMENTS);
   return {
     id: `${shape.kind}-${shape.effect}`,
     kind: shape.kind,
@@ -252,7 +252,9 @@ const MOD_SCORE: Record<ModKey, number> = {
   wardPower: 50, thorns: 2, ultimateBounces: 200, ultimateProjectiles: 60,
   healthPercent: 200, defensePercent: 150, manaRegen: 20,
   fireDamage: 130, coldDamage: 130, lightningDamage: 130, poisonDamage: 130, voidDamage: 130,
+  holyDamage: 130, arcaneDamage: 130, natureDamage: 130,
   fireResist: 1.1, coldResist: 1.1, lightningResist: 1.1, poisonResist: 1.1, voidResist: 1.1,
+  holyResist: 1.1, arcaneResist: 1.1, natureResist: 1.1,
 };
 
 /**

@@ -24,6 +24,9 @@ export const MATERIAL_NAMES: Record<Element, string> = {
   lightning: "Storm Coil",
   poison: "Blight Root",
   void: "Void Husk",
+  holy: "Gilt Reliquary",
+  arcane: "Rune Fragment",
+  nature: "Heartwood Sap",
 };
 
 export const MATERIAL_BLURBS: Record<Element, string> = {
@@ -33,6 +36,9 @@ export const MATERIAL_BLURBS: Record<Element, string> = {
   lightning: "Twitches if you hold it too long. Crafts a lightning essence.",
   poison: "Best not to lick it. Crafts a poison essence.",
   void: "Looks back. Crafts a void essence.",
+  holy: "Warm to the touch and faintly singing. Crafts a holy essence.",
+  arcane: "The marks on it rearrange when unobserved. Crafts an arcane essence.",
+  nature: "Still growing, slowly. Crafts a nature essence.",
 };
 
 export const MATERIALS: Record<Element, Material> = Object.fromEntries(
@@ -44,5 +50,8 @@ export const MATERIALS: Record<Element, Material> = Object.fromEntries(
 export type MaterialBag = Record<Element, number>;
 
 export function emptyMaterials(): MaterialBag {
-  return { physical: 0, fire: 0, cold: 0, lightning: 0, poison: 0, void: 0 };
+  return {
+    physical: 0, fire: 0, cold: 0, lightning: 0, poison: 0, void: 0,
+    holy: 0, arcane: 0, nature: 0,
+  };
 }
