@@ -162,6 +162,62 @@ export interface Totem extends Body {
   color: string;
 }
 
+/**
+ * A summoned combatant that fights for the hero who made it. Unlike a `Totem` it moves,
+ * picks its own targets and can be killed. Necromancer skeletons, Engineer drones, a
+ * Ranger's falcon, a Warden's bear — all one entity, told apart by their numbers and
+ * the command they were given. Kill credit, XP and threat all route back to `owner`.
+ */
+export interface Minion extends Body {
+  readonly id: number;
+  /** Hero index that summoned it. */
+  readonly owner: number;
+  /** Archetype tag from the ability that made it — "skeleton", "drone", "bear". */
+  readonly unit: string;
+  health: number;
+  maxHealth: number;
+  /** Damage per hit, already folded with whatever fraction of the owner it inherited. */
+  damage: number;
+  attackCooldown: number;
+  attackTimer: number;
+  /** Reach of its attack, centre to centre. */
+  attackRange: number;
+  /** Telegraph before its hit lands; 0 when it isn't winding up. */
+  windup: number;
+  speed: number;
+  element: Element;
+  facing: number;
+  hitFlash: number;
+  knockX: number;
+  knockY: number;
+  /** Seconds of life left. `Infinity` for a permanent summon. */
+  remaining: number;
+  /** How it decides what to do. Set at spawn, changed by Command abilities. */
+  behavior: "follow" | "guardPoint" | "aggroNearest" | "commandTarget";
+  /** For `commandTarget`: the enemy id it was told to focus. */
+  commandTargetId: number | null;
+  /** The point a `guardPoint` minion holds. */
+  guardX: number;
+  guardY: number;
+  /** Slows, stuns and DoTs — the same container an enemy carries. */
+  sc: StatusContainer;
+  /** Sidestep bookkeeping when a wall is between it and its target. */
+  stuckTimer: number;
+  dodgeDir: number;
+}
+
+/**
+ * What a slain monster leaves behind for a few seconds. Only the corpse economy reads
+ * it — the Necromancer spends these to raise minions and to fuel some of its kit.
+ */
+export interface Corpse {
+  readonly id: number;
+  x: number;
+  y: number;
+  /** Seconds before it rots away on its own. */
+  remaining: number;
+}
+
 export interface Projectile extends Body {
   vx: number;
   vy: number;

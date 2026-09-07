@@ -122,10 +122,19 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 > 2. `Dungeon implements CombatHost` (below, "Stage 1") — ✅
 > 3. Per-actor resources & status container (below, "Stage 3") — ✅ safe slice;
 >    `sc`-authority + resource-generation wiring resequenced into Stage 6
-> 4. **Minion subsystem** — new: `Minion` entity in `entities.ts`, AI + `FlowField`
->    pathing in `dungeon.ts`, owner attribution, per-owner + global summon cap,
->    `spawnMinion`/`commandSummons`/`sacrificeSummons`/`consumeCorpses` host methods
->    hooked to it, minion positions in the snapshot for rendering only.
+> 4. **Minion subsystem** — ✅ DONE (green: full npm test). `Minion` + `Corpse` entities
+>    in `entities.ts`; `data/minions.ts` caps/tuning; `FlowField.updateMulti` multi-source
+>    BFS toward the enemies; `updateMinions` AI (target by command, route straight then
+>    flow then sidestep, telegraphed hit through `damageEnemy(..,{source:owner})` so kill
+>    credit flows to the owner); `updateCorpses` + corpse drop in `killEnemy`; boss
+>    telegraph/ground AoE now also hits minions; `spawnMinion`/`commandSummons`/
+>    `sacrificeSummons`/`consumeCorpses` real; `minionHost`/`actor`/`actors`/`summonsOf`/
+>    `dealDamage` handle minions; `drawMinions`/`drawCorpses` (canvas primitives, no
+>    sprites — no `npm run art`); `tools/smoke.ts` "minion subsystem" section.
+>    **Deferred to Stage 9:** minion/corpse positions in the snapshot (host-authoritative,
+>    nothing spawns a minion until Stage 6, co-op with minions can't happen before then).
+>    **Noted for Stage 11 / raid:** enemies do not yet retarget onto minions in melee —
+>    that is threat-system work, already on the raid-hazard list.
 > 5. `Player` resolves a v2 build (below, "Stage 3")
 > 6. Skill + ultimate + **basic-attack** execution onto `Ability` (below, "Stage 4"
 >    plus C4: weapon families become abilities, `playerAttack` routes through

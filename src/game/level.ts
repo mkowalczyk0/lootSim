@@ -953,6 +953,42 @@ export class FlowField {
     }
   }
 
+  /**
+   * Rebuilds the field with many goals at once — a multi-source BFS. `direction` then
+   * points toward whichever goal is nearest by walk distance. The minion pathing uses
+   * this with every live enemy as a goal, so a skeleton in a corridor flows toward the
+   * fight instead of grinding on the wall between it and the nearest monster.
+   */
+  updateMulti(level: Level, points: readonly { x: number; y: number }[]): void {
+    this.dist.fill(-1);
+    const cols = level.cols;
+    const grid = { cols, rows: level.rows, blocked: level.blocked };
+    const q = this.queue;
+    let head = 0;
+    let tail = 0;
+    for (const p of points) {
+      const start = nearestOpen(grid, cellIndexAt(level, p.x, p.y));
+      if (start < 0 || this.dist[start]! >= 0) continue;
+      this.dist[start] = 0;
+      q[tail++] = start;
+    }
+    while (head < tail) {
+      const i = q[head++]!;
+      const cx = i % cols;
+      const cy = (i - cx) / cols;
+      const next = this.dist[i]! + 1;
+      for (const [dx, dy] of NEIGHBORS) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= level.rows) continue;
+        const j = ny * cols + nx;
+        if (level.blocked[j] || this.dist[j]! >= 0) continue;
+        this.dist[j] = next;
+        q[tail++] = j;
+      }
+    }
+  }
+
   /** Unit step toward the goal from (x, y), or null if there's no route from here. */
   direction(level: Level, x: number, y: number): { x: number; y: number } | null {
     const cols = level.cols;

@@ -21,6 +21,7 @@ import { profileFor } from "../src/data/depth";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { SKILLS } from "../src/data/skills";
+import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, type ClassId } from "../src/data/classes";
 import { TREES } from "../src/data/tree";
 import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
@@ -615,6 +616,61 @@ console.log("\n=== elements, ailments and mana ===");
   for (let i = 0; i < 600; i++) deep.update(DT, new FakeInput() as unknown as Input);
   for (const e of deep.enemies) { total++; if (e.element !== "physical") infused++; }
   check("deep floors are elemental", total === 0 || infused > 0, `${infused}/${total} infused`);
+}
+
+console.log("\n=== minion subsystem ===");
+{
+  // The mobile-summon subsystem, driven straight through the CombatHost seam the way
+  // the ability executor will once it is wired. The bot does nothing — every point of
+  // non-player damage on this floor is a minion's.
+  const idle = () => new FakeInput() as unknown as Input;
+  const state = geared(16, 4242, 18, "necromancer");
+  const d = new Dungeon(state, 6, 4242);
+  for (let i = 0; i < 240 && d.enemies.filter((e) => e.state !== "spawning").length < 3; i++) {
+    d.update(DT, idle());
+  }
+  const hero = d.localHero;
+  const gapTo = (mx: number, my: number) => {
+    let best = Infinity;
+    for (const e of d.enemies) best = Math.min(best, Math.hypot(e.x - mx, e.y - my));
+    return best;
+  };
+  const ids = d.spawnMinion({
+    ownerId: hero.index, unit: "skeleton", x: hero.avatar.x + 24, y: hero.avatar.y,
+    count: 6, duration: 6, command: { behavior: "aggroNearest", inheritPower: 0.6 },
+  });
+  check("spawnMinion makes bodies", ids.length === 6 && d.minions.length === 6, `${d.minions.length} out`);
+  const startGap = d.minions.reduce((s, m) => s + gapTo(m.x, m.y), 0) / Math.max(1, d.minions.length);
+
+  let minionDamage = 0;
+  let closedIn = false;
+  for (let i = 0; i < 180; i++) {
+    d.update(DT, idle());
+    for (const ev of d.drainEvents()) {
+      if (ev.kind === "damage" && !ev.onPlayer) minionDamage += ev.amount;
+    }
+    if (d.minions.length > 0) {
+      const g = d.minions.reduce((s, m) => s + gapTo(m.x, m.y), 0) / d.minions.length;
+      if (g < startGap * 0.6) closedIn = true;
+    }
+  }
+  check("minions close on the enemy", closedIn, `start ${startGap.toFixed(0)}`);
+  check("minions fight for their owner", minionDamage > 0, `${minionDamage.toFixed(0)} dealt`);
+
+  for (let i = 0; i < 200; i++) d.update(DT, idle());
+  check("minions time out", d.minions.length === 0, `${d.minions.length} still standing past their 6s`);
+
+  // The caps hold no matter how greedy the summon is.
+  const cs = geared(16, 111, 18, "necromancer");
+  const cd = new Dungeon(cs, 6, 111);
+  for (let i = 0; i < 120; i++) cd.update(DT, idle());
+  cd.spawnMinion({
+    ownerId: cd.localHero.index, unit: "x", x: cd.localHero.avatar.x, y: cd.localHero.avatar.y,
+    count: 40, duration: 20, command: { behavior: "follow" },
+  });
+  check("the per-owner summon cap holds", cd.minions.length === MINION_CAP_PER_OWNER, `${cd.minions.length}`);
+  const dead = cd.sacrificeSummons(cd.localHero.index, 3);
+  check("sacrificeSummons kills its own", dead === 3 && cd.minions.length === MINION_CAP_PER_OWNER - 3, `${dead}`);
 }
 
 /**

@@ -140,7 +140,9 @@ export class WorldRenderer {
     this.drawResourceNodes(ctx, dungeon);
     this.drawPortal(ctx, dungeon);
     this.drawPickups(ctx, dungeon, alpha);
+    this.drawCorpses(ctx, dungeon);
     this.drawTotems(ctx, dungeon);
+    this.drawMinions(ctx, dungeon, alpha);
     this.drawActors(ctx, dungeon, alpha);
     this.drawProjectiles(ctx, dungeon, alpha);
     fx.draw(ctx);
@@ -317,6 +319,51 @@ export class WorldRenderer {
       ctx.arc(t.x, t.y - 18, 5, 0, TAU);
       ctx.fill();
       ctx.restore();
+    }
+  }
+
+  /** Slain-monster bodies fading on the floor — the Necromancer's raw material. */
+  private drawCorpses(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    for (const c of d.corpsePile) {
+      ctx.save();
+      ctx.globalAlpha = clamp(c.remaining / 10, 0, 1) * 0.5;
+      ctx.fillStyle = "#3a2f33";
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, 9, 5, 0, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Summoned combatants. Small, plain bodies in their owner's element — a legion should
+   * read as a swarm of yours, not be mistaken for more monsters.
+   */
+  private drawMinions(ctx: CanvasRenderingContext2D, d: Dungeon, alpha: number): void {
+    for (const m of d.minions) {
+      const { x, y } = lerpPos(m, alpha);
+      const color = ELEMENT_COLORS[m.element] ?? "#9fd3ff";
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(m.facing);
+      ctx.fillStyle = m.hitFlash > 0 ? "#ffffff" : color;
+      ctx.beginPath();
+      ctx.moveTo(m.radius + 2, 0);
+      ctx.lineTo(-m.radius, m.radius * 0.8);
+      ctx.lineTo(-m.radius, -m.radius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      if (m.windup > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, m.radius + 3, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (m.health < m.maxHealth) healthBar(ctx, x, y - m.radius * 2.4, m.health / m.maxHealth, 18);
     }
   }
 

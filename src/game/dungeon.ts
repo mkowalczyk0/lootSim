@@ -39,7 +39,11 @@ import { CLASS_BY_ID, makeClassResources } from "../progression/index";
 // Registers burn/chill/shock/venom/drain/sear/sunder on the unified status registry so
 // `Hero.sc` / `Enemy.sc` mean the same thing the legacy ailment list does.
 import "../combat/legacy-ailments";
-import type { Avatar, Enemy, GroundZone, Pickup, Projectile, Telegraph, Totem } from "./entities";
+import type { Avatar, Corpse, Enemy, GroundZone, Minion, Pickup, Projectile, Telegraph, Totem } from "./entities";
+import {
+  MINION_CAP_GLOBAL, MINION_CAP_PER_OWNER, MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN,
+  MINION_GUARD_LEASH, MINION_LEASH, MINION_SEPARATION, MINION_WINDUP,
+} from "../data/minions";
 import type { Appearance } from "../data/cosmetics";
 import type { AvatarInput } from "../core/input";
 import type { Player } from "./player";
@@ -344,6 +348,10 @@ export class Dungeon implements CombatHost {
   readonly ground: GroundZone[] = [];
   /** Totems you planted. They keep working after you've walked away. */
   readonly totems: Totem[] = [];
+  /** Summoned combatants — skeletons, drones, a falcon. They move, fight and die. */
+  readonly minions: Minion[] = [];
+  /** Bodies of slain monsters, for the Necromancer's corpse economy. */
+  readonly corpsePile: Corpse[] = [];
   readonly events: RunEvent[] = [];
   /** Deterministic randomness for the whole floor. The boss brain draws from it too. */
   readonly rng: Rng;
@@ -364,6 +372,10 @@ export class Dungeon implements CombatHost {
   private spawnTimer = 0;
   private nextEnemyId = 1;
   private nextTotemId = 1;
+  private nextMinionId = 1;
+  private nextCorpseId = 1;
+  /** Distance field toward the enemies, for minion pathing. Built only while minions exist. */
+  private minionFlow: FlowField | null = null;
   /** Guards against a triggered effect setting off another triggered effect forever. */
   private inTrigger = false;
   /** The save this run belongs to. Public because the multiplayer layer banks a
@@ -760,6 +772,8 @@ export class Dungeon implements CombatHost {
     this.updateTotems(dt);
     this.updateSpawning(dt);
     this.updateEnemies(dt);
+    this.updateMinions(dt);
+    this.updateCorpses(dt);
     this.updateProjectiles(dt);
     this.updatePickups(dt);
     // Potions live on the save in a solo dive, exactly as they always did.
@@ -889,6 +903,12 @@ export class Dungeon implements CombatHost {
     for (const hero of this.heroes) {
       if (!hero.alive) continue;
       hero.flow?.update(this.level, hero.avatar.x, hero.avatar.y);
+    }
+    // One shared field toward the fight, so a minion that can't see its target still
+    // routes around walls to reach it. Only worth building when something follows it.
+    if (this.minions.length > 0 && this.enemies.length > 0) {
+      if (!this.minionFlow) this.minionFlow = new FlowField(this.level);
+      this.minionFlow.updateMulti(this.level, this.enemies);
     }
   }
 
@@ -1028,6 +1048,10 @@ export class Dungeon implements CombatHost {
         const a = hero.avatar;
         if (inTelegraph(t, a.x, a.y, a.radius)) this.hurtPlayerMechanic(hero, t.damage, t.element, 0.7);
       }
+      // A boss shape catches your summons too — a legion melts in an arena-wide slam.
+      for (const m of [...this.minions]) {
+        if (inTelegraph(t, m.x, m.y, m.radius)) this.hurtMinion(m, t.damage, t.element);
+      }
     }
     if (t.hitsEnemies) {
       const caught = this.enemies.filter(
@@ -1073,6 +1097,9 @@ export class Dungeon implements CombatHost {
           if (dist(a.x, a.y, g.x, g.y) <= g.radius + a.radius) {
             this.hurtPlayerRaw(hero, g.damage, g.element, 0.35);
           }
+        }
+        for (const m of [...this.minions]) {
+          if (dist(m.x, m.y, g.x, g.y) <= g.radius + m.radius) this.hurtMinion(m, g.damage, g.element);
         }
       }
       if (!g.hitsEnemies) continue;
@@ -1717,6 +1744,199 @@ export class Dungeon implements CombatHost {
     }
   }
 
+  // --- minions -----------------------------------------------------------
+  //
+  // A minion is a totem that walks: it picks the nearest enemy, routes to it around
+  // walls, hits it on a short telegraph, and can be killed or simply time out. Every
+  // hit it lands goes through `damageEnemy(..., { source: owner })`, so kill credit,
+  // ultimate charge and on-kill triggers all flow back to the hero who summoned it,
+  // exactly as if they had swung themselves.
+
+  private static readonly MINION_RADIUS = 7;
+
+  /** Nearest living, non-spawning enemy to a point, within `maxDist` if given. */
+  private nearestEnemyTo(x: number, y: number, maxDist = Infinity): Enemy | null {
+    let best: Enemy | null = null;
+    let bestGap = maxDist;
+    for (const e of this.enemies) {
+      if (e.health <= 0 || e.state === "spawning") continue;
+      const gap = dist(x, y, e.x, e.y);
+      if (gap <= bestGap) { best = e; bestGap = gap; }
+    }
+    return best;
+  }
+
+  private minionsOf(ownerIndex: number): Minion[] {
+    return this.minions.filter((m) => m.owner === ownerIndex);
+  }
+
+  /** What a minion should be walking toward and hitting this tick, or null to idle. */
+  private minionTarget(m: Minion): Enemy | null {
+    switch (m.behavior) {
+      case "commandTarget": {
+        if (m.commandTargetId !== null) {
+          const t = this.enemies.find((e) => e.id === m.commandTargetId && e.health > 0);
+          if (t) return t;
+          m.commandTargetId = null;
+        }
+        return this.nearestEnemyTo(m.x, m.y);
+      }
+      case "guardPoint":
+        return this.nearestEnemyTo(m.guardX, m.guardY, MINION_GUARD_LEASH);
+      case "aggroNearest":
+        return this.nearestEnemyTo(m.x, m.y);
+      case "follow":
+      default: {
+        const owner = this.heroes[m.owner];
+        const from = owner ? owner.avatar : m;
+        return this.nearestEnemyTo(from.x, from.y, MINION_LEASH);
+      }
+    }
+  }
+
+  private updateMinions(dt: number): void {
+    for (const m of [...this.minions]) {
+      if (m.health <= 0) continue;
+      m.px = m.x;
+      m.py = m.y;
+      m.hitFlash = Math.max(0, m.hitFlash - dt);
+
+      m.sc.tick(dt, { onDamage: (p) => this.dealDamage(Dungeon.MINION_ID_BASE + m.id, p) });
+      if (m.health <= 0) continue;
+
+      m.remaining -= dt;
+      if (m.remaining <= 0) { this.despawnMinion(m, false); continue; }
+
+      const disables = m.sc.disables();
+      const slow = m.sc.slowMultiplier();
+      const target = this.minionTarget(m);
+
+      let goalX: number;
+      let goalY: number;
+      if (target) {
+        goalX = target.x;
+        goalY = target.y;
+        m.facing = Math.atan2(target.y - m.y, target.x - m.x);
+      } else if (m.behavior === "guardPoint") {
+        goalX = m.guardX;
+        goalY = m.guardY;
+      } else {
+        const owner = this.heroes[m.owner];
+        goalX = owner ? owner.avatar.x : m.x;
+        goalY = owner ? owner.avatar.y : m.y;
+      }
+
+      const gap = dist(m.x, m.y, goalX, goalY);
+      const inReach = target !== null && gap <= m.attackRange + target.radius;
+
+      if (!disables.move && !inReach && gap > 2) {
+        let dir = normalize(goalX - m.x, goalY - m.y);
+        const blocked = lineBlocked(this.level, m.x, m.y, goalX, goalY);
+        if ((blocked || m.stuckTimer > 0.18) && target && this.minionFlow) {
+          const routed = this.minionFlow.direction(this.level, m.x, m.y);
+          if (routed) dir = routed;
+          else if (m.stuckTimer > 0.22) {
+            dir = normalize(
+              Math.cos(m.facing + m.dodgeDir * 1.05),
+              Math.sin(m.facing + m.dodgeDir * 1.05),
+            );
+          }
+        }
+        const speed = m.speed * slow;
+        m.x += dir.x * speed * dt;
+        m.y += dir.y * speed * dt;
+      }
+
+      m.x += m.knockX * dt;
+      m.y += m.knockY * dt;
+      m.knockX = approach(m.knockX, 0, 900 * dt);
+      m.knockY = approach(m.knockY, 0, 900 * dt);
+
+      m.x = clamp(m.x, m.radius + WALL_PAD, this.width - m.radius - WALL_PAD);
+      m.y = clamp(m.y, m.radius + WALL_PAD, this.height - m.radius - WALL_PAD);
+      const fixed = resolveCircle(this.level, m.x, m.y, m.radius);
+      const shoved = Math.hypot(fixed.x - m.x, fixed.y - m.y) > 0.05;
+      m.x = fixed.x;
+      m.y = fixed.y;
+      if (shoved) {
+        m.stuckTimer += dt;
+        if (m.stuckTimer > 1.6) { m.stuckTimer = 0; m.dodgeDir *= -1; }
+      } else {
+        m.stuckTimer = Math.max(0, m.stuckTimer - dt * 2);
+      }
+
+      m.attackTimer = Math.max(0, m.attackTimer - dt);
+      if (m.windup > 0) {
+        m.windup -= dt;
+        if (m.windup <= 0 && target) {
+          const owner = this.heroes[m.owner] ?? null;
+          const angle = Math.atan2(target.y - m.y, target.x - m.x);
+          this.damageEnemy(target, m.damage, angle, m.element, { source: owner });
+        }
+      } else if (!disables.attack && inReach && m.attackTimer <= 0) {
+        m.windup = MINION_WINDUP;
+        m.attackTimer = m.attackCooldown;
+      }
+    }
+    this.separateMinions();
+  }
+
+  private separateMinions(): void {
+    const list = this.minions;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i]!;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= MINION_SEPARATION * MINION_SEPARATION || d2 === 0) continue;
+        const d = Math.sqrt(d2);
+        const push = (MINION_SEPARATION - d) / 2;
+        const nx = dx / d;
+        const ny = dy / d;
+        a.x -= nx * push; a.y -= ny * push;
+        b.x += nx * push; b.y += ny * push;
+      }
+    }
+  }
+
+  /** Damage onto a minion — no armour or resists, they are cheap bodies. Returns dealt. */
+  private hurtMinion(m: Minion, amount: number, element: Element): number {
+    if (m.health <= 0) return 0;
+    const dealt = Math.max(1, Math.round(amount));
+    m.health -= dealt;
+    m.hitFlash = 0.12;
+    this.events.push({
+      kind: "damage", x: m.x, y: m.y - m.radius, amount: dealt,
+      crit: false, onPlayer: false, element,
+    });
+    if (m.health <= 0) this.despawnMinion(m, true);
+    return dealt;
+  }
+
+  private despawnMinion(m: Minion, dead: boolean): void {
+    const i = this.minions.indexOf(m);
+    if (i < 0) return;
+    this.minions.splice(i, 1);
+    this.hostActors.delete(Dungeon.MINION_ID_BASE + m.id);
+    if (dead) this.events.push({ kind: "death", x: m.x, y: m.y, elite: null });
+    else this.events.push({ kind: "nova", x: m.x, y: m.y, radius: 12 });
+  }
+
+  private updateCorpses(dt: number): void {
+    for (let i = this.corpsePile.length - 1; i >= 0; i--) {
+      const c = this.corpsePile[i]!;
+      c.remaining -= dt;
+      if (c.remaining <= 0) this.corpsePile.splice(i, 1);
+    }
+  }
+
+  private addCorpse(x: number, y: number): void {
+    if (this.corpsePile.length >= 16) this.corpsePile.shift();
+    this.corpsePile.push({ id: this.nextCorpseId++, x, y, remaining: 10 });
+  }
+
   /**
    * Lightning-style hop from body to body. Skills, totems and triggered effects all
    * use it, so a wall saves a monster from every one of them in exactly the same way.
@@ -2063,6 +2283,9 @@ export class Dungeon implements CombatHost {
       // Anything still winding up belonged to the encounter too.
       this.telegraphs.length = 0;
     }
+
+    // A body for the corpse economy — Necromancer fuel. Bosses leave nothing to raise.
+    if (!e.boss) this.addCorpse(e.x, e.y);
 
     source.loot.kills++;
     if (source.local) this.state.stats.enemiesKilled++;
@@ -2694,6 +2917,12 @@ export class Dungeon implements CombatHost {
     return this.enemies.find((e) => e.id === realId);
   }
 
+  private minionByHostId(id: number): Minion | undefined {
+    if (id < Dungeon.MINION_ID_BASE) return undefined;
+    const realId = id - Dungeon.MINION_ID_BASE;
+    return this.minions.find((m) => m.id === realId);
+  }
+
   private heroHost(hero: Hero): HostActor {
     const existing = this.hostActors.get(hero.index);
     if (existing) return existing;
@@ -2732,22 +2961,44 @@ export class Dungeon implements CombatHost {
     return host;
   }
 
+  private minionHost(m: Minion): HostActor {
+    const hostId = Dungeon.MINION_ID_BASE + m.id;
+    const existing = this.hostActors.get(hostId);
+    if (existing) return existing;
+    const host: HostActor = {
+      id: hostId,
+      kind: "minion",
+      faction: "player",
+      statuses: m.sc,
+      ownerId: m.owner,
+      get x() { return m.x; },
+      get y() { return m.y; },
+      get health() { return m.health; },
+      get maxHealth() { return m.maxHealth; },
+      get alive() { return m.health > 0; },
+    };
+    this.hostActors.set(hostId, host);
+    return host;
+  }
+
   actor(id: number): HostActor | undefined {
     const hero = this.heroByHostId(id);
     if (hero) return this.heroHost(hero);
     const enemy = this.enemyByHostId(id);
     if (enemy) return this.enemyHost(enemy);
+    const minion = this.minionByHostId(id);
+    if (minion) return this.minionHost(minion);
     return undefined;
   }
 
   *actors(): Iterable<TargetActor> {
     for (const hero of this.heroes) yield this.heroHost(hero);
     for (const e of this.enemies) if (e.health > 0) yield this.enemyHost(e);
+    for (const m of this.minions) if (m.health > 0) yield this.minionHost(m);
   }
 
   *corpses(): Iterable<{ id: number; x: number; y: number }> {
-    // No corpse system yet — the Necromancer's corpse economy lands with the minion
-    // subsystem. An empty iterable makes corpse-targeted effects simply no-op.
+    for (const c of this.corpsePile) yield { id: c.id, x: c.x, y: c.y };
   }
 
   *zones(): Iterable<{ id: number; x: number; y: number }> {
@@ -2760,15 +3011,10 @@ export class Dungeon implements CombatHost {
   *summonsOf(ownerId: number): Iterable<TargetActor> {
     const hero = this.heroByHostId(ownerId);
     if (!hero) return;
-    for (const e of this.enemies) {
-      if (e.health > 0 && e.summoned && e.boss === null && this.minionOwner.get(e.id) === hero.index) {
-        yield this.enemyHost(e);
-      }
+    for (const m of this.minions) {
+      if (m.health > 0 && m.owner === hero.index) yield this.minionHost(m);
     }
   }
-
-  /** Which hero owns a summoned minion (kill/threat credit). Populated by `spawnMinion`. */
-  private readonly minionOwner = new Map<number, number>();
 
   markOf(actorId: number): number | undefined {
     // `mark` lives on the target's own container; the executor's "marked" selector uses
@@ -2806,6 +3052,12 @@ export class Dungeon implements CombatHost {
         source,
       });
       this.applyInflict(enemy.sc, packet);
+      return dealt;
+    }
+    const minion = this.minionByHostId(targetId);
+    if (minion) {
+      const dealt = this.hurtMinion(minion, packet.amount, packet.type);
+      if (minion.health > 0) this.applyInflict(minion.sc, packet);
       return dealt;
     }
     return 0;
@@ -2880,36 +3132,66 @@ export class Dungeon implements CombatHost {
   }
 
   spawnMinion(req: MinionRequest): number[] {
-    // The full mobile-minion subsystem (pathing, targeting, caps) lands in the next
-    // stage. For now a summon reuses the totem infrastructure: a stationary body that
-    // pulses at nearby enemies, credited to its owner.
     const owner = this.heroByHostId(req.ownerId);
-    if (!owner) return [];
-    const ids: number[] = [];
-    for (let i = 0; i < req.count; i++) {
-      const angle = (TAU / Math.max(1, req.count)) * i;
-      this.plantTotem(owner, req.x + Math.cos(angle) * 26, req.y + Math.sin(angle) * 26, {
-        damage: owner.player.attackDamage * (req.command.inheritPower ?? 0.5),
-        duration: req.duration || 8,
-        interval: TOTEM_PULSE,
-        range: 120,
-        targets: 1,
-        element: owner.player.attackElement,
-        ailment: 0,
-      });
-      ids.push(Dungeon.MINION_ID_BASE + this.nextTotemId - 1);
+    if (!owner || req.count <= 0) return [];
+
+    const inherit = req.command.inheritPower ?? MINION_DEFAULT_INHERIT;
+    const lifespan = req.duration && req.duration > 0 ? req.duration : MINION_DEFAULT_LIFESPAN;
+
+    // Caps: cull the owner's oldest to fit the per-owner limit, then clamp to whatever
+    // global room is left — a raid must never bury a floor in pathing bodies.
+    let want = Math.min(req.count, MINION_CAP_PER_OWNER);
+    const owned = this.minionsOf(owner.index);
+    for (let k = 0; k < owned.length + want - MINION_CAP_PER_OWNER; k++) {
+      if (owned[k]) this.despawnMinion(owned[k]!, false);
     }
+    want = Math.max(0, Math.min(want, MINION_CAP_GLOBAL - this.minions.length));
+    if (want <= 0) return [];
+
+    const power = Math.max(1, owner.player.attackDamage * inherit);
+    const hp = Math.max(6, owner.player.maxHealth * 0.12 * inherit);
+    const r = Dungeon.MINION_RADIUS;
+    const ids: number[] = [];
+    for (let i = 0; i < want; i++) {
+      const angle = (TAU / want) * i + this.rng.next() * 0.6;
+      const spot = resolveCircle(
+        this.level,
+        clamp(req.x + Math.cos(angle) * (18 + i * 2), r + WALL_PAD, this.width - r - WALL_PAD),
+        clamp(req.y + Math.sin(angle) * (18 + i * 2), r + WALL_PAD, this.height - r - WALL_PAD),
+        r,
+      );
+      const id = this.nextMinionId++;
+      this.minions.push({
+        id, owner: owner.index, unit: req.unit,
+        x: spot.x, y: spot.y, px: spot.x, py: spot.y, radius: r,
+        health: hp, maxHealth: hp, damage: power,
+        attackCooldown: 1.1, attackTimer: 0.3 + i * 0.05, attackRange: 20, windup: 0,
+        speed: PLAYER_SPEED * 0.9,
+        element: owner.player.attackElement,
+        facing: angle, hitFlash: 0, knockX: 0, knockY: 0,
+        remaining: lifespan,
+        behavior: req.command.behavior,
+        commandTargetId: null,
+        guardX: req.x, guardY: req.y,
+        sc: new StatusContainer(Dungeon.MINION_ID_BASE + id),
+        stuckTimer: 0, dodgeDir: this.rng.next() < 0.5 ? -1 : 1,
+      });
+      ids.push(Dungeon.MINION_ID_BASE + id);
+    }
+    this.events.push({ kind: "nova", x: req.x, y: req.y, radius: 20 });
     return ids;
   }
 
   spawnTerrain(_req: TerrainRequest): number {
     // No player-built terrain yet (Necromancer's Ossuary Wall, Juggernaut's Anchor
-    // Rune). Lands with the minion/construct stage.
+    // Rune). Lands with the ability cutover.
     return -1;
   }
 
-  consumeCorpses(_count: number | "all"): number {
-    return 0;
+  consumeCorpses(count: number | "all"): number {
+    const take = count === "all" ? this.corpsePile.length : Math.min(count, this.corpsePile.length);
+    this.corpsePile.splice(0, take);
+    return take;
   }
 
   setThreat(targetId: number, op: "taunt" | "drop" | "generate", sourceId: number, _amount: number): void {
@@ -2943,13 +3225,24 @@ export class Dungeon implements CombatHost {
     }
   }
 
-  commandSummons(ownerId: number, _behavior: MinionCommand["behavior"], _targetId?: number): void {
-    void ownerId;
-    // No-op until minions can be re-tasked (minion stage).
+  commandSummons(ownerId: number, behavior: MinionCommand["behavior"], targetId?: number): void {
+    const hero = this.heroByHostId(ownerId);
+    if (!hero) return;
+    const enemy = targetId !== undefined ? this.enemyByHostId(targetId) : undefined;
+    for (const m of this.minionsOf(hero.index)) {
+      m.behavior = behavior;
+      if (behavior === "commandTarget" && enemy) m.commandTargetId = enemy.id;
+      if (behavior === "guardPoint") { m.guardX = hero.avatar.x; m.guardY = hero.avatar.y; }
+    }
   }
 
-  sacrificeSummons(_ownerId: number, _count: number): number {
-    return 0;
+  sacrificeSummons(ownerId: number, count: number): number {
+    const hero = this.heroByHostId(ownerId);
+    if (!hero) return 0;
+    const owned = this.minionsOf(hero.index);
+    const take = Math.min(count, owned.length);
+    for (let i = 0; i < take; i++) this.despawnMinion(owned[i]!, true);
+    return take;
   }
 
   redirectDamage(_protectorId: number, _wardId: number, _fraction: number, _duration: number): void {
