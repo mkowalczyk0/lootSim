@@ -209,9 +209,36 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 >     `tools/smoke.ts` bot + `probeUltimate` rewritten shape-agnostic; planet + boss
 >     probes re-geared (CLAUDE.md sanctions this for planets). `src/data/combat-tuning.ts`
 >     — new global `SKILL_POWER` (1.22) / `ULTIMATE_POWER` (1.15) dials.
-> 11. Validation & tuning pass (§4) — NOT STARTED. Note: Reaper `death_comes_due` execute
->     ultimate dealt 0 in a probe at SKILL_POWER 1.28; Warlock probe fragile. Both to
->     investigate here.
+> 11. Validation & tuning pass (§4) — **IN PROGRESS.**
+>     - **Per-class ultimate sanity — first pass done.** Found and fixed a cluster of
+>       executor / ability-data bugs where an ultimate (or skill) resolved to no victims:
+>       - `selectActorIds` treated `to: "enemies"` as an alias for `to: "allTargets"`
+>         (the pre-resolved aim list), which for a self-targeted ability is just the
+>         caster — so a self-cast shout / delayed ultimate / reactive with `to: "enemies"`
+>         hit nobody, or dealt its damage to the caster. `"enemies"` now scans hostiles
+>         around the caster, `shape.radius`-bounded when present, field-wide otherwise.
+>         **This was the Reaper `death_comes_due` 0-damage bug** (0 → ~7500 probe); also
+>         silently fixed Magician Astral Collapse, Ranger's Last Hunt, Warlock Damnation.
+>       - Monk Heavenly Fist / Corsair Broadside / Lancer Vaulting Spear / Ranger Pinning
+>         Shot used a point/direction targeting mode with `to: "allTargets"` (an empty
+>         list) — retargeted onto the shape / projectile. Monk 0→~140, Corsair 0→~1200.
+>       - Necromancer Kingdom of Bones raised 0 on a fresh floor (`fromCorpses: "all"`
+>         == corpse count); `"all"` now still raises at least `count`.
+>       - The **Warlock probe fragility** was the probe, not the class: `probeUltimate`
+>         discarded the cast tick's own damage events, so an all-instant ultimate
+>         (Damnation) measured 0. Fixed in `tools/smoke.ts`.
+>       - Still low direct damage in the probe (by design — §31 support/reactive):
+>         Juggernaut Citadel, Paladin Last Light, Bard Grand Performance (support),
+>         Duelist Perfect Riposte (reactive — needs to be hit to pay out). Not bugs.
+>     - **AoE-at-cursor** (separate ask): ground-placed abilities landed at a fixed reach
+>       along the facing, not the mouse. `castInputFor` now uses the cursor world point
+>       (clamped to the ability's range) via a new optional `AvatarInput.aimPoint`.
+>     - **Still TODO:** the 12-axis × 21-class measurement table; meter-fill-window
+>       characterisation with a controlled harness (Monk flagged from 6b.1b as ~15 s
+>       god-mode, wants a real number); build differentiation (3 builds/class);
+>       hybrid/keystone/mythic detectable-impact sweep; early-vs-late power curve;
+>       raid-scale hazards (§4 list — redirect/taunt caps, party-wide guardsDeath,
+>       summon caps, zone-merge, threat math); planet-floor pacing.
 
 ### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
 Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to
