@@ -36,6 +36,9 @@ import {
   type TerrainRequest, type ZoneRequest, type MinionCommand,
 } from "../combat/index";
 import { CLASS_BY_ID, makeClassResources } from "../progression/index";
+// Registers burn/chill/shock/venom/drain/sear/sunder on the unified status registry so
+// `Hero.sc` / `Enemy.sc` mean the same thing the legacy ailment list does.
+import "../combat/legacy-ailments";
 import type { Avatar, Enemy, GroundZone, Pickup, Projectile, Telegraph, Totem } from "./entities";
 import type { Appearance } from "../data/cosmetics";
 import type { AvatarInput } from "../core/input";
@@ -238,8 +241,23 @@ export class Hero {
   /** Damage the Ward Veil will eat before health does, and how long it holds. */
   ward = 0;
   wardTimer = 0;
-  /** 0..1. Fills the way this hero's class says it does; spending it fires the ultimate. */
-  specialCharge = 0;
+  /**
+   * 0..1. Fills the way this hero's class says it does; spending it fires the ultimate.
+   * Backed by the class's `isUltimateMeter` resource pool, so the meter is one object
+   * the eventual `src/combat` ultimate path and the legacy `ChargeRules` both move.
+   * `_specialCharge` is the fallback for a class with no resolved pilot class.
+   */
+  private _specialCharge = 0;
+  get specialCharge(): number {
+    const meter = this.resources.ultimateMeter();
+    return meter ? meter.fraction : this._specialCharge;
+  }
+  set specialCharge(value: number) {
+    const v = value < 0 ? 0 : value > 1 ? 1 : value;
+    const meter = this.resources.ultimateMeter();
+    if (meter) meter.value = v * meter.max;
+    else this._specialCharge = v;
+  }
   /** Potions are per-character in a party, so nobody drinks out of your belt. */
   potions: number;
   /** True for the hero this browser is driving — the camera and the HUD follow it. */

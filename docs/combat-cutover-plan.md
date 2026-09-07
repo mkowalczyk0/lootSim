@@ -118,9 +118,10 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 
 > **Revised stage list after the owner decisions** (the numbered sections below are the
 > original draft; read them in this order and with these additions):
-> 1. Elements promotion (above)
-> 2. `Dungeon implements CombatHost` (below, "Stage 1")
-> 3. Per-actor resources & status container (below, "Stage 2")
+> 1. Elements promotion (above) — ✅
+> 2. `Dungeon implements CombatHost` (below, "Stage 1") — ✅
+> 3. Per-actor resources & status container (below, "Stage 3") — ✅ safe slice;
+>    `sc`-authority + resource-generation wiring resequenced into Stage 6
 > 4. **Minion subsystem** — new: `Minion` entity in `entities.ts`, AI + `FlowField`
 >    pathing in `dungeon.ts`, owner attribution, per-owner + global summon cap,
 >    `spawnMinion`/`commandSummons`/`sacrificeSummons`/`consumeCorpses` host methods
@@ -152,15 +153,32 @@ executor yet. Original notes:
 - Wire the `EventBus` to the existing `fireTriggers` so item triggers still fire.
 - Tests: a `tools/` harness that casts one Lancer ability through `DungeonHost` headless.
 
-### Stage 2 — per-actor resources & status container
-- `Hero` grows `resources: ResourceSet` (from `makeClassResources(pilotClass)`) and its
-  `statuses` becomes a `combat/status.ts` `StatusContainer` (bridge `game/combat.ts`
+### Stage 3 — per-actor resources & status container — ✅ DONE (green: full npm test)
+Landed the safe slice (commit "Stage 3: ultimate meter is a resource pool; legacy
+ailments on the unified registry"):
+- `Hero.specialCharge` (0..1) is now a getter/setter over the class's `isUltimateMeter`
+  `ResourcePool` (`ResourceSet.ultimateMeter()`), with a `_specialCharge` fallback for a
+  hero with no resolved pilot class. Legacy `ChargeRules` / `gainCharge` still drive it
+  through the setter; the meter pool's own `generation` rules are dormant (nothing calls
+  `resources.broadcast()` yet), so there is zero charge-rate change. The meter is now one
+  object both the eventual executor path and the legacy path move.
+- `src/combat/legacy-ailments.ts` registers `burn/chill/shock/venom/drain/sear/sunder`
+  on the `combat/status.ts` registry with the exact `src/data/elements.ts` numbers, so
+  `sc.apply("burn", …)` == `applyStatus(list, "burn", …)`. Imported for its side effect
+  by `dungeon.ts`. Additive — no reader yet.
+
+**Resequenced (rationale):** swapping `sc` to be *authoritative* for ailments — moving
+`applyStatus`/`tickStatuses`/`slowFrom`/`amplifyFrom`/`manaBurnFrom` and the HUD/draw/
+sync readers onto `sc`, deleting `StatusInstance[]` — and wiring resource `generation`
+to the `EventBus` both change the DoT damage path (mitigation / amplify / on-tick events
+/ charge gain) in ways that must be reasoned about together with the ability executor to
+avoid a Stage-1-style seeded-RNG / balance drift. Both move into **Stage 6**, where that
+path is being rebuilt anyway. `patchResourceSpec` folding `resourcePatches` moves to
+**Stage 5** (build resolve). Original Stage 3 intent below:
+- `Hero.statuses` becomes a `combat/status.ts` `StatusContainer` (bridge `game/combat.ts`
   writers so legacy weapon ailments still land — one model, two writers).
-- `Enemy` likewise gets a `StatusContainer`; `game/combat.ts` `tickStatuses` delegates.
-- `Hero.specialCharge` (0..1 float) becomes a getter over the `ultimate` pool
-  (`pool.value / pool.max`) so the HUD and `net/sync.ts` need no immediate change.
+- `Enemy` likewise; `game/combat.ts` `tickStatuses` delegates.
 - Resource pools tick in the fixed-step loop; generation rules subscribe to the bus.
-- `patchResourceSpec(base, build)` folds tree `resourcePatches` at build-resolve time.
 - Tests: Rage fills on hit, Momentum bleeds out of combat, Conviction on prevented
   damage — in a real `Dungeon`, not the `tools/classes.ts` `World`.
 

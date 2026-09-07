@@ -416,6 +416,13 @@ export class ResourceSet {
   all(): ResourcePool[] {
     return [...this.pools.values()];
   }
+  /** The pool flagged `isUltimateMeter`, if this class declares one. */
+  ultimateMeter(): ResourcePool | undefined {
+    for (const pool of this.pools.values()) {
+      if (pool.spec.isUltimateMeter) return pool;
+    }
+    return undefined;
+  }
 
   addStance(spec: StanceSpec): StancePool {
     const pool = new StancePool(spec);
