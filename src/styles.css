@@ -76,25 +76,75 @@ html, body {
 
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
+  /* Twelve tabs is more than a narrow window can hold; scroll rather than wrap, so the
+     row height stays fixed and the grid below it doesn't jump. */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 
 .tab {
-  padding: 7px 16px;
+  padding: 7px 12px;
+  white-space: nowrap;
   font-size: 12px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--muted);
   border: 1px solid transparent;
   border-radius: 3px;
+  cursor: pointer;
 }
+
+.tab:hover { color: var(--text); }
 
 .tab.on {
   color: var(--text);
   background: var(--panel-2);
   border-color: var(--line);
 }
+
+/* Small clickable mirrors of A/D, Q and ; — the keyboard path is unchanged, these are
+   just somewhere for a mouse to land on the same action. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 9px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip:hover { border-color: var(--accent); }
+
+/* The two text fields in the game: your party name and a room code. Everything else is
+   driven by keys or clicks, so these deliberately look like the chips around them. */
+.field {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  width: 130px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  outline: none;
+}
+
+.field:focus { border-color: var(--accent); }
+.field::placeholder { color: var(--muted); letter-spacing: 1px; }
+.chip.warn { color: var(--danger); border-color: var(--danger); }
+
+.row.disabled { opacity: 0.55; }
 
 .tabhint { margin-left: auto; font-size: 11px; color: var(--muted); }
 
@@ -149,6 +199,9 @@ html, body {
   gap: 10px;
   font-size: 13px;
   min-width: 0;
+  /* Items now carry a list of modifiers, so the name column has to win the fight for
+     space and the description has to be the half that gets cut. */
+  flex: 1 1 55%;
 }
 
 .row-main .name {
@@ -162,6 +215,10 @@ html, body {
   color: var(--muted);
   text-align: right;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .row-side.warn { color: var(--danger); }
@@ -187,9 +244,13 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 2px;
   padding: 1px 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .badge.boss { color: var(--danger); border-color: var(--danger); }
+.badge.warn { color: var(--danger); border-color: var(--danger); }
+.badge.on { color: var(--accent); border-color: var(--accent); }
 
 .dot {
   width: 8px;
@@ -268,3 +329,599 @@ html, body {
 }
 
 #flash.show { transform: translate(-50%, 0); }
+
+/* --- skill tree ---------------------------------------------------------- */
+
+.tree {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 14px;
+}
+
+.tree-col h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+
+.tree-col.on h4 { color: #e8eef7; }
+
+.tree-node {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 7px 8px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.015);
+  opacity: 0.5;
+}
+
+/* A branch is walked top to bottom, so the nodes are strung together visibly. */
+.tree-node + .tree-node { position: relative; }
+.tree-node + .tree-node::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 1px;
+  height: 8px;
+  background: var(--line);
+}
+
+.tree-node.open { opacity: 0.95; border-color: rgba(255, 255, 255, 0.22); }
+.tree-node.taken {
+  opacity: 1;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.tree-node.on {
+  outline: 1px solid #e8eef7;
+  outline-offset: 1px;
+  opacity: 1;
+}
+.tree-node.keystone { border-style: double; border-width: 3px; }
+
+.tree-name { display: block; font-size: 12px; color: #e8eef7; }
+.tree-mods { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* --- gems and the wardrobe ------------------------------------------- */
+
+.purse .gemcount { color: #f0abfc; font-weight: 700; }
+
+/*
+ * The pixel art is baked to canvases in `render/sprites.ts` and dropped into the town
+ * as data URLs, so it needs the same nearest-neighbour treatment the game canvas gets.
+ */
+.portrait {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 10px 0 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.portrait img {
+  image-rendering: pixelated;
+  display: block;
+}
+
+.portrait.weapon {
+  padding: 12px 0;
+  margin-bottom: 10px;
+}
+
+/* Inline icon inside a row or a pull list — the actual cosmetic, at 1:1. */
+.pip {
+  image-rendering: pixelated;
+  vertical-align: middle;
+  max-height: 22px;
+  margin: 0 4px;
+}
+
+.pulls .pip { max-height: 18px; }
+
+/* A colour chip for the rows that have no sprite: hair, skin, eyes, dye. */
+.row-main .dot { flex: 0 0 auto; }
+
+/* --- the chest shop: categories + a carousel per category -------------- */
+
+.chests-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  /* A grid item's default min-width is its content's intrinsic width, which for a row
+     of unwrapped cards is huge — without this the carousel refuses to shrink to its
+     1fr column and blows the whole layout out to the right instead of scrolling. */
+  min-width: 0;
+}
+
+.chest-cats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.chest-cat {
+  padding: 9px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chest-cat:hover { color: var(--text); }
+
+.chest-cat.on {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+
+.carousel {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.carousel-arrow {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 18px;
+  padding: 22px 12px;
+}
+
+.carousel-track {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Not smooth: every keypress rebuilds this element from scratch (the whole town
+     screen is a fresh innerHTML render), so a fresh node always starts scrolled to 0.
+     Smooth scrolling would animate from that reset position on every single step,
+     which reads as the carousel sliding back to the first card each time you move. */
+  padding: 10px 6px;
+  min-height: 0;
+  min-width: 0;
+  align-items: center;
+}
+
+.chest-card {
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  text-align: center;
+}
+
+.chest-card:hover { border-color: var(--chest-color, var(--accent)); }
+
+.chest-card.on {
+  border-color: var(--chest-color, var(--accent));
+  box-shadow: 0 0 0 1px var(--chest-color, var(--accent)), 0 0 22px -6px var(--chest-color, var(--accent));
+  background: var(--panel);
+  transform: scale(1.08);
+}
+
+.chest-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
+  height: 110px;
+  flex: 0 0 auto;
+}
+
+.chest-card-art img {
+  image-rendering: pixelated;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.chest-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.chest-card-price { font-size: 11px; color: var(--gold); }
+
+.chest-desc { font-size: 13px; line-height: 1.7; color: var(--text); }
+
+/* --- class selection: one carousel, no categories ----------------------- */
+
+.class-card {
+  flex: 0 0 148px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  text-align: center;
+}
+
+.class-card:hover { border-color: var(--class-color, var(--accent)); }
+
+.class-card.on {
+  border-color: var(--class-color, var(--accent));
+  box-shadow: 0 0 0 1px var(--class-color, var(--accent)), 0 0 22px -6px var(--class-color, var(--accent));
+  background: var(--panel);
+  transform: scale(1.08);
+}
+
+.class-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.class-card-art img {
+  image-rendering: pixelated;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.class-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* --- rarity reactions: wash, rays, the big word ---------------------------------------------- */
+/* Overlays the whole town rather than living inside it: `TownUI` rebuilds its own
+   innerHTML on every keypress, and nothing that animates can survive that. */
+
+.roll {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(6, 7, 11, 0.95);
+  backdrop-filter: blur(4px);
+  animation: roll-in 140ms ease-out;
+}
+.roll[hidden] { display: none; }
+.roll.out { opacity: 0; transition: opacity 220ms ease; }
+
+@keyframes roll-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* The colour wash. One element, driven entirely by two custom properties the script
+   sets per rarity — a bloom out of the middle over a flat tint of the whole screen. */
+.fx-wash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 44%, var(--wash, #fff) 0%, transparent 62%);
+}
+.fx-wash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--wash, #fff);
+  opacity: 0.42;
+}
+.fx-wash.wash-hit { animation: wash-hit var(--dur, 300ms) ease-out; }
+
+@keyframes wash-hit {
+  0% { opacity: 0; }
+  12% { opacity: var(--peak, 0.4); }
+  100% { opacity: 0; }
+}
+
+/* Rays, legendary and up only. A repeating conic gradient turning slowly, masked to a
+   burst that fades out around whatever it's sitting behind. */
+.fx-rays {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  /* Sized to sit *behind the board* and fade out at roughly its edges. A box big enough
+     to cover the viewport turns the screen into stripes, which reads as noise rather
+     than as a burst around the loot — the mask is relative to this box, so the box is
+     what actually decides how far the rays travel. */
+  width: 1250px;
+  height: 1250px;
+  margin: -625px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+  background: repeating-conic-gradient(
+    from 0deg, var(--r, #fff) 0deg 3.5deg, transparent 3.5deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, #000 12%, transparent 46%);
+  mask-image: radial-gradient(circle, #000 0%, #000 12%, transparent 46%);
+  animation: rays-spin 18s linear infinite;
+}
+.rays-on .fx-rays { opacity: 0.26; }
+
+@keyframes rays-spin { to { transform: rotate(360deg); } }
+
+.roll-stage {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  max-width: 1100px;
+}
+.roll-stage.shake-1 { animation: shake-1 260ms ease-out; }
+.roll-stage.shake-2 { animation: shake-2 520ms ease-out; }
+
+@keyframes shake-1 {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 4px); }
+  45% { transform: translate(5px, -3px); }
+  70% { transform: translate(-3px, -3px); }
+  88% { transform: translate(3px, 2px); }
+}
+@keyframes shake-2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-14px, 8px) rotate(-0.7deg); }
+  25% { transform: translate(12px, -10px) rotate(0.6deg); }
+  40% { transform: translate(-10px, -7px) rotate(-0.5deg); }
+  55% { transform: translate(9px, 7px) rotate(0.4deg); }
+  70% { transform: translate(-6px, 4px) rotate(-0.3deg); }
+  85% { transform: translate(4px, -3px) rotate(0.2deg); }
+}
+
+.roll-title {
+  font-size: 13px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.roll-board {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+.roll.single .roll-board { grid-template-columns: 1fr; }
+
+.roll-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 150px;
+  padding: 14px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.roll-cell.locked {
+  border-color: var(--r, var(--line));
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 26px -8px var(--r, transparent), inset 0 0 30px -16px var(--r, transparent);
+}
+/* Legendary and up keep breathing after they land, so a good board doesn't go static. */
+.roll-cell.locked.r4, .roll-cell.locked.r5,
+.roll-cell.locked.r6, .roll-cell.locked.r7 {
+  animation: cell-glow 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes cell-glow {
+  from { box-shadow: 0 0 22px -10px var(--r), inset 0 0 30px -18px var(--r); }
+  to { box-shadow: 0 0 40px -4px var(--r), inset 0 0 34px -10px var(--r); }
+}
+
+.roll-face {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+/* The blur: the sprite swaps every ~50ms from script, and this keeps it physically
+   moving in between so it reads as a reel rather than a stuttering slideshow. */
+.roll-cell.spinning .roll-face {
+  filter: blur(0.7px) brightness(1.15);
+  animation: reel-blur 104ms linear infinite;
+}
+.roll-cell.locked .roll-face { animation: reel-land 280ms cubic-bezier(0.2, 1.4, 0.4, 1); }
+
+@keyframes reel-blur {
+  0% { transform: translateY(-9%); }
+  50% { transform: translateY(7%); }
+  100% { transform: translateY(-9%); }
+}
+@keyframes reel-land {
+  0% { transform: scale(1.55); }
+  55% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+.roll-label {
+  min-height: 26px;
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.roll-cell.locked .roll-label { opacity: 1; }
+
+.roll.single .roll-cell { width: 330px; padding: 26px 16px 18px; }
+.roll.single .roll-face { width: 210px; height: 210px; }
+.roll.single .roll-label { min-height: 34px; font-size: 14px; }
+
+.fx-banner {
+  min-height: 54px;
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 10px;
+  text-indent: 10px;
+  opacity: 0;
+}
+.fx-banner.banner-hit {
+  text-shadow: 0 0 28px currentColor;
+  animation: banner-hit 420ms cubic-bezier(0.2, 1.3, 0.4, 1) forwards;
+}
+
+@keyframes banner-hit {
+  0% { opacity: 0; transform: scale(0.6); }
+  30% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.roll-hint { font-size: 11px; color: var(--muted); }
+
+/* Everything above is decoration on a roll that already happened, so a player who has
+   asked for less motion simply gets the result. */
+@media (prefers-reduced-motion: reduce) {
+  .roll, .fx-rays, .fx-wash, .roll-stage,
+  .roll-cell, .roll-face, .fx-banner { animation: none !important; }
+  .roll-cell.spinning .roll-face { filter: none; }
+  .fx-banner { opacity: 1; }
+}
+
+/* --- a drop landing mid-dive -------------------------------------------- */
+/* Shares the wash, rays, shake and big word with the chest slot machine — see
+   `ui/rarityfx.ts`. What differs is that this one plays over a fight that has not
+   stopped, so the cinematic form has no backdrop, eats no clicks, and sits above the
+   middle of the screen where the character isn't. */
+
+.loot {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  overflow: hidden;
+  pointer-events: none;
+}
+.loot[hidden] { display: none; }
+.loot.out { opacity: 0; transition: opacity 300ms ease; }
+
+/* Rays and wash centre on the banner rather than the screen, since that's what they're
+   a burst around. */
+.loot .fx-rays { top: 26%; width: 760px; height: 760px; margin: -380px; }
+.loot .fx-wash { background: radial-gradient(circle at 50% 26%, var(--wash, #fff) 0%, transparent 58%); }
+/* Held back from the chest screen's 0.26: this plays over a floor you are still fighting
+   on, and rays you can't see a charging brute through are a bug, not a flourish. */
+.loot.rays-on .fx-rays { opacity: 0.19; }
+
+.loot-stage {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.loot-card {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.loot-art {
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 18px var(--r, transparent));
+  animation: loot-pop 420ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes loot-pop {
+  0% { transform: scale(0.2) rotate(-14deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.loot-text { text-align: left; max-width: 540px; }
+/* The glow comes from `.fx-banner`; this adds the dark half, because a dungeon floor can
+   be any colour and a gold word on a fire biome is otherwise unreadable. */
+.loot .fx-banner {
+  min-height: 0;
+  font-size: 40px;
+  filter: drop-shadow(0 2px 6px #000) drop-shadow(0 0 3px #000);
+}
+
+.loot-name {
+  font-size: 17px;
+  font-weight: 700;
+  text-shadow: 0 2px 10px #000, 0 0 4px #000;
+  animation: loot-slide 340ms ease-out;
+}
+.loot-line {
+  font-size: 12px;
+  color: #cfd8e3;
+  text-shadow: 0 2px 8px #000, 0 0 4px #000;
+  animation: loot-slide 340ms ease-out;
+}
+
+@keyframes loot-slide {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.loot-hint {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: hint-pulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes hint-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+
+/* Unspoken, and only unspoken. The world is frozen behind this, so it is allowed to
+   take the whole screen and to be clicked. */
+.loot.halt {
+  pointer-events: auto;
+  background: rgba(4, 5, 8, 0.86);
+  backdrop-filter: blur(5px);
+  cursor: pointer;
+}
+.loot.halt .loot-stage { top: 50%; gap: 20px; }
+.loot.halt .loot-card { flex-direction: column; gap: 16px; }
+.loot.halt .loot-text { text-align: center; }
+.loot.halt .loot-art { width: 210px; height: 210px; }
+.loot.halt .fx-rays { top: 50%; width: 1500px; height: 1500px; margin: -750px; }
+.loot.halt .fx-wash { background: radial-gradient(circle at 50% 50%, var(--wash, #fff) 0%, transparent 62%); }
+.loot.halt .fx-banner { font-size: 76px; letter-spacing: 18px; text-indent: 18px; }
+.loot.halt .loot-name { font-size: 24px; }
+.loot.halt.rays-on .fx-rays { opacity: 0.34; }
+
+@media (prefers-reduced-motion: reduce) {
+  .loot, .loot .fx-rays, .loot .fx-wash, .loot-stage,
+  .loot-art, .loot-name, .loot-line, .loot-hint { animation: none !important; }
+}

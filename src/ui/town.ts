@@ -1,47 +1,221 @@
-import type { Input } from "../core/input";
+import { combatHints, Input, skillKeys, townHints } from "../core/input";
 import { clamp, formatNumber } from "../core/math";
-import { CHESTS, CHEST_TIERS } from "../data/chests";
+import { challengerMultiplier, challengerName, MAX_CHALLENGER_TIER } from "../data/challenger";
+import { CHEST_CATEGORIES, CHESTS, CHEST_TIERS, chestName } from "../data/chests";
+import {
+  CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, COSMETIC_SLOT_LABELS,
+  COSMETICS_BY_ID, EYE_COLORS, HAIR_COLORS, HAIR_STYLES, HAIR_STYLE_LABELS,
+  OUTFIT_DYES, SKIN_TONES, type CosmeticSlot,
+} from "../data/cosmetics";
+import {
+  CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, craftBulkCost, craftEssenceCost,
+  type CraftCategory,
+} from "../data/crafting";
 import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
+import {
+  ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS, MAGIC_ELEMENTS, resistFraction, type Element,
+} from "../data/elements";
+import { MATERIALS } from "../data/materials";
+import {
+  MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
+} from "../data/modes";
+import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import { trapsFor } from "../data/traps";
-import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS } from "../data/items";
+import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine } from "../data/items";
+import { CLASSES, CLASS_IDS } from "../data/classes";
+import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, modLine, type ModKey } from "../data/mods";
+import { ULTIMATES } from "../data/ultimates";
+import { WEAPONS } from "../data/weapons";
+import {
+  TREE_BRANCH_COUNT, TREE_BRANCH_DEPTH, branchBlurb, branchName, treeNode,
+} from "../data/tree";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
-import { itemScore, statLine, type Item } from "../game/item";
-import { POTION_CAP, POTION_PRICE, sellPrice, type GameState } from "../game/state";
+import {
+  ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
+  REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
+} from "../data/settings";
+import { SKILLS, SKILL_SLOTS, type SkillId } from "../data/skills";
+import { cleanPlayerName } from "../data/settings";
+import type { Party } from "../net/party";
+import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
+import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game/item";
+import {
+  POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
+} from "../game/state";
+import { chestIcon, cosmeticPreview, heroSprite, weaponSprite } from "../render/sprites";
+import { ChestRoll } from "./chestroll";
+import { pixelImage } from "./pixelimage";
 
-const TABS = ["Dive", "Chests", "Stash", "Hero", "Records"] as const;
-type Tab = (typeof TABS)[number];
+/**
+ * Reached by walking to a station in the ship hub and never by cycling — the dive, each
+ * rift and the star map are destinations, not menu rows. Everything in `CYCLE_TABS` is
+ * the Quartermaster's screen, browsed the old way with [I]/[O].
+ */
+const CYCLE_TABS = [
+  "Chests", "Stash", "Hero", "Skills", "Tree", "Path", "Style", "Capsules", "Records", "Settings",
+] as const;
+const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party"] as const;
+type StationTab = (typeof STATION_TABS)[number];
+export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
-/** Per-tab footer legend. E is always the primary action, Q the secondary. */
-const TAB_HELP: Record<Tab, string> = {
-  Dive: "W/S choose depth · E dive · Q buy a potion",
-  Chests: "W/S choose chest · E open · Q buy key · A/D bulk 1↔10",
-  Stash: "W/S select · A/D filter rarity · E equip · Q sell · ; sell all junk",
-  Hero: "W/S select slot · E unequip",
-  Records: "Nothing to do here — just numbers.",
+const STATION_LABELS: Record<StationTab, string> = {
+  Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "STAR MAP", Craft: "THE FORGE",
+  Party: "COMMS RELAY",
 };
 
 /**
- * The town hub: dive selection, chest gambling, stash, equipment and lifetime stats.
- * Rendered as DOM because it's menu-shaped, but driven entirely from the keyboard —
- * mouse clicks are a convenience mirror of the key actions, never the only route.
+ * The style screen, top to bottom: the four things everybody gets for free, then one
+ * row per cosmetic slot. Free choices first on purpose — a brand new character with an
+ * empty wardrobe still has a screen worth visiting.
+ */
+/** One row of the Comms Relay screen. Out of a room it's the top three; in one, the rest. */
+type PartyRow =
+  | { readonly kind: "name" | "host" | "join" | "code" | "depth" | "leave" }
+  | { readonly kind: "member"; readonly index: number };
+
+type StyleRow =
+  | { readonly kind: "hairStyle" }
+  | { readonly kind: "hair" | "skin" | "eyes" | "dye" }
+  | { readonly kind: "slot"; readonly slot: CosmeticSlot };
+
+const STYLE_ROWS: readonly StyleRow[] = [
+  { kind: "hairStyle" },
+  { kind: "hair" },
+  { kind: "skin" },
+  { kind: "eyes" },
+  { kind: "dye" },
+  ...COSMETIC_SLOTS.map((slot) => ({ kind: "slot", slot }) as const),
+];
+
+/** A bound key's live label, for anywhere in the town screen that names one — never a
+ *  hardcoded letter, since every one of these is rebindable now. */
+function k(settings: Settings, action: RebindableAction): string {
+  return keyLabel(settings.keybinds[action] ?? DEFAULT_KEYBINDS[action]);
+}
+
+/**
+ * Per-tab footer legend. E is always the primary action (confirm), Q the secondary
+ * (cancel), W/S select (up/down) and A/D adjust (left/right) — built from the live
+ * bindings rather than hardcoded, since a rebind has to move this legend too, the same
+ * rule `combatHints` follows for the dungeon HUD.
+ */
+function tabHelp(tab: Tab, s: Settings): string {
+  const sel = `${k(s, "up")}/${k(s, "down")}`;
+  const adj = `${k(s, "left")}/${k(s, "right")}`;
+  const e = k(s, "confirm");
+  const q = k(s, "cancel");
+  const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
+  switch (tab) {
+    case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
+    case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
+    case "StarMap": return `${sel} choose tier · ${adj} switch planet · ${e} open a portal for it`;
+    case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
+    case "Party": return `${sel} select · ${e} do it · ${adj} change the depth · then everyone walks into the Party Portal`;
+    case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
+    case "Stash": return `${sel} select · ${adj} filter rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
+    case "Hero": return `${sel} select slot · ${e} unequip`;
+    case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
+    case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
+    case "Path": return `${sel} choose a class · ${e} commit to it`;
+    case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
+    case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
+    case "Records": return "Nothing to do here — just numbers.";
+    case "Settings": return `${sel} select · ${e} toggle/rebind · ${q} resets a key/backs out · reset progress asks twice`;
+  }
+}
+
+// "planet" is rift-shaped internally (fixed floors, a boss, tier scaling) but it isn't
+// a selectable rift flavor — it's the mechanical shell every planet expedition borrows.
+// The Rifts screen only ever shows the two the player actually picks between.
+const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet");
+
+/**
+ * The town hub: dive selection, rift tiers, chest gambling, stash, equipment, skills
+ * and lifetime stats. Rendered as DOM because it's menu-shaped, but driven entirely
+ * from the keyboard — mouse clicks are a convenience mirror of the key actions, never
+ * the only route.
  */
 export class TownUI {
   private tab: Tab = "Dive";
   private cursor = 0;
   private bulk = false;
+  /** Which of `CHEST_CATEGORIES` the chest shop's carousel is showing. */
+  private chestCategory = 0;
   private rarityFilter: Rarity | "all" = "all";
+  private riftMode: RunModeId = "hoard";
+  /** Which planet the star map is showing. */
+  private starMapPlanet: PlanetSpec = PLANETS[0]!;
+  private craftCategory: CraftCategory = "weapon";
+  private craftEssence: Element | null = null;
+  /** Which column of the skill tree the cursor is walking down. */
+  private treeBranch = 0;
   private toast: { text: string; color: string; until: number } | null = null;
+  /**
+   * Wiping the save is the one irreversible thing in the game, so it takes two presses
+   * of the same key. Any navigation disarms it — you have to mean it right now.
+   */
+  private resetArmed = false;
   private lastPulls: Item[] = [];
+  /** The last capsule opening, for the Capsules side panel. */
+  private lastCapsules: CapsulePull[] = [];
+  /** Set every tick from `update()`, so a click handler can reach the same input the
+   *  keyboard path uses — rebinding a key needs to intercept the next keydown. */
+  private input: Input | null = null;
+  /** Which rebindable action is waiting for its next key, while it waits. */
+  private rebindPending: RebindableAction | null = null;
+  /** The chest slot machine. It owns its own overlay outside `root`'s innerHTML, since
+   *  this screen rebuilds itself wholesale on every keypress and an animation can't. */
+  private readonly roll: ChestRoll;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly state: GameState,
-    private readonly onDive: (depth: number) => void,
+    private readonly onDive: (config: RunConfig) => void,
+    /** The star map doesn't launch a run itself — it spawns a portal for one back in the hub. */
+    private readonly onExpedition: (planet: PlanetSpec, tier: number) => void,
+    /** The party, for the Comms Relay screen. It owns the connection; this only shows it. */
+    private readonly party: Party,
   ) {
-    // Clicking a row selects it and fires its primary action, for anyone who wants it.
+    this.roll = new ChestRoll(this.root.parentElement ?? document.body);
+
+    // The whole screen is clickable, not just a keyboard with a mouse-shaped cursor: a
+    // row selects and fires its primary action, a tab switches, and the small
+    // adjust/secondary/tertiary buttons sprinkled through the templates mirror A/D, Q
+    // and ; exactly. None of it replaces the keyboard path — it's the same handlers.
     this.root.addEventListener("click", (e) => {
-      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-index]");
+      const target = e.target as HTMLElement;
+      const tabEl = target.closest<HTMLElement>("[data-tab]");
+      if (tabEl) {
+        this.tab = tabEl.dataset.tab as Tab;
+        this.cursor = 0;
+        this.resetArmed = false;
+        this.rebindPending = null;
+        this.render();
+        return;
+      }
+      const catEl = target.closest<HTMLElement>("[data-category]");
+      if (catEl) {
+        this.chestCategory = Number(catEl.dataset.category);
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const actionEl = target.closest<HTMLElement>("[data-action]");
+      if (actionEl) {
+        const action = actionEl.dataset.action!;
+        const index = actionEl.dataset.index;
+        if (index !== undefined) this.cursor = Number(index);
+        switch (action) {
+          case "left": this.adjust(-1); break;
+          case "right": this.adjust(1); break;
+          case "secondary": this.secondary(); break;
+          case "tertiary": this.tertiary(); break;
+        }
+        this.render();
+        return;
+      }
+      const row = target.closest<HTMLElement>("[data-index]");
       if (!row) return;
       this.cursor = Number(row.dataset.index);
       this.primary();
@@ -49,43 +223,115 @@ export class TownUI {
     });
   }
 
-  show(): void {
+  /** Key labels for the skill slots, read live off the current bindings. */
+  private get skillKeyLabels(): string[] {
+    return skillKeys(this.state.settings);
+  }
+
+  /** Opened by walking up to a hub station — `tab` is which one, `riftMode` pins the
+   *  rift portal you actually walked into rather than whichever was last selected. */
+  show(tab?: Tab, riftMode?: RunModeId): void {
     this.root.hidden = false;
     this.cursor = 0;
+    this.resetArmed = false;
+    // A class is the first real decision in the game, so a new character lands on it
+    // no matter which station sent them here.
+    this.tab = !this.state.classChosen ? "Path" : (tab ?? this.tab);
+    if (riftMode) this.riftMode = riftMode;
     this.render();
   }
 
   hide(): void {
+    // Escape out of town mid-spin and the reels go with it — but the pull still lands in
+    // the stash and the side panel, because the chest was already opened when it started.
+    this.roll.cancel();
     this.root.hidden = true;
   }
 
-  private notify(text: string, color = "#e8eef7"): void {
+  /**
+   * True while a text field in this screen has focus. The screen rebuilds its own
+   * innerHTML on almost every event, which would throw away a half-typed room code, so
+   * everything that redraws checks here first.
+   */
+  private get typing(): boolean {
+    return document.activeElement instanceof HTMLInputElement && this.root.contains(document.activeElement);
+  }
+
+  /** Redraw from outside — the party roster changes on its own schedule, not on a keypress. */
+  refresh(): void {
+    // A room filling up or emptying changes how many rows this screen has underneath a
+    // cursor that was pointing at one of them.
+    this.cursor = Math.max(0, Math.min(this.cursor, this.rowCount() - 1));
+    if (!this.root.hidden) this.render();
+  }
+
+  notify(text: string, color = "#e8eef7"): void {
     this.toast = { text, color, until: performance.now() + 3200 };
+    if (!this.root.hidden) this.render();
   }
 
   // --- input --------------------------------------------------------------
 
   update(input: Input): void {
+    this.input = input;
+
+    // While the reels are spinning the screen belongs to them and every key means the
+    // same thing: skip. That's what makes "hit the button again" work without a second
+    // binding — confirm opens the chest, confirm again cuts to the result, confirm once
+    // more closes it and you're back on the card ready to open another.
+    if (this.roll.active) {
+      const nudged = (["confirm", "cancel", "special", "up", "down", "left", "right"] as const)
+        .some((a) => input.wasPressed(a));
+      if (nudged) this.roll.skip();
+      return;
+    }
+
     let dirty = false;
 
+    // Only the Quartermaster's own tabs cycle with [I]/[O] — a station tab (Dive, a
+    // rift, the star map, the forge) is a destination you walked to, not a row you
+    // browse past, so these are simply inert while one of them is open.
     if (input.wasPressed("tabNext")) {
-      this.tab = TABS[(TABS.indexOf(this.tab) + 1) % TABS.length]!;
-      this.cursor = 0;
-      dirty = true;
+      const i = (CYCLE_TABS as readonly Tab[]).indexOf(this.tab);
+      if (i >= 0) {
+        this.tab = CYCLE_TABS[(i + 1) % CYCLE_TABS.length]!;
+        this.cursor = 0;
+        this.resetArmed = false;
+        dirty = true;
+      }
     }
     if (input.wasPressed("tabPrev")) {
-      this.tab = TABS[(TABS.indexOf(this.tab) - 1 + TABS.length) % TABS.length]!;
-      this.cursor = 0;
-      dirty = true;
+      const i = (CYCLE_TABS as readonly Tab[]).indexOf(this.tab);
+      if (i >= 0) {
+        this.tab = CYCLE_TABS[(i - 1 + CYCLE_TABS.length) % CYCLE_TABS.length]!;
+        this.cursor = 0;
+        this.resetArmed = false;
+        dirty = true;
+      }
     }
 
     const count = this.rowCount();
+    // Chests is the one screen where up/down don't walk the row the cursor is on —
+    // they flip between categories (General, Weapon Specific, ...), because the chests
+    // themselves are a left/right carousel within whichever category is showing.
     if (input.wasPressedOrRepeated("down") && count > 0) {
-      this.cursor = (this.cursor + 1) % count;
+      if (this.tab === "Chests") {
+        this.chestCategory = (this.chestCategory + 1) % CHEST_CATEGORIES.length;
+        this.cursor = 0;
+      } else {
+        this.cursor = (this.cursor + 1) % count;
+      }
+      this.resetArmed = false;
       dirty = true;
     }
     if (input.wasPressedOrRepeated("up") && count > 0) {
-      this.cursor = (this.cursor - 1 + count) % count;
+      if (this.tab === "Chests") {
+        this.chestCategory = (this.chestCategory - 1 + CHEST_CATEGORIES.length) % CHEST_CATEGORIES.length;
+        this.cursor = 0;
+      } else {
+        this.cursor = (this.cursor - 1 + count) % count;
+      }
+      this.resetArmed = false;
       dirty = true;
     }
     if (input.wasPressed("left")) dirty = this.adjust(-1) || dirty;
@@ -101,20 +347,99 @@ export class TownUI {
     if (dirty) this.render();
   }
 
+  // --- settings row layout -------------------------------------------------
+  // The Settings list is long enough now (toggles, control scheme, right-click,
+  // eight rebindable keys, Challenger, reset) that every other method indexes into
+  // it the same way these do, rather than re-deriving the offsets each time.
+  private get controlSchemeIndex(): number { return SETTING_SPECS.length; }
+  private get mouseSecondaryIndex(): number { return SETTING_SPECS.length + 1; }
+  private get keybindStartIndex(): number { return SETTING_SPECS.length + 2; }
+  private get challengerIndex(): number { return this.keybindStartIndex + REBINDABLE_ACTIONS.length; }
+  private get resetIndex(): number { return this.challengerIndex + 1; }
+  /** The rebindable action a Settings row indexes to, or null off that stretch. */
+  private keybindRowAction(index: number): RebindableAction | null {
+    const i = index - this.keybindStartIndex;
+    return i >= 0 && i < REBINDABLE_ACTIONS.length ? REBINDABLE_ACTIONS[i]! : null;
+  }
+
   private rowCount(): number {
     switch (this.tab) {
       case "Dive": return this.state.maxUnlockedDepth;
-      case "Chests": return CHEST_TIERS.length;
+      case "Rifts": return this.state.riftTiers[this.riftMode];
+      case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
+      case "Craft": return CRAFTABLE_RARITIES.length;
+      case "Party": return this.partyRows().length;
+      case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length;
+      case "Skills": return SKILL_SLOTS;
+      case "Tree": return TREE_BRANCH_DEPTH;
+      case "Path": return CLASS_IDS.length;
+      case "Style": return STYLE_ROWS.length;
+      case "Capsules": return CAPSULE_TIERS.length;
       case "Records": return 0;
+      case "Settings": return this.resetIndex + 1;
     }
   }
 
   private adjust(dir: number): boolean {
-    if (this.tab === "Chests") {
+    if (this.tab === "Capsules") {
       this.bulk = dir > 0;
       return true;
+    }
+    if (this.tab === "Chests") {
+      const tiers = CHEST_CATEGORIES[this.chestCategory]!.tiers;
+      this.cursor = (this.cursor + dir + tiers.length) % tiers.length;
+      return true;
+    }
+    if (this.tab === "Path") {
+      this.cursor = (this.cursor + dir + CLASS_IDS.length) % CLASS_IDS.length;
+      return true;
+    }
+    if (this.tab === "Style") return this.cycleStyle(this.cursor, dir);
+    if (this.tab === "Rifts") {
+      const i = RIFT_MODES.indexOf(this.riftMode);
+      this.riftMode = RIFT_MODES[clamp(i + dir, 0, RIFT_MODES.length - 1)]!;
+      this.cursor = 0;
+      return true;
+    }
+    if (this.tab === "StarMap") {
+      const i = PLANETS.indexOf(this.starMapPlanet);
+      this.starMapPlanet = PLANETS[clamp(i + dir, 0, PLANETS.length - 1)]!;
+      this.cursor = 0;
+      return true;
+    }
+    if (this.tab === "Party") {
+      if (!this.party.isHost) return false;
+      this.party.setDepth(this.party.depth + dir);
+      return true;
+    }
+    if (this.tab === "Craft") {
+      const options: (Element | null)[] = [null, ...MAGIC_ELEMENTS];
+      const i = options.indexOf(this.craftEssence);
+      this.craftEssence = options[(i + dir + options.length) % options.length] ?? null;
+      return true;
+    }
+    if (this.tab === "Skills") {
+      this.cycleSkill(this.cursor, dir);
+      return true;
+    }
+    if (this.tab === "Tree") {
+      this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_BRANCH_COUNT - 1);
+      return true;
+    }
+    if (this.tab === "Settings") {
+      // The Challenger row has a direction; every other toggle just flips either way.
+      if (this.cursor === this.challengerIndex) {
+        this.state.setChallengerTier(this.state.challengerTier + dir);
+        this.state.save();
+        return true;
+      }
+      if (this.cursor === this.controlSchemeIndex) return this.toggleControlScheme();
+      if (this.cursor === this.mouseSecondaryIndex) return this.cycleMouseSecondary(dir);
+      if (this.keybindRowAction(this.cursor)) return false; // rebind is E; A/D do nothing here
+      if (this.cursor < SETTING_SPECS.length) return this.toggleSetting(this.cursor);
+      return false;
     }
     if (this.tab === "Stash") {
       const options: (Rarity | "all")[] = ["all", ...RARITIES];
@@ -126,32 +451,214 @@ export class TownUI {
     return false;
   }
 
+  /** Cycles the skill in a slot through everything unlocked, plus empty. */
+  private cycleSkill(slot: number, dir: number): void {
+    const options: (SkillId | null)[] = [null, ...this.state.player.unlocked];
+    const current = this.state.player.skills[slot] ?? null;
+    const i = options.indexOf(current);
+    const next = options[(i + dir + options.length) % options.length] ?? null;
+    this.state.player.setSkill(slot, next);
+    this.state.save();
+  }
+
+  /**
+   * Steps one row of the style screen. The free rows wrap through their palette; a
+   * cosmetic slot wraps through everything you own plus "nothing", so taking a hat off
+   * is the same gesture as changing it.
+   */
+  private cycleStyle(index: number, dir: number): boolean {
+    const row = STYLE_ROWS[index];
+    if (!row) return false;
+    const a = this.state.appearance;
+
+    if (row.kind === "slot") {
+      const owned = this.state.ownedInSlot(row.slot);
+      if (owned.length === 0) {
+        this.notify(
+          `No ${COSMETIC_SLOT_LABELS[row.slot].toLowerCase()} in the wardrobe yet. Open a capsule.`,
+          "#9aa4b2",
+        );
+        return true;
+      }
+      const options: (string | null)[] = [null, ...owned.map((c) => c.id)];
+      const i = options.indexOf(a[row.slot]);
+      const next = options[(i + dir + options.length) % options.length] ?? null;
+      this.state.wear(row.slot, next);
+    } else if (row.kind === "hairStyle") {
+      const i = HAIR_STYLES.indexOf(a.hairStyle);
+      a.hairStyle = HAIR_STYLES[(i + dir + HAIR_STYLES.length) % HAIR_STYLES.length]!;
+    } else {
+      const len = row.kind === "hair" ? HAIR_COLORS.length
+        : row.kind === "skin" ? SKIN_TONES.length
+        : row.kind === "eyes" ? EYE_COLORS.length
+        : OUTFIT_DYES.length;
+      a[row.kind] = (a[row.kind] + dir + len) % len;
+    }
+    this.state.save();
+    return true;
+  }
+
+  /** Flips one cosmetic option. Returns true so the caller can treat it as a redraw. */
+  private toggleSetting(index: number): boolean {
+    const spec = SETTING_SPECS[index];
+    if (!spec) return false;
+    const on = !this.state.settings[spec.key];
+    this.state.settings[spec.key] = on;
+    this.notify(`${spec.label}: ${on ? "on" : "off"}`, on ? "#4ade80" : "#9aa4b2");
+    this.state.save();
+    return true;
+  }
+
+  /** Between the original no-mouse game and aiming with the mouse. Either flips it. */
+  private toggleControlScheme(): boolean {
+    const s = this.state.settings;
+    s.controlScheme = s.controlScheme === "mouse" ? "keyboard" : "mouse";
+    this.notify(
+      s.controlScheme === "mouse" ? "Mouse + keyboard — click or hold to attack, aim with the cursor."
+        : "Keyboard only — the mouse does nothing in the dungeon.",
+      "#4ade80",
+    );
+    this.state.save();
+    return true;
+  }
+
+  private cycleMouseSecondary(dir: number): boolean {
+    const options = MOUSE_SECONDARY_OPTIONS;
+    const i = options.indexOf(this.state.settings.mouseSecondary);
+    const next = options[(i + dir + options.length) % options.length]!;
+    this.state.settings.mouseSecondary = next;
+    this.notify(`Right click now casts ${MOUSE_SECONDARY_LABELS[next]}`, "#4ade80");
+    this.state.save();
+    return true;
+  }
+
+  /** Asks the input layer to hand back the next physical key instead of acting on it. */
+  private beginRebind(action: RebindableAction): void {
+    if (!this.input) return;
+    this.rebindPending = action;
+    this.notify(`Press a key for ${ACTION_LABELS[action]}… (Esc cancels)`, "#7dd3fc");
+    this.render();
+    this.input.captureNextKey((code) => {
+      this.rebindPending = null;
+      if (code === "Escape") {
+        this.notify("Rebind cancelled.", "#9aa4b2");
+        this.render();
+        return;
+      }
+      const binds = this.state.settings.keybinds;
+      // Stealing a key from another action swaps them, rather than leaving two actions
+      // silently fighting over the same key.
+      const clash = REBINDABLE_ACTIONS.find(
+        (a) => a !== action && (binds[a] ?? DEFAULT_KEYBINDS[a]) === code);
+      if (clash) binds[clash] = binds[action] ?? DEFAULT_KEYBINDS[action];
+      binds[action] = code;
+      this.input!.refreshBindings();
+      this.notify(
+        `${ACTION_LABELS[action]} bound to ${keyLabel(code)}`
+        + (clash ? ` (swapped with ${ACTION_LABELS[clash]})` : ""),
+        "#4ade80",
+      );
+      this.state.save();
+      this.render();
+    });
+  }
+
+  private resetKeybind(action: RebindableAction): void {
+    this.state.settings.keybinds[action] = DEFAULT_KEYBINDS[action];
+    this.input?.refreshBindings();
+    this.notify(`${ACTION_LABELS[action]} reset to ${keyLabel(DEFAULT_KEYBINDS[action])}`, "#9aa4b2");
+    this.state.save();
+  }
+
   private primary(): void {
     switch (this.tab) {
+      case "Party": {
+        this.partyAction(this.partyRows()[this.cursor]);
+        break;
+      }
       case "Dive": {
+        if (!this.requireClass()) break;
         const depth = this.cursor + 1;
         this.state.player.fullHeal();
-        this.onDive(depth);
+        this.onDive(delveConfig(depth, this.state.challengerTier));
+        break;
+      }
+      case "Rifts": {
+        if (!this.requireClass()) break;
+        const mode = MODES[this.riftMode];
+        if (!modeUnlocked(mode, this.state.stats.deepestDepth)) {
+          this.notify(`Reach depth ${mode.unlockDepth} in the delve first.`, "#ef4444");
+          break;
+        }
+        const tier = this.cursor + 1;
+        this.state.player.fullHeal();
+        this.onDive(riftConfig(this.riftMode, tier, 1, this.state.challengerTier));
+        break;
+      }
+      case "StarMap": {
+        if (!this.requireClass()) break;
+        if (!planetUnlocked(this.starMapPlanet, this.state.planetProgress)) {
+          this.notify("Locked. Clear the previous planet's first tier to open this one.", "#ef4444");
+          break;
+        }
+        const tier = this.cursor + 1;
+        this.onExpedition(this.starMapPlanet, tier);
+        this.notify(`Portal opened for ${this.starMapPlanet.name} T${tier} — find it back at the ship.`, "#4ade80");
+        break;
+      }
+      case "Craft": {
+        const rarity = CRAFTABLE_RARITIES[this.cursor]!;
+        const item = this.state.craftItem(this.craftCategory, rarity, this.craftEssence);
+        if (item) {
+          this.notify(`${rarityLabel(item.rarity)}: ${item.name}`, RARITY_COLORS[item.rarity]);
+        } else {
+          this.notify("Not enough materials for that.", "#ef4444");
+        }
         break;
       }
       case "Chests": {
-        const tier = CHEST_TIERS[this.cursor]!;
+        const tier = CHEST_CATEGORIES[this.chestCategory]!.tiers[this.cursor]!;
         const want = this.bulk ? 10 : 1;
         if (this.state.keys[tier] < want) {
-          this.notify(`Not enough ${tier} keys — press Q to buy one.`, "#ef4444");
+          this.notify(
+            `Not enough ${chestName(tier)} keys — press ${k(this.state.settings, "cancel")} to buy one.`,
+            "#ef4444",
+          );
           break;
         }
+        // The roll is already resolved — `openChests` decided all of it before anything
+        // moved. The reels are only how it gets told, so nothing reaches the side panel
+        // or the toast until the animation has actually shown it.
         const found = this.state.openChests(tier, want);
-        this.lastPulls = found;
-        const best = found.reduce<Item | null>(
-          (b, it) => (!b || rarityIndex(it.rarity) > rarityIndex(b.rarity) ? it : b), null);
-        if (best) this.notify(`${rarityLabel(best.rarity)}: ${best.name}`, RARITY_COLORS[best.rarity]);
+        this.roll.play(
+          {
+            items: found,
+            title: chestName(tier).toUpperCase(),
+            color: CHESTS[tier].color,
+            skipHint: `${k(this.state.settings, "confirm")} or click — skip`,
+          },
+          () => {
+            this.lastPulls = found;
+            const best = found.reduce<Item | null>(
+              (b, it) => (!b || rarityIndex(it.rarity) > rarityIndex(b.rarity) ? it : b), null);
+            if (best) {
+              this.notify(`${rarityLabel(best.rarity)}: ${best.name}`, RARITY_COLORS[best.rarity]);
+            }
+            this.render();
+          },
+        );
         break;
       }
       case "Stash": {
         const item = this.filteredStash()[this.cursor];
         if (!item) break;
-        this.state.equipFromInventory(item.id);
+        if (!this.state.equipFromInventory(item.id)) {
+          this.notify(
+            `Needs level ${requiredLevel(item)} — ${this.state.heroClass.name} is ${this.state.player.level}.`,
+            "#ef4444",
+          );
+          break;
+        }
         this.notify(`Equipped ${item.name}`, RARITY_COLORS[item.rarity]);
         this.cursor = clamp(this.cursor, 0, Math.max(0, this.filteredStash().length - 1));
         break;
@@ -161,10 +668,125 @@ export class TownUI {
         if (this.state.unequipToInventory(slot)) this.notify(`Unequipped ${slot}`);
         break;
       }
+      case "Skills": {
+        this.cycleSkill(this.cursor, 1);
+        break;
+      }
+      case "Tree": {
+        const node = treeNode(this.state.player.classId, this.treeBranch, this.cursor);
+        if (!node) break;
+        if (this.state.player.allocated.includes(node.id)) {
+          this.notify("Already yours. Points don't come back one at a time.", "#9aa4b2");
+        } else if (this.state.player.allocate(node)) {
+          this.notify(`${node.name} taken`, this.state.heroClass.color);
+        } else if (this.state.player.treePoints < node.cost) {
+          this.notify(`Needs ${node.cost} point${node.cost > 1 ? "s" : ""}. Go and earn them.`, "#ef4444");
+        } else {
+          this.notify("Take the node above it first.", "#ef4444");
+        }
+        break;
+      }
+      case "Path": {
+        const id = CLASS_IDS[this.cursor]!;
+        const cls = CLASSES[id];
+        if (this.state.classChosen && this.state.activeClassId === id) {
+          this.notify(`You are already playing ${cls.name}.`, cls.color);
+          break;
+        }
+        const wasPlayed = this.state.classChosen;
+        const pc = this.state.players[id];
+        const returning = pc.level > 1 || pc.xp > 0;
+        this.state.chooseClass(id);
+        this.notify(
+          returning
+            ? `${cls.name}, level ${pc.level}. Welcome back.`
+            : wasPlayed
+              ? `${cls.name}. ${cls.title}. A fresh level 1, gear and all.`
+              : `${cls.name}. ${cls.title}.`,
+          cls.color,
+        );
+        break;
+      }
+      case "Style": {
+        this.cycleStyle(this.cursor, 1);
+        break;
+      }
+      case "Capsules": {
+        const tier = CAPSULE_TIERS[this.cursor]!;
+        const want = this.bulk ? 10 : 1;
+        const price = CAPSULES[tier].price;
+        if (this.state.gems < price) {
+          this.notify(`Need ${formatNumber(price)} gems. They drop down there.`, "#ef4444");
+          break;
+        }
+        const pulls = this.state.openCapsules(tier, want);
+        this.lastCapsules = pulls;
+        const fresh = pulls.filter((p) => !p.dupe);
+        if (fresh.length > 0) {
+          const best = fresh.reduce((b, p) =>
+            rarityIndex(p.cosmetic.rarity) > rarityIndex(b.cosmetic.rarity) ? p : b);
+          this.notify(
+            `${rarityLabel(best.cosmetic.rarity)}: ${best.cosmetic.name}`,
+            RARITY_COLORS[best.cosmetic.rarity],
+          );
+        } else {
+          const refund = pulls.reduce((n, p) => n + p.refund, 0);
+          this.notify(`All duplicates. ${formatNumber(refund)} gems back.`, "#9aa4b2");
+        }
+        break;
+      }
       case "Records":
         break;
+      case "Settings": {
+        if (this.cursor < SETTING_SPECS.length) {
+          this.toggleSetting(this.cursor);
+          break;
+        }
+        if (this.cursor === this.controlSchemeIndex) {
+          this.toggleControlScheme();
+          break;
+        }
+        if (this.cursor === this.mouseSecondaryIndex) {
+          this.cycleMouseSecondary(1);
+          break;
+        }
+        const rebindAction = this.keybindRowAction(this.cursor);
+        if (rebindAction) {
+          this.beginRebind(rebindAction);
+          break;
+        }
+        if (this.cursor === this.challengerIndex) {
+          this.notify(
+            `${k(this.state.settings, "left")} / ${k(this.state.settings, "right")} raises or lowers it.`,
+            "#9aa4b2",
+          );
+          break;
+        }
+        if (!this.resetArmed) {
+          this.resetArmed = true;
+          this.notify(
+            `Press ${k(this.state.settings, "confirm")} again to erase everything. `
+            + `${k(this.state.settings, "cancel")} if you'd rather not.`,
+            "#ef4444",
+          );
+          break;
+        }
+        // `wipe` also gags the save, so the `beforeunload` handler can't put it back.
+        this.state.wipe();
+        window.location.reload();
+        break;
+      }
     }
     this.state.save();
+  }
+
+  /** Nothing dives until a class is picked. */
+  private requireClass(): boolean {
+    if (this.state.classChosen) return true;
+    this.tab = "Path";
+    this.cursor = 0;
+    this.notify("Pick a class first. It changes everything you do down there.", "#ef4444");
+    return false;
   }
 
   private secondary(): void {
@@ -180,14 +802,23 @@ export class TownUI {
         break;
       }
       case "Chests": {
-        const tier = CHEST_TIERS[this.cursor]!;
+        const tier = CHEST_CATEGORIES[this.chestCategory]!.tiers[this.cursor]!;
         const count = this.bulk ? 10 : 1;
         const cost = CHESTS[tier].price * count;
         if (this.state.buyKey(tier, count)) {
-          this.notify(`Bought ${count} ${tier} key${count > 1 ? "s" : ""}`, CHESTS[tier].color);
+          this.notify(`Bought ${count} ${chestName(tier)} key${count > 1 ? "s" : ""}`, CHESTS[tier].color);
         } else {
           this.notify(`Need ${formatNumber(cost)} coins`, "#ef4444");
         }
+        break;
+      }
+      case "Craft": {
+        if (this.craftEssence === null) {
+          this.notify("No essence selected.", "#9aa4b2");
+          break;
+        }
+        this.craftEssence = null;
+        this.notify("Essence cleared — a plain craft, cheaper and unbiased.", "#9aa4b2");
         break;
       }
       case "Stash": {
@@ -198,20 +829,78 @@ export class TownUI {
         this.cursor = clamp(this.cursor, 0, Math.max(0, this.filteredStash().length - 1));
         break;
       }
+      case "Skills": {
+        this.state.player.setSkill(this.cursor, null);
+        this.notify("Slot cleared", "#9aa4b2");
+        break;
+      }
+      case "Style": {
+        const row = STYLE_ROWS[this.cursor];
+        if (!row || row.kind !== "slot") {
+          this.notify("That one is always on. Cycle it with A and D.", "#9aa4b2");
+          break;
+        }
+        if (this.state.appearance[row.slot] === null) {
+          this.notify("Already wearing nothing there.", "#9aa4b2");
+          break;
+        }
+        this.state.wear(row.slot, null);
+        this.notify(`${COSMETIC_SLOT_LABELS[row.slot]} removed`, "#9aa4b2");
+        break;
+      }
+      case "Settings": {
+        const rebindAction = this.keybindRowAction(this.cursor);
+        if (rebindAction) {
+          this.resetKeybind(rebindAction);
+          break;
+        }
+        if (this.resetArmed) {
+          this.resetArmed = false;
+          this.notify("Left everything exactly where it was.", "#9aa4b2");
+        }
+        break;
+      }
+      case "Tree": {
+        const spent = this.state.player.allocated.length;
+        if (spent === 0) {
+          this.notify("Nothing to refund. The tree is exactly as empty as it looks.", "#9aa4b2");
+          break;
+        }
+        this.state.player.respec();
+        this.notify(`Refunded ${spent} nodes. Changing your mind is free.`, "#7dd3fc");
+        break;
+      }
       default:
         break;
     }
     this.state.save();
   }
 
-  /** Bulk "sell everything strictly worse than what I'm wearing" — the QoL that makes
-   *  a 200-slot stash bearable without a mouse. */
+  /**
+   * The one key with a different job on every tab that uses it: bulk-sells junk on
+   * Stash, cycles the craft category on Craft, toggles 1×/10× on Chests now that
+   * left/right drive the carousel instead.
+   */
   private tertiary(): void {
+    if (this.tab === "Craft") {
+      const i = CRAFT_CATEGORIES.indexOf(this.craftCategory);
+      this.craftCategory = CRAFT_CATEGORIES[(i + 1) % CRAFT_CATEGORIES.length]!;
+      this.cursor = 0;
+      this.render();
+      return;
+    }
+    if (this.tab === "Chests") {
+      this.bulk = !this.bulk;
+      this.notify(`Bulk: ${this.bulk ? "10×" : "1×"}`, "#9aa4b2");
+      this.render();
+      return;
+    }
     if (this.tab !== "Stash") return;
     const equipped = this.state.player.equipment;
     const junk = this.state.inventory.filter((it) => {
       const worn = equipped[it.slot];
-      return worn ? itemScore(it) < itemScore(worn) : false;
+      const cls = this.state.heroClass;
+      return worn ? itemScore(it, cls) < itemScore(worn, cls) : false;
     });
     if (junk.length === 0) {
       this.notify("No junk to sell — nothing is worse than what you're wearing.", "#9aa4b2");
@@ -227,12 +916,20 @@ export class TownUI {
     const list = this.rarityFilter === "all"
       ? [...this.state.inventory]
       : this.state.inventory.filter((it) => it.rarity === this.rarityFilter);
-    return list.sort((a, b) => rarityIndex(b.rarity) - rarityIndex(a.rarity) || itemScore(b) - itemScore(a));
+    const cls = this.state.heroClass;
+    return list.sort((a, b) =>
+      rarityIndex(b.rarity) - rarityIndex(a.rarity) || itemScore(b, cls) - itemScore(a, cls));
   }
 
   // --- rendering ----------------------------------------------------------
 
   private render(): void {
+    if (this.typing) return;
+    // Whenever this screen redraws and nothing is focused, the keyboard has to be live
+    // — otherwise a field that lost focus (Enter, Escape, a click, or the room-join
+    // redraw itself) can leave Escape and everything else dead until some other event
+    // happens to re-enable it.
+    this.input?.setEnabled(!this.typing);
     const s = this.state;
     this.root.innerHTML = `
       <div class="town">
@@ -240,39 +937,282 @@ export class TownUI {
           <div class="brand">DEPTHS OF THE <span>UNSPOKEN</span></div>
           <div class="purse">
             <span class="coin">${formatNumber(s.coins)}</span> coins
+            <span class="sep">·</span>
+            <span class="gemcount">${formatNumber(s.gems)}</span> gems
+            <span class="sep">·</span>
+            <span style="color:${s.classChosen ? s.heroClass.color : "#5a6270"}">
+              ${s.classChosen ? escapeHtml(s.heroClass.name) : "no class"}</span>
             <span class="sep">·</span> LV ${s.player.level}
             <span class="sep">·</span> deepest ${s.stats.deepestDepth}
           </div>
         </header>
         <nav class="tabs">
-          ${TABS.map((t) => `<span class="tab ${t === this.tab ? "on" : ""}">${t}</span>`).join("")}
-          <span class="tabhint">[I] / [O] switch</span>
+          ${(STATION_TABS as readonly Tab[]).includes(this.tab)
+            ? `<span class="tab on">${escapeHtml(STATION_LABELS[this.tab as StationTab])}</span>
+               <span class="tabhint">a station, not a tab — [${k(this.state.settings, "pause")}] back to the ship</span>`
+            : `${CYCLE_TABS.map((t) =>
+                `<span class="tab ${t === this.tab ? "on" : ""}" data-tab="${t}">${t}</span>`).join("")}
+               <span class="tabhint">[${k(this.state.settings, "tabPrev")}] / [${k(this.state.settings, "tabNext")}] switch, or click a tab</span>`}
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${TAB_HELP[this.tab]}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
 
-    // Keep the highlighted row on screen when the list is longer than the panel.
-    this.root.querySelector<HTMLElement>(".row.on")?.scrollIntoView({ block: "nearest" });
+    // Keep the highlighted row on screen when the list is longer than the panel — Chests
+    // scrolls horizontally instead, hence "nearest" on both axes.
+    this.root.querySelector<HTMLElement>(".row.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (this.tab === "Party") this.bindPartyFields();
   }
 
   private renderTab(): string {
     switch (this.tab) {
       case "Dive": return this.renderDive();
+      case "Party": return this.renderParty();
+      case "Rifts": return this.renderRifts();
+      case "StarMap": return this.renderStarMap();
+      case "Craft": return this.renderCraft();
       case "Chests": return this.renderChests();
       case "Stash": return this.renderStash();
       case "Hero": return this.renderHero();
+      case "Skills": return this.renderSkills();
+      case "Tree": return this.renderTree();
+      case "Path": return this.renderPath();
+      case "Style": return this.renderStyle();
+      case "Capsules": return this.renderCapsules();
       case "Records": return this.renderRecords();
+      case "Settings": return this.renderSettings();
     }
   }
 
+  /**
+   * The Comms Relay, top to bottom. Out of a room it's three rows: your name, host,
+   * join. In one it's the code, the depth the host has picked, everybody who's here,
+   * and the door out.
+   */
+  private partyRows(): PartyRow[] {
+    if (!this.party.inRoom) {
+      return [{ kind: "name" }, { kind: "host" }, { kind: "join" }];
+    }
+    const rows: PartyRow[] = [{ kind: "code" }, { kind: "depth" }];
+    for (let i = 0; i < this.party.size; i++) rows.push({ kind: "member", index: i });
+    rows.push({ kind: "leave" });
+    return rows;
+  }
+
+  private partyAction(row: PartyRow | undefined): void {
+    if (!row) return;
+    switch (row.kind) {
+      case "name":
+      case "join":
+        this.focusField(row.kind);
+        break;
+      case "host":
+        if (!this.requireClass()) break;
+        if (!this.state.settings.playerName) {
+          this.notify("Put a name in first — the others need something to shout.", "#fbbf24");
+          this.cursor = 0;
+          this.focusField("name");
+          break;
+        }
+        this.party.hostRoom();
+        break;
+      case "code":
+        void navigator.clipboard?.writeText(this.party.code).then(
+          () => this.notify(`Copied ${this.party.code}. Send it to them.`, "#4ade80"),
+          () => this.notify(`The code is ${this.party.code}.`),
+        );
+        break;
+      case "depth":
+        this.notify(
+          this.party.isHost
+            ? "Use left and right to pick the depth."
+            : "The host picks the depth.",
+          "#9aa4b2",
+        );
+        break;
+      case "leave":
+        this.party.leave();
+        this.cursor = 0;
+        break;
+      case "member":
+        break;
+    }
+  }
+
+  /** Focuses one of the two text fields on this screen after the next repaint. */
+  private focusField(which: "name" | "join"): void {
+    this.render();
+    const field = this.root.querySelector<HTMLInputElement>(`[data-field="${which}"]`);
+    field?.focus();
+    field?.select();
+  }
+
+  /** Wired once per render, since the screen rebuilds its own DOM on every keypress. */
+  private bindPartyFields(): void {
+    for (const which of ["name", "join"] as const) {
+      const field = this.root.querySelector<HTMLInputElement>(`[data-field="${which}"]`);
+      if (!field) continue;
+      field.addEventListener("keydown", (e) => {
+        // While a field has focus the game's keys are off (see `focusin` in main.ts),
+        // so Enter and Escape are the whole interface here.
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const value = field.value;
+          field.blur();
+          if (which === "name") {
+            this.state.settings.playerName = cleanPlayerName(value);
+            this.state.save();
+            this.notify(`You're ${this.state.settings.playerName || "nobody"} now.`, "#4ade80");
+          } else if (isRoomCode(normalizeRoomCode(value))) {
+            if (!this.requireClass()) return;
+            this.party.joinRoom(value);
+          } else {
+            this.notify(`${ROOM_CODE_LENGTH} letters. Ask them to read it out again.`, "#ef4444");
+          }
+          this.render();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          field.blur();
+          this.render();
+        }
+      });
+      field.addEventListener("blur", () => this.render());
+    }
+  }
+
+  private renderParty(): string {
+    const p = this.party;
+    const rows: string[] = [];
+    const list = this.partyRows();
+    const roster = p.inRoom ? p.net.roster(p.name) : [];
+
+    list.forEach((row, i) => {
+      const on = i === this.cursor ? "on" : "";
+      switch (row.kind) {
+        case "name":
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main"><span class="name">Your name</span></div>
+              <div class="row-side">
+                <input class="field" data-field="name" maxlength="12" placeholder="type a name"
+                  value="${escapeHtml(this.state.settings.playerName)}" />
+              </div>
+            </div>`);
+          break;
+        case "host":
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main"><span class="name">Open a room</span></div>
+              <div class="row-side">you host, everyone else joins with the code</div>
+            </div>`);
+          break;
+        case "join":
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main"><span class="name">Join a room</span></div>
+              <div class="row-side">
+                <input class="field" data-field="join" maxlength="${ROOM_CODE_LENGTH}"
+                  placeholder="CODE" />
+              </div>
+            </div>`);
+          break;
+        case "code":
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main">
+                <span class="depth">${escapeHtml(p.code)}</span>
+                <span class="name">Room code</span>
+                ${p.isHost ? '<span class="badge boss">HOST</span>' : ""}
+              </div>
+              <div class="row-side">${k(this.state.settings, "confirm")} copies it</div>
+            </div>`);
+          break;
+        case "depth": {
+          const config = delveConfig(p.depth, this.state.challengerTier, p.size);
+          const profile = profileFor(config.depth, config);
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main">
+                <span class="depth">${String(p.depth).padStart(2, "0")}</span>
+                <span class="name">${escapeHtml(profile.name)}</span>
+                ${profile.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
+              </div>
+              <div class="row-side">
+                ${p.isHost
+                  ? `<span class="chip" data-action="left" data-index="${i}">◀</span>
+                     req. lv ${profile.recommendedLevel}
+                     <span class="chip" data-action="right" data-index="${i}">▶</span>`
+                  : `req. lv ${profile.recommendedLevel} · the host picks`}
+              </div>
+            </div>`);
+          break;
+        }
+        case "member": {
+          const member = roster[row.index];
+          const remote = p.members.find((m) => m.id === member?.id);
+          const ready = member?.id === p.net.id ? false : remote?.ready ?? false;
+          const you = member?.id === p.net.id;
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main">
+                <span class="name">${escapeHtml(member?.name ?? "…")}</span>
+                ${you ? '<span class="badge">YOU</span>' : ""}
+              </div>
+              <div class="row-side ${you || !ready ? "warn" : ""}">
+                ${you
+                  ? "at the relay — you only count as ready while you're standing in the portal"
+                  : ready ? "in the portal" : "on the ship"}
+              </div>
+            </div>`);
+          break;
+        }
+        case "leave":
+          rows.push(`
+            <div class="row ${on}" data-index="${i}">
+              <div class="row-main"><span class="name">Leave the room</span></div>
+              <div class="row-side">${p.isHost ? "closes it for everybody" : "back to diving alone"}</div>
+            </div>`);
+          break;
+      }
+    });
+
+    const status = p.net.status === "connecting" ? "Connecting…"
+      : p.net.status === "error" ? p.net.error
+      : p.inRoom ? `Room ${p.code} · ${p.size}/${MAX_PARTY}`
+      : "Not connected.";
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3>Multiplayer</h3>
+        <p class="${p.net.status === "error" ? "danger" : "muted"}">${escapeHtml(status)}</p>
+        <p>One of you opens a room and reads out the four letters. Everybody else types
+        them in. Then you all walk into the <b>Party Portal</b> on the ship — the run
+        starts when the last person steps in, and not before. Standing at this terminal
+        doesn't count; back out to the ship first.</p>
+        <h3>What a party does to a floor</h3>
+        <p>Monsters get tougher and there are more of them the more of you there are.
+        They do not hit meaningfully harder — you still can't dodge for each other.</p>
+        <p>Everyone keeps their own loot, their own XP and their own stash. Drops belong
+        to whoever picks them up.</p>
+        <p class="danger">Go down and you're not dead, you're <b>down</b> — an ally
+        standing over you brings you back. If the last one standing falls, the whole
+        party loses the floor.</p>
+        <h3>Getting them in</h3>
+        <p class="muted">They need to be able to open this page. Same wifi: give them the
+        <b>Network</b> address <code>npm run host</code> prints. The room lives on
+        whoever is serving the game.</p>
+      </aside>`;
+  }
+
   private renderDive(): string {
+    const challenger = this.state.challengerTier;
     const rows: string[] = [];
     for (let depth = 1; depth <= this.state.maxUnlockedDepth; depth++) {
-      const p = profileFor(depth);
+      const p = profileFor(depth, delveConfig(depth, challenger));
       const under = this.state.player.level < p.recommendedLevel;
       rows.push(`
         <div class="row ${depth - 1 === this.cursor ? "on" : ""}" data-index="${depth - 1}">
@@ -293,43 +1233,255 @@ export class TownUI {
       <aside class="side">
         <h3>The dive</h3>
         <p>Clear every wave, then step into the portal. <b>Descend</b> to push deeper for
-        richer loot, or <b>extract</b> to bank what you're carrying.</p>
+        richer loot, or <b>extract</b> to bank what you're carrying. Every fifth floor is
+        a raid boss, and it will take a while.</p>
         <p class="danger">Die and you lose every coin, key and item you picked up on the
         way down. XP is always kept.</p>
         <h3>${escapeHtml(biome.name)}</h3>
         <p class="muted">No two floors are laid out the same. Watch the ground.</p>
         <p>Hazards: ${hazards.length ? escapeHtml(hazards.join(", ")) : "none yet. Enjoy it."}</p>
+        <p>Local element: <b style="color:${ELEMENT_COLORS[biome.element]}">${ELEMENT_LABELS[biome.element]}</b>
+        <span class="muted">· the deeper you go, the more of the wildlife is made of it</span></p>
         <h3>Belt</h3>
         <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
-        <span class="muted">· [Q] buys one for ${POTION_PRICE}c</span></p>
+        <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
+        ${this.challengerNote()}
       </aside>`;
   }
 
-  private renderChests(): string {
-    const rows = CHEST_TIERS.map((tier, i) => {
-      const info = CHESTS[tier];
-      const n = this.bulk ? 10 : 1;
+  /**
+   * Rift tiers. The ladder is exponential rather than linear, so the interesting
+   * information on a row is what it will do to you, not what floor it is.
+   */
+  private renderRifts(): string {
+    const mode = MODES[this.riftMode];
+    const unlocked = modeUnlocked(mode, this.state.stats.deepestDepth);
+    const maxTier = this.state.riftTiers[this.riftMode];
+    const challenger = this.state.challengerTier;
+
+    const rows: string[] = [];
+    for (let tier = 1; tier <= maxTier; tier++) {
+      const config = riftConfig(this.riftMode, tier, mode.floors, challenger);
+      const p = profileFor(config.depth, config);
+      const under = this.state.player.level < p.recommendedLevel;
+      const best = tier === maxTier && maxTier > 1;
+      rows.push(`
+        <div class="row ${tier - 1 === this.cursor ? "on" : ""}" data-index="${tier - 1}">
+          <div class="row-main">
+            <span class="depth">T${String(tier).padStart(2, "0")}</span>
+            <span class="name">${escapeHtml(mode.name)}</span>
+            ${best ? '<span class="badge boss">NEW</span>' : ""}
+          </div>
+          <div class="row-side ${under ? "warn" : ""}">
+            req. lv ${p.recommendedLevel} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
+          </div>
+        </div>`);
+    }
+
+    const sel = riftConfig(this.riftMode, Math.min(this.cursor + 1, maxTier), mode.floors, challenger);
+    const other = RIFT_MODES.map((m) =>
+      `<span style="color:${m === this.riftMode ? MODES[m].color : "#5a6270"}">${MODES[m].short}</span>`,
+    ).join(" / ");
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3 style="color:${mode.color}">${escapeHtml(mode.name)}</h3>
+        <p class="muted">${other}
+          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+        <p>${escapeHtml(mode.blurb)}</p>
+        ${unlocked ? "" : `<p class="danger">Locked. Reach depth ${mode.unlockDepth} in the delve.</p>`}
+        <table class="cmp">
+          <tr><td>Floors</td><td>${mode.floors}, boss last</td></tr>
+          <tr><td>Boss floor depth</td><td>${sel.depth}</td></tr>
+          <tr><td>Danger</td><td>×${sel.danger.toFixed(2)}</td></tr>
+          <tr><td>Rarity push</td><td>${mode.rarityBias > 0.1 ? "heavy" : mode.rarityBias > 0 ? "slight" : "none"}</td></tr>
+          <tr><td>Drop volume</td><td>×${mode.quantity.toFixed(1)}</td></tr>
+          <tr><td>Coins</td><td>×${mode.coinMult.toFixed(1)}</td></tr>
+          <tr><td>Keys</td><td>×${mode.keyMult.toFixed(1)}</td></tr>
+        </table>
+        <p class="muted">Clearing the boss opens the next tier. Extracting early keeps
+        what you're carrying and opens nothing.</p>
+        <p>Rifts closed: <b>${this.state.stats.riftsCleared[this.riftMode] ?? 0}</b></p>
+        ${this.challengerNote()}
+      </aside>`;
+  }
+
+  /**
+   * Star map: pick a planet and a tier, same shape as the rift screen — A/D switches
+   * planet instead of rift flavor, and confirming doesn't dive, it opens a portal for
+   * the ship to find.
+   */
+  private renderStarMap(): string {
+    const planet = this.starMapPlanet;
+    const unlocked = planetUnlocked(planet, this.state.planetProgress);
+    const maxTier = this.state.planetProgress[planet.id] ?? 1;
+    const challenger = this.state.challengerTier;
+
+    const rows: string[] = [];
+    for (let tier = 1; tier <= maxTier; tier++) {
+      const config = planetConfig(planet, tier, planet.floors, challenger);
+      const p = profileFor(config.depth, config);
+      const under = this.state.player.level < p.recommendedLevel;
+      const best = tier === maxTier && maxTier > 1;
+      rows.push(`
+        <div class="row ${tier - 1 === this.cursor ? "on" : ""}" data-index="${tier - 1}">
+          <div class="row-main">
+            <span class="depth">T${String(tier).padStart(2, "0")}</span>
+            <span class="name">${escapeHtml(planet.name)}</span>
+            ${best ? '<span class="badge boss">NEW</span>' : ""}
+          </div>
+          <div class="row-side ${under ? "warn" : ""}">
+            req. lv ${p.recommendedLevel} · ${planet.floors} floors · danger ×${config.danger.toFixed(2)}
+          </div>
+        </div>`);
+    }
+
+    const sel = planetConfig(planet, Math.min(this.cursor + 1, maxTier), planet.floors, challenger);
+    const other = PLANETS.map((p) =>
+      `<span style="color:${p === planet ? ELEMENT_COLORS[p.element] : "#5a6270"}">${escapeHtml(p.name)}</span>`,
+    ).join(" / ");
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3 style="color:${ELEMENT_COLORS[planet.element]}">${escapeHtml(planet.name)}
+          <span class="muted">· T${planet.order}</span></h3>
+        <p class="muted">${other}
+          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+        <p>${escapeHtml(planet.blurb)}</p>
+        ${unlocked ? "" : "<p class=\"danger\">Locked. Clear the previous planet's first tier.</p>"}
+        <table class="cmp">
+          <tr><td>Floors</td><td>${planet.floors}, boss last</td></tr>
+          <tr><td>Boss floor depth</td><td>${sel.depth}</td></tr>
+          <tr><td>Danger</td><td>×${sel.danger.toFixed(2)}</td></tr>
+          <tr><td>Local element</td><td style="color:${ELEMENT_COLORS[planet.element]}">${ELEMENT_LABELS[planet.element]}</td></tr>
+          <tr><td>Material</td><td style="color:${MATERIALS[planet.element].color}">${escapeHtml(MATERIALS[planet.element].name)}</td></tr>
+        </table>
+        <p class="muted">Fight and mine your way to the boss. Beating it opens
+        extraction and the next tier — the further you travel, the better it pays.</p>
+        <p>Opening a portal doesn't dive — it spawns one back at the ship. Walk into it
+        when you're ready.</p>
+        ${this.challengerNote()}
+      </aside>`;
+  }
+
+  /**
+   * The forge: pick a rarity, a category and (optionally) an essence, and see the cost
+   * before spending anything — a chest never shows you that in advance, which is the
+   * whole difference between gambling and crafting.
+   */
+  private renderCraft(): string {
+    const category = this.craftCategory;
+    const essence = this.craftEssence;
+    const rows = CRAFTABLE_RARITIES.map((rarity, i) => {
+      const bulk = craftBulkCost(rarity);
+      const essenceCost = essence ? craftEssenceCost(rarity) : 0;
+      const afford = this.state.materials.physical >= bulk && (!essence || this.state.materials[essence] >= essenceCost);
       return `
         <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
           <div class="row-main">
-            <span class="dot" style="background:${info.color}"></span>
-            <span class="name">${tier}</span>
-            <span class="badge">${this.state.keys[tier]} keys</span>
+            <span class="dot" style="background:${RARITY_COLORS[rarity]}"></span>
+            <span class="name" style="color:${RARITY_COLORS[rarity]}">${rarityLabel(rarity)}</span>
           </div>
-          <div class="row-side">${info.blurb} · ${formatNumber(info.price * n)} for ${n}</div>
+          <div class="row-side ${afford ? "" : "warn"}">
+            ${formatNumber(bulk)} ${escapeHtml(MATERIALS.physical.name)}${essence ? ` · ${formatNumber(essenceCost)} ${escapeHtml(MATERIALS[essence].name)}` : ""}
+          </div>
         </div>`;
     }).join("");
+
+    const bag = ELEMENTS.map((e) =>
+      `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td><td>${formatNumber(this.state.materials[e])}</td></tr>`,
+    ).join("");
+
+    return `<div class="list">${rows}</div>
+      <aside class="side">
+        <h3>Craft: <b>${CRAFT_CATEGORY_LABELS[category]}</b>
+          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} cycle</span></h3>
+        <p class="muted">Divine and unspoken stay chest-only — everything from common to
+        mythic is fair game here, at a price that climbs steeply with the rarity.</p>
+        <h3>Essence: <b style="color:${essence ? ELEMENT_COLORS[essence] : "#9aa4b2"}">
+          ${essence ? ELEMENT_LABELS[essence] : "None"}</b>
+          <span class="chip" data-action="left">◀</span>
+          <span class="chip" data-action="right">▶</span>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} clear</span></h3>
+        <p class="muted">Biases the roll toward that element's damage or resist affix,
+        instead of only ever hoping for it.</p>
+        <h3>Materials</h3>
+        <table class="cmp">${bag}</table>
+        <p class="muted">Dropped by monsters and mined from resource nodes — planets
+        only. The dive and the rifts never pay in these.</p>
+      </aside>`;
+  }
+
+  /** The current Challenger dial, shown wherever a run gets configured. Set in Settings. */
+  private challengerNote(): string {
+    const tier = this.state.challengerTier;
+    if (tier <= 0) return `<p class="muted">Challenger off — crank it up from Settings.</p>`;
+    return `<p style="color:#ff2d2d">Challenger <b>${tier}</b> — ${escapeHtml(challengerName(tier))}.
+      ×${challengerMultiplier(tier).toFixed(1)} danger on top of everything above.
+      <span class="muted">Change it in Settings.</span></p>`;
+  }
+
+  /**
+   * The chest shop: one category at a time, each browsed as a big horizontal carousel of
+   * chest cards rather than a single 28-row list — up/down flip the category pill, left/
+   * right (or the arrow chips, or clicking a card) walk the carousel. Every card carries
+   * its own little sprite (`chestIcon`): the real weapon for a single-family cache, a
+   * slot icon for the three category caches, and a tinted chest prop otherwise. The full
+   * blurb for whichever chest is selected lives in the aside, in real reading size,
+   * rather than squeezed into the card itself.
+   */
+  private renderChests(): string {
+    const n = this.bulk ? 10 : 1;
+    const cat = CHEST_CATEGORIES[this.chestCategory]!;
+
+    const cats = CHEST_CATEGORIES.map((c, i) => `
+      <div class="chest-cat ${i === this.chestCategory ? "on" : ""}" data-category="${i}">${escapeHtml(c.label)}</div>
+    `).join("");
+
+    const cards = cat.tiers.map((tier, i) => {
+      const info = CHESTS[tier];
+      const icon = pixelImage(chestIcon(tier), 5, tier);
+      return `
+        <div class="chest-card row ${i === this.cursor ? "on" : ""}" data-index="${i}" style="--chest-color:${info.color}">
+          <div class="chest-card-art"><img src="${icon}" alt=""></div>
+          <span class="chest-card-name">${escapeHtml(chestName(tier))}</span>
+          <span class="badge">${this.state.keys[tier]} keys</span>
+          <span class="chest-card-price">${formatNumber(info.price * n)} for ${n}</span>
+        </div>`;
+    }).join("");
+
+    const selTier = cat.tiers[this.cursor] ?? cat.tiers[0]!;
+    const sel = CHESTS[selTier];
 
     const pulls = this.lastPulls.length
       ? this.lastPulls
           .map((it) => `<li style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}
-             <em>${statLine(it)}</em></li>`)
+             <em>${escapeHtml(statLine(it))}</em></li>`)
           .join("")
       : '<li class="muted">Nothing opened yet.</li>';
 
-    return `<div class="list">${rows}</div>
+    return `<div class="chests-pane">
+        <div class="chest-cats">${cats}</div>
+        <div class="carousel">
+          <span class="chip carousel-arrow" data-action="left">◀</span>
+          <div class="carousel-track">${cards}</div>
+          <span class="chip carousel-arrow" data-action="right">▶</span>
+        </div>
+      </div>
       <aside class="side">
-        <h3>Bulk: <b>${this.bulk ? "10×" : "1×"}</b> <span class="muted">(A / D)</span></h3>
+        <h3>${escapeHtml(cat.label)}</h3>
+        <p class="muted">${escapeHtml(cat.blurb)}</p>
+        <h3 style="color:${sel.color}">${escapeHtml(chestName(selTier))}</h3>
+        <p class="chest-desc">${escapeHtml(sel.blurb)}</p>
+        <table class="cmp">
+          <tr><td>Price</td><td>${formatNumber(sel.price * n)} for ${n}</td></tr>
+          <tr><td>Keys owned</td><td>${this.state.keys[selTier]}</td></tr>
+        </table>
+        <h3>Bulk: <b>${this.bulk ? "10×" : "1×"}</b>
+          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} toggle</span></h3>
+        <p><span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy a key</span></p>
         <h3>Last pull</h3>
         <ul class="pulls">${pulls}</ul>
         <p class="muted">Unspoken is roughly 1 in 20,000 from a Basic chest. Good luck.</p>
@@ -345,24 +1497,36 @@ export class TownUI {
 
     const rows = items.slice(0, 300).map((it, i) => {
       const worn = this.state.player.equipment[it.slot];
-      const delta = worn ? itemScore(it) - itemScore(worn) : itemScore(it);
+      const cls = this.state.heroClass;
+      const delta = worn ? itemScore(it, cls) - itemScore(worn, cls) : itemScore(it, cls);
       const mark = delta > 0 ? '<span class="up">▲</span>' : delta < 0 ? '<span class="down">▼</span>' : "";
+      const dot = it.grant || it.trigger
+        ? `<span class="dot" style="background:${it.trigger ? "#ff1493" : "#7dd3fc"}"></span>`
+        : "";
+      const locked = !this.state.player.canEquip(it);
       return `
         <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
           <div class="row-main">
-            ${mark}
+            ${mark}${dot}
             <span class="name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
             <span class="badge">${it.slot}</span>
+            ${locked ? `<span class="badge warn">req lv ${requiredLevel(it)}</span>` : ""}
           </div>
-          <div class="row-side">${statLine(it)} · ilvl ${it.ilvl} · sells ${formatNumber(sellPrice(it))}c</div>
+          <div class="row-side">${escapeHtml(statLine(it))} · ilvl ${it.ilvl} · sells ${formatNumber(sellPrice(it))}c</div>
         </div>`;
     }).join("");
 
     const sel = items[this.cursor];
     return `<div class="list">${rows}</div>
       <aside class="side">
-        <h3>Filter: <b>${this.rarityFilter}</b> <span class="muted">(A / D)</span></h3>
+        <h3>Filter: <b>${this.rarityFilter}</b>
+          <span class="chip" data-action="left">◀</span>
+          <span class="chip" data-action="right">▶</span></h3>
         ${sel ? this.renderCompare(sel) : ""}
+        <p>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · sell selected</span>
+          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} · sell all junk</span>
+        </p>
         <p class="muted">${this.state.inventory.length} / 200 slots used.</p>
       </aside>`;
   }
@@ -370,50 +1534,595 @@ export class TownUI {
   /** Side-by-side against the equipped piece — the core "is this an upgrade" question. */
   private renderCompare(item: Item): string {
     const worn = this.state.player.equipment[item.slot];
-    const lines = STAT_KEYS.filter((k) => item.stats[k] > 0 || (worn?.stats[k] ?? 0) > 0)
+    const mine = itemMods(item);
+    const theirs = worn ? itemMods(worn) : {};
+    const rows = MOD_KEYS.filter((k) => (mine[k] ?? 0) !== 0 || (theirs[k] ?? 0) !== 0)
       .map((k) => {
-        const mine = item.stats[k];
-        const theirs = worn?.stats[k] ?? 0;
-        const d = mine - theirs;
+        const a = mine[k] ?? 0;
+        const b = theirs[k] ?? 0;
+        const d = a - b;
         const cls = d > 0 ? "up" : d < 0 ? "down" : "muted";
-        return `<tr><td>${STAT_LABELS[k]}</td><td>${mine}</td>
-          <td class="${cls}">${d > 0 ? "+" : ""}${d}</td></tr>`;
+        return `<tr><td>${escapeHtml(shortLabel(k))}</td><td>${fmtMod(k, a)}</td>
+          <td class="${cls}">${d > 0 ? "+" : ""}${fmtMod(k, d)}</td></tr>`;
       }).join("");
+
+    const weapon = item.family ? WEAPONS[item.family] : null;
+    const affine = item.family
+      ? this.state.heroClass.affinity.includes(item.family)
+      : false;
+    const weaponLine = weapon
+      ? `<p style="color:${affine ? this.state.heroClass.color : "#9aa4b2"}">
+          <b>${escapeHtml(weapon.name)}</b> — ${escapeHtml(weapon.blurb)}
+          ${affine ? `<br><em>Your class was built for this.</em>` : "<br><em>Not your class's weapon; it hits a little softer.</em>"}</p>`
+      : "";
+
+    const grant = item.grant
+      ? `<p style="color:#7dd3fc">Grants <b>${escapeHtml(SKILLS[item.grant].name)}</b>
+         — an extra skill on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}] while this is equipped.</p>`
+      : "";
+    const trigger = item.trigger
+      ? `<p style="color:${ELEMENT_COLORS[item.trigger.element]}">${escapeHtml(triggerLine(item.trigger))}</p>`
+      : "";
+    const locked = !this.state.player.canEquip(item);
+    const reqLine = locked
+      ? `<p class="danger">Needs level ${requiredLevel(item)} to equip —
+         ${escapeHtml(this.state.heroClass.name)} is only ${this.state.player.level}.</p>`
+      : "";
 
     return `
       <h3 style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</h3>
-      <p class="muted">${rarityLabel(item.rarity)} ${item.type} · vs ${worn ? escapeHtml(worn.name) : "nothing equipped"}</p>
-      <table class="cmp">${lines}</table>`;
+      <p class="muted">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}
+        · vs ${worn ? escapeHtml(worn.name) : "nothing equipped"}</p>
+      ${reqLine}
+      ${weaponLine}
+      <table class="cmp">${rows}</table>
+      ${grant}${trigger}`;
   }
 
   private renderHero(): string {
     const p = this.state.player;
+    const cls = p.heroClass;
     const rows = EQUIP_SLOTS.map((slot, i) => {
       const it = p.equipment[slot];
+      const affine = it?.family ? cls.affinity.includes(it.family) : false;
       return `
         <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
           <div class="row-main">
             <span class="slot">${slot}</span>
             <span class="name" style="color:${it ? RARITY_COLORS[it.rarity] : "#5a6270"}">
               ${it ? escapeHtml(it.name) : "— empty —"}</span>
+            ${affine ? `<span class="badge" style="color:${cls.color};border-color:${cls.color}">affinity</span>` : ""}
           </div>
-          <div class="row-side">${it ? statLine(it) : ""}</div>
+          <div class="row-side">${it ? escapeHtml(statLine(it)) : ""}</div>
         </div>`;
     }).join("");
 
     const s = p.stats;
     const statRows = STAT_KEYS.map((k) => `<tr><td>${STAT_LABELS[k]}</td><td>${s[k]}</td></tr>`).join("");
 
+    const resists = p.resists;
+    const resistRows = ELEMENTS.filter((e) => e !== "physical").map((e) => {
+      const flat = Math.round(resists[e]);
+      const pct = (resistFraction(flat) * 100).toFixed(0);
+      return `<tr><td style="color:${ELEMENT_COLORS[e]}">${ELEMENT_LABELS[e]}</td>
+        <td>${flat}</td><td class="${flat > 0 ? "up" : "muted"}">${pct}%</td></tr>`;
+    }).join("");
+
+    const elemental = Object.entries(p.elementalDamage);
+    const elementalLine = elemental.length
+      ? elemental.map(([e, v]) =>
+          `<span style="color:${ELEMENT_COLORS[e as keyof typeof ELEMENT_COLORS]}">+${Math.round(v * 100)}% ${e}</span>`)
+        .join(" · ")
+      : '<span class="muted">none — your hits are plain physical</span>';
+
+    // Only the modifiers that are actually doing something, so the panel stays honest.
+    const combatRows = MOD_KEYS.filter((k) => !isStatKey(k) && !isResistKey(k) && p.mods[k] !== 0)
+      .map((k) => `<tr><td>${escapeHtml(shortLabel(k))}</td><td>${fmtMod(k, p.mods[k])}</td></tr>`)
+      .join("");
+
+    const weapon = p.weapon;
+    const ult = p.ultimate;
+    const granted = p.grantedSkill;
+
     return `<div class="list">${rows}</div>
       <aside class="side">
-        <h3>Level ${p.level}</h3>
-        <p class="muted">${p.xp} / ${p.xpNeeded} XP</p>
+        <h3 style="color:${cls.color}">${escapeHtml(cls.name)} · level ${p.level}</h3>
+        <p class="muted">${p.xp} / ${p.xpNeeded} XP · ${p.treePoints} unspent tree points</p>
         <table class="cmp">${statRows}</table>
         <p class="muted">Damage reduction ${(p.damageReduction * 100).toFixed(0)}% ·
-        ${p.attackCooldown.toFixed(2)}s per swing</p>
-        <p>${p.usesStaff
-          ? "A staff is equipped — your attack fires a bolt instead of swinging."
-          : "Melee weapon equipped — attacks sweep an arc in front of you."}</p>
+        ${p.attackCooldown.toFixed(2)}s per swing · crit ${(p.critChance * 100).toFixed(0)}%
+        at ×${p.critMultiplier.toFixed(2)} · spell damage ${Math.round(p.spellDamage)}</p>
+        <h3>In your hands</h3>
+        <p><b style="color:${p.hasAffinity ? cls.color : "#e8eef7"}">${escapeHtml(weapon.name)}</b>
+        — ${escapeHtml(weapon.blurb)}</p>
+        <p class="muted">${Math.round(p.attackDamage)} per hit${weapon.hits > 1 ? ` × ${weapon.hits}` : ""}
+        ${p.hasAffinity ? ` · +${Math.round(cls.affinityBonus * 100)}% class affinity` : ""}</p>
+        <h3>Ultimate</h3>
+        <p style="color:${ult.color}"><b>${escapeHtml(ult.name)}</b>
+          <span class="muted">[${keyLabel(this.state.settings.keybinds.special ?? DEFAULT_KEYBINDS.special)}]</span></p>
+        <p class="muted">${escapeHtml(ult.blurb)}</p>
+        ${granted ? `<h3>Granted by your gear</h3>
+          <p style="color:#7dd3fc">${escapeHtml(SKILLS[granted].name)}
+          <span class="muted">on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}]</span></p>` : ""}
+        <h3>On your hits</h3>
+        <p>${elementalLine}</p>
+        ${combatRows ? `<h3>Modifiers</h3><table class="cmp">${combatRows}</table>` : ""}
+        <h3>Resistances</h3>
+        <table class="cmp">${resistRows}</table>
+      </aside>`;
+  }
+
+  /**
+   * Three slots on the keys around the attack finger. Everything is unlocked by
+   * levelling, so this screen is about choosing, never about buying.
+   */
+  private renderSkills(): string {
+    const p = this.state.player;
+    const rows = Array.from({ length: SKILL_SLOTS }, (_, i) => {
+      const id = p.skills[i] ?? null;
+      const skill = id ? SKILLS[id] : null;
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="slot">[${this.skillKeyLabels[i] ?? i + 1}]</span>
+            <span class="name" style="color:${skill ? ELEMENT_COLORS[skill.element] : "#5a6270"}">
+              ${skill ? escapeHtml(skill.name) : "— empty —"}</span>
+          </div>
+          <div class="row-side">${skill
+            ? `${skill.manaCost} mana · ${(skill.cooldown * p.cooldownMult).toFixed(1)}s · ${ELEMENT_LABELS[skill.element]}`
+            : "A / D to pick one"}</div>
+        </div>`;
+    }).join("");
+
+    // The fourth slot isn't yours to choose — it's whatever your gear is handing you.
+    const granted = p.grantedSkill;
+    const grantedRow = granted
+      ? `<div class="row">
+          <div class="row-main">
+            <span class="slot">[${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}]</span>
+            <span class="name" style="color:${ELEMENT_COLORS[SKILLS[granted].element]}">
+              ${escapeHtml(SKILLS[granted].name)}</span>
+            <span class="badge">from your gear</span>
+          </div>
+          <div class="row-side">${SKILLS[granted].manaCost} mana · granted, not chosen</div>
+        </div>`
+      : "";
+
+    const selId = p.skills[this.cursor] ?? null;
+    const sel = selId ? SKILLS[selId] : null;
+    const known = p.skillPool.map((id) => {
+      const skill = SKILLS[id];
+      const have = p.unlocked.includes(id);
+      const equipped = p.skills.includes(id);
+      return `<li style="color:${have ? ELEMENT_COLORS[skill.element] : "#4a515e"}">
+        ${escapeHtml(skill.name)} ${equipped ? "<em>equipped</em>" : have ? "" : `<em>lv ${skill.unlockLevel}</em>`}</li>`;
+    }).join("");
+
+    return `<div class="list">${rows}${grantedRow}</div>
+      <aside class="side">
+        ${sel ? `
+          <h3 style="color:${ELEMENT_COLORS[sel.element]}">${escapeHtml(sel.name)}</h3>
+          <p>${escapeHtml(sel.blurb)}</p>
+          <table class="cmp">
+            <tr><td>Element</td><td>${ELEMENT_LABELS[sel.element]}</td></tr>
+            <tr><td>Mana</td><td>${sel.manaCost}</td></tr>
+            <tr><td>Cooldown</td><td>${(sel.cooldown * p.cooldownMult).toFixed(1)}s</td></tr>
+            ${sel.damage > 0 ? `<tr><td>Damage</td><td>${Math.round(p.spellDamage * sel.damage)}${sel.count > 1 ? ` × ${sel.count}` : ""}</td></tr>` : ""}
+          </table>`
+        : `<h3>Empty slot</h3><p class="muted">Press ${k(this.state.settings, "left")} or
+          ${k(this.state.settings, "right")} to put something in it.</p>`}
+        <p>
+          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · clear slot</span>
+        </p>
+        <h3>${escapeHtml(p.heroClass.name)} skills</h3>
+        <ul class="pulls">${known}</ul>
+        <p class="muted">Your class decides what you can learn. Everything else on this
+        screen is your problem.</p>
+      </aside>`;
+  }
+
+  /**
+   * The skill tree: four branches, walked top to bottom. Keyboard only, like everything
+   * else — W and S walk a branch, A and D move between them.
+   */
+  private renderTree(): string {
+    const p = this.state.player;
+    const cls = p.heroClass;
+    const columns: string[] = [];
+
+    for (let b = 0; b < TREE_BRANCH_COUNT; b++) {
+      const nodes: string[] = [];
+      for (let row = 0; row < TREE_BRANCH_DEPTH; row++) {
+        const node = treeNode(p.classId, b, row);
+        if (!node) continue;
+        const taken = p.allocated.includes(node.id);
+        const open = p.canAllocate(node);
+        const here = b === this.treeBranch && row === this.cursor;
+        const state = taken ? "taken" : open ? "open" : "locked";
+        nodes.push(`
+          <div class="tree-node ${state} ${node.keystone ? "keystone" : ""} ${here ? "on" : ""}"
+               style="--accent:${cls.color}">
+            <span class="tree-name">${escapeHtml(node.name)}</span>
+            <span class="tree-mods">${escapeHtml(nodeSummary(node.mods))}</span>
+          </div>`);
+      }
+      columns.push(`
+        <div class="tree-col ${b === this.treeBranch ? "on" : ""}">
+          <h4>${escapeHtml(branchName(p.classId, b))}</h4>
+          ${nodes.join("")}
+        </div>`);
+    }
+
+    const sel = treeNode(p.classId, this.treeBranch, this.cursor);
+    const taken = sel ? p.allocated.includes(sel.id) : false;
+    const totalTaken = p.allocated.length;
+
+    return `<div class="list"><div class="tree">${columns.join("")}</div></div>
+      <aside class="side">
+        <h3 style="color:${cls.color}">${escapeHtml(cls.name)} · ${p.treePoints} points</h3>
+        <p class="muted">${totalTaken} nodes taken. One point a level, two on every fifth.</p>
+        ${sel ? `
+          <h3>${escapeHtml(sel.name)}${sel.keystone ? " <em>keystone</em>" : ""}</h3>
+          <p>${escapeHtml(sel.blurb)}</p>
+          <table class="cmp">
+            ${Object.entries(sel.mods).map(([k, v]) =>
+              `<tr><td>${escapeHtml(shortLabel(k as ModKey))}</td>
+                <td class="up">${escapeHtml(modLine(k as ModKey, v as number))}</td></tr>`).join("")}
+            <tr><td>Cost</td><td>${sel.cost} point${sel.cost > 1 ? "s" : ""}</td></tr>
+          </table>
+          <p class="${taken ? "up" : p.canAllocate(sel) ? "" : "muted"}">
+            ${taken ? "Taken."
+              : p.canAllocate(sel) ? `Press ${k(this.state.settings, "confirm")} to take it.`
+              : sel.requires && !p.allocated.includes(sel.requires) ? "Take the one above it first."
+              : `Needs ${sel.cost} point${sel.cost > 1 ? "s" : ""}. Go and earn ${sel.cost > 1 ? "them" : "one"}.`}</p>
+        ` : ""}
+        <h3>${escapeHtml(branchName(p.classId, this.treeBranch))}</h3>
+        <p class="muted">${escapeHtml(branchBlurb(p.classId, this.treeBranch))}</p>
+        <p class="muted">
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund the whole tree</span>
+          free, any time. Nobody is going to charge you for changing your mind.</p>
+      </aside>`;
+  }
+
+  /**
+   * Class selection, as a carousel of cards rather than a list of rows — modeled on
+   * the chest shop's `renderChests`, since "browse a handful of options and preview one
+   * in detail" is the same screen either way. Each card is its own save slot: a level
+   * (or "new" for a class you haven't touched yet) and, on the one you're actually
+   * playing, a "playing" badge. Left/right (or the arrow chips, or clicking a card) walk
+   * the carousel; up/down do too, since there's only one row of cards to browse, unlike
+   * Chests where up/down flip between categories instead.
+   */
+  private renderPath(): string {
+    const cards = CLASS_IDS.map((id, i) => {
+      const cls = CLASSES[id];
+      const pc = this.state.players[id];
+      const playing = this.state.classChosen && this.state.activeClassId === id;
+      const untouched = pc.level === 1 && pc.xp === 0 && pc.allocated.length === 0
+        && (Object.values(pc.equipment) as (Item | null)[]).every((it) => it === null);
+      const icon = pixelImage(weaponSprite(cls.affinity[0]!, null, null), 4, `path-${id}`);
+      return `
+        <div class="class-card row ${i === this.cursor ? "on" : ""}" data-index="${i}"
+          style="--class-color:${cls.color}">
+          <div class="class-card-art"><img src="${icon}" alt=""></div>
+          <span class="class-card-name" style="color:${cls.color}">${escapeHtml(cls.name)}</span>
+          <span class="badge">${untouched ? "new" : `lv ${pc.level}`}</span>
+          ${playing ? '<span class="badge on">playing</span>' : ""}
+        </div>`;
+    }).join("");
+
+    const selId = CLASS_IDS[this.cursor] ?? this.state.activeClassId;
+    const sel = CLASSES[selId];
+    const selChar = this.state.players[selId];
+    const isCurrent = this.state.classChosen && selId === this.state.activeClassId;
+    const ult = ULTIMATES[sel.ultimate];
+    const weapons = sel.affinity.map((f) => WEAPONS[f].name).join(", ");
+    const skills = sel.skills.map((id) =>
+      `<li style="color:${ELEMENT_COLORS[SKILLS[id].element]}">${escapeHtml(SKILLS[id].name)}
+        <em>lv ${SKILLS[id].unlockLevel}</em></li>`).join("");
+    const charge = chargeSummary(sel.charge);
+    const equippedCount = (Object.values(selChar.equipment) as (Item | null)[]).filter(Boolean).length;
+
+    return `<div class="carousel">
+        <span class="chip carousel-arrow" data-action="left">◀</span>
+        <div class="carousel-track">${cards}</div>
+        <span class="chip carousel-arrow" data-action="right">▶</span>
+      </div>
+      <aside class="side">
+        <h3 style="color:${sel.color}">${escapeHtml(sel.name)}</h3>
+        <p class="muted">${escapeHtml(sel.title)}</p>
+        <p>${escapeHtml(sel.blurb)}</p>
+        <p class="muted">${escapeHtml(sel.playstyle)}</p>
+        <table class="cmp">
+          <tr><td>Level</td><td>${selChar.level}</td></tr>
+          <tr><td>Tree points spent</td><td>${selChar.allocated.length}</td></tr>
+          <tr><td>Gear equipped</td><td>${equippedCount} / ${EQUIP_SLOTS.length}</td></tr>
+        </table>
+        <h3 style="color:${ult.color}">${escapeHtml(ult.name)}</h3>
+        <p>${escapeHtml(ult.blurb)}</p>
+        <p class="muted">Charges by ${escapeHtml(charge)}.</p>
+        <h3>Built for</h3>
+        <p>${escapeHtml(weapons)} <span class="muted">· +${Math.round(sel.affinityBonus * 100)}% damage,
+        and anything else hits a little softer</span></p>
+        <h3>Skills</h3>
+        <ul class="pulls">${skills}</ul>
+        ${isCurrent
+          ? '<p class="danger">You are playing this one right now.</p>'
+          : this.state.classChosen
+            ? `<p class="danger">Switching plays this class instead. Your `
+              + `${escapeHtml(this.state.heroClass.name)} is saved exactly as it is, `
+              + `waiting for whenever you switch back — every class keeps its own `
+              + `level, tree and gear.</p>`
+            : '<p class="danger">Nothing dives until you pick one. You can change your mind later — every class keeps its own level and build.</p>'}
+      </aside>`;
+  }
+
+  /**
+   * Options and the reset button, plus the full key legend — the one place in the game
+   * that lists every binding, read straight out of `core/input` so it can never drift.
+   */
+  private renderSettings(): string {
+    const s = this.state.settings;
+    const rows = SETTING_SPECS.map((spec, i) => {
+      const on = s[spec.key];
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="name">${escapeHtml(spec.label)}</span>
+          </div>
+          <div class="row-side" style="color:${on ? "#4ade80" : "#5a6270"}">${on ? "ON" : "OFF"}</div>
+        </div>`;
+    });
+
+    const mouseScheme = s.controlScheme === "mouse";
+    rows.push(`
+      <div class="row ${this.controlSchemeIndex === this.cursor ? "on" : ""}" data-index="${this.controlSchemeIndex}">
+        <div class="row-main">
+          <span class="name">Controls</span>
+        </div>
+        <div class="row-side" style="color:${mouseScheme ? "#7dd3fc" : "#4ade80"}">
+          ${mouseScheme ? "MOUSE + KEYBOARD" : "KEYBOARD ONLY"}
+        </div>
+      </div>`);
+
+    rows.push(`
+      <div class="row ${!mouseScheme ? "disabled" : ""} ${this.mouseSecondaryIndex === this.cursor ? "on" : ""}"
+           data-index="${this.mouseSecondaryIndex}">
+        <div class="row-main">
+          <span class="name">Right click casts</span>
+        </div>
+        <div class="row-side" style="color:${mouseScheme ? "#e8eef7" : "#5a6270"}">
+          ${MOUSE_SECONDARY_LABELS[s.mouseSecondary]}${mouseScheme ? "" : " (mouse mode off)"}
+        </div>
+      </div>`);
+
+    for (let i = 0; i < REBINDABLE_ACTIONS.length; i++) {
+      const action = REBINDABLE_ACTIONS[i]!;
+      const index = this.keybindStartIndex + i;
+      const pending = this.rebindPending === action;
+      const code = s.keybinds[action] ?? DEFAULT_KEYBINDS[action];
+      rows.push(`
+        <div class="row ${index === this.cursor ? "on" : ""}" data-index="${index}">
+          <div class="row-main">
+            <span class="name">${escapeHtml(ACTION_LABELS[action])}</span>
+          </div>
+          <div class="row-side" style="color:${pending ? "#7dd3fc" : "#e8eef7"}">
+            ${pending ? "press a key…" : `[ ${escapeHtml(keyLabel(code))} ]
+              <span class="chip" data-action="secondary" data-index="${index}">reset</span>`}
+          </div>
+        </div>`);
+    }
+
+    const challenger = this.state.challengerTier;
+    rows.push(`
+      <div class="row ${this.challengerIndex === this.cursor ? "on" : ""}" data-index="${this.challengerIndex}">
+        <div class="row-main">
+          <span class="name" style="color:${challenger > 0 ? "#ff2d2d" : "#e8eef7"}">Challenger</span>
+        </div>
+        <div class="row-side" style="color:${challenger > 0 ? "#ff2d2d" : "#5a6270"}">
+          ${challenger > 0 ? `${challenger}/${MAX_CHALLENGER_TIER} — ${escapeHtml(challengerName(challenger))}` : `off (0/${MAX_CHALLENGER_TIER})`}
+        </div>
+      </div>`);
+
+    rows.push(`
+      <div class="row ${this.resetIndex === this.cursor ? "on" : ""}" data-index="${this.resetIndex}">
+        <div class="row-main">
+          <span class="name" style="color:#ef4444">Reset progress</span>
+          ${this.resetArmed ? `<span class="badge boss">PRESS ${k(s, "confirm")} AGAIN</span>` : ""}
+        </div>
+        <div class="row-side warn">wipes the save</div>
+      </div>`);
+
+    const selected = SETTING_SPECS[this.cursor];
+    const rebindAction = this.keybindRowAction(this.cursor);
+    const blurb = selected
+      ? `<p>${escapeHtml(selected.blurb)}</p>`
+      : this.cursor === this.controlSchemeIndex
+        ? `<p>Mouse + keyboard aims and attacks with the cursor — left click (or hold) to
+          swing, right click for whatever's chosen below, WASD still moves. Keyboard only
+          is the original game: no mouse touches the dungeon at all, and you face
+          whichever way you're moving.</p>`
+        : this.cursor === this.mouseSecondaryIndex
+          ? `<p>What the right mouse button casts, in Mouse + keyboard mode. Cycle it with
+            ${k(s, "left")}/${k(s, "right")} or click to step through the options.</p>`
+          : rebindAction
+            ? `<p>Press ${escapeHtml(keyLabel(s.keybinds.confirm ?? DEFAULT_KEYBINDS.confirm))}, or
+              click this row, then press any key to bind
+              <b>${escapeHtml(ACTION_LABELS[rebindAction])}</b> to it.
+              ${escapeHtml(keyLabel(s.keybinds.cancel ?? DEFAULT_KEYBINDS.cancel))} resets it to
+              ${escapeHtml(keyLabel(DEFAULT_KEYBINDS[rebindAction]))}. Every action can be
+              rebound, movement and menu navigation included — the mouse always works too,
+              so there's no key you can pick that locks you out of this screen.</p>`
+            : this.cursor === this.challengerIndex
+              ? `<p>A difficulty multiplier you choose yourself, on top of whatever a mode
+                and depth already imply. Applies to the delve, every rift and every
+                planet — even the gentlest floor in the game gets real teeth at a high
+                tier. ${challenger > 0 ? `Currently ×${challengerMultiplier(challenger).toFixed(1)} danger.` : ""}</p>`
+              : `<p class="danger">Erases your class, level, tree, gear, stash, coins, keys
+                and every record. There is no undo and no backup. The page reloads into a
+                brand new character.</p>`;
+
+    const title = selected ? selected.label
+      : this.cursor === this.controlSchemeIndex ? "Controls"
+      : this.cursor === this.mouseSecondaryIndex ? "Right click casts"
+      : rebindAction ? ACTION_LABELS[rebindAction]
+      : this.cursor === this.challengerIndex ? "Challenger"
+      : "Reset progress";
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3>${escapeHtml(title)}</h3>
+        ${blurb}
+        <h3>In the dungeon</h3>
+        <table class="cmp">${hintRows(combatHints(s))}</table>
+        <h3>In town</h3>
+        <table class="cmp">${hintRows(townHints(s))}</table>
+        <p class="muted">Every key above can be rebound, movement and menu navigation
+        included — mouse click always works everywhere too, so there's no way to rebind
+        yourself out of this screen.</p>
+      </aside>`;
+  }
+
+  /** Row label, current value and a colour swatch, for one line of the style screen. */
+  private styleRowInfo(row: StyleRow): {
+    label: string; value: string; color: string; id: string | null; blurb: string;
+  } {
+    const a = this.state.appearance;
+    switch (row.kind) {
+      case "hairStyle": {
+        const hair = HAIR_COLORS[a.hair]!;
+        return {
+          label: "Hair", value: HAIR_STYLE_LABELS[a.hairStyle], color: hair.hair, id: null,
+          blurb: "Five of them. Nobody down there is going to comment either way.",
+        };
+      }
+      case "hair": {
+        const hair = HAIR_COLORS[a.hair]!;
+        return { label: "Hair colour", value: hair.name, color: hair.hair, id: null,
+          blurb: "Dyed in town. Holds up remarkably well against fire." };
+      }
+      case "skin": {
+        const tone = SKIN_TONES[a.skin]!;
+        return { label: "Skin", value: tone.name, color: tone.skin, id: null,
+          blurb: "Two of these are not strictly human. No questions were asked." };
+      }
+      case "eyes": {
+        const eye = EYE_COLORS[a.eyes]!;
+        return { label: "Eyes", value: eye.name, color: eye.eye, id: null,
+          blurb: "Large, on purpose. It is that kind of dungeon." };
+      }
+      case "dye": {
+        const dye = OUTFIT_DYES[a.dye]!;
+        return { label: "Outfit", value: dye.name, color: dye.cloth, id: null,
+          blurb: "Recolours whatever you happen to be wearing. Armour included." };
+      }
+      case "slot": {
+        const id = a[row.slot];
+        const c = id ? COSMETICS_BY_ID[id] : null;
+        const owned = this.state.ownedInSlot(row.slot).length;
+        return {
+          label: COSMETIC_SLOT_LABELS[row.slot],
+          value: c ? c.name : owned > 0 ? "— nothing —" : "— none owned —",
+          color: c ? RARITY_COLORS[c.rarity] : "#5a6270",
+          id,
+          blurb: c ? c.blurb : `${owned} owned for this slot.`,
+        };
+      }
+    }
+  }
+
+  /**
+   * The character screen. Everything on it is free or already paid for, and none of it
+   * does anything — which is why it gets a live portrait instead of a stat table.
+   */
+  private renderStyle(): string {
+    const rows = STYLE_ROWS.map((row, i) => {
+      const info = this.styleRowInfo(row);
+      const icon = info.id
+        ? `<img class="pip" src="${pixelImage(cosmeticPreview(info.id), 2, info.id)}" alt="">`
+        : "";
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="dot" style="background:${info.color}"></span>
+            <span class="name">${escapeHtml(info.label)}</span>
+            ${icon}
+          </div>
+          <div class="row-side" style="color:${info.color}">${escapeHtml(info.value)}</div>
+        </div>`;
+    }).join("");
+
+    const a = this.state.appearance;
+    const held = this.state.player.equipment.weapon;
+    const portrait = pixelImage(heroSprite(a), 7);
+    const weapon = pixelImage(
+      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 4);
+    const selected = STYLE_ROWS[this.cursor];
+    const info = selected ? this.styleRowInfo(selected) : null;
+    const owned = this.state.cosmetics.length;
+
+    return `<div class="list">${rows}</div>
+      <aside class="side">
+        <h3>You</h3>
+        <div class="portrait"><img src="${portrait}" alt="your character"></div>
+        <div class="portrait weapon"><img src="${weapon}" alt="your weapon"></div>
+        ${info ? `<p><b style="color:${info.color}">${escapeHtml(info.value)}</b></p>
+          <p class="muted">${escapeHtml(info.blurb)}</p>` : ""}
+        <p>
+          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · take off</span>
+        </p>
+        <h3>Wardrobe</h3>
+        <p><b>${owned}</b> / ${COSMETICS.length} collected</p>
+        <p class="muted">None of it does anything. That is the entire promise — a hat
+        will never be the reason a floor went badly.</p>
+      </aside>`;
+  }
+
+  /** The gem shop. Same gamble as the chests, with nothing at stake but your dignity. */
+  private renderCapsules(): string {
+    const n = this.bulk ? 10 : 1;
+    const rows = CAPSULE_TIERS.map((tier, i) => {
+      const info = CAPSULES[tier];
+      const cost = info.price * n;
+      const afford = this.state.gems >= info.price;
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="dot" style="background:${info.color}"></span>
+            <span class="name">${tier}</span>
+          </div>
+          <div class="row-side ${afford ? "" : "warn"}">
+            ${escapeHtml(info.blurb)} · ${formatNumber(cost)} gems for ${n}
+          </div>
+        </div>`;
+    }).join("");
+
+    const pulls = this.lastCapsules.length
+      ? this.lastCapsules.map((p) => `
+          <li style="color:${p.dupe ? "#6b7480" : RARITY_COLORS[p.cosmetic.rarity]}">
+            <img class="pip" src="${pixelImage(cosmeticPreview(p.cosmetic.id), 2, p.cosmetic.id)}" alt="">
+            ${escapeHtml(p.cosmetic.name)}
+            <em>${p.dupe ? `duplicate · +${p.refund} gems` : COSMETIC_SLOT_LABELS[p.cosmetic.slot]}</em>
+          </li>`).join("")
+      : '<li class="muted">Nothing opened yet.</li>';
+
+    const owned = this.state.cosmetics.length;
+    return `<div class="list">${rows}</div>
+      <aside class="side">
+        <h3><span class="gemcount">${formatNumber(this.state.gems)}</span> gems</h3>
+        <p class="muted">Gems drop in the dungeon and buy nothing else. Coins never
+        become gems and gems never become coins.</p>
+        <h3>Bulk: <b>${this.bulk ? "10×" : "1×"}</b>
+          <span class="chip" data-action="left">1×</span>
+          <span class="chip" data-action="right">10×</span></h3>
+        <h3>Last pull</h3>
+        <ul class="pulls">${pulls}</ul>
+        <p class="muted">Duplicates come back as gems. <b>${owned}</b> / ${COSMETICS.length}
+        collected.</p>
       </aside>`;
   }
 
@@ -423,7 +2132,10 @@ export class TownUI {
       (r) => `<tr><td style="color:${RARITY_COLORS[r]}">${rarityLabel(r)}</td>
         <td>${formatNumber(st.raritiesFound[r])}</td></tr>`).join("");
     const chests = CHEST_TIERS.map(
-      (t) => `<tr><td>${t}</td><td>${formatNumber(st.chestsOpened[t])}</td></tr>`).join("");
+      (t) => `<tr><td>${escapeHtml(chestName(t))}</td><td>${formatNumber(st.chestsOpened[t])}</td></tr>`).join("");
+    const rifts = RIFT_MODES.map(
+      (m) => `<tr><td style="color:${MODES[m].color}">${MODES[m].name}</td>
+        <td>${formatNumber(st.riftsCleared[m] ?? 0)} cleared · tier ${this.state.riftTiers[m]}</td></tr>`).join("");
 
     return `
       <div class="list records">
@@ -432,18 +2144,70 @@ export class TownUI {
           <tr><td>Coins spent</td><td>${formatNumber(st.coinsSpent)}</td></tr>
           <tr><td>Items sold</td><td>${formatNumber(st.itemsSold)}</td></tr>
           <tr><td>Enemies killed</td><td>${formatNumber(st.enemiesKilled)}</td></tr>
+          <tr><td>Bosses killed</td><td>${formatNumber(st.bossesKilled)}</td></tr>
           <tr><td>Runs extracted</td><td>${formatNumber(st.runsCompleted)}</td></tr>
           <tr><td>Deaths</td><td>${formatNumber(st.deaths)}</td></tr>
           <tr><td>Deepest depth</td><td>${st.deepestDepth}</td></tr>
+          <tr><td>Gems earned</td><td>${formatNumber(st.gemsEarned)}</td></tr>
+          <tr><td>Capsules opened</td><td>${formatNumber(st.capsulesOpened)}</td></tr>
+          <tr><td>Wardrobe</td><td>${this.state.cosmetics.length} / ${COSMETICS.length}</td></tr>
         </table>
       </div>
       <aside class="side">
+        <h3>Rifts</h3>
+        <table class="cmp">${rifts}</table>
         <h3>Rarities found</h3>
         <table class="cmp">${rarities}</table>
         <h3>Chests opened</h3>
         <table class="cmp">${chests}</table>
       </aside>`;
   }
+}
+
+/** One key legend as table rows. The hint lists are the single source of truth. */
+function hintRows(hints: readonly { keys: string; label: string }[]): string {
+  return hints
+    .map((h) => `<tr><td>${escapeHtml(h.label)}</td><td>${escapeHtml(h.keys)}</td></tr>`)
+    .join("");
+}
+
+/** Short label for a modifier, for tables where the full phrase is too wide. */
+function shortLabel(key: ModKey): string {
+  return MOD_LABELS[key];
+}
+
+/** A modifier value, formatted the way its key wants to be read. */
+function fmtMod(key: ModKey, value: number): string {
+  if (value === 0) return "0";
+  return PERCENT_MODS.has(key) ? `${Math.round(value * 100)}%` : String(Math.round(value * 10) / 10);
+}
+
+function isStatKey(key: ModKey): boolean {
+  return (STAT_KEYS as readonly string[]).includes(key);
+}
+
+function isResistKey(key: ModKey): boolean {
+  return key.endsWith("Resist");
+}
+
+/** One line of what a tree node actually does, for the node box itself. */
+function nodeSummary(mods: Record<string, number | undefined>): string {
+  return Object.entries(mods)
+    .map(([k, v]) => modLine(k as ModKey, v as number))
+    .join(", ");
+}
+
+/** Plain English for how a class fills its ultimate meter. */
+function chargeSummary(charge: {
+  perKill: number; perHealthLost: number; perManaSpent: number;
+  perCrit: number; perAilment: number;
+}): string {
+  const parts: string[] = ["kills"];
+  if (charge.perHealthLost > 0) parts.push("getting hurt");
+  if (charge.perManaSpent > 0) parts.push("spending mana");
+  if (charge.perCrit > 0) parts.push("critical hits");
+  if (charge.perAilment > 0) parts.push("inflicting ailments");
+  return parts.join(" and ");
 }
 
 function escapeHtml(s: string): string {

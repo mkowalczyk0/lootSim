@@ -6,6 +6,7 @@
  * Pure data — no DOM, no canvas, no simulation state.
  */
 
+import type { Element } from "./elements";
 import type { TrapKind } from "./traps";
 
 export type PropKind = "torch" | "bones" | "mushroom" | "crystal" | "rock";
@@ -36,6 +37,12 @@ export interface BiomeStyle {
   readonly props: readonly PropKind[];
   readonly layouts: readonly LayoutKind[];
   readonly traps: readonly TrapKind[];
+  /**
+   * What the local wildlife is made of. Monsters here are increasingly likely to be
+   * infused with this element as you descend, which is what turns resistance on a
+   * chestplate from a number into a decision about where you're going.
+   */
+  readonly element: Element;
 }
 
 export const BIOMES: readonly BiomeStyle[] = [
@@ -46,6 +53,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["torch", "rock"],
     layouts: ["open", "pillars"],
     traps: ["spike"],
+    element: "physical",
   },
   {
     name: "Whispering Forest",
@@ -54,6 +62,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["mushroom", "rock", "bones"],
     layouts: ["open", "rubble", "chambers"],
     traps: ["spike", "mire"],
+    element: "poison",
   },
   {
     name: "Dark Cave",
@@ -62,6 +71,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["crystal", "rock", "bones"],
     layouts: ["rubble", "pillars", "gauntlet", "ring"],
     traps: ["spike", "saw", "mire"],
+    element: "cold",
   },
   {
     name: "Ashen Wastes",
@@ -70,6 +80,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["bones", "rock", "torch"],
     layouts: ["gauntlet", "open", "chambers", "pillars"],
     traps: ["flame", "spike", "turret"],
+    element: "fire",
   },
   {
     name: "Dragon's Lair",
@@ -78,6 +89,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["bones", "torch", "crystal"],
     layouts: ["ring", "chambers", "gauntlet", "pillars"],
     traps: ["flame", "saw", "turret"],
+    element: "lightning",
   },
   {
     name: "The Veil",
@@ -86,6 +98,7 @@ export const BIOMES: readonly BiomeStyle[] = [
     props: ["crystal", "bones", "torch"],
     layouts: ["ring", "gauntlet", "rubble", "chambers"],
     traps: ["turret", "saw", "flame", "mire"],
+    element: "void",
   },
 ];
 

@@ -1,15 +1,23 @@
 /**
- * Depth is the single difficulty dial. Everything the dungeon needs to know about
- * how hard floor N is comes from here, so tuning lives in one place.
+ * Depth is the difficulty dial for the delve. Everything the dungeon needs to know
+ * about how hard a floor is comes from here, so tuning lives in one place.
+ *
+ * A rift floor goes through exactly the same function: the mode hands over an effective
+ * depth plus a `danger` multiplier that compounds per tier, and the curve below does the
+ * rest. That's the whole trick — one difficulty curve, two ways of walking up it.
  */
 
 import { clamp } from "../core/math";
 import { biomeFor } from "./biomes";
+import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
+import { delveConfig, partyScale, type RunConfig } from "./modes";
 
 export interface DepthProfile {
   readonly depth: number;
   readonly name: string;
   readonly tint: string;
+  /** The run this floor belongs to — mode, tier, position in the rift. */
+  readonly run: RunConfig;
   /** Baseline enemy stats before the archetype multipliers. */
   readonly enemyHealth: number;
   readonly enemyDamage: number;
@@ -17,6 +25,9 @@ export interface DepthProfile {
   readonly waves: number;
   readonly enemiesPerWave: number;
   readonly maxAlive: number;
+  /** How much a rift tier's danger fattens a wave, independent of depth. Exposed so the
+   *  wave director can scale burst size the same way it scales the headcount. */
+  readonly crowd: number;
   readonly coinMultiplier: number;
   readonly xpMultiplier: number;
   /** Multiplies enemy attack cooldowns: deep floors swing more often. */
@@ -24,44 +35,97 @@ export interface DepthProfile {
   /** Multiplies the wind-up before a hit lands: deep floors telegraph less. */
   readonly telegraph: number;
   readonly isBoss: boolean;
+  /** Extra bias handed to the rarity roll — the abyss's entire reason to exist. */
+  readonly rarityBias: number;
+  /** Multiplies how many separate things drop. */
+  readonly quantity: number;
   /** Recommended character level; below it you take a visible beating. */
   readonly recommendedLevel: number;
+  /** Short label for the HUD: "Abyssal Rift · T4 · Floor 2/4", or "" for a delve. */
+  readonly tag: string;
 }
 
-export function profileFor(depth: number): DepthProfile {
+export function profileFor(depth: number, config?: RunConfig): DepthProfile {
+  const run = config ?? delveConfig(depth);
   const d = Math.max(1, Math.floor(depth));
-  const isBoss = d % 5 === 0;
-  const biome = biomeFor(d);
+  const isBoss = run.bossFloor;
+  // A planet expedition brings its own visual identity instead of the depth-bucketed
+  // biome — everything else about the curve below is unchanged either way.
+  const biome = run.planet?.spec.biome ?? biomeFor(d);
+  const mode = run.mode;
+  const danger = run.danger;
+  // A co-op floor is scaled by how many people walked into it. One player leaves every
+  // number below exactly where it was.
+  const party = partyScale(run.players ?? 1);
 
   // Health grows geometrically to stay ahead of the 2^n rarity ladder on gear. Fights
   // are meant to be long enough to hurt: damage taken accumulates over a fight while
   // damage dealt does not, so length is most of the difficulty.
-  const enemyHealth = 28 * Math.pow(1.22, d - 1);
+  //
+  // The base was raised with the class overhaul. Classes, weapon families, the tree
+  // and the ultimates together put roughly 70% more damage in the player's hands, and
+  // the smoke test caught it immediately: a careless bot was walking to depth 17 and a
+  // raid boss was dying in eighteen seconds. Enemies got the difference back.
+  const enemyHealth = 48 * Math.pow(1.22, d - 1) * danger * party.health;
   // Damage starts gentle and accelerates: the first few floors have to be learnable
   // with no gear at all, while depth 20 should genuinely frighten a geared character.
-  const enemyDamage = 5 + 2.8 * (d - 1) + 0.22 * (d - 1) * (d - 1);
-  const enemySpeed = 54 + Math.min(52, 2.4 * (d - 1));
+  // Rift danger is applied at a lower exponent so a high tier is a longer fight before
+  // it's an instant death.
+  const enemyDamage = (5 + 3.6 * (d - 1) + 0.32 * (d - 1) * (d - 1)) * Math.pow(danger, 0.8) * party.damage;
+  const enemySpeed = (54 + Math.min(52, 2.4 * (d - 1))) * Math.min(1.25, Math.pow(danger, 0.15));
+  // More bodies at high tiers, but only slowly — a screen full of monsters stops being
+  // a fight and starts being a wall.
+  const crowd = Math.min(1.6, Math.pow(danger, 0.28));
 
   return {
     depth: d,
-    name: isBoss ? `${biome.name} — Warden's Hall` : `${biome.name} ${romanize(((d - 1) % 5) + 1)}`,
+    name: floorName(biome.name, d, run),
     tint: biome.tint,
+    run,
     enemyHealth,
     enemyDamage,
     enemySpeed,
-    waves: isBoss ? 2 : Math.min(4, 2 + Math.floor(d / 5)),
-    enemiesPerWave: Math.min(10, 3 + Math.floor(d * 0.5)),
-    maxAlive: Math.min(22, 5 + Math.floor(d * 0.9)),
-    coinMultiplier: Math.pow(1.22, d - 1),
-    xpMultiplier: Math.pow(1.22, d - 1),
+    // A boss floor is the boss. Adds come from the encounter itself, not a wave director.
+    waves: isBoss ? 1 : Math.min(4, 2 + Math.floor(d / 5)),
+    // Hordes, not a trickle: a wave throws 2-3x the bodies the old drip-feed did. Individual
+    // trash gets a bit softer to pay for it (see WAVE_HEALTH_MULT in dungeon.ts), so the
+    // total work per wave grows more modestly than the headcount alone suggests.
+    enemiesPerWave: Math.min(60, Math.round((3 + Math.floor(d * 0.5)) * crowd * 2.5 * party.count)),
+    maxAlive: Math.min(110, Math.round((5 + Math.floor(d * 0.9)) * crowd * 2.2 * party.count)),
+    crowd,
+    coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier),
+    xpMultiplier: Math.pow(1.22, d - 1) * mode.xpMult,
     // Numbers alone can't threaten a player who dodges well, so the deeper floors
     // squeeze the thing skill actually spends: reaction time.
-    aggression: clamp(1 - (d - 1) * 0.014, 0.55, 1),
-    telegraph: clamp(1 - (d - 1) * 0.012, 0.58, 1),
+    aggression: clamp(1 - (d - 1) * 0.016, 0.5, 1),
+    telegraph: clamp(1 - (d - 1) * 0.014, 0.55, 1),
     isBoss,
+    rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier),
+    quantity: mode.quantity,
     // Levelling now tracks depth closely, so the advice should too.
-    recommendedLevel: Math.max(1, Math.round(d * 0.9)),
+    recommendedLevel: Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35))),
+    tag: buildTag(run),
   };
+}
+
+/** "Htrae · T2 · Floor 2/3 · Nightmare V" — whichever of those actually apply. */
+function buildTag(run: RunConfig): string {
+  const parts: string[] = [];
+  if ((run.players ?? 1) > 1) parts.push(`${run.players} players`);
+  if (run.planet) {
+    parts.push(`${run.planet.spec.name} · T${run.planet.tier} · Floor ${run.floor}/${run.planet.spec.floors}`);
+  } else if (run.mode.isRift) {
+    parts.push(`${run.mode.name} · T${run.tier} · Floor ${run.floor}/${run.mode.floors}`);
+  }
+  const challenger = challengerName(run.challengerTier);
+  if (challenger) parts.push(challenger);
+  return parts.join(" · ");
+}
+
+function floorName(biomeName: string, d: number, run: RunConfig): string {
+  if (run.bossFloor) return `${biomeName} — Warden's Hall`;
+  if (run.mode.isRift) return `${biomeName} — Rift Fracture`;
+  return `${biomeName} ${romanize(((d - 1) % 5) + 1)}`;
 }
 
 const NUMERALS = ["I", "II", "III", "IV", "V"] as const;
@@ -70,15 +134,15 @@ function romanize(n: number): string {
 }
 
 /**
- * Coins dropped by one kill at this depth, before the archetype's loot weight.
+ * Coins dropped by one kill on this floor, before the archetype's loot weight.
  * Deliberately stingy: coins are the pressure that keeps you diving, and a player who
  * can buy a Legendary key after two floors has nothing left to want.
  */
-export function coinDropFor(depth: number): number {
-  return 3.5 * profileFor(depth).coinMultiplier;
+export function coinDropFor(profile: DepthProfile): number {
+  return 3.5 * profile.coinMultiplier;
 }
 
-/** XP granted by one kill at this depth, before the archetype's xp multiplier. */
-export function xpDropFor(depth: number): number {
-  return 7 * profileFor(depth).xpMultiplier;
+/** XP granted by one kill on this floor, before the archetype's xp multiplier. */
+export function xpDropFor(profile: DepthProfile): number {
+  return 7 * profile.xpMultiplier;
 }

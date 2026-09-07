@@ -1,17 +1,42 @@
-import type { Input } from "../core/input";
 import { angleDelta, approach, circlesOverlap, clamp, dist, normalize, TAU } from "../core/math";
 import { Rng } from "../core/rng";
+import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP, bossFor } from "../data/bosses";
+import { challengerRewardMult } from "../data/challenger";
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
-import { ARCHETYPES, bossName, type EnemyArchetype, type EnemyKind } from "../data/enemies";
+import {
+  AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, MAGIC_ELEMENTS, STATUS_FOR_ELEMENT,
+  zeroResists, type Element,
+} from "../data/elements";
+import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
+import type { ChargeRules } from "../data/classes";
+import { ULTIMATES, type UltimateId, type UltimateKind, type UltimateSpec } from "../data/ultimates";
+import {
+  BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
+} from "../data/weapons";
+import type { TriggerKind, TriggerSpec } from "../data/items";
 import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
-import { ITEM_TYPES, type ItemType } from "../data/items";
+import { EQUIP_SLOTS } from "../data/items";
+import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
+import { delveConfig, type RunConfig } from "../data/modes";
+import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
+import {
+  SKILLS, TOTEM_PULSE, TOTEM_TARGETS, WARD_RESIST, type SkillId,
+} from "../data/skills";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
-import type { Avatar, Enemy, Pickup, Projectile } from "./entities";
-import { rollItem, type Item } from "./item";
+import { updateBoss } from "./boss";
+import {
+  amplifyFrom, applyStatus, manaBurnFrom, mitigateWithResists, slowFrom, tickStatuses,
+  type StatusInstance,
+} from "./combat";
+import type { Avatar, Enemy, GroundZone, Pickup, Projectile, Telegraph, Totem } from "./entities";
+import type { Appearance } from "../data/cosmetics";
+import type { AvatarInput } from "../core/input";
+import type { Player } from "./player";
+import { randomItemType, rollItem, type Item } from "./item";
 import {
   circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
-  type Level, type Trap,
+  type Level, type ResourceNode, type Trap,
 } from "./level";
 import type { GameState } from "./state";
 
@@ -23,44 +48,237 @@ const DASH_SPEED = 470;
 const DASH_TIME = 0.14;
 const DASH_COOLDOWN = 0.75;
 const SWING_TIME = 0.13;
-const SWING_ARC = Math.PI * 0.75;
-const SWING_REACH = 46;
 const HIT_INVULN = 0.65;
 const MAGNET_RANGE = 78;
 const PICKUP_RANGE = 16;
 /** Keeps bodies far enough from the arena edge that sprites don't overlap the border. */
 const WALL_PAD = 16;
-const SPECIAL_RADIUS = 130;
-/** Kills needed to fill the special. High enough that it's a decision, not a rotation. */
-const SPECIAL_KILLS = 16;
+/**
+ * Wave-spawned trash is a bit softer than the raw depth curve says, because a wave now
+ * throws 2-3x as many bodies at once. This keeps the total health pool per wave from
+ * growing as fast as the headcount does — more enemies, but each one dies quicker, which
+ * is the whole point of a horde. Elites, adds and the boss itself are untouched.
+ */
+const WAVE_HEALTH_MULT = 0.75;
+/**
+ * A wave now throws 2-3x the bodies it used to. If every one of them still paid full XP,
+ * coin and drop chance, the whole meta-progression curve would race ahead of the depth
+ * curve it's supposed to track — a bigger fight would quietly mean a much faster game.
+ * Ordinary trash pays a reduced share per kill to keep total reward-per-wave close to
+ * where it always was; elites and the boss are exempt; they're the real reward mixed
+ * into the chaff, not the chaff itself.
+ */
+const TRASH_REWARD_MULT = 0.5;
+
+/**
+ * How much of your own movement you keep while an ultimate is happening. A Comet
+ * Charge steers itself and a whirlwind slows you down; a Cataclysm is cast and then
+ * you are free to run, because the meteors are not aimed at you.
+ */
+const ULT_MOVE: Record<UltimateKind, number> = {
+  charge: 0, spin: 0.8, storm: 0.7, impact: 1, totem: 1,
+};
+
+/** Ultimates that own the attack button while they run. */
+const ULT_BUSY: Record<UltimateKind, boolean> = {
+  charge: true, spin: true, storm: true, impact: false, totem: false,
+};
+
+/** Seconds between a whirlwind's bursts of projectiles. */
+const WHIRL_EMIT = 0.42;
+/** Radians a bladestorm sweep advances each time it swings. */
+const STORM_STEP = 2.1;
+/** How far from you a thorns retort reaches. */
+const THORNS_RANGE = 64;
 /** Fraction of max health a potion restores. */
 const POTION_HEAL = 0.45;
+/** Fraction of max mana a potion restores, and what a kill gives back. */
+const POTION_MANA = 0.3;
+const MANA_ON_KILL = 0.035;
+/**
+ * Co-op only. A downed ally is not out of the run: stand next to them for a moment and
+ * they come back up on a sliver of health. Dying in a party costs the party its damage
+ * and somebody's time, which is a real price without being "sit and watch for a floor".
+ */
+const REVIVE_RANGE = 46;
+export const REVIVE_TIME = 2.6;
+/** Fraction of max health a revived ally comes back with. */
+const REVIVE_HEALTH = 0.4;
+
+/** Seconds between damage ticks from a patch of burning ground. */
+const GROUND_TICK = 0.5;
+/** Fraction of a mechanic's damage that its leftover ground deals per tick. */
+const GROUND_DAMAGE = 0.28;
 
 export type RunPhase = "fighting" | "cleared" | "dead";
 
 /** Loot held by the current dive. Banked on extract, lost on death. */
 export interface RunLoot {
   coins: number;
+  /** Vanity currency. Banked and lost exactly like coins — cosmetics take the risk too. */
+  gems: number;
   xp: number;
   keys: Record<ChestTier, number>;
   items: Item[];
   kills: number;
+  /** Only ever fills on a planet expedition — kills and resource nodes both pay this. */
+  materials: MaterialBag;
 }
 
 export type RunEvent =
-  | { kind: "damage"; x: number; y: number; amount: number; crit: boolean; onPlayer: boolean }
+  | { kind: "damage"; x: number; y: number; amount: number; crit: boolean; onPlayer: boolean; element: Element }
   | { kind: "death"; x: number; y: number; elite: Rarity | null }
   | { kind: "pickup"; x: number; y: number; label: string; color: string }
-  | { kind: "levelUp"; levels: number }
+  /** An item specifically, rather than a generic pickup: the presentation layer needs the
+   *  rarity to decide whether this is a line of text or an event.
+   *
+   *  `owner` is the hero index it belongs to. In a solo dive that is always you; in a
+   *  party the host stamps it so a legendary banner only takes over the screen of the
+   *  person who actually found the thing. */
+  | { kind: "loot"; x: number; y: number; item: Item; owner: number }
+  | { kind: "levelUp"; levels: number; owner: number }
   | { kind: "shake"; amount: number }
   | { kind: "nova"; x: number; y: number; radius: number }
   | { kind: "wave"; wave: number; total: number }
   | { kind: "trap"; x: number; y: number; trap: TrapKind; radius: number }
+  | { kind: "boom"; x: number; y: number; radius: number; color: string }
+  | { kind: "bolt"; x1: number; y1: number; x2: number; y2: number; color: string }
+  | { kind: "cast"; x: number; y: number; label: string; color: string }
+  /**
+   * A weapon went through the air. Purely for the renderer — the hits have already been
+   * resolved by the time this is pushed — but the shape of the swing is simulation data,
+   * so the arc a crescent is drawn along is the arc that actually connected.
+   */
+  | {
+      kind: "swing"; x: number; y: number; angle: number;
+      arc: number; reach: number; pattern: AttackPattern; ultimate: boolean;
+      /** Whose gear this swing is made of. Carried on the event rather than read off
+       *  the local character, so an ally's crescent is their element and not yours. */
+      element: Element;
+    }
+  | { kind: "bossSpawn"; name: string; title: string }
+  | { kind: "bossPhase"; name: string; phase: number; total: number }
+  | { kind: "bossCast"; name: string; time: number }
+  | { kind: "bossDown"; x: number; y: number }
+  | { kind: "ultimate"; id: UltimateId; name: string; color: string; x: number; y: number }
+  | { kind: "trail"; x: number; y: number; color: string }
+  | { kind: "totem"; x: number; y: number; color: string }
   | { kind: "cleared" }
-  | { kind: "playerDied" };
+  | { kind: "playerDied"; owner: number };
+
+/** Everything needed to paint a danger zone on the floor. */
+export interface TelegraphInit {
+  shape: Telegraph["shape"];
+  x: number;
+  y: number;
+  angle: number;
+  /** Defaults to 0 — only a multi-instance ability needs to hold a fixed spacing. */
+  angleOffset?: number;
+  radius: number;
+  inner: number;
+  arc: number;
+  width: number;
+  total: number;
+  damage: number;
+  element: Element;
+  color: string;
+  hitsPlayer: boolean;
+  hitsEnemies: boolean;
+  linger: number;
+  followId: number | null;
+}
 
 function emptyKeys(): Record<ChestTier, number> {
   return Object.fromEntries(CHEST_TIERS.map((t) => [t, 0])) as Record<ChestTier, number>;
+}
+
+/**
+ * One participant on a floor: an avatar, a character sheet, and their own unbanked
+ * loot. In a solo dive there is exactly one of these and every back-compat getter on
+ * `Dungeon` points straight at it, which is why the rest of the game — the HUD, the
+ * renderer, the boss brain, the smoke test — never had to learn what a party is.
+ *
+ * In a party the host owns a `Hero` for every player, including the ones being driven
+ * from another laptop: their buttons arrive over the network as an `AvatarInput` and
+ * feed exactly the same `updateHero` every local player goes through. There is no
+ * second code path for a remote player, which is the only reason co-op is a few hundred
+ * lines instead of a rewrite.
+ */
+export class Hero {
+  /** Position in `Dungeon.heroes`. Stable for the whole run — snapshots index by it. */
+  readonly index: number;
+  /** Relay peer id, or "" for a solo run. */
+  readonly netId: string;
+  readonly name: string;
+  readonly player: Player;
+  readonly appearance: Appearance;
+  readonly avatar: Avatar;
+  /** Ailments on this hero. Monsters carry their own, same as always. */
+  readonly statuses: StatusInstance[] = [];
+  /** One more than you equipped, for the slot a piece of gear can grant you. */
+  readonly skillCooldowns = [0, 0, 0, 0];
+  readonly loot: RunLoot = {
+    coins: 0, gems: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0, materials: emptyMaterials(),
+  };
+  /** Damage the Ward Veil will eat before health does, and how long it holds. */
+  ward = 0;
+  wardTimer = 0;
+  /** 0..1. Fills the way this hero's class says it does; spending it fires the ultimate. */
+  specialCharge = 0;
+  /** Potions are per-character in a party, so nobody drinks out of your belt. */
+  potions: number;
+  /** True for the hero this browser is driving — the camera and the HUD follow it. */
+  readonly local: boolean;
+  /** Where a remote player's buttons arrive. Null for the one holding this keyboard. */
+  input: AvatarInput | null = null;
+  /** Out of health, waiting for an ally. In a solo run this is simply "dead". */
+  downed = false;
+  reviveProgress = 0;
+  /** XP earned since the host last told this hero's own browser about it. */
+  xpPending = 0;
+  /** Items picked up since the host last told this hero's own browser about them. */
+  readonly itemsPending: Item[] = [];
+  /** Routes monsters to this hero when they can't see them directly. */
+  flow: FlowField | null = null;
+
+  constructor(setup: HeroSetup, index: number, avatar: Avatar) {
+    this.index = index;
+    this.netId = setup.netId;
+    this.name = setup.name;
+    this.player = setup.player;
+    this.appearance = setup.appearance;
+    this.potions = setup.potions;
+    this.local = setup.local;
+    this.avatar = avatar;
+  }
+
+  get alive(): boolean {
+    return !this.downed;
+  }
+}
+
+/** What `Dungeon` needs to build one `Hero`. */
+export interface HeroSetup {
+  readonly netId: string;
+  readonly name: string;
+  readonly player: Player;
+  readonly appearance: Appearance;
+  readonly potions: number;
+  readonly local: boolean;
+}
+
+/**
+ * How this floor is being run. `solo` is the whole original game. `host` simulates for
+ * everybody; `client` simulates nothing at all and is driven by `net/sync.ts` from the
+ * snapshots the host sends.
+ */
+export type NetRole = "solo" | "host" | "client";
+
+export interface DungeonOptions {
+  readonly seed?: number;
+  readonly role?: NetRole;
+  /** The whole party, host first. Omitted for a solo dive. */
+  readonly heroes?: readonly HeroSetup[];
 }
 
 /**
@@ -69,81 +287,183 @@ function emptyKeys(): Record<ChestTier, number> {
  * needs to react to is pushed onto `events` and drained once per frame.
  */
 export class Dungeon {
+  /** How this floor was configured: mode, rift tier, position in the run. */
+  readonly config: RunConfig;
   readonly profile: DepthProfile;
   /** The generated floor: walls, hazards, decoration, and where the exit is. */
   readonly level: Level;
   readonly width: number;
   readonly height: number;
-  readonly avatar: Avatar;
+  /** Everyone on this floor, host first. One entry in a solo dive. */
+  readonly heroes: Hero[] = [];
+  /** The hero this browser drives. Every legacy getter below points here. */
+  readonly localHero: Hero;
+  readonly role: NetRole;
   readonly enemies: Enemy[] = [];
   readonly projectiles: Projectile[] = [];
   readonly pickups: Pickup[] = [];
+  /** Danger zones mid-wind-up. The whole vocabulary of a boss fight. */
+  readonly telegraphs: Telegraph[] = [];
+  /** Fire, tar and worse, left behind by whatever just went off. */
+  readonly ground: GroundZone[] = [];
+  /** Totems you planted. They keep working after you've walked away. */
+  readonly totems: Totem[] = [];
   readonly events: RunEvent[] = [];
-  readonly loot: RunLoot = { coins: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0 };
+  /** Deterministic randomness for the whole floor. The boss brain draws from it too. */
+  readonly rng: Rng;
 
   phase: RunPhase = "fighting";
-  /** 0..1. Fills as you kill; spending it fires the nova. */
-  specialCharge = 0;
   wave = 0;
+  /** The one enemy that is a raid boss, while it lives. */
+  boss: Enemy | null = null;
   /** Enemies still owed by the current wave. */
   private queued = 0;
-  private waveGap = 1.2;
+  private waveGap = 0.6;
   private spawnTimer = 0;
-  private readonly rng: Rng;
-  private readonly state: GameState;
-  /** Routes monsters around walls when they can't see the player directly. */
-  private readonly flow: FlowField;
+  private nextEnemyId = 1;
+  private nextTotemId = 1;
+  /** Guards against a triggered effect setting off another triggered effect forever. */
+  private inTrigger = false;
+  /** The save this run belongs to. Public because the multiplayer layer banks a
+   *  client's loot and potions straight back into it. */
+  readonly state: GameState;
+  /** One route map per hero: a monster follows the one belonging to whoever it wants. */
   private flowTimer = 0;
   /** Position of the extraction portal. Live all floor; descent needs a clear. */
   readonly portal: { x: number; y: number };
   elapsed = 0;
 
-  constructor(state: GameState, depth: number, seed?: number) {
+  /**
+   * `depth` may be a plain delve depth or a full rift configuration. `opts` is only
+   * ever passed by the multiplayer layer — a solo dive stays a two-argument call and
+   * behaves exactly as it always has, with a party of one.
+   */
+  constructor(state: GameState, depth: number | RunConfig, opts: number | DungeonOptions = {}) {
+    const options: DungeonOptions = typeof opts === "number" ? { seed: opts } : opts;
+    const seed = options.seed;
+    this.role = options.role ?? "solo";
     this.state = state;
-    this.profile = profileFor(depth);
+    this.config = typeof depth === "number" ? delveConfig(depth) : depth;
+    this.profile = profileFor(this.config.depth, this.config);
     this.rng = new Rng(seed);
 
-    // Every floor is generated: layout, hazards and decoration all come from here.
-    this.level = generateLevel(depth, this.rng);
+    // Every floor is generated: layout, hazards and decoration all come from here. A
+    // planet expedition brings its own biome, a bigger room graph, and resource nodes
+    // to mine on top of whatever it's fighting.
+    const planet = this.config.planet?.spec;
+    this.level = generateLevel(this.config.depth, this.rng, {
+      boss: this.profile.isBoss,
+      biome: planet?.biome,
+      big: planet !== undefined,
+      nodeCount: planet && !this.profile.isBoss ? planet.nodeCount : undefined,
+    });
     this.width = this.level.width;
     this.height = this.level.height;
 
+    // A solo dive is a party of one, built from the save exactly like it always was.
+    const setups: readonly HeroSetup[] = options.heroes ?? [{
+      netId: "", name: "You", player: state.player, appearance: state.appearance,
+      potions: state.potions, local: true,
+    }];
     const { x, y } = this.level.start;
-    this.avatar = {
-      x, y, px: x, py: y,
-      radius: PLAYER_RADIUS,
-      vx: 0, vy: 0, facing: -Math.PI / 2,
-      attackTimer: 0, swingTimer: 0, swingAngle: 0,
-      dashTimer: 0, dashCooldown: 0, invulnTimer: 0, hitFlash: 0,
-    };
+    for (let i = 0; i < setups.length; i++) {
+      // Party members stand in a small ring around the entrance rather than inside each
+      // other, so four people arriving on a floor don't spend the first second untangling.
+      const angle = (TAU / Math.max(1, setups.length)) * i - Math.PI / 2;
+      const spread = setups.length > 1 ? 22 : 0;
+      const spot = resolveCircle(
+        this.level,
+        clamp(x + Math.cos(angle) * spread, PLAYER_RADIUS + WALL_PAD, this.level.width - PLAYER_RADIUS - WALL_PAD),
+        clamp(y + Math.sin(angle) * spread, PLAYER_RADIUS + WALL_PAD, this.level.height - PLAYER_RADIUS - WALL_PAD),
+        PLAYER_RADIUS,
+      );
+      const hero = new Hero(setups[i]!, i, makeAvatar(spot.x, spot.y));
+      hero.flow = new FlowField(this.level);
+      hero.flow.update(this.level, spot.x, spot.y);
+      this.heroes.push(hero);
+    }
+    this.localHero = this.heroes.find((h) => h.local) ?? this.heroes[0]!;
     this.portal = this.level.portal;
-    this.flow = new FlowField(this.level);
-    this.flow.update(this.level, x, y);
     this.startNextWave();
   }
 
-  get player() {
-    return this.state.player;
+  // --- the one hero this browser is driving -------------------------------
+  //
+  // Everything downstream of the simulation — the HUD, the renderer, the boss brain,
+  // the smoke test — asks the dungeon about "the player" and gets the local one. That
+  // is what kept the party rewrite from spilling out of this file.
+
+  get avatar(): Avatar {
+    return this.localHero.avatar;
   }
 
-  /** Potions are stored on the save, but the HUD reads them through the run. */
-  get potionCount(): number {
-    return this.state.potions;
+  get loot(): RunLoot {
+    return this.localHero.loot;
   }
+
+  get playerStatuses(): StatusInstance[] {
+    return this.localHero.statuses;
+  }
+
+  get skillCooldowns(): number[] {
+    return this.localHero.skillCooldowns;
+  }
+
+  get ward(): number {
+    return this.localHero.ward;
+  }
+
+  get specialCharge(): number {
+    return this.localHero.specialCharge;
+  }
+
+  set specialCharge(value: number) {
+    this.localHero.specialCharge = value;
+  }
+
+  /** True in a party run — the HUD grows ally frames and the portal waits for everyone. */
+  get isParty(): boolean {
+    return this.heroes.length > 1;
+  }
+
+  /** What the character looks like. The renderer's business, never the simulation's. */
+  get appearance(): Appearance {
+    return this.localHero.appearance;
+  }
+
+  get player(): Player {
+    return this.localHero.player;
+  }
+
+  get settings() {
+    return this.state.settings;
+  }
+
+  /** Potions belong to the character carrying them, not to the floor. */
+  get potionCount(): number {
+    return this.localHero.potions;
+  }
+
+  /** On a client the wave director isn't running here, so the host says what's left. */
+  remoteRemaining = 0;
 
   get enemiesRemaining(): number {
+    if (this.role === "client") return this.remoteRemaining;
     return this.enemies.length + this.queued;
+  }
+
+  /** Pushed by the boss brain and by anything else that wants the renderer's attention. */
+  emit(ev: RunEvent): void {
+    this.events.push(ev);
   }
 
   // --- wave director ------------------------------------------------------
 
   private startNextWave(): void {
     this.wave++;
-    if (this.profile.isBoss && this.wave === this.profile.waves) {
-      this.queued = 1;
-    } else {
-      this.queued = this.profile.enemiesPerWave;
-    }
+    // A boss floor has exactly one wave, and it is the boss. Everything else that
+    // shows up during the fight was summoned by it.
+    this.queued = this.profile.isBoss ? 1 : this.profile.enemiesPerWave;
     this.spawnTimer = this.waveGap;
     this.events.push({ kind: "wave", wave: this.wave, total: this.profile.waves });
   }
@@ -154,23 +474,69 @@ export class Dungeon {
     );
   }
 
-  private spawnOne(): void {
-    const isBossWave = this.profile.isBoss && this.wave === this.profile.waves;
-    let archetype: EnemyArchetype;
-    if (isBossWave) {
-      archetype = ARCHETYPES.boss;
-    } else {
-      const kinds = this.spawnableKinds();
-      const weights = Object.fromEntries(kinds.map((k) => [k, ARCHETYPES[k].weight])) as Record<EnemyKind, number>;
-      archetype = ARCHETYPES[this.rng.weighted(weights)];
+  /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
+  private placeMonsterAt(spot: { x: number; y: number }): void {
+    const kinds = this.spawnableKinds();
+    const weights = Object.fromEntries(kinds.map((k) => [k, ARCHETYPES[k].weight])) as Record<EnemyKind, number>;
+    const archetype = ARCHETYPES[this.rng.weighted(weights)];
+    const at = resolveCircle(this.level, spot.x, spot.y, archetype.radius);
+    // Elites scale with depth: deeper floors roll higher tints and much fatter loot.
+    let elite: Rarity | null = null;
+    const eliteChance = clamp(
+      (0.03 + this.profile.depth * 0.008) * (1 + (this.config.danger - 1) * 0.6), 0, 0.35);
+    if (this.rng.chance(eliteChance)) {
+      const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
+      elite = RARITIES[this.rng.int(1, maxTier)]!;
     }
+    // The discount is for chaff only — an elite in the swarm is still the real threat.
+    this.enemies.push(
+      this.makeEnemy(archetype, at.x, at.y, { elite, healthMult: elite ? 1 : WAVE_HEALTH_MULT }),
+    );
+  }
 
-    // Spawn on open floor, away from the player, and never inside a hazard.
+  /**
+   * A horde doesn't trickle in one at a time — it pours out of a single spot all at
+   * once. Picks one open point and scatters a tight cluster of monsters around it,
+   * which also happens to be exactly the shape a cleave or an arc wants to eat.
+   */
+  private spawnBurst(): void {
+    if (this.profile.isBoss && !this.boss) {
+      this.spawnBoss();
+      this.queued = Math.max(0, this.queued - 1);
+      return;
+    }
+    const room = Math.max(0, this.profile.maxAlive - this.enemies.length);
+    const size = Math.min(this.burstSizeFor(), this.queued, room);
+    if (size <= 0) return;
+    const center = this.openSpot(20);
+    for (let i = 0; i < size; i++) {
+      const angle = this.rng.angle();
+      const reach = this.rng.range(0, 60);
+      this.placeMonsterAt({
+        x: clamp(center.x + Math.cos(angle) * reach, 40, this.width - 40),
+        y: clamp(center.y + Math.sin(angle) * reach, 40, this.height - 40),
+      });
+    }
+    this.queued -= size;
+  }
+
+  /** Bigger, chunkier bursts the deeper — and the more dangerous — the floor gets. */
+  private burstSizeFor(): number {
+    return clamp(Math.round(2 + this.profile.depth * 0.1 + (this.profile.crowd - 1) * 3), 2, 6);
+  }
+
+  /** Time between bursts. Deep floors don't just field more monsters, they field them faster. */
+  private burstGapFor(): number {
+    return clamp(0.5 - this.profile.depth * 0.01, 0.2, 0.5);
+  }
+
+  /** Somewhere on open floor, away from the player, and never inside a hazard. */
+  private openSpot(radius: number, awayFrom = 200): { x: number; y: number } {
     const hazards = this.level.traps.map((t) => ({ x: t.x, y: t.y, d: t.radius + 20 }));
-    const spot =
+    return (
       randomOpenPoint(this.level, this.rng, {
-        clearance: archetype.radius > 16 ? 2 : 1,
-        away: [{ x: this.avatar.x, y: this.avatar.y, d: 200 }, ...hazards],
+        clearance: radius > 16 ? 2 : 1,
+        away: [{ x: this.avatar.x, y: this.avatar.y, d: awayFrom }, ...hazards],
         tries: 40,
       }) ??
       // A cramped floor may have nowhere far away; settle for anywhere walkable.
@@ -178,25 +544,46 @@ export class Dungeon {
         away: [{ x: this.avatar.x, y: this.avatar.y, d: 110 }],
         tries: 30,
       }) ??
-      this.level.start;
-    const x = spot.x;
-    const y = spot.y;
+      this.level.start
+    );
+  }
 
-    // Elites scale with depth: deeper floors roll higher tints and much fatter loot.
-    let elite: Rarity | null = null;
-    const eliteChance = isBossWave ? 1 : clamp(0.03 + this.profile.depth * 0.008, 0, 0.3);
-    if (this.rng.chance(eliteChance)) {
-      const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
-      elite = RARITIES[this.rng.int(1, maxTier)]!;
-    }
+  /**
+   * Builds a monster. Everything that isn't the boss comes through here, including the
+   * adds a boss summons, so infusion and resistance rules are applied in exactly one
+   * place.
+   */
+  private makeEnemy(
+    archetype: EnemyArchetype,
+    x: number,
+    y: number,
+    opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number } = {},
+  ): Enemy {
+    const elite = opts.elite ?? null;
     const eliteMult = elite ? 1 + rarityIndex(elite) * 0.55 : 1;
+    const element = this.rollElement(archetype.element, elite !== null);
+    const health = this.profile.enemyHealth * archetype.health * eliteMult * (opts.healthMult ?? 1);
 
-    const health = this.profile.enemyHealth * archetype.health * eliteMult;
-    this.enemies.push({
+    // Everything resists its own element hard, so a single-element build eventually
+    // hits a wall and has to diversify. Physical is deliberately exempt: it's the
+    // damage everyone always has, and a floor that resists your sword is a floor you
+    // simply cannot fight.
+    const resists = zeroResists();
+    for (const e of Object.keys(resists) as Element[]) {
+      resists[e] = archetype.resist + (elite ? rarityIndex(elite) * 8 : 0);
+    }
+    if (element !== "physical") resists[element] += 55 + this.profile.depth * 1.5;
+
+    const prefix = element !== archetype.element ? `${ELEMENT_PREFIX[element]} ` : "";
+    // A planet renames its ordinary archetypes so the roster reads as this planet's
+    // own, even though it's the same five kinds fighting the same way underneath.
+    const baseName = this.config.planet?.spec.enemyNames[archetype.kind] ?? archetype.name;
+    return {
+      id: this.nextEnemyId++,
       x, y, px: x, py: y,
       radius: archetype.radius * (elite ? 1.18 : 1),
       archetype,
-      name: isBossWave ? bossName(this.profile.depth) : elite ? `${cap(elite)} ${archetype.name}` : archetype.name,
+      name: `${prefix}${elite ? `${cap(elite)} ` : ""}${baseName}`,
       health, maxHealth: health,
       damage: this.profile.enemyDamage * archetype.damage * (elite ? 1 + rarityIndex(elite) * 0.12 : 1),
       speed: this.profile.enemySpeed * archetype.speed,
@@ -211,28 +598,226 @@ export class Dungeon {
       trapCooldown: 0,
       stuckTimer: 0,
       dodgeDir: this.rng.chance(0.5) ? 1 : -1,
-    });
+      element,
+      resists,
+      statuses: [],
+      knockResist: 1,
+      boss: null,
+      summoned: opts.summoned ?? false,
+    };
+  }
+
+  /** Deep floors infuse their monsters with the local element; elites roll their own. */
+  private rollElement(base: Element, elite: boolean): Element {
+    if (elite && this.rng.chance(0.45)) return this.rng.pick(MAGIC_ELEMENTS);
+    const local = this.level.biome.element;
+    if (local !== "physical" && this.rng.chance(infusionChance(this.profile.depth))) return local;
+    return base;
+  }
+
+  /**
+   * The encounter. One enormous body in the middle of the room with a rotation of
+   * telegraphed abilities and enough health that you'll see all of them.
+   */
+  private spawnBoss(): void {
+    // A planet's boss is borrowed wholesale from an existing encounter and reskinned —
+    // see `planetBossSpec` — rather than picked off the depth-bucketed ladder.
+    const spec = this.config.planet ? planetBossSpec(this.config.planet.spec) : bossFor(this.profile.depth);
+    const archetype = ARCHETYPES.boss;
+    const spot = this.openSpot(spec.radius, 260);
+    const base = this.makeEnemy(archetype, spot.x, spot.y, {});
+
+    const health = this.profile.enemyHealth * spec.health;
+    const resists = zeroResists();
+    for (const e of Object.keys(resists) as Element[]) resists[e] = archetype.resist;
+    if (spec.element !== "physical") resists[spec.element] += spec.selfResist;
+
+    const boss: Enemy = {
+      ...base,
+      name: spec.name,
+      radius: spec.radius,
+      health, maxHealth: health,
+      damage: this.profile.enemyDamage * spec.damage,
+      speed: this.profile.enemySpeed * spec.speed,
+      element: spec.element,
+      resists,
+      knockResist: BOSS_KNOCK_RESIST,
+      // It gets a moment to arrive before it starts casting at you.
+      spawnTimer: 1.1,
+      boss: {
+        spec,
+        phase: 0,
+        actionTimer: BOSS_ACTION_GAP,
+        ability: null,
+        castTimer: 0,
+        castTotal: 0,
+        cooldowns: {},
+        aimX: spot.x, aimY: spot.y,
+        chargeTimer: 0, chargeVx: 0, chargeVy: 0,
+        pendingDrops: 0, dropTimer: 0,
+        buffTimer: 0, buffDamageMult: 1, buffHasteMult: 1,
+      },
+    };
+    this.enemies.push(boss);
+    this.boss = boss;
+    this.events.push({ kind: "bossSpawn", name: spec.name, title: spec.title });
+    this.events.push({ kind: "shake", amount: 14 });
+  }
+
+  /** Adds, thrown out by a boss ability. Chaff: weaker, and they evaporate with it. */
+  spawnAdds(count: number, x: number, y: number): void {
+    const kinds = this.spawnableKinds();
+    const weights = Object.fromEntries(kinds.map((k) => [k, ARCHETYPES[k].weight])) as Record<EnemyKind, number>;
+    for (let i = 0; i < count; i++) {
+      const archetype = ARCHETYPES[this.rng.weighted(weights)];
+      const angle = this.rng.angle();
+      const reach = this.rng.range(70, 150);
+      const spot = resolveCircle(
+        this.level,
+        clamp(x + Math.cos(angle) * reach, 40, this.width - 40),
+        clamp(y + Math.sin(angle) * reach, 40, this.height - 40),
+        archetype.radius,
+      );
+      this.enemies.push(this.makeEnemy(archetype, spot.x, spot.y, { summoned: true, healthMult: 0.62 }));
+    }
   }
 
   // --- simulation ---------------------------------------------------------
 
-  update(dt: number, input: Input): void {
+  /**
+   * One simulation tick. `input` is the local player's; every other hero on the floor
+   * carries its own `Hero.input`, filled in from the network, and goes through exactly
+   * the same code.
+   *
+   * A `client` dungeon never runs any of this — `net/sync.ts` overwrites its world from
+   * the host's snapshots instead, and the only thing it simulates is a little local
+   * prediction so your own character answers the keyboard without a round trip.
+   */
+  update(dt: number, input: AvatarInput): void {
     this.elapsed += dt;
+    if (this.role === "client") {
+      this.predictLocal(dt, input);
+      return;
+    }
     if (this.phase === "dead") return;
 
-    this.updateAvatar(dt, input);
+    for (const hero of this.heroes) {
+      const source = hero.local ? input : hero.input;
+      if (!source) continue;
+      if (hero.downed) continue;
+      this.updateHero(hero, dt, source);
+      this.updateResourceNodes(hero, source);
+    }
+    for (const hero of this.heroes) this.updateHeroStatuses(hero, dt);
+    this.updateRevives(dt);
     this.updateFlow(dt);
     this.updateTraps(dt);
+    this.updateTelegraphs(dt);
+    this.updateGround(dt);
+    this.updateTotems(dt);
     this.updateSpawning(dt);
     this.updateEnemies(dt);
     this.updateProjectiles(dt);
     this.updatePickups(dt);
+    // Potions live on the save in a solo dive, exactly as they always did.
+    if (this.role === "solo") this.state.potions = this.localHero.potions;
 
     if (this.phase === "fighting" && this.enemiesRemaining === 0 && this.wave >= this.profile.waves) {
       this.phase = "cleared";
+      // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
+      for (const hero of this.heroes) {
+        if (hero.downed) this.reviveHero(hero);
+      }
       this.dropClearCache();
       this.events.push({ kind: "cleared" });
     }
+  }
+
+  /**
+   * A client moves its own character immediately and lets the host's next snapshot
+   * correct it (see `applyHero` in `net/sync.ts`). Nothing else is predicted — a swing
+   * that hasn't happened yet must never draw a number, and on a home network the
+   * correction arrives before you could notice one.
+   */
+  private predictLocal(dt: number, input: AvatarInput): void {
+    const hero = this.localHero;
+    if (hero.downed || this.phase === "dead") return;
+    const a = hero.avatar;
+    a.px = a.x;
+    a.py = a.y;
+    const aim = input.aimAngle(a.x, a.y);
+    const move = input.moveVector();
+    if (aim !== null) a.facing = aim;
+    else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
+    if (a.dashTimer > 0) return; // the host owns a dash outright; it lands in one snapshot
+    const speed = PLAYER_SPEED * hero.player.moveMult * this.mireSlowAt(a.x, a.y);
+    a.x = clamp(a.x + move.x * speed * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
+    a.y = clamp(a.y + move.y * speed * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
+    const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
+    a.x = fixed.x;
+    a.y = fixed.y;
+  }
+
+  /**
+   * Downed allies. Stand next to one and they come back; walk away and their progress
+   * bleeds off. Skipped entirely in a solo dive, where being out of health is simply
+   * the end of the run.
+   */
+  private updateRevives(dt: number): void {
+    if (!this.isParty) return;
+    for (const hero of this.heroes) {
+      if (!hero.downed) continue;
+      const helper = this.heroes.some(
+        (other) => other.alive && dist(other.avatar.x, other.avatar.y, hero.avatar.x, hero.avatar.y) <= REVIVE_RANGE,
+      );
+      hero.reviveProgress = clamp(hero.reviveProgress + (helper ? dt : -dt * 0.5), 0, REVIVE_TIME);
+      if (hero.reviveProgress >= REVIVE_TIME) this.reviveHero(hero);
+    }
+  }
+
+  private reviveHero(hero: Hero): void {
+    hero.downed = false;
+    hero.reviveProgress = 0;
+    hero.player.health = Math.max(1, Math.round(hero.player.maxHealth * REVIVE_HEALTH));
+    hero.avatar.invulnTimer = Math.max(hero.avatar.invulnTimer, 1.2);
+    hero.statuses.length = 0;
+    this.events.push({ kind: "nova", x: hero.avatar.x, y: hero.avatar.y, radius: 70 });
+    this.events.push({
+      kind: "pickup", x: hero.avatar.x, y: hero.avatar.y - 26,
+      label: `${hero.name} is up`, color: "#4ade80",
+    });
+  }
+
+  /** The living hero nearest a point: who a monster charges and what a boss aims at. */
+  nearestHero(x: number, y: number): Hero {
+    let best = this.localHero;
+    let bestGap = Infinity;
+    for (const hero of this.heroes) {
+      if (!hero.alive) continue;
+      const gap = dist(x, y, hero.avatar.x, hero.avatar.y);
+      if (gap < bestGap) {
+        best = hero;
+        bestGap = gap;
+      }
+    }
+    return best;
+  }
+
+  /** The avatar a monster or a boss should be pointing at from where it stands. */
+  aimAvatar(x: number, y: number): Avatar {
+    return this.nearestHero(x, y).avatar;
+  }
+
+  /** A living hero at random — meteor rain should fall on the whole party, not one head. */
+  randomHeroAvatar(): Avatar {
+    const alive = this.heroes.filter((h) => h.alive);
+    return (alive.length > 0 ? this.rng.pick(alive) : this.localHero).avatar;
+  }
+
+  /** How many of the party are standing in the portal. The HUD counts them out loud. */
+  get partyAtPortal(): number {
+    return this.heroes.filter(
+      (h) => dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
   }
 
   private updateSpawning(dt: number): void {
@@ -244,17 +829,24 @@ export class Dungeon {
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
     if (this.enemies.length >= this.profile.maxAlive) return;
-    this.spawnOne();
-    this.queued--;
-    this.spawnTimer = 0.28;
+    this.spawnBurst();
+    this.spawnTimer = this.burstGapFor();
   }
 
   /** The pathing field only needs to be roughly current, so it runs a few times a second. */
+  /**
+   * One route map per hero, rebuilt four times a second. A monster that can't see
+   * anybody follows the field belonging to whichever hero it's chasing — without this
+   * they stand behind pillars and the floor never ends.
+   */
   private updateFlow(dt: number): void {
     this.flowTimer -= dt;
     if (this.flowTimer > 0) return;
     this.flowTimer = 0.25;
-    this.flow.update(this.level, this.avatar.x, this.avatar.y);
+    for (const hero of this.heroes) {
+      if (!hero.alive) continue;
+      hero.flow?.update(this.level, hero.avatar.x, hero.avatar.y);
+    }
   }
 
   // --- hazards ------------------------------------------------------------
@@ -318,8 +910,12 @@ export class Dungeon {
   /** Hits everything standing in a live hazard, the player included. */
   private applyTrapDamage(t: Trap): void {
     const damage = this.profile.enemyDamage * t.spec.damage;
-    const a = this.avatar;
-    if (dist(a.x, a.y, t.x, t.y) <= t.radius + a.radius) this.hurtPlayer(damage);
+    const element: Element = t.kind === "flame" ? "fire" : t.kind === "mire" ? "poison" : "physical";
+    for (const hero of this.heroes) {
+      if (!hero.alive) continue;
+      const a = hero.avatar;
+      if (dist(a.x, a.y, t.x, t.y) <= t.radius + a.radius) this.hurtPlayer(hero, damage, element);
+    }
 
     if (!t.spec.hitsEnemies) return;
     // Snapshot: damageEnemy can splice the list while we're walking it.
@@ -328,19 +924,13 @@ export class Dungeon {
     );
     for (const e of caught) {
       e.trapCooldown = TRAP_ENEMY_COOLDOWN;
-      this.damageEnemy(e, damage, Math.atan2(e.y - t.y, e.x - t.x));
+      this.damageEnemy(e, damage, Math.atan2(e.y - t.y, e.x - t.x), element);
     }
   }
 
   private fireTurret(t: Trap): void {
-    const speed = 230;
     this.events.push({ kind: "trap", x: t.x, y: t.y, trap: t.kind, radius: t.radius });
-    this.projectiles.push({
-      x: t.x, y: t.y, px: t.x, py: t.y, radius: 5,
-      vx: Math.cos(t.angle) * speed, vy: Math.sin(t.angle) * speed,
-      damage: this.profile.enemyDamage * t.spec.damage,
-      friendly: false, life: 4, color: "#fca5a5",
-    });
+    this.spawnEnemyBolt(t.x, t.y, t.angle, 230, this.profile.enemyDamage * t.spec.damage, "physical", 0);
   }
 
   /** Movement multiplier at a point — 1 on clean floor, much less in tar. */
@@ -352,8 +942,109 @@ export class Dungeon {
     return 1;
   }
 
-  private updateAvatar(dt: number, input: Input): void {
-    const a = this.avatar;
+  // --- telegraphs and burning ground ---------------------------------------
+
+  /** Paints a danger zone. Called by the boss brain, and by the floor for a big hit. */
+  addTelegraph(init: TelegraphInit): Telegraph {
+    const t: Telegraph = { ...init, angleOffset: init.angleOffset ?? 0, remaining: init.total };
+    this.telegraphs.push(t);
+    return t;
+  }
+
+  private updateTelegraphs(dt: number): void {
+    for (let i = this.telegraphs.length - 1; i >= 0; i--) {
+      const t = this.telegraphs[i]!;
+      if (t.followId !== null) {
+        const owner = this.enemies.find((e) => e.id === t.followId);
+        // The owner died mid-cast: the ability dies with it. That's a real reward for
+        // burning a boss down through a wind-up.
+        if (!owner) { this.telegraphs.splice(i, 1); continue; }
+        t.x = owner.x;
+        t.y = owner.y;
+        // The offset is what keeps several blades off one boss from collapsing onto
+        // the same facing every time its rotation is refreshed.
+        if (t.shape === "cone" || t.shape === "line") t.angle = owner.facing + t.angleOffset;
+      }
+      t.remaining -= dt;
+      if (t.remaining > 0) continue;
+      this.telegraphs.splice(i, 1);
+      this.resolveTelegraph(t);
+    }
+  }
+
+  private resolveTelegraph(t: Telegraph): void {
+    this.events.push({
+      kind: "boom", x: t.x, y: t.y,
+      radius: t.shape === "donut" ? t.inner : t.radius,
+      color: t.color,
+    });
+
+    if (t.hitsPlayer) {
+      for (const hero of this.heroes) {
+        if (!hero.alive) continue;
+        const a = hero.avatar;
+        if (inTelegraph(t, a.x, a.y, a.radius)) this.hurtPlayerMechanic(hero, t.damage, t.element, 0.7);
+      }
+    }
+    if (t.hitsEnemies) {
+      const caught = this.enemies.filter(
+        (e) => !e.boss && e.id !== t.followId && e.state !== "spawning" && inTelegraph(t, e.x, e.y, e.radius),
+      );
+      for (const e of caught) {
+        this.damageEnemy(e, t.damage, Math.atan2(e.y - t.y, e.x - t.x), t.element);
+      }
+    }
+
+    if (t.linger > 0) {
+      this.ground.push({
+        x: t.x, y: t.y, px: t.x, py: t.y,
+        radius: t.shape === "line" ? Math.max(40, t.width * 2) : Math.max(30, t.radius * 0.75),
+        element: t.element,
+        damage: t.damage * GROUND_DAMAGE,
+        remaining: t.linger,
+        tickTimer: GROUND_TICK,
+        hitsPlayer: t.hitsPlayer,
+        hitsEnemies: t.hitsEnemies,
+        color: t.color,
+      });
+    }
+  }
+
+  /**
+   * Burning ground. It ignores invulnerability frames on purpose — a dash is how you
+   * cross it, not how you stand in it.
+   */
+  private updateGround(dt: number): void {
+    for (let i = this.ground.length - 1; i >= 0; i--) {
+      const g = this.ground[i]!;
+      g.remaining -= dt;
+      if (g.remaining <= 0) { this.ground.splice(i, 1); continue; }
+      g.tickTimer -= dt;
+      if (g.tickTimer > 0) continue;
+      g.tickTimer += GROUND_TICK;
+
+      if (g.hitsPlayer) {
+        for (const hero of this.heroes) {
+          if (!hero.alive) continue;
+          const a = hero.avatar;
+          if (dist(a.x, a.y, g.x, g.y) <= g.radius + a.radius) {
+            this.hurtPlayerRaw(hero, g.damage, g.element, 0.35);
+          }
+        }
+      }
+      if (!g.hitsEnemies) continue;
+      const caught = this.enemies.filter(
+        (e) => !e.boss && e.state !== "spawning" && dist(e.x, e.y, g.x, g.y) <= g.radius + e.radius,
+      );
+      for (const e of caught) this.damageEnemy(e, g.damage, this.rng.angle(), g.element);
+    }
+  }
+
+  // --- the player ---------------------------------------------------------
+
+  private updateHero(hero: Hero, dt: number, input: AvatarInput): void {
+    const a = hero.avatar;
+    const player = hero.player;
     a.px = a.x;
     a.py = a.y;
 
@@ -361,160 +1052,1047 @@ export class Dungeon {
     a.swingTimer = Math.max(0, a.swingTimer - dt);
     a.dashCooldown = Math.max(0, a.dashCooldown - dt);
     a.invulnTimer = Math.max(0, a.invulnTimer - dt);
+    a.dashInvuln = Math.max(0, a.dashInvuln - dt);
     a.hitFlash = Math.max(0, a.hitFlash - dt);
+    for (let i = 0; i < hero.skillCooldowns.length; i++) {
+      hero.skillCooldowns[i] = Math.max(0, hero.skillCooldowns[i]! - dt);
+    }
+    if (hero.wardTimer > 0) {
+      hero.wardTimer = Math.max(0, hero.wardTimer - dt);
+      if (hero.wardTimer === 0) hero.ward = 0;
+    }
+    // Mana comes back slowly enough that a skill is a decision, not a rotation filler.
+    player.restoreMana(player.manaRegen * dt);
+
+    // Buffs run on their own clock and simply end.
+    if (a.buffTimer > 0) {
+      a.buffTimer = Math.max(0, a.buffTimer - dt);
+      if (a.buffTimer === 0) {
+        a.buffAttackSpeed = 0;
+        a.buffLifeOnHit = 0;
+      }
+    }
 
     const move = input.moveVector();
-    if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
+    const steered = this.ultLocksMovement(hero);
+    // In mouse-aim mode, facing (and so every attack and skill) points at the cursor
+    // regardless of which way you're walking — movement and aim are separate axes,
+    // same as any twin-aim action game. Exclusive keyboard keeps the original behavior:
+    // you face whichever way you're moving, because there's nothing else to aim with.
+    if (!steered) {
+      const aim = input.aimAngle(a.x, a.y);
+      if (aim !== null) a.facing = aim;
+      else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
+    }
+
+    // The ultimate is the one thing that can take the character off you.
+    if (a.ultimate) this.updateUltimate(hero, dt);
 
     if (a.dashTimer > 0) {
       a.dashTimer -= dt;
-    } else if (input.wasPressed("dash") && a.dashCooldown <= 0) {
+    } else if (input.wasPressed("dash") && a.dashCooldown <= 0 && !steered) {
       a.dashTimer = DASH_TIME;
       a.dashCooldown = DASH_COOLDOWN;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
       a.invulnTimer = Math.max(a.invulnTimer, DASH_TIME + 0.08);
+      a.dashInvuln = DASH_TIME + 0.08;
       const dir = move.x || move.y ? move : { x: Math.cos(a.facing), y: Math.sin(a.facing) };
       a.vx = dir.x * DASH_SPEED;
       a.vy = dir.y * DASH_SPEED;
+      this.fireTriggers(hero, "onDash", a.x, a.y);
     }
 
-    if (a.dashTimer <= 0) {
+    if (a.dashTimer <= 0 && !steered) {
       // Tar slows a walk to a crawl but never a dash — the dash stays the way out.
-      const slow = this.mireSlowAt(a.x, a.y);
-      a.vx = move.x * PLAYER_SPEED * slow;
-      a.vy = move.y * PLAYER_SPEED * slow;
+      const slow = this.mireSlowAt(a.x, a.y) * slowFrom(hero.statuses);
+      const spin = a.ultimate ? ULT_MOVE[ULTIMATES[a.ultimate].kind] : 1;
+      const speed = PLAYER_SPEED * player.moveMult * slow * spin;
+      a.vx = move.x * speed;
+      a.vy = move.y * speed;
     }
 
-    a.x = clamp(a.x + a.vx * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
-    a.y = clamp(a.y + a.vy * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
-    const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
-    a.x = fixed.x;
-    a.y = fixed.y;
+    if (steered) {
+      // A comet charge steers itself and comes off the walls.
+      this.stepCharge(hero, dt);
+    } else {
+      a.x = clamp(a.x + a.vx * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
+      a.y = clamp(a.y + a.vy * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
+      const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
+      a.x = fixed.x;
+      a.y = fixed.y;
+    }
 
-    if (input.wasPressed("attack") && a.attackTimer <= 0) this.attack();
-    if (input.wasPressed("potion")) this.drinkPotion();
-    if (input.wasPressed("special")) this.useSpecial();
+    // While an ultimate is swinging for you, your own buttons are not available.
+    const busy = a.ultimate ? ULT_BUSY[ULTIMATES[a.ultimate].kind] : false;
+    if (!busy && input.wasPressed("attack") && a.attackTimer <= 0) this.attack(hero);
+    if (input.wasPressed("potion")) this.drinkPotion(hero);
+    if (input.wasPressed("special")) this.useUltimate(hero);
+    if (!busy) {
+      if (input.wasPressed("skill1")) this.castSkill(hero, 0);
+      if (input.wasPressed("skill2")) this.castSkill(hero, 1);
+      if (input.wasPressed("skill3")) this.castSkill(hero, 2);
+      if (input.wasPressed("skill4")) this.castSkill(hero, 3);
+    }
   }
 
-  private attack(): void {
-    const a = this.avatar;
-    a.attackTimer = this.player.attackCooldown;
-    a.swingAngle = a.facing;
+  /** Ailments on a hero tick here, along with the mana a void hit tears out. */
+  private updateHeroStatuses(hero: Hero, dt: number): void {
+    if (hero.downed) return;
+    const burn = manaBurnFrom(hero.statuses);
+    if (burn > 0) hero.player.drainMana(burn * dt);
+    tickStatuses(hero.statuses, dt, (damage, element) => {
+      this.hurtPlayerRaw(hero, damage, element, 0);
+    });
+  }
 
-    if (this.player.usesStaff) {
-      const speed = 340;
-      this.projectiles.push({
-        x: a.x, y: a.y, px: a.x, py: a.y, radius: 5,
-        vx: Math.cos(a.facing) * speed, vy: Math.sin(a.facing) * speed,
-        damage: this.player.damage * 1.15,
-        friendly: true, life: 1.4, color: "#7dd3fc",
-      });
-      a.swingTimer = SWING_TIME * 0.6;
-      return;
+  /**
+   * One press of the attack button, resolved the way the weapon in your hand says it
+   * should be. Six families, six shapes: this is where "every weapon is the same swing
+   * with a bigger number on it" finally stops being true.
+   */
+  private attack(hero: Hero): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    const w = p.weapon;
+    a.attackTimer = p.attackCooldown / (1 + a.buffAttackSpeed);
+    a.swingAngle = a.facing;
+    const damage = p.attackDamage;
+
+    switch (w.pattern) {
+      case "bolt": {
+        // A staff turns your attack into a projectile, and every projectile modifier
+        // on your gear applies to it.
+        const count = 1 + Math.max(0, Math.round(p.mods.projectiles));
+        const spread = 0.15;
+        for (let i = 0; i < count; i++) {
+          const offset = count === 1 ? 0 : (i / (count - 1) - 0.5) * spread * (count - 1);
+          this.spawnPlayerBolt(hero, a.facing + offset, damage, w.pierce + Math.round(p.mods.pierce));
+        }
+        a.swingTimer = SWING_TIME * 0.6;
+        break;
+      }
+      case "thrust": {
+        // Reach and pierce. It runs down a lane and stops after so many bodies.
+        const limit = 1 + w.pierce + Math.max(0, Math.round(p.mods.pierce));
+        for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc).slice(0, limit)) {
+          this.playerHit(hero, e, damage, a.facing, w.knock);
+        }
+        a.swingTimer = SWING_TIME;
+        break;
+      }
+      case "dual": {
+        // Two blades, two hits a press, offset so both numbers are readable.
+        for (let i = 0; i < w.hits; i++) {
+          const angle = a.facing + (i === 0 ? -0.18 : 0.18);
+          for (const e of this.meleeTargets(hero, angle, w.reach, w.arc)) {
+            this.playerHit(hero, e, damage, angle, w.knock);
+          }
+        }
+        a.swingTimer = SWING_TIME * 0.8;
+        break;
+      }
+      case "orb": {
+        // A full circle around you, and then a spark at something outside it.
+        for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc)) {
+          this.playerHit(hero, e, damage, Math.atan2(e.y - a.y, e.x - a.x), w.knock);
+        }
+        this.talismanSpark(hero, damage);
+        a.swingTimer = SWING_TIME;
+        break;
+      }
+      default: {
+        // arc and cleave: everything inside the sweep, hit once.
+        for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc)) {
+          this.playerHit(hero, e, damage, a.facing, w.knock);
+        }
+        a.swingTimer = SWING_TIME;
+        break;
+      }
     }
 
-    a.swingTimer = SWING_TIME;
-    // The melee hitbox resolves immediately: every enemy inside the arc is hit once.
+    this.events.push({
+      kind: "swing", x: a.x, y: a.y - 8, angle: a.swingAngle,
+      arc: w.arc, reach: w.reach, pattern: w.pattern, ultimate: a.ultimate !== null,
+      element: p.attackElement,
+    });
+  }
+
+  /** Live enemies inside a melee sweep, nearest first so pierce limits mean something. */
+  private meleeTargets(hero: Hero, angle: number, reach: number, arc: number): Enemy[] {
+    const a = hero.avatar;
+    const found: { e: Enemy; d: number }[] = [];
     for (const e of this.enemies) {
-      if (e.state === "spawning") continue;
+      if (e.state === "spawning" || e.health <= 0) continue;
       const d = dist(a.x, a.y, e.x, e.y);
-      if (d > SWING_REACH + e.radius) continue;
-      const toEnemy = Math.atan2(e.y - a.y, e.x - a.x);
-      if (Math.abs(angleDelta(a.facing, toEnemy)) > SWING_ARC / 2) continue;
-      this.damageEnemy(e, this.player.damage, a.facing);
+      if (d > reach + e.radius) continue;
+      if (arc < TAU - 0.01) {
+        const toEnemy = Math.atan2(e.y - a.y, e.x - a.x);
+        if (Math.abs(angleDelta(angle, toEnemy)) > arc / 2) continue;
+      }
+      found.push({ e, d });
+    }
+    found.sort((l, r) => l.d - r.d);
+    return found.map((f) => f.e);
+  }
+
+  /** The staff's basic attack. It routes back through `playerHit` when it lands. */
+  private spawnPlayerBolt(hero: Hero, angle: number, damage: number, pierce: number): void {
+    const a = hero.avatar;
+    const color = ELEMENT_COLORS[hero.player.attackElement];
+    this.projectiles.push({
+      x: a.x, y: a.y, px: a.x, py: a.y, radius: 5,
+      vx: Math.cos(angle) * BOLT_SPEED, vy: Math.sin(angle) * BOLT_SPEED,
+      damage, friendly: true, life: BOLT_LIFE, color,
+      element: "physical", pierce: Math.max(0, pierce), hits: new Set(),
+      ailment: 0, basic: true, owner: hero.index,
+    });
+  }
+
+  /** The talisman's second hit: an arc to something you weren't even facing. */
+  private talismanSpark(hero: Hero, damage: number): void {
+    const a = hero.avatar;
+    const element = hero.player.attackElement;
+    let best: Enemy | null = null;
+    let bestGap = TALISMAN_ARC_RANGE;
+    for (const e of this.enemies) {
+      if (e.state === "spawning" || e.health <= 0) continue;
+      const gap = dist(a.x, a.y, e.x, e.y);
+      if (gap > bestGap) continue;
+      if (lineBlocked(this.level, a.x, a.y, e.x, e.y)) continue;
+      best = e;
+      bestGap = gap;
+    }
+    if (!best) return;
+    this.events.push({
+      kind: "bolt", x1: a.x, y1: a.y, x2: best.x, y2: best.y, color: ELEMENT_COLORS[element],
+    });
+    this.damageEnemy(best, damage * TALISMAN_ARC_DAMAGE, this.rng.angle(), element, {
+      ailment: this.ailmentChance(hero, 0.6), knock: 40, source: hero,
+    });
+  }
+
+  /**
+   * One landed player attack: the physical hit, then a separate hit for every element
+   * the gear carries. Splitting it is what makes an elemental roll readable — you see
+   * the orange number come off next to the white one, and the thing catches fire.
+   */
+  private playerHit(hero: Hero, e: Enemy, amount: number, angle: number, knock?: number): void {
+    const p = hero.player;
+    const crit = this.rng.chance(p.critChance);
+    const rolled = amount * (crit ? p.critMultiplier : 1) * this.rng.range(0.92, 1.08);
+    this.damageEnemy(e, rolled, angle, "physical", {
+      crit,
+      knock: knock === undefined ? undefined : knock * (crit ? 1.5 : 1),
+      source: hero,
+    });
+    if (crit) this.gainCharge(hero, this.chargeRules(hero).perCrit);
+
+    // What landing a hit gives back, counted once per swing rather than per element.
+    const life = p.mods.lifeOnHit + hero.avatar.buffLifeOnHit;
+    if (life > 0) p.heal(life);
+    if (p.mods.manaOnHit > 0) p.restoreMana(p.mods.manaOnHit);
+
+    if (e.health > 0) {
+      for (const [element, fraction] of Object.entries(p.elementalDamage) as [Element, number][]) {
+        if (!fraction) continue;
+        this.damageEnemy(e, rolled * fraction, angle, element, {
+          ailment: this.ailmentChance(hero, AILMENT_CHANCE), knock: 0, source: hero,
+        });
+        if (e.health <= 0) break;
+      }
+    }
+    this.fireTriggers(hero, "onHit", e.x, e.y);
+  }
+
+  /** Ailment odds after every modifier that improves them. Never above certain. */
+  private ailmentChance(hero: Hero, base: number): number {
+    if (base <= 0) return 0;
+    return Math.min(1, base * (1 + hero.player.mods.ailmentChance));
+  }
+
+  /** How hard an ailment a hero inflicts bites, as a multiplier on its damage. */
+  private ailmentPotency(hero: Hero): number {
+    return 1 + hero.player.mods.ailmentPotency;
+  }
+
+  // --- the ultimate -------------------------------------------------------
+
+  /** How the class a hero is playing fills its meter. */
+  private chargeRules(hero: Hero): ChargeRules {
+    return hero.player.heroClass.charge;
+  }
+
+  /** Adds to a hero's ultimate meter. `units` is measured in kill-equivalents. */
+  private gainCharge(hero: Hero, units: number): void {
+    if (units <= 0) return;
+    hero.specialCharge = Math.min(1, hero.specialCharge + units / hero.player.ultimateCost);
+  }
+
+  /** True while an ultimate is driving the character instead of the player. */
+  private ultLocksMovement(hero: Hero): boolean {
+    const id = hero.avatar.ultimate;
+    return id !== null && ULTIMATES[id].kind === "charge";
+  }
+
+  /** Damage of one ultimate hit. Your weapon powers it, so a build carries into it. */
+  private ultimateDamage(hero: Hero, mult: number): number {
+    return hero.player.attackDamage * mult * hero.player.ultimateMult;
+  }
+
+  /**
+   * Spends a full meter. Every class does something completely different here, and
+   * that is the entire point of picking one.
+   */
+  useUltimate(hero: Hero = this.localHero): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    if (hero.specialCharge < 1 || a.ultimate) return;
+    hero.specialCharge = 0;
+
+    const spec = ULTIMATES[p.heroClass.ultimate];
+    a.ultimate = spec.id;
+    a.ultTimer = spec.duration;
+    a.ultTotal = spec.duration;
+    a.ultTick = 0;
+    a.ultAngle = a.facing;
+    a.ultBounces = spec.bounces + Math.max(0, Math.round(p.mods.ultimateBounces));
+    a.ultHits = new Set();
+    a.ultEmits = 0;
+    a.ultPending = spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles));
+
+    this.events.push({
+      kind: "ultimate", id: spec.id, name: spec.name, color: spec.color, x: a.x, y: a.y,
+    });
+    this.events.push({ kind: "shake", amount: 12 });
+
+    switch (spec.kind) {
+      case "charge":
+        a.vx = Math.cos(a.facing) * spec.speed;
+        a.vy = Math.sin(a.facing) * spec.speed;
+        break;
+      case "totem": {
+        // Planted at once; after that the totems are on their own and so are you.
+        const count = Math.max(1, a.ultPending);
+        for (let i = 0; i < count; i++) {
+          const angle = a.facing + (i - (count - 1) / 2) * 0.9;
+          this.plantTotem(hero, a.x + Math.cos(angle) * 44, a.y + Math.sin(angle) * 44, {
+            damage: this.ultimateDamage(hero, spec.damage),
+            duration: spec.duration,
+            interval: spec.tick,
+            range: spec.radius * p.areaMult,
+            targets: TOTEM_TARGETS + 1,
+            element: p.attackElement,
+            ailment: this.ailmentChance(hero, 0.7),
+          });
+        }
+        // Nothing left for the avatar itself to do.
+        a.ultTimer = 0.25;
+        a.ultTotal = 0.25;
+        break;
+      }
+      default:
+        break;
+    }
+    this.fireTriggers(hero, "onUltimate", a.x, a.y);
+  }
+
+  private updateUltimate(hero: Hero, dt: number): void {
+    const a = hero.avatar;
+    const id = a.ultimate;
+    if (!id) return;
+    const spec = ULTIMATES[id];
+    a.ultTimer -= dt;
+    a.ultTick -= dt;
+
+    switch (spec.kind) {
+      case "charge":
+        // Nothing touches you while you are the spear. The movement itself is in
+        // `stepCharge`, because it has to happen after the input pass.
+        a.invulnTimer = Math.max(a.invulnTimer, 0.15);
+        a.dashInvuln = Math.max(a.dashInvuln, 0.15);
+        this.events.push({ kind: "trail", x: a.x, y: a.y, color: spec.color });
+        break;
+
+      case "spin": {
+        if (a.ultTick <= 0) {
+          a.ultTick += spec.tick;
+          const radius = spec.radius * hero.player.areaMult;
+          for (const e of this.meleeTargets(hero, a.facing, radius, TAU)) {
+            this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), Math.atan2(e.y - a.y, e.x - a.x), 60);
+          }
+          this.events.push({ kind: "trail", x: a.x, y: a.y, color: spec.color });
+        }
+        // The sparks come out on a slower clock than the grinding does.
+        const elapsed = a.ultTotal - a.ultTimer;
+        if (elapsed >= (a.ultEmits + 1) * WHIRL_EMIT) {
+          a.ultEmits++;
+          this.whirlBurst(hero, spec);
+        }
+        break;
+      }
+
+      case "storm": {
+        if (a.ultTick <= 0) {
+          a.ultTick += spec.tick;
+          a.ultAngle += STORM_STEP;
+          a.swingAngle = a.ultAngle;
+          a.swingTimer = Math.max(a.swingTimer, spec.tick);
+          const radius = spec.radius * hero.player.areaMult;
+          for (const e of this.meleeTargets(hero, a.ultAngle, radius, Math.PI * 0.9)) {
+            this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), a.ultAngle, 90);
+          }
+          this.events.push({
+            kind: "swing", x: a.x, y: a.y - 8, angle: a.ultAngle,
+            arc: Math.PI * 0.9, reach: radius, pattern: "arc", ultimate: true,
+            element: hero.player.attackElement,
+          });
+        }
+        break;
+      }
+
+      case "impact": {
+        if (a.ultPending > 0 && a.ultTick <= 0) {
+          a.ultTick += spec.tick;
+          a.ultPending--;
+          this.dropMeteor(hero, spec);
+        }
+        break;
+      }
+
+      case "totem":
+        break;
+    }
+
+    if (a.ultTimer <= 0) this.endUltimate(hero, spec.id);
+  }
+
+  private endUltimate(hero: Hero, id: UltimateId): void {
+    const a = hero.avatar;
+    const spec = ULTIMATES[id];
+    // A storm ends by throwing every blade it was holding.
+    if (spec.kind === "storm") this.launchBlades(hero, spec);
+    a.ultimate = null;
+    a.ultTimer = 0;
+    a.ultTick = 0;
+    a.ultPending = 0;
+    a.ultEmits = 0;
+    a.ultHits.clear();
+    a.vx = 0;
+    a.vy = 0;
+  }
+
+  /**
+   * Any `charge`-kind ultimate: it moves itself, runs through everything in the lane,
+   * and comes off the walls — and each bounce is a fresh pass, so the bodies it already
+   * ran through are fair game again on the way back. Shared by the Lancer's Comet
+   * Charge and every other class whose ultimate reuses this mechanism.
+   */
+  private stepCharge(hero: Hero, dt: number): void {
+    const a = hero.avatar;
+    const id = a.ultimate;
+    // The charge can end mid-tick (updateUltimate runs before this and may null it
+    // out) — `steered` was latched before that, so bail rather than read a dead spec.
+    if (!id) return;
+    const spec = ULTIMATES[id];
+    const r = a.radius;
+    const minX = r + WALL_PAD;
+    const maxX = this.width - r - WALL_PAD;
+    const minY = r + WALL_PAD;
+    const maxY = this.height - r - WALL_PAD;
+
+    let nx = a.x + a.vx * dt;
+    let ny = a.y + a.vy * dt;
+    let bounced = false;
+    if (nx < minX || nx > maxX || circleHitsWall(this.level, nx, a.y, r)) {
+      a.vx = -a.vx;
+      nx = a.x;
+      bounced = true;
+    }
+    if (ny < minY || ny > maxY || circleHitsWall(this.level, a.x, ny, r)) {
+      a.vy = -a.vy;
+      ny = a.y;
+      bounced = true;
+    }
+    a.x = clamp(nx, minX, maxX);
+    a.y = clamp(ny, minY, maxY);
+    const fixed = resolveCircle(this.level, a.x, a.y, r);
+    a.x = fixed.x;
+    a.y = fixed.y;
+    if (a.vx !== 0 || a.vy !== 0) a.facing = Math.atan2(a.vy, a.vx);
+
+    const reach = spec.radius * hero.player.areaMult;
+    for (const e of [...this.enemies]) {
+      if (e.state === "spawning" || e.health <= 0 || a.ultHits.has(e.id)) continue;
+      if (dist(a.x, a.y, e.x, e.y) > reach + e.radius) continue;
+      a.ultHits.add(e.id);
+      this.playerHit(hero, e, this.ultimateDamage(hero, spec.damage), a.facing, 240);
+    }
+
+    if (!bounced) return;
+    this.events.push({ kind: "boom", x: a.x, y: a.y, radius: reach, color: spec.color });
+    this.events.push({ kind: "shake", amount: 8 });
+    if (a.ultBounces <= 0) {
+      a.ultTimer = 0;
+      return;
+    }
+    a.ultBounces--;
+    a.ultHits.clear();
+  }
+
+  /** A ring of whatever your gear is made of, thrown out of a whirlwind. */
+  private whirlBurst(hero: Hero, spec: UltimateSpec): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    const count = Math.max(1, spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles)));
+    const element = p.attackElement;
+    const color = ELEMENT_COLORS[element];
+    const base = a.ultAngle;
+    a.ultAngle += 0.7;
+    for (let i = 0; i < count; i++) {
+      const angle = base + (TAU / count) * i;
+      this.projectiles.push({
+        x: a.x, y: a.y, px: a.x, py: a.y, radius: 6,
+        vx: Math.cos(angle) * spec.speed, vy: Math.sin(angle) * spec.speed,
+        damage: this.ultimateDamage(hero, spec.damage * 1.7),
+        friendly: true, life: 1, color, element,
+        pierce: 1 + Math.max(0, Math.round(p.mods.pierce)),
+        hits: new Set(), ailment: this.ailmentChance(hero, 0.6), basic: false, owner: hero.index,
+      });
+    }
+  }
+
+  /** Everything the swordsman was holding leaves at once. */
+  private launchBlades(hero: Hero, spec: UltimateSpec): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    const count = Math.max(1, spec.count + Math.max(0, Math.round(p.mods.ultimateProjectiles)));
+    const element = p.attackElement;
+    const color = ELEMENT_COLORS[element];
+    this.events.push({ kind: "nova", x: a.x, y: a.y, radius: spec.radius * p.areaMult });
+    for (let i = 0; i < count; i++) {
+      const angle = a.ultAngle + (TAU / count) * i;
+      this.projectiles.push({
+        x: a.x, y: a.y, px: a.x, py: a.y, radius: 6,
+        vx: Math.cos(angle) * spec.speed, vy: Math.sin(angle) * spec.speed,
+        damage: this.ultimateDamage(hero, spec.damage * 1.2),
+        friendly: true, life: 1.3, color, element,
+        pierce: 2 + Math.max(0, Math.round(p.mods.pierce)),
+        hits: new Set(), ailment: this.ailmentChance(hero, 0.4), basic: false, owner: hero.index,
+      });
+    }
+  }
+
+  /** One impact of a Cataclysm, telegraphed just long enough to be sporting. */
+  private dropMeteor(hero: Hero, spec: UltimateSpec): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    const element = p.attackElement;
+    let x = a.x;
+    let y = a.y;
+    // It prefers to fall where the bodies are, but it will happily wreck an empty room.
+    const live = this.enemies.filter((e) => e.health > 0);
+    if (live.length > 0) {
+      const target = this.rng.pick(live);
+      x = target.x + this.rng.range(-64, 64);
+      y = target.y + this.rng.range(-64, 64);
+    } else {
+      const spot = randomOpenPoint(this.level, this.rng, { tries: 12 });
+      if (spot) {
+        x = spot.x;
+        y = spot.y;
+      }
+    }
+    this.addTelegraph({
+      shape: "circle",
+      x: clamp(x, 30, this.width - 30),
+      y: clamp(y, 30, this.height - 30),
+      angle: 0,
+      radius: spec.radius * p.areaMult,
+      inner: 0, arc: 0, width: 0,
+      total: 0.55,
+      damage: this.ultimateDamage(hero, spec.damage),
+      element,
+      color: ELEMENT_COLORS[element],
+      hitsPlayer: false,
+      hitsEnemies: true,
+      linger: 2.4,
+      followId: null,
+    });
+  }
+
+  // --- totems -------------------------------------------------------------
+
+  /** Plants a totem. It doesn't move, and it keeps working after you've left. */
+  plantTotem(
+    hero: Hero, x: number, y: number,
+    opts: {
+      damage: number; duration: number; interval: number;
+      range: number; targets: number; element: Element; ailment: number;
+    },
+  ): void {
+    const spot = resolveCircle(
+      this.level,
+      clamp(x, 24, this.width - 24),
+      clamp(y, 24, this.height - 24),
+      10,
+    );
+    const color = ELEMENT_COLORS[opts.element];
+    this.totems.push({
+      id: this.nextTotemId++,
+      owner: hero.index,
+      x: spot.x, y: spot.y, px: spot.x, py: spot.y, radius: 10,
+      remaining: opts.duration,
+      pulseTimer: 0.35,
+      interval: opts.interval,
+      damage: opts.damage,
+      element: opts.element,
+      range: opts.range,
+      targets: opts.targets,
+      ailment: opts.ailment,
+      color,
+    });
+    this.events.push({ kind: "totem", x: spot.x, y: spot.y, color });
+  }
+
+  private updateTotems(dt: number): void {
+    for (let i = this.totems.length - 1; i >= 0; i--) {
+      const t = this.totems[i]!;
+      t.remaining -= dt;
+      if (t.remaining <= 0) {
+        this.totems.splice(i, 1);
+        continue;
+      }
+      t.pulseTimer -= dt;
+      if (t.pulseTimer > 0) continue;
+      t.pulseTimer += t.interval;
+      // A totem keeps working for whoever planted it, kill credit and charge included.
+      this.chainFrom(this.heroes[t.owner] ?? null, t.x, t.y, t.targets, t.range, t.damage, t.element, t.ailment, t.color);
     }
   }
 
   /**
-   * Nova: a full-circle burst centered on the player that hits everything nearby for
-   * heavy damage. It's the panic button for when a wave has surrounded you, which is
-   * why it also grants a moment of invulnerability.
+   * Lightning-style hop from body to body. Skills, totems and triggered effects all
+   * use it, so a wall saves a monster from every one of them in exactly the same way.
    */
-  private useSpecial(): void {
-    if (this.specialCharge < 1) return;
-    this.specialCharge = 0;
-    const a = this.avatar;
-    a.invulnTimer = Math.max(a.invulnTimer, 0.35);
-    this.events.push({ kind: "nova", x: a.x, y: a.y, radius: SPECIAL_RADIUS });
-    this.events.push({ kind: "shake", amount: 10 });
-
-    // Snapshot first: damageEnemy can remove entries from this.enemies mid-iteration.
-    const caught = this.enemies.filter(
-      (e) => e.state !== "spawning" && dist(a.x, a.y, e.x, e.y) <= SPECIAL_RADIUS + e.radius,
-    );
-    for (const e of caught) {
-      this.damageEnemy(e, this.player.damage * 2.6, Math.atan2(e.y - a.y, e.x - a.x));
+  private chainFrom(
+    source: Hero | null,
+    x: number, y: number, hops: number, range: number,
+    damage: number, element: Element, ailment: number, color: string,
+  ): void {
+    let fromX = x;
+    let fromY = y;
+    const hit = new Set<number>();
+    for (let i = 0; i < hops; i++) {
+      let best: Enemy | null = null;
+      let bestGap = range;
+      for (const e of this.enemies) {
+        if (e.state === "spawning" || hit.has(e.id) || e.health <= 0) continue;
+        const gap = dist(fromX, fromY, e.x, e.y);
+        if (gap > bestGap) continue;
+        if (lineBlocked(this.level, fromX, fromY, e.x, e.y)) continue;
+        best = e;
+        bestGap = gap;
+      }
+      if (!best) break;
+      hit.add(best.id);
+      this.events.push({ kind: "bolt", x1: fromX, y1: fromY, x2: best.x, y2: best.y, color });
+      fromX = best.x;
+      fromY = best.y;
+      this.damageEnemy(best, damage, this.rng.angle(), element, { ailment, knock: 30, source });
     }
   }
 
-  private drinkPotion(): void {
-    if (this.state.potions <= 0 || this.player.health >= this.player.maxHealth) return;
-    this.state.potions--;
-    const healed = this.player.heal(this.player.maxHealth * POTION_HEAL);
+  // --- triggered gear -------------------------------------------------------
+
+  /**
+   * Everything equipped that goes off on this kind of event. This is the payoff for a
+   * legendary drop: the item plays itself, and the build starts doing things you never
+   * pressed a key for.
+   */
+  private fireTriggers(hero: Hero, kind: TriggerKind, x: number, y: number): void {
+    // A triggered nova that kills something must not set off the on-kill trigger that
+    // sets off the nova again.
+    if (this.inTrigger) return;
+    for (const slot of EQUIP_SLOTS) {
+      const trigger = hero.player.equipment[slot]?.trigger;
+      if (!trigger || trigger.kind !== kind) continue;
+      if (trigger.chance < 1 && !this.rng.chance(trigger.chance)) continue;
+      this.inTrigger = true;
+      try {
+        this.resolveTrigger(hero, trigger, x, y);
+      } finally {
+        this.inTrigger = false;
+      }
+    }
+  }
+
+  private resolveTrigger(hero: Hero, t: TriggerSpec, x: number, y: number): void {
+    const p = hero.player;
+    const power = p.spellDamage * t.power;
+    const color = ELEMENT_COLORS[t.element];
+    const ailment = this.ailmentChance(hero, 0.6);
+    switch (t.effect) {
+      case "nova": {
+        const radius = t.radius * p.areaMult;
+        this.events.push({ kind: "boom", x, y, radius, color });
+        for (const e of [...this.enemies]) {
+          if (e.state === "spawning" || e.health <= 0) continue;
+          if (dist(x, y, e.x, e.y) > radius + e.radius) continue;
+          this.damageEnemy(e, power, Math.atan2(e.y - y, e.x - x), t.element, { ailment, source: hero });
+        }
+        break;
+      }
+      case "bolt": {
+        for (let i = 0; i < t.count; i++) {
+          const angle = hero.avatar.facing + (i - (t.count - 1) / 2) * 0.32;
+          this.projectiles.push({
+            x, y, px: x, py: y, radius: t.radius,
+            vx: Math.cos(angle) * 420, vy: Math.sin(angle) * 420,
+            damage: power, friendly: true, life: 1.1, color, element: t.element,
+            pierce: 1, hits: new Set(), ailment, basic: false, owner: hero.index,
+          });
+        }
+        break;
+      }
+      case "chain":
+        this.chainFrom(hero, x, y, t.count, t.radius * p.areaMult, power, t.element, ailment, color);
+        break;
+    }
+  }
+
+  // --- skills -------------------------------------------------------------
+
+  /** True if the slot holds a skill that's off cooldown and affordable right now. */
+  canCast(slot: number, hero: Hero = this.localHero): boolean {
+    const id = hero.player.activeSkills[slot];
+    if (!id) return false;
+    return (hero.skillCooldowns[slot] ?? 0) <= 0 && hero.player.mana >= SKILLS[id].manaCost;
+  }
+
+  private castSkill(hero: Hero, slot: number): void {
+    const id = hero.player.activeSkills[slot] ?? null;
+    if (!id) return;
+    const skill = SKILLS[id];
+    const a = hero.avatar;
+    const p = hero.player;
+
+    if ((hero.skillCooldowns[slot] ?? 0) > 0) return;
+    if (p.mana < skill.manaCost) {
+      this.events.push({
+        kind: "pickup", x: a.x, y: a.y - 20, label: "no mana", color: "#60a5fa",
+      });
+      return;
+    }
+    p.spendMana(skill.manaCost);
+    // Spending mana is how a Magician earns its sky.
+    this.gainCharge(hero, this.chargeRules(hero).perManaSpent * (skill.manaCost / Math.max(1, p.maxMana)));
+    hero.skillCooldowns[slot] = skill.cooldown * p.cooldownMult;
+    const color = ELEMENT_COLORS[skill.element];
+    this.events.push({ kind: "cast", x: a.x, y: a.y - 34, label: skill.name, color });
+
+    const power = p.spellDamage * skill.damage;
+    const area = p.areaMult;
+    const ailment = this.ailmentChance(hero, skill.ailment);
+    const extraProjectiles = Math.max(0, Math.round(p.mods.projectiles));
+    const pierce = skill.pierce + Math.max(0, Math.round(p.mods.pierce));
+
+    switch (skill.shape) {
+      case "bolt": {
+        const count = Math.max(1, skill.count) + extraProjectiles;
+        for (let i = 0; i < count; i++) {
+          const offset = count === 1 ? 0 : (i - (count - 1) / 2) * 0.13;
+          const angle = a.facing + offset;
+          this.projectiles.push({
+            x: a.x, y: a.y, px: a.x, py: a.y, radius: skill.radius,
+            vx: Math.cos(angle) * skill.speed, vy: Math.sin(angle) * skill.speed,
+            damage: power, friendly: true, life: 1.8, color,
+            element: skill.element, pierce, hits: new Set(), ailment, basic: false, owner: hero.index,
+          });
+        }
+        break;
+      }
+      case "cone": {
+        // A spray: the spread is wide enough that the edges miss a single target, so
+        // it's a crowd tool rather than a bigger bolt.
+        const spread = 0.95;
+        const count = skill.count + extraProjectiles;
+        for (let i = 0; i < count; i++) {
+          const t = count === 1 ? 0.5 : i / (count - 1);
+          const angle = a.facing - spread / 2 + spread * t;
+          this.projectiles.push({
+            x: a.x, y: a.y, px: a.x, py: a.y, radius: skill.radius,
+            vx: Math.cos(angle) * skill.speed * this.rng.range(0.85, 1.15),
+            vy: Math.sin(angle) * skill.speed * this.rng.range(0.85, 1.15),
+            damage: power, friendly: true, life: 0.75, color,
+            element: skill.element, pierce, hits: new Set(), ailment, basic: false, owner: hero.index,
+          });
+        }
+        break;
+      }
+      case "nova": {
+        this.novaAt(hero, a.x, a.y, skill.radius * area, power, skill.element, ailment, color);
+        break;
+      }
+      case "slam": {
+        // You go where you were pointing, and the floor objects when you land.
+        const landing = this.leapTo(hero, a.facing, skill.offset);
+        this.novaAt(hero, landing.x, landing.y, skill.radius * area, power, skill.element, ailment, color);
+        this.events.push({ kind: "shake", amount: 9 });
+        break;
+      }
+      case "chain": {
+        this.chainFrom(hero, a.x, a.y, skill.count, skill.radius, power, skill.element, ailment, color);
+        break;
+      }
+      case "ward": {
+        const pool = (p.maxHealth * 0.35 + p.spellDamage * 2) * (1 + p.mods.wardPower);
+        hero.ward = pool;
+        hero.wardTimer = skill.duration;
+        this.events.push({ kind: "nova", x: a.x, y: a.y, radius: 60 });
+        break;
+      }
+      case "buff": {
+        a.buffTimer = skill.duration;
+        a.buffAttackSpeed = skill.buffAttackSpeed;
+        a.buffLifeOnHit = skill.buffLifeOnHit;
+        this.events.push({ kind: "nova", x: a.x, y: a.y, radius: 54 });
+        break;
+      }
+      case "totem": {
+        const count = Math.max(1, skill.count);
+        for (let i = 0; i < count; i++) {
+          const angle = a.facing + (i - (count - 1) / 2) * 0.8;
+          this.plantTotem(hero, a.x + Math.cos(angle) * 34, a.y + Math.sin(angle) * 34, {
+            damage: power,
+            duration: skill.duration,
+            interval: TOTEM_PULSE,
+            range: skill.radius * area,
+            targets: TOTEM_TARGETS,
+            element: skill.element,
+            ailment,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  /** A circular burst centred anywhere. Novas, slams and ultimates all land through it. */
+  private novaAt(
+    hero: Hero,
+    x: number, y: number, radius: number, power: number,
+    element: Element, ailment: number, color: string,
+  ): void {
+    this.events.push({ kind: "nova", x, y, radius });
+    this.events.push({ kind: "boom", x, y, radius, color });
+    for (const e of [...this.enemies]) {
+      if (e.state === "spawning" || e.health <= 0) continue;
+      if (dist(x, y, e.x, e.y) > radius + e.radius) continue;
+      this.damageEnemy(e, power, Math.atan2(e.y - y, e.x - x), element, { ailment, source: hero });
+    }
+  }
+
+  /**
+   * Moves the avatar up to `reach` along `angle`, stopping short of anything solid.
+   * Stepping rather than teleporting is what keeps a leap from putting you inside a
+   * wall on a floor full of pillars.
+   */
+  private leapTo(hero: Hero, angle: number, reach: number): { x: number; y: number } {
+    const a = hero.avatar;
+    const step = 12;
+    let x = a.x;
+    let y = a.y;
+    for (let travelled = 0; travelled < reach; travelled += step) {
+      const nx = clamp(x + Math.cos(angle) * step, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
+      const ny = clamp(y + Math.sin(angle) * step, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
+      if (circleHitsWall(this.level, nx, ny, a.radius)) break;
+      x = nx;
+      y = ny;
+    }
+    a.x = x;
+    a.y = y;
+    // A leap is a commitment, so it comes with the same window a dash does.
+    a.invulnTimer = Math.max(a.invulnTimer, 0.2);
+    return { x, y };
+  }
+
+  private drinkPotion(hero: Hero): void {
+    const p = hero.player;
+    if (hero.potions <= 0) return;
+    if (p.health >= p.maxHealth && p.mana >= p.maxMana) return;
+    hero.potions--;
+    const healed = p.heal(p.maxHealth * POTION_HEAL);
+    p.restoreMana(p.maxMana * POTION_MANA);
     this.events.push({
-      kind: "pickup", x: this.avatar.x, y: this.avatar.y,
+      kind: "pickup", x: hero.avatar.x, y: hero.avatar.y,
       label: `+${Math.round(healed)} HP`, color: "#4ade80",
     });
   }
 
-  private damageEnemy(e: Enemy, amount: number, knockAngle: number): void {
-    // Crits give melee a rhythm and keep the damage numbers from feeling flat.
-    const crit = this.rng.chance(0.15);
-    const dealt = Math.max(1, Math.round(amount * (crit ? 1.8 : 1) * this.rng.range(0.92, 1.08)));
-    e.health -= dealt;
-    e.hitFlash = 0.12;
-    const knock = crit ? 190 : 120;
-    e.knockX += Math.cos(knockAngle) * knock;
-    e.knockY += Math.sin(knockAngle) * knock;
-    this.events.push({ kind: "damage", x: e.x, y: e.y - e.radius, amount: dealt, crit, onPlayer: false });
-    if (e.health <= 0) this.killEnemy(e);
+  /**
+   * Mining. Planet floors only: stand on an unspent node and press confirm to pay out
+   * once, the same key that opens a portal — the two never overlap in practice, and
+   * `wasPressed` is a per-tick latch, so both can read it without stealing it from
+   * each other.
+   */
+  private updateResourceNodes(hero: Hero, input: AvatarInput): void {
+    const planet = this.config.planet?.spec;
+    if (!planet || !input.wasPressed("confirm")) return;
+    const a = hero.avatar;
+    for (const node of this.level.resourceNodes) {
+      if (node.depleted) continue;
+      if (dist(a.x, a.y, node.x, node.y) > node.radius + a.radius + 8) continue;
+      node.depleted = true;
+      const amount = Math.round(
+        this.rng.range(3, 6) * planet.materialYield * challengerRewardMult(this.config.challengerTier));
+      hero.loot.materials[planet.element] += amount;
+      this.events.push({
+        kind: "pickup", x: node.x, y: node.y,
+        label: `+${amount} ${MATERIAL_NAMES[planet.element]}`, color: ELEMENT_COLORS[planet.element],
+      });
+      this.events.push({ kind: "nova", x: node.x, y: node.y, radius: 24 });
+      break;
+    }
   }
 
-  private killEnemy(e: Enemy): void {
+  // --- damage -------------------------------------------------------------
+
+  /**
+   * Every point of damage a monster takes goes through here. `raw` skips mitigation,
+   * which is what ailment ticks use — they were already mitigated when they landed.
+   */
+  private damageEnemy(
+    e: Enemy,
+    amount: number,
+    knockAngle: number,
+    element: Element = "physical",
+    opts: {
+      crit?: boolean; ailment?: number; knock?: number; raw?: boolean;
+      /** Who gets the kill, the charge and the on-kill triggers. */
+      source?: Hero | null;
+    } = {},
+  ): void {
+    if (e.health <= 0) return;
+    const amplified = amount * amplifyFrom(e.statuses);
+    const mitigated = opts.raw ? amount : mitigateWithResists(amplified, element, e.resists);
+    const dealt = Math.max(1, Math.round(mitigated));
+    e.health -= dealt;
+    e.hitFlash = 0.12;
+
+    const knock = (opts.knock ?? (opts.crit ? 190 : 120)) * e.knockResist;
+    e.knockX += Math.cos(knockAngle) * knock;
+    e.knockY += Math.sin(knockAngle) * knock;
+    this.events.push({
+      kind: "damage", x: e.x, y: e.y - e.radius, amount: dealt,
+      crit: opts.crit ?? false, onPlayer: false, element,
+    });
+
+    // Anything with no obvious author — a hazard, an ailment tick — is credited to
+    // whoever is standing closest, which in a solo dive is always the only hero there.
+    const source = opts.source ?? this.nearestHero(e.x, e.y);
+    const ailment = STATUS_FOR_ELEMENT[element];
+    if (ailment && opts.ailment && this.rng.chance(opts.ailment)) {
+      applyStatus(e.statuses, ailment, dealt, this.ailmentPotency(source));
+      // Spreading rot is how a Shaman earns its totems.
+      this.gainCharge(source, this.chargeRules(source).perAilment);
+    }
+    if (e.health <= 0) this.killEnemy(e, source);
+  }
+
+  private killEnemy(e: Enemy, source: Hero): void {
     const idx = this.enemies.indexOf(e);
     if (idx >= 0) this.enemies.splice(idx, 1);
 
-    this.loot.kills++;
-    this.state.stats.enemiesKilled++;
+    if (e.boss) {
+      this.boss = null;
+      this.state.stats.bossesKilled++;
+      this.events.push({ kind: "bossDown", x: e.x, y: e.y });
+      this.events.push({ kind: "shake", amount: 22 });
+      // The adds were the boss's, not the floor's. They leave with it.
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        if (this.enemies[i]!.summoned) this.enemies.splice(i, 1);
+      }
+      // Anything still winding up belonged to the encounter too.
+      this.telegraphs.length = 0;
+    }
+
+    source.loot.kills++;
+    if (source.local) this.state.stats.enemiesKilled++;
     // Bosses and elites fill the bar faster so big fights aren't a charge drought.
-    const chargeGain = (e.archetype.kind === "boss" ? 6 : e.elite ? 3 : 1) / SPECIAL_KILLS;
-    this.specialCharge = Math.min(1, this.specialCharge + chargeGain);
+    this.gainCharge(source, this.chargeRules(source).perKill * (e.boss ? 6 : e.elite ? 3 : 1));
+    this.fireTriggers(source, "onKill", e.x, e.y);
+    source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
-    if (e.archetype.kind === "boss") this.events.push({ kind: "shake", amount: 14 });
 
-    const lootMult = e.archetype.lootWeight * (e.elite ? 1 + rarityIndex(e.elite) * 0.8 : 1);
+    // Summoned chaff exists to pressure you during a fight, not to pay for it.
+    if (e.summoned) return;
 
-    // XP is granted straight away — it's the one thing death doesn't take from you.
-    const xp = Math.round(xpDropFor(this.profile.depth) * e.archetype.xp * this.rng.range(0.9, 1.1));
-    this.loot.xp += xp;
-    const levels = this.player.gainXp(xp);
-    if (levels > 0) this.events.push({ kind: "levelUp", levels });
+    const quantity = this.profile.quantity;
+    const lootMult = e.archetype.lootWeight * (e.elite ? 1 + rarityIndex(e.elite) * 0.8 : 1)
+      * (e.boss ? 2.2 : 1);
+    const trashMult = e.boss || e.elite ? 1 : TRASH_REWARD_MULT;
 
-    const coins = Math.round(coinDropFor(this.profile.depth) * lootMult * this.rng.range(0.8, 1.25));
+    // XP is granted straight away — it's the one thing death doesn't take from you —
+    // and in a party everybody gets the full amount rather than a split. Nobody should
+    // ever be annoyed that a friend got the last hit.
+    const xp = Math.round(xpDropFor(this.profile) * e.archetype.xp * trashMult * this.rng.range(0.9, 1.1));
+    for (const hero of this.heroes) {
+      hero.loot.xp += xp;
+      hero.xpPending += xp;
+      const levels = hero.player.gainXp(xp);
+      if (levels > 0) this.events.push({ kind: "levelUp", levels, owner: hero.index });
+    }
+
+    const coins = Math.round(coinDropFor(this.profile) * lootMult * quantity * trashMult * this.rng.range(0.8, 1.25));
     this.dropPickup(e.x, e.y, { kind: "coin", value: coins });
 
     // Keys are the bridge back to the chest gambling. A dive should fund a couple of
     // pulls, not a spree — the chests are the slot machine, not the payout.
-    if (this.rng.chance(clamp(0.075 + lootMult * 0.014, 0, 0.4))) {
+    const keyChance = clamp((0.075 + lootMult * 0.014) * this.config.mode.keyMult * trashMult, 0, 0.5);
+    if (e.boss || this.rng.chance(keyChance)) {
       const tier = keyDropTier(this.profile.depth, this.rng.next());
       this.dropPickup(e.x, e.y, { kind: "key", keyTier: tier });
     }
 
-    if (this.rng.chance(0.02 + lootMult * 0.004)) {
+    // Gems. A thin, steady trickle on ordinary monsters and a real handful off a boss —
+    // enough that a wardrobe fills over a few dozen floors without ever competing with
+    // coins for the same drop slot.
+    const gemChance = clamp((0.09 + lootMult * 0.02) * this.config.mode.gemMult * trashMult, 0, 0.45);
+    if (e.boss) {
+      this.dropPickup(e.x, e.y, { kind: "gem", value: Math.round((14 + this.profile.depth * 1.2) * this.config.mode.gemMult) });
+    } else if (this.rng.chance(gemChance)) {
+      this.dropPickup(e.x, e.y, { kind: "gem", value: this.rng.int(1, 2 + Math.floor(this.profile.depth / 5)) });
+    }
+
+    // Materials — a planet's whole reason to exist. Every kill has a shot at one, a
+    // boss always pays out a real handful.
+    if (this.config.planet) {
+      const yieldMult = this.config.planet.spec.materialYield;
+      const materialChance = clamp(0.15 + lootMult * 0.03, 0, 0.55) * trashMult;
+      if (e.boss || this.rng.chance(materialChance)) {
+        const amount = Math.round(
+          this.rng.range(2, 5) * yieldMult * (e.boss ? 5 : 1) * challengerRewardMult(this.config.challengerTier));
+        this.dropPickup(e.x, e.y, { kind: "material", value: amount, element: this.config.planet.spec.element });
+      }
+    }
+
+    if (this.rng.chance((0.02 + lootMult * 0.004) * quantity * trashMult)) {
       this.dropPickup(e.x, e.y, { kind: "potion" });
     }
 
     // Direct gear drops. Elites and bosses roll several, weighted deeper by floor.
-    const rolls = e.archetype.kind === "boss"
-      ? 3
+    const rolls = e.boss
+      ? Math.round(4 * quantity)
       : e.elite
-        ? (this.rng.chance(0.3) ? 2 : 1)
-        : this.rng.chance(clamp(0.07 + lootMult * 0.025, 0, 0.34)) ? 1 : 0;
+        ? (this.rng.chance(0.3 * quantity) ? 2 : 1)
+        : this.rng.chance(clamp((0.07 + lootMult * 0.025) * quantity * trashMult, 0, 0.45)) ? 1 : 0;
+    const bias = this.profile.rarityBias;
     for (let i = 0; i < rolls; i++) {
-      const rarity = this.rng.weighted(depthWeights(this.profile.depth + (e.elite ? rarityIndex(e.elite) * 2 : 0)));
+      const boost = (e.elite ? rarityIndex(e.elite) * 2 : 0) + (e.boss ? 5 : 0);
+      const rarity = this.rng.weighted(depthWeights(this.profile.depth + boost, bias));
       const item = rollItem({
         rarity,
-        type: this.rng.pick(ITEM_TYPES) as ItemType,
+        type: randomItemType(this.rng, source.player.heroClass.affinity),
         ilvl: this.profile.depth,
         rng: this.rng,
       });
@@ -529,27 +2107,53 @@ export class Dungeon {
    */
   private dropClearCache(): void {
     const { x, y } = this.portal;
-    const coins = Math.round(coinDropFor(this.profile.depth) * 9 * this.rng.range(0.9, 1.15));
+    const quantity = this.profile.quantity;
+    // The last floor of a rift pays for the whole rift, which is what makes bailing
+    // out of one at floor three hurt.
+    const finale = this.config.lastFloor ? 2.4 : 1;
+
+    const coins = Math.round(coinDropFor(this.profile) * 9 * quantity * finale * this.rng.range(0.9, 1.15));
     this.dropPickup(x, y, { kind: "coin", value: coins });
 
-    const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2));
-    const item = rollItem({
-      rarity,
-      type: this.rng.pick(ITEM_TYPES) as ItemType,
-      ilvl: this.profile.depth,
-      rng: this.rng,
-    });
-    this.dropPickup(x, y, { kind: "item", item, rarity });
+    const drops = Math.max(1, Math.round(quantity * finale));
+    for (let i = 0; i < drops; i++) {
+      const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2, this.profile.rarityBias));
+      const item = rollItem({
+        rarity,
+        type: randomItemType(this.rng, this.player.heroClass.affinity),
+        ilvl: this.profile.depth,
+        rng: this.rng,
+      });
+      this.dropPickup(x, y, { kind: "item", item, rarity });
+    }
 
-    if (this.rng.chance(0.7)) {
-      this.dropPickup(x, y, { kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()) });
+    const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
+    if (gems > 0) this.dropPickup(x, y, { kind: "gem", value: gems });
+
+    if (this.config.planet) {
+      const yieldMult = this.config.planet.spec.materialYield;
+      const materials = Math.round(
+        (6 + this.profile.depth * 0.4) * yieldMult * finale * challengerRewardMult(this.config.challengerTier));
+      if (materials > 0) {
+        this.dropPickup(x, y, { kind: "material", value: materials, element: this.config.planet.spec.element });
+      }
+    }
+
+    const keys = Math.round(this.config.mode.keyMult * finale);
+    for (let i = 0; i < keys; i++) {
+      if (i > 0 || this.rng.chance(0.7)) {
+        this.dropPickup(x, y, { kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()) });
+      }
     }
     if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }
 
   private dropPickup(
     x: number, y: number,
-    opts: { kind: Pickup["kind"]; value?: number; item?: Item; keyTier?: string; rarity?: Rarity },
+    opts: {
+      kind: Pickup["kind"]; value?: number; item?: Item; keyTier?: string; rarity?: Rarity;
+      element?: Element;
+    },
   ): void {
     const angle = this.rng.angle();
     const speed = this.rng.range(40, 110);
@@ -560,6 +2164,7 @@ export class Dungeon {
       item: opts.item ?? null,
       keyTier: opts.keyTier ?? null,
       rarity: opts.rarity ?? null,
+      element: opts.element ?? null,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 0,
@@ -567,12 +2172,20 @@ export class Dungeon {
     });
   }
 
+  // --- monsters -----------------------------------------------------------
+
   private updateEnemies(dt: number): void {
-    const a = this.avatar;
-    for (const e of this.enemies) {
+    // Snapshot: an ailment tick can kill something mid-loop and splice the live list.
+    for (const e of [...this.enemies]) {
+      if (e.health <= 0) continue;
       e.px = e.x;
       e.py = e.y;
       e.hitFlash = Math.max(0, e.hitFlash - dt);
+
+      tickStatuses(e.statuses, dt, (damage, element) => {
+        this.damageEnemy(e, damage, this.rng.angle(), element, { raw: true, knock: 0 });
+      });
+      if (e.health <= 0) continue;
 
       if (e.state === "spawning") {
         e.spawnTimer -= dt;
@@ -580,9 +2193,17 @@ export class Dungeon {
         continue;
       }
 
+      // Everything chases whoever is nearest to it, which is all the "aggro" a horde
+      // shooter needs: bodies flow to the nearest player and the party gets split up
+      // exactly as much as it deserves to be.
+      const target = this.nearestHero(e.x, e.y);
+      const a = target.avatar;
       const d = dist(e.x, e.y, a.x, a.y);
       const toPlayer = Math.atan2(a.y - e.y, a.x - e.x);
       e.facing = toPlayer;
+
+      // The boss brain owns its own movement whenever it's casting or charging.
+      const bossBusy = e.boss ? updateBoss(this, e, dt) : false;
 
       // With a wall in the way nothing holds its ground: ranged types reposition for a
       // shot and everything else takes the long way around, instead of standing there.
@@ -590,7 +2211,7 @@ export class Dungeon {
 
       // Ranged types hold a standoff distance; melee types close.
       let moveAngle = toPlayer;
-      let move = true;
+      let move = !bossBusy;
       if (e.archetype.ranged && hasLos) {
         if (d < e.archetype.standoff * 0.75) moveAngle = toPlayer + Math.PI;
         else if (d < e.archetype.standoff * 1.15) move = false;
@@ -608,11 +2229,11 @@ export class Dungeon {
       e.trapCooldown = Math.max(0, e.trapCooldown - dt);
 
       if (move) {
-        const speed = e.speed * this.mireSlowAt(e.x, e.y);
+        const speed = e.speed * this.mireSlowAt(e.x, e.y) * slowFrom(e.statuses);
         // With a clear line, charge straight in; otherwise follow the route around.
         let dir = normalize(Math.cos(moveAngle), Math.sin(moveAngle));
         if (!hasLos || e.stuckTimer > 0.18) {
-          const routed = this.flow.direction(this.level, e.x, e.y);
+          const routed = target.flow?.direction(this.level, e.x, e.y) ?? null;
           if (routed) dir = routed;
           else if (e.stuckTimer > 0.22) dir = normalize(Math.cos(moveAngle + e.dodgeDir * 1.05), Math.sin(moveAngle + e.dodgeDir * 1.05));
         }
@@ -640,8 +2261,10 @@ export class Dungeon {
         e.stuckTimer = Math.max(0, e.stuckTimer - dt * 2);
       }
 
+      // A boss's auto-attack is the least of your problems, but standing in melee of
+      // one should still cost something.
       e.attackTimer -= dt;
-      if (e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
+      if (!bossBusy && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
         e.windup = (e.archetype.ranged ? 0.35 : 0.28) * this.profile.telegraph;
         e.attackTimer = e.archetype.attackCooldown * this.profile.aggression;
       }
@@ -662,48 +2285,150 @@ export class Dungeon {
         const d2 = dx * dx + dy * dy;
         if (d2 >= minDist * minDist || d2 === 0) continue;
         const d = Math.sqrt(d2);
+        // A boss doesn't get shoved around by its own adds.
         const push = (minDist - d) / 2;
         const nx = dx / d;
         const ny = dy / d;
-        a.x -= nx * push; a.y -= ny * push;
-        b.x += nx * push; b.y += ny * push;
+        const aShare = a.boss ? 0 : b.boss ? 2 : 1;
+        const bShare = b.boss ? 0 : a.boss ? 2 : 1;
+        a.x -= nx * push * aShare; a.y -= ny * push * aShare;
+        b.x += nx * push * bShare; b.y += ny * push * bShare;
       }
     }
   }
 
   private resolveEnemyAttack(e: Enemy): void {
-    const a = this.avatar;
+    const target = this.nearestHero(e.x, e.y);
+    const a = target.avatar;
     if (e.archetype.ranged) {
-      const speed = 210;
       const angle = Math.atan2(a.y - e.y, a.x - e.x);
-      this.projectiles.push({
-        x: e.x, y: e.y, px: e.x, py: e.y, radius: 5,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        damage: e.damage, friendly: false, life: 3,
-        color: e.archetype.kind === "caster" ? "#c084fc" : "#fbbf24",
-      });
+      this.spawnEnemyBolt(e.x, e.y, angle, 210, e.damage, e.element, AILMENT_CHANCE);
       return;
     }
-    if (dist(e.x, e.y, a.x, a.y) <= e.archetype.attackRange) this.hurtPlayer(e.damage);
+    if (dist(e.x, e.y, a.x, a.y) <= e.archetype.attackRange + e.radius * 0.5) {
+      this.hurtPlayer(target, e.damage, e.element, AILMENT_CHANCE);
+    }
   }
 
-  private hurtPlayer(amount: number): void {
-    const a = this.avatar;
+  /** A hostile projectile. Bosses and turrets both come through here. */
+  spawnEnemyBolt(
+    x: number, y: number, angle: number, speed: number,
+    damage: number, element: Element, ailment = AILMENT_CHANCE,
+  ): void {
+    this.projectiles.push({
+      x, y, px: x, py: y, radius: 5,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      damage, friendly: false, life: 4,
+      color: ELEMENT_COLORS[element],
+      element, pierce: 0, hits: new Set(), ailment, basic: false, owner: -1,
+    });
+  }
+
+  // --- taking it ----------------------------------------------------------
+
+  /** A dodgeable hit: respects invulnerability, and grants a window after it lands. */
+  private hurtPlayer(hero: Hero, amount: number, element: Element = "physical", ailment = 0): void {
+    const a = hero.avatar;
     if (a.invulnTimer > 0) return;
-    const dealt = this.player.takeDamage(amount);
     a.invulnTimer = HIT_INVULN;
-    a.hitFlash = 0.25;
-    this.events.push({ kind: "damage", x: a.x, y: a.y - 14, amount: dealt, crit: false, onPlayer: true });
-    this.events.push({ kind: "shake", amount: clamp(dealt / 8, 2, 12) });
-    if (!this.player.isAlive) {
-      this.phase = "dead";
-      this.state.stats.deaths++;
-      this.events.push({ kind: "playerDied" });
+    this.applyPlayerDamage(hero, amount, element, ailment);
+  }
+
+  /**
+   * A resolved boss mechanic. It goes through the invulnerability you get from being
+   * hit — otherwise a clip from an add would eat a slam you stood in for a second and
+   * a half — but a dash still beats it outright, and it leaves a short window so two
+   * mechanics landing together don't simply delete you.
+   */
+  private hurtPlayerMechanic(hero: Hero, amount: number, element: Element, ailment: number): void {
+    const a = hero.avatar;
+    if (a.dashInvuln > 0) return;
+    a.invulnTimer = Math.max(a.invulnTimer, HIT_INVULN * 0.5);
+    this.applyPlayerDamage(hero, amount, element, ailment);
+  }
+
+  /**
+   * Damage that ignores invulnerability frames: ailment ticks and burning ground.
+   * A dash gets you out of the fire, it doesn't make the fire safe.
+   */
+  private hurtPlayerRaw(hero: Hero, amount: number, element: Element = "physical", ailment = 0): void {
+    this.applyPlayerDamage(hero, amount, element, ailment);
+  }
+
+  private applyPlayerDamage(hero: Hero, amount: number, element: Element, ailment: number): void {
+    if (hero.downed) return;
+    const a = hero.avatar;
+    const p = hero.player;
+    // The ward eats damage before health does, and counts as resistance while it holds.
+    const extraResist = hero.ward > 0 ? WARD_RESIST : 0;
+    let incoming = p.mitigate(amount, element, extraResist);
+
+    if (hero.ward > 0) {
+      const absorbed = Math.min(hero.ward, incoming);
+      hero.ward -= absorbed;
+      incoming -= absorbed;
+      this.events.push({
+        kind: "damage", x: a.x, y: a.y - 22, amount: Math.round(absorbed),
+        crit: false, onPlayer: true, element: "void",
+      });
+      if (hero.ward <= 0) hero.wardTimer = 0;
+    }
+
+    const dealt = Math.round(incoming);
+    if (dealt > 0) {
+      p.health = Math.max(0, p.health - dealt);
+      a.hitFlash = 0.25;
+      // Getting hurt is a Berserker's resource, and armour with spikes on it answers back.
+      this.gainCharge(hero, this.chargeRules(hero).perHealthLost * (dealt / Math.max(1, p.maxHealth)));
+      this.retaliate(hero);
+      this.events.push({ kind: "damage", x: a.x, y: a.y - 14, amount: dealt, crit: false, onPlayer: true, element });
+      this.events.push({ kind: "shake", amount: clamp(dealt / 8, 2, 12) });
+    }
+
+    const kind = STATUS_FOR_ELEMENT[element];
+    if (kind && ailment > 0 && this.rng.chance(ailment)) {
+      applyStatus(hero.statuses, kind, Math.max(1, dealt));
+    }
+
+    if (!p.isAlive) this.downHero(hero);
+  }
+
+  /**
+   * Out of health. Solo, that ends the run on the spot exactly as it always did. In a
+   * party you're down rather than out until an ally reaches you — but if the last one
+   * standing falls, the whole party loses the floor together, unbanked loot included.
+   */
+  private downHero(hero: Hero): void {
+    if (hero.downed) return;
+    hero.downed = true;
+    hero.reviveProgress = 0;
+    hero.avatar.ultimate = null;
+    hero.avatar.vx = 0;
+    hero.avatar.vy = 0;
+    // Ailments are cleared when they get back up, not here — an ailment tick is often
+    // the very thing that downed them, and it is still walking this list.
+    if (hero.local) this.state.stats.deaths++;
+    this.events.push({ kind: "playerDied", owner: hero.index });
+    if (this.heroes.every((h) => h.downed)) this.phase = "dead";
+  }
+
+  /**
+   * Spikes. Everything close enough to have plausibly been the thing that hit you
+   * takes a piece of it back — we don't track who dealt the damage, and for a wall of
+   * bodies pressed against you the answer is "all of them" anyway.
+   */
+  private retaliate(hero: Hero): void {
+    const thorns = hero.player.mods.thorns;
+    if (thorns <= 0) return;
+    const a = hero.avatar;
+    for (const e of [...this.enemies]) {
+      if (e.state === "spawning" || e.health <= 0) continue;
+      if (dist(a.x, a.y, e.x, e.y) > THORNS_RANGE + e.radius) continue;
+      this.damageEnemy(e, thorns, Math.atan2(e.y - a.y, e.x - a.x), "physical", { knock: 20, source: hero });
     }
   }
 
   private updateProjectiles(dt: number): void {
-    const a = this.avatar;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i]!;
       p.px = p.x;
@@ -719,28 +2444,42 @@ export class Dungeon {
       }
 
       if (p.friendly) {
-        for (const e of this.enemies) {
-          if (e.state === "spawning") continue;
+        let spent = false;
+        for (const e of [...this.enemies]) {
+          if (e.state === "spawning" || e.health <= 0 || p.hits.has(e.id)) continue;
           if (!circlesOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
-          this.damageEnemy(e, p.damage, Math.atan2(p.vy, p.vx));
-          this.projectiles.splice(i, 1);
-          break;
+          p.hits.add(e.id);
+          const angle = Math.atan2(p.vy, p.vx);
+          const owner = this.heroes[p.owner] ?? null;
+          // A staff bolt *is* your attack, so it earns crits, leech and triggers.
+          if (p.basic && owner) this.playerHit(owner, e, p.damage, angle, 60);
+          else this.damageEnemy(e, p.damage, angle, p.element, { ailment: p.ailment, source: owner });
+          if (p.hits.size > p.pierce) { spent = true; break; }
         }
-      } else if (circlesOverlap(p.x, p.y, p.radius, a.x, a.y, a.radius)) {
-        this.hurtPlayer(p.damage);
-        this.projectiles.splice(i, 1);
+        if (spent) this.projectiles.splice(i, 1);
+      } else {
+        // A hostile bolt hits the first member of the party it runs into.
+        const struck = this.heroes.find(
+          (h) => h.alive && circlesOverlap(p.x, p.y, p.radius, h.avatar.x, h.avatar.y, h.avatar.radius));
+        if (struck) {
+          this.hurtPlayer(struck, p.damage, p.element, p.ailment);
+          this.projectiles.splice(i, 1);
+        }
       }
     }
   }
 
   private updatePickups(dt: number): void {
-    const a = this.avatar;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i]!;
       p.px = p.x;
       p.py = p.y;
       p.life += dt;
 
+      // Drops belong to whoever gets there first, which is the oldest and least
+      // complicated loot rule there is. It pulls toward the nearest living hero.
+      const claimant = this.nearestHero(p.x, p.y);
+      const a = claimant.avatar;
       const d = dist(p.x, p.y, a.x, a.y);
       // A short delay before magnetism kicks in lets the drop pop out and be seen.
       if (p.life > 0.35 && d < MAGNET_RANGE) p.magnet = true;
@@ -763,33 +2502,47 @@ export class Dungeon {
       p.y = clear.y;
 
       if (p.life > 0.3 && d < PICKUP_RANGE) {
-        this.collect(p);
+        this.collect(claimant, p);
         this.pickups.splice(i, 1);
       }
     }
   }
 
-  private collect(p: Pickup): void {
+  private collect(hero: Hero, p: Pickup): void {
     switch (p.kind) {
       case "coin":
-        this.loot.coins += p.value;
+        hero.loot.coins += p.value;
         this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${p.value}`, color: "#fbbf24" });
         break;
       case "key":
         if (p.keyTier) {
-          this.loot.keys[p.keyTier as ChestTier]++;
+          hero.loot.keys[p.keyTier as ChestTier]++;
           this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `${p.keyTier} Key`, color: "#e2e8f0" });
         }
         break;
+      case "gem":
+        hero.loot.gems += p.value;
+        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${p.value} gems`, color: "#f0abfc" });
+        break;
+      case "material":
+        if (p.element) {
+          hero.loot.materials[p.element] += p.value;
+          this.events.push({
+            kind: "pickup", x: p.x, y: p.y,
+            label: `+${p.value} ${MATERIAL_NAMES[p.element]}`, color: ELEMENT_COLORS[p.element],
+          });
+        }
+        break;
       case "potion":
-        this.state.potions++;
+        hero.potions++;
         this.events.push({ kind: "pickup", x: p.x, y: p.y, label: "Potion", color: "#4ade80" });
         break;
       case "item":
         if (p.item) {
-          this.loot.items.push(p.item);
-          this.state.stats.raritiesFound[p.item.rarity]++;
-          this.events.push({ kind: "pickup", x: p.x, y: p.y, label: p.item.name, color: "#fff" });
+          hero.loot.items.push(p.item);
+          hero.itemsPending.push(p.item);
+          if (hero.local) this.state.stats.raritiesFound[p.item.rarity]++;
+          this.events.push({ kind: "loot", x: p.x, y: p.y, item: p.item, owner: hero.index });
         }
         break;
       case "xp":
@@ -798,6 +2551,13 @@ export class Dungeon {
   }
 
   // --- run outcomes -------------------------------------------------------
+
+  /** Name of the ability the boss is winding up, for the boss frame. Empty if none. */
+  get bossCastLabel(): string {
+    const b = this.boss?.boss;
+    if (!b || !b.ability) return "";
+    return BOSS_ABILITIES[b.ability].name;
+  }
 
   /**
    * The portal is live for the whole floor, not just after a clear. Being able to run
@@ -813,16 +2573,40 @@ export class Dungeon {
     return this.phase === "cleared";
   }
 
-  /** Moves this floor's loot into the persistent save. Called on extract or descend. */
+  /** The unspent resource node the player is close enough to mine, if any — HUD prompt only. */
+  get activeResourceNode(): ResourceNode | null {
+    if (!this.config.planet) return null;
+    const a = this.avatar;
+    for (const node of this.level.resourceNodes) {
+      if (node.depleted) continue;
+      if (dist(a.x, a.y, node.x, node.y) <= node.radius + a.radius + 8) return node;
+    }
+    return null;
+  }
+
+  /**
+   * Moves this floor's loot into the persistent save. Called on extract or descend.
+   *
+   * It banks the *local* hero's share and nobody else's, which is exactly right in both
+   * directions: in a party every player runs this on their own machine against their own
+   * save, and the host's copy of a friend's character is never written anywhere.
+   */
   bankLoot(): void {
+    this.state.potions = this.localHero.potions;
     this.state.addCoins(this.loot.coins);
+    this.state.addGems(this.loot.gems);
     for (const t of CHEST_TIERS) this.state.keys[t] += this.loot.keys[t];
+    for (const e of ELEMENTS) {
+      if (this.loot.materials[e] > 0) this.state.addMaterials(e, this.loot.materials[e]);
+    }
     this.state.addToInventory(this.loot.items);
-    this.state.recordDepth(this.profile.depth);
+    this.state.recordDepth(this.profile.depth, this.config);
     this.state.stats.runsCompleted++;
     this.loot.coins = 0;
+    this.loot.gems = 0;
     this.loot.items = [];
     this.loot.keys = emptyKeys();
+    this.loot.materials = emptyMaterials();
   }
 
   drainEvents(): RunEvent[] {
@@ -830,8 +2614,52 @@ export class Dungeon {
   }
 }
 
+/** Is a body inside a telegraph's danger zone? One test per shape, and that's the game. */
+export function inTelegraph(t: Telegraph, x: number, y: number, r: number): boolean {
+  switch (t.shape) {
+    case "circle":
+      return dist(t.x, t.y, x, y) <= t.radius + r;
+    case "donut": {
+      // Safe in the middle: the hole has to be entered, not merely touched.
+      const d = dist(t.x, t.y, x, y);
+      return d + r > t.inner && d <= t.radius + r;
+    }
+    case "cone": {
+      const d = dist(t.x, t.y, x, y);
+      if (d > t.radius + r) return false;
+      const toBody = Math.atan2(y - t.y, x - t.x);
+      return Math.abs(angleDelta(t.angle, toBody)) <= t.arc / 2;
+    }
+    case "line": {
+      const dx = x - t.x;
+      const dy = y - t.y;
+      const along = dx * Math.cos(t.angle) + dy * Math.sin(t.angle);
+      if (along < -r || along > t.radius + r) return false;
+      const across = Math.abs(-dx * Math.sin(t.angle) + dy * Math.cos(t.angle));
+      return across <= t.width + r;
+    }
+    case "none":
+      return false;
+  }
+}
+
+/** A fresh avatar at a spot on the floor. Every hero, local or remote, starts here. */
+function makeAvatar(x: number, y: number): Avatar {
+  return {
+    x, y, px: x, py: y,
+    radius: PLAYER_RADIUS,
+    vx: 0, vy: 0, facing: -Math.PI / 2,
+    attackTimer: 0, swingTimer: 0, swingAngle: 0,
+    dashTimer: 0, dashCooldown: 0, invulnTimer: 0, dashInvuln: 0, hitFlash: 0,
+    ultimate: null, ultTimer: 0, ultTotal: 0, ultTick: 0, ultBounces: 0,
+    ultAngle: 0, ultHits: new Set(), ultPending: 0, ultEmits: 0,
+    buffTimer: 0, buffAttackSpeed: 0, buffLifeOnHit: 0,
+  };
+}
+
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export { TAU };
+export type { SkillId };

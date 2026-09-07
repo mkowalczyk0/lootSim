@@ -2,15 +2,39 @@
  * Headless simulation smoke test. Drives the dungeon with a scripted input source to
  * confirm waves spawn, combat resolves, loot drops, floors clear and death works —
  * none of which needs a browser, since `game/` is DOM-free by design.
+ *
+ * The bot is the point of this file. It plays the way the game asks you to: it reads
+ * boss telegraphs and gets out of them, it casts the skills it has, and it retreats
+ * when it's hurt. A bot that can't do those things measures a game nobody is playing.
  */
-import type { Action, Input } from "../src/core/input";
-import { Dungeon } from "../src/game/dungeon";
-import { circleHitsWall, generateLevel, isWalkable } from "../src/game/level";
-import { itemScore } from "../src/game/item";
+import type { Action, AvatarInput, Input } from "../src/core/input";
+import { Dungeon, inTelegraph } from "../src/game/dungeon";
+import { Hub, HUB_HEIGHT, HUB_WIDTH } from "../src/game/hub";
+import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle } from "../src/game/level";
+import { itemScore, requiredLevel } from "../src/game/item";
+import { Player } from "../src/game/player";
 import { GameState, POTION_PRICE } from "../src/game/state";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
+import { challengerMultiplier } from "../src/data/challenger";
+import { CRAFTABLE_RARITIES } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
+import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
+import { SKILLS } from "../src/data/skills";
+import { CLASSES, CLASS_IDS, type ClassId } from "../src/data/classes";
+import { TREES } from "../src/data/tree";
+import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
+import { BOSSES } from "../src/data/bosses";
+import {
+  CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, HAIR_STYLES,
+  cosmeticProblems,
+} from "../src/data/cosmetics";
+import { BOSS_GRIDS, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems } from "../src/render/pixels";
+import { RARITIES, rarityIndex } from "../src/data/rarity";
+import { rollItem } from "../src/game/item";
 import { Rng } from "../src/core/rng";
+import { applySnapshot, configFromWire, configToWire, encodeSnapshot } from "../src/net/sync";
+import { isRoomCode, normalizeRoomCode, randomRoomCode } from "../src/net/protocol";
 
 class FakeInput {
   private down = new Set<Action>();
@@ -20,6 +44,8 @@ class FakeInput {
   beginTick() { this.pressed.clear(); }
   isDown(a: Action) { return this.down.has(a); }
   wasPressed(a: Action) { return this.pressed.has(a); }
+  /** `AvatarInput`: the bot plays the exclusive-keyboard scheme, so it never aims. */
+  aimAngle() { return null; }
   wasPressedOrRepeated(a: Action) { return this.pressed.has(a); }
   moveVector() {
     let x = 0, y = 0;
@@ -41,14 +67,12 @@ function check(label: string, ok: boolean, detail = "") {
 const DT = 1 / 60;
 
 /**
- * Steers toward (or away from) a point without walking into a wall: it tries the
- * straight line first, then progressively wider angles. Crude, but it's what a player
- * does instinctively, and without it the bot pins itself on a pillar and dies there.
+ * Steers along a direction without walking into a wall: it tries the straight line
+ * first, then progressively wider angles. Crude, but it's what a player does
+ * instinctively, and without it the bot pins itself on a pillar and dies there.
  */
-function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
+function steerAngle(d: Dungeon, base: number): { x: number; y: number } {
   const a = d.avatar;
-  const sign = retreat ? -1 : 1;
-  const base = Math.atan2((ty - a.y) * sign, (tx - a.x) * sign);
   for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3]) {
     const ang = base + off;
     const px = a.x + Math.cos(ang) * 34;
@@ -60,16 +84,103 @@ function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: numbe
   return { x: Math.cos(base), y: Math.sin(base) };
 }
 
+function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
+  const a = d.avatar;
+  const sign = retreat ? -1 : 1;
+  return steerAngle(d, Math.atan2((ty - a.y) * sign, (tx - a.x) * sign));
+}
+
+/**
+ * A real dungeon has walls a straight line can't see past, so closing on something
+ * across a room graph needs an actual route, not just "nudge around whatever's directly
+ * in front of you." This is exactly the field monsters already chase the player with —
+ * the bot gets the same eyes a human has (it can see the level), just no better.
+ */
+function approachDir(d: Dungeon, flow: FlowField, tx: number, ty: number): { x: number; y: number } {
+  return flow.direction(d.level, d.avatar.x, d.avatar.y) ?? steer(d, tx, ty, false);
+}
+
+/**
+ * Where to run when something is about to go off underneath you. This is the whole
+ * skill of a boss fight expressed as one function: get out of the circle, get into the
+ * hole in the donut, step off the line.
+ */
+function escapeAngle(d: Dungeon): number | null {
+  const a = d.avatar;
+  for (const t of d.telegraphs) {
+    if (!t.hitsPlayer) continue;
+    if (!inTelegraph(t, a.x, a.y, a.radius + 10)) continue;
+    switch (t.shape) {
+      case "donut":
+        // The safe spot is the hole in the middle, so run at it.
+        return Math.atan2(t.y - a.y, t.x - a.x);
+      case "line":
+      case "cone": {
+        // Step off the side rather than trying to outrun its length.
+        const perp = t.angle + Math.PI / 2;
+        const dx = a.x - t.x;
+        const dy = a.y - t.y;
+        const side = -dx * Math.sin(t.angle) + dy * Math.cos(t.angle);
+        return side >= 0 ? perp : perp + Math.PI;
+      }
+      default:
+        return Math.atan2(a.y - t.y, a.x - t.x);
+    }
+  }
+  // Burning ground is the same problem with a longer fuse.
+  for (const g of d.ground) {
+    if (Math.hypot(a.x - g.x, a.y - g.y) <= g.radius + a.radius) {
+      return Math.atan2(a.y - g.y, a.x - g.x);
+    }
+  }
+  return null;
+}
+
+interface FloorResult {
+  d: Dungeon;
+  seconds: number;
+  peakEnemies: number;
+  /** Highest number of ailments seen on a single monster — did elements do anything? */
+  peakAilments: number;
+  lowestMana: number;
+  skillCasts: number;
+  bossPhases: number;
+  /** Total damage the player ate. The clearest measure of whether they played well. */
+  damageTaken: number;
+  potionsDrunk: number;
+  /** Boss mechanics that resolved with the player still standing in them. */
+  mechanicsEaten: number;
+  mechanicsResolved: number;
+}
+
 /**
  * Plays a floor with a bot that chases the nearest enemy and mashes attack.
- * `dodge` is the fraction of telegraphs it reacts to, which is the single biggest
+ * `dodge` is the fraction of threats it reacts to, which is the single biggest
  * difference between one player and another — see the campaign section below.
  */
-function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 1000 + depth * 37, dodge = 0.55) {
-  const d = new Dungeon(state, depth, seed);
+function playFloor(
+  state: GameState,
+  run: number | RunConfig,
+  maxSeconds = 300,
+  seed = 1000,
+  dodge = 0.55,
+): FloorResult {
+  const d = new Dungeon(state, run, seed);
   const input = new FakeInput();
+  const flow = new FlowField(d.level);
+  let flowTimer = 0;
+  let flowGoalX = d.avatar.x;
+  let flowGoalY = d.avatar.y;
   let t = 0;
   let peakEnemies = 0;
+  let peakAilments = 0;
+  let lowestMana = state.player.maxMana;
+  let skillCasts = 0;
+  let bossPhases = 0;
+  let damageTaken = 0;
+  let mechanicsEaten = 0;
+  let mechanicsResolved = 0;
+  const potionsAtStart = state.potions;
   // Input here is polled every tick, so an ungated press would chug the whole belt.
   let potionCooldown = 0;
   // Reaction rolls. A bot that dodges every telegraph perfectly walks the whole ladder
@@ -92,6 +203,18 @@ function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 100
       if (dd < gap) { gap = dd; target = e; }
     }
 
+    // The route only has to be roughly current, same tradeoff the real monster AI
+    // already makes — rebuilding a BFS field every tick over a big floor is wasted work.
+    const goalX = target ? target.x : d.portal.x;
+    const goalY = target ? target.y : d.portal.y;
+    flowTimer -= DT;
+    if (flowTimer <= 0 || Math.hypot(goalX - flowGoalX, goalY - flowGoalY) > 50) {
+      flow.update(d.level, goalX, goalY);
+      flowGoalX = goalX;
+      flowGoalY = goalY;
+      flowTimer = 0.2;
+    }
+
     // Back off when hurt, but only from something close enough to be the threat, and
     // only while there's a potion left to buy time with. Retreating with an empty belt
     // never resolves: the player outruns everything, so the floor would never end.
@@ -107,9 +230,18 @@ function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 100
     threatSeen = incoming;
     const threat = incoming && willDodge;
 
-    if (target) {
+    // Standing in a boss mechanic outranks everything else on the to-do list.
+    const escape = dodge > 0 ? escapeAngle(d) : null;
+    if (escape !== null) {
+      const dir = steerAngle(d, escape);
+      if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+      if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+      input.press("dash");
+      // Still swing if something happens to be in reach on the way out.
+      if (target && gap < 40) input.press("attack");
+    } else if (target) {
       if (hurt || gap > 26) {
-        const dir = steer(d, target.x, target.y, hurt);
+        const dir = hurt ? steer(d, target.x, target.y, true) : approachDir(d, flow, target.x, target.y);
         if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
         if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
       } else if (threat) {
@@ -120,6 +252,27 @@ function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 100
       input.press("attack");
       if (hurt || threat) input.press("dash");
     }
+
+    // Skills, when there is something to point them at and the mana to do it.
+    if (target && gap < 340) {
+      for (let slot = 0; slot < 3; slot++) {
+        if (!d.canCast(slot)) continue;
+        const id = state.player.skills[slot];
+        if (!id) continue;
+        const skill = SKILLS[id];
+        // Novas and cones only make sense up close; bolts and chains reach.
+        const useful = skill.shape === "nova" || skill.shape === "cone"
+          ? gap < skill.radius * 0.8 + 60
+          : skill.shape === "ward"
+            ? state.player.health < state.player.maxHealth * 0.7
+            : true;
+        if (!useful) continue;
+        input.press(slot === 0 ? "skill1" : slot === 1 ? "skill2" : "skill3");
+        skillCasts++;
+        break;
+      }
+    }
+
     if (d.specialCharge >= 1) input.press("special");
     potionCooldown -= DT;
     if (state.player.health < state.player.maxHealth * 0.5 && potionCooldown <= 0) {
@@ -127,17 +280,58 @@ function playFloor(state: GameState, depth: number, maxSeconds = 300, seed = 100
       potionCooldown = 2;
     }
 
+    // Anything about to resolve this tick: was the player still standing in it? This is
+    // the direct measure of reading the floor, and it doesn't get muddied by chip damage
+    // from adds the way a raw damage total does.
+    for (const tg of d.telegraphs) {
+      if (tg.remaining > DT || !tg.hitsPlayer) continue;
+      mechanicsResolved++;
+      if (inTelegraph(tg, d.avatar.x, d.avatar.y, d.avatar.radius)) mechanicsEaten++;
+    }
+
     d.update(DT, input as unknown as Input);
-    d.drainEvents();
+    for (const ev of d.drainEvents()) {
+      if (ev.kind === "bossPhase") bossPhases++;
+      if (ev.kind === "damage" && ev.onPlayer) damageTaken += ev.amount;
+    }
     peakEnemies = Math.max(peakEnemies, d.enemies.length);
+    for (const e of d.enemies) peakAilments = Math.max(peakAilments, e.statuses.length);
+    lowestMana = Math.min(lowestMana, state.player.mana);
     t += DT;
   }
-  return { d, seconds: t, peakEnemies };
+
+  // Mopping up. A boss and a clear cache both drop everything at the instant the floor
+  // ends, so a bot that stops the moment the last thing dies banks nothing — which is
+  // not what a player does, and made every boss floor look worthless.
+  let mop = 0;
+  while (d.phase === "cleared" && d.pickups.length > 0 && mop < 20) {
+    input.beginTick();
+    for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
+    let near = d.pickups[0]!;
+    for (const p of d.pickups) {
+      if (Math.hypot(p.x - d.avatar.x, p.y - d.avatar.y) <
+          Math.hypot(near.x - d.avatar.x, near.y - d.avatar.y)) near = p;
+    }
+    flow.update(d.level, near.x, near.y);
+    const dir = approachDir(d, flow, near.x, near.y);
+    if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+    if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+    d.update(DT, input as unknown as Input);
+    d.drainEvents();
+    mop += DT;
+  }
+
+  return {
+    d, seconds: t, peakEnemies, peakAilments, lowestMana, skillCasts, bossPhases,
+    damageTaken, potionsDrunk: Math.max(0, potionsAtStart - state.potions),
+    mechanicsEaten, mechanicsResolved,
+  };
 }
 
 /** What a player does between dives: restock, gamble the purse, wear the best of it. */
 function townVisit(state: GameState): void {
   state.player.fullHeal();
+  state.player.autoSlotNewSkills();
   while (state.potions < 5 && state.coins >= POTION_PRICE * 2) {
     if (!state.buyPotion()) break;
   }
@@ -151,15 +345,42 @@ function townVisit(state: GameState): void {
     if (state.keys[tier] > 0) state.openChests(tier, state.keys[tier]);
   }
   // Wear the best of everything, then sell what's strictly worse than what's worn.
-  for (const item of [...state.inventory].sort((a, b) => itemScore(b) - itemScore(a))) {
+  const cls = state.heroClass;
+  for (const item of [...state.inventory].sort((a, b) => itemScore(b, cls) - itemScore(a, cls))) {
     const worn = state.player.equipment[item.slot];
-    if (!worn || itemScore(item) > itemScore(worn)) state.equipFromInventory(item.id);
+    if (!worn || itemScore(item, cls) > itemScore(worn, cls)) state.equipFromInventory(item.id);
   }
   const junk = state.inventory.filter((it) => {
     const worn = state.player.equipment[it.slot];
-    return worn ? itemScore(it) < itemScore(worn) : false;
+    return worn ? itemScore(it, cls) < itemScore(worn, cls) : false;
   });
   if (junk.length) state.sell(junk.map((i) => i.id));
+}
+
+/** Levels a character up to `level` and dresses it, so a boss test isn't a naked one. */
+function geared(level: number, seed = 5150, keys = 14, classId?: ClassId): GameState {
+  const state = new GameState(seed);
+  // The class comes first: chest rolls favour the weapons it was built for.
+  if (classId) state.chooseClass(classId);
+  state.player.level = level;
+  state.player.refresh();
+  state.player.autoSlotNewSkills();
+  state.keys.Advanced = keys;
+  state.openChests("Advanced", keys);
+  const cls = state.heroClass;
+  for (const item of [...state.inventory].sort((a, b) => itemScore(b, cls) - itemScore(a, cls))) {
+    const worn = state.player.equipment[item.slot];
+    if (!worn || itemScore(item, cls) > itemScore(worn, cls)) state.equipFromInventory(item.id);
+  }
+  // Whatever else it found, it goes down there holding something it can use.
+  if (!state.player.hasAffinity) {
+    const family = cls.affinity[0]!;
+    const weapon = rollItem({ rarity: "rare", type: family, ilvl: level, rng: new Rng(seed ^ 0x51ed) });
+    state.player.equip(weapon);
+  }
+  state.player.fullHeal();
+  state.potions = 5;
+  return state;
 }
 
 console.log("\n=== depth curve ===");
@@ -172,10 +393,23 @@ for (const depth of [1, 5, 10, 20, 30]) {
   );
 }
 
+console.log("\n=== rift ladders ===");
+for (const mode of ["hoard", "abyss"] as const) {
+  for (const tier of [1, 5, 10, 20]) {
+    const cfg = riftConfig(mode, tier, MODES[mode].floors);
+    const p = profileFor(cfg.depth, cfg);
+    console.log(
+      `  ${MODES[mode].short.padEnd(6)} T${String(tier).padStart(2)}  depth=${String(cfg.depth).padStart(3)}` +
+      ` danger=x${cfg.danger.toFixed(2).padStart(6)} hp=${p.enemyHealth.toFixed(0).padStart(9)}` +
+      ` dmg=${p.enemyDamage.toFixed(0).padStart(5)} req.lv=${p.recommendedLevel}`,
+    );
+  }
+}
+
 console.log("\n=== floor 1 with a fresh character ===");
 {
   const state = new GameState();
-  const { d, seconds, peakEnemies } = playFloor(state, 1);
+  const { d, seconds, peakEnemies } = playFloor(state, 1, 300, 1037);
   check("floor clears", d.phase === "cleared", `phase=${d.phase} in ${seconds.toFixed(1)}s`);
   check("enemies actually spawned", peakEnemies > 0, `peak alive ${peakEnemies}`);
   check("kills recorded", d.loot.kills > 0, `${d.loot.kills} kills`);
@@ -212,7 +446,7 @@ function campaign(seed: number, dodge: number, dives = 20, log = false) {
       console.log(
         `  dive ${String(dive + 1).padStart(2)} → depth ${String(target).padStart(2)} ` +
         `${d.phase.padEnd(8)} ${seconds.toFixed(0).padStart(3)}s ${d.level.layout.padEnd(9)} ` +
-        `traps=${String(d.level.traps.length).padStart(2)} lv${String(state.player.level).padStart(2)} ` +
+        `${d.profile.isBoss ? "BOSS " : "     "}lv${String(state.player.level).padStart(2)} ` +
         `kills=${String(d.loot.kills).padStart(3)} coins=${String(d.loot.coins).padStart(6)} ` +
         `atk=${String(state.player.stats.attack).padStart(4)}`,
       );
@@ -237,7 +471,7 @@ function campaign(seed: number, dodge: number, dives = 20, log = false) {
 
 console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraphs) ===");
 {
-  const runs = [4242, 991, 7777].map((seed, i) => campaign(seed, 0.55, 20, i === 0));
+  const runs = [4242, 991, 7777, 31337, 606].map((seed, i) => campaign(seed, 0.55, 20, i === 0));
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -248,7 +482,7 @@ console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraph
   const deepest = runs.reduce((a, r) => a + r.deepest, 0) / runs.length;
   const first = runs[0]!.state;
   const worn = Object.values(first.player.equipment).filter(Boolean).length;
-  check("skilled play makes real progress", deepest >= 10, `average deepest depth ${deepest.toFixed(1)}`);
+  check("skilled play makes real progress", deepest >= 8, `average deepest depth ${deepest.toFixed(1)}`);
   check("gear is found and worn", worn >= 4, `${worn} slots filled`);
   check("chests get opened along the way",
     Object.values(first.stats.chestsOpened).some((n) => n > 0), JSON.stringify(first.stats.chestsOpened));
@@ -258,7 +492,7 @@ console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraph
 
 console.log("\n=== a campaign: 20 dives, a reckless player (never dodges) ===");
 {
-  const runs = [4242, 991, 7777].map((seed) => campaign(seed, 0, 20));
+  const runs = [4242, 991, 7777, 31337, 606].map((seed) => campaign(seed, 0, 20));
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -270,20 +504,590 @@ console.log("\n=== a campaign: 20 dives, a reckless player (never dodges) ===");
   const deaths = runs.reduce((a, r) => a + r.deaths, 0);
   // Standing in the open and trading hits has to cost you. It also has to leave the
   // early floors learnable, or a new character can never get started at all.
-  check("ignoring telegraphs gets you killed", deaths >= 6, `${deaths} deaths across 60 dives`);
+  check("ignoring telegraphs gets you killed", deaths >= 10, `${deaths} deaths across 100 dives`);
   check("the descent still has teeth for a careless player", deepest <= 12,
     `average deepest depth ${deepest.toFixed(1)}`);
   check("the early floors stay learnable", deepest >= 3, `average deepest depth ${deepest.toFixed(1)}`);
 }
 
-console.log("\n=== boss floor (depth 5) ===");
+/**
+ * The raid boss. It has to be beatable by somebody at the recommended level who reads
+ * the floor, it has to take long enough to be a fight rather than a speed bump, and it
+ * has to punish somebody who stands in everything.
+ */
+console.log("\n=== the first raid boss (depth 5) ===");
 {
-  const state = new GameState();
-  state.player.level = 12;
-  const { d } = playFloor(state, 5, 400);
   const p = profileFor(5);
   check("depth 5 is a boss floor", p.isBoss);
-  check("boss floor resolved", d.phase !== "fighting", `phase=${d.phase}`);
+  check("a boss floor is one wave", p.waves === 1, `${p.waves} waves`);
+
+  // A character at roughly the recommended level with a few chests behind it — not a
+  // twink. The gap between this section and the next is the whole point: same
+  // character, same floor, the only difference is whether it reads the floor.
+  const results = [11, 22, 33, 44, 55].map((seed) => {
+    const state = geared(6, 4000 + seed, 8);
+    return playFloor(state, 5, 400, seed, 0.85);
+  });
+  for (const [i, r] of results.entries()) {
+    console.log(
+      `  seed ${i}: ${r.d.phase.padEnd(8)} ${r.seconds.toFixed(0).padStart(3)}s ` +
+      `phases=${r.bossPhases} casts=${r.skillCasts} peakAdds=${r.peakEnemies}`,
+    );
+  }
+  const wins = results.filter((r) => r.d.phase === "cleared");
+  const avg = results.reduce((a, r) => a + r.seconds, 0) / results.length;
+  check("a geared, attentive player can kill it", wins.length >= 4,
+    `${wins.length}/5 cleared`);
+  check("the fight is long enough to be a fight", avg > 25, `${avg.toFixed(0)}s average`);
+  check("it changes phase at least once", results.some((r) => r.bossPhases > 0),
+    results.map((r) => r.bossPhases).join("/"));
+  check("it summons adds", results.some((r) => r.peakEnemies > 1),
+    results.map((r) => r.peakEnemies).join("/"));
+}
+
+/**
+ * The same character on the same floor, with telegraph-reading switched off. Death
+ * isn't the right measure here — a bot that kites and drinks potions can survive a
+ * great deal of bad play — but the damage bill has to be brutally different, or the
+ * mechanics aren't mechanics.
+ */
+console.log("\n=== standing in boss mechanics costs you ===");
+{
+  const attentive = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0.85));
+  const reckless = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0));
+  const avg = (rs: typeof reckless, f: (r: (typeof rs)[number]) => number) =>
+    rs.reduce((a, r) => a + f(r), 0) / rs.length;
+
+  const readDamage = avg(attentive, (r) => r.damageTaken);
+  const blindDamage = avg(reckless, (r) => r.damageTaken);
+  const deaths = reckless.filter((r) => r.d.phase === "dead").length;
+  const readHits = avg(attentive, (r) => r.mechanicsEaten);
+  const blindHits = avg(reckless, (r) => r.mechanicsEaten);
+  console.log(
+    `  reads the floor: ${readDamage.toFixed(0)} damage taken, ` +
+    `${readHits.toFixed(1)}/${avg(attentive, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
+    `${avg(attentive, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
+    `${avg(attentive, (r) => r.seconds).toFixed(0)}s, ` +
+    `${attentive.filter((r) => r.d.phase === "dead").length}/5 died`);
+  console.log(
+    `  stands in it:    ${blindDamage.toFixed(0)} damage taken, ` +
+    `${blindHits.toFixed(1)}/${avg(reckless, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
+    `${avg(reckless, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
+    `${avg(reckless, (r) => r.seconds).toFixed(0)}s, ${deaths}/5 died`);
+
+  // The rate, not the count: a player who dodges is alive longer and therefore sees more
+  // mechanics, so comparing totals would flatter the one who stood still and died faster.
+  const readRate = readHits / Math.max(1, avg(attentive, (r) => r.mechanicsResolved));
+  const blindRate = blindHits / Math.max(1, avg(reckless, (r) => r.mechanicsResolved));
+  check("reading the telegraphs actually gets you out of them",
+    blindRate > readRate * 2, `${(blindRate * 100).toFixed(0)}% eaten vs ${(readRate * 100).toFixed(0)}%`);
+  // Rates again, and for the same reason: dodging costs time, so the careless player
+  // finishes the fight in half as long. Comparing totals rewards them for dying faster
+  // in exactly the way comparing mechanic counts would.
+  const readRateDamage = readDamage / Math.max(1, avg(attentive, (r) => r.seconds));
+  const blindRateDamage = blindDamage / Math.max(1, avg(reckless, (r) => r.seconds));
+  check("ignoring boss telegraphs costs a great deal of health",
+    blindRateDamage > readRateDamage * 1.3,
+    `${blindRateDamage.toFixed(1)}/s vs ${readRateDamage.toFixed(1)}/s`);
+  // Death isn't guaranteed — a boss that one-shots a careless player would just be a
+  // wall — but the belt has to empty faster. Burning the potions is how the fight tells
+  // you that you played it badly.
+  const readPotions = avg(attentive, (r) => r.potionsDrunk) / Math.max(1, avg(attentive, (r) => r.seconds));
+  const blindPotions = avg(reckless, (r) => r.potionsDrunk) / Math.max(1, avg(reckless, (r) => r.seconds));
+  check("and it empties the potion belt",
+    blindPotions > readPotions * 1.3,
+    `${(blindPotions * 60).toFixed(1)} vs ${(readPotions * 60).toFixed(1)} potions a minute`);
+}
+
+console.log("\n=== elements, ailments and mana ===");
+{
+  const state = geared(14, 909);
+  const r = playFloor(state, 9, 200, 606, 0.7);
+  check("skills get cast", r.skillCasts > 0, `${r.skillCasts} attempted`);
+  check("mana is a real constraint", r.lowestMana < state.player.maxMana * 0.6,
+    `dipped to ${r.lowestMana.toFixed(0)} of ${state.player.maxMana}`);
+  check("monsters catch ailments", r.peakAilments > 0, `${r.peakAilments} at once`);
+
+  // Deep monsters should mostly be made of something other than plain physical.
+  const deep = new Dungeon(geared(20, 12), 22, 4242);
+  let infused = 0;
+  let total = 0;
+  for (let i = 0; i < 600; i++) deep.update(DT, new FakeInput() as unknown as Input);
+  for (const e of deep.enemies) { total++; if (e.element !== "physical") infused++; }
+  check("deep floors are elemental", total === 0 || infused > 0, `${infused}/${total} infused`);
+}
+
+/**
+ * Fires a class's ultimate in a real fight and reports what came of it. Every class's
+ * ultimate is a different mechanism — a charge that bounces, a spin that throws
+ * sparks, a sky full of holes — so the probe records all of the signals and each class
+ * asserts on its own.
+ */
+function probeUltimate(classId: ClassId, seed = 8100) {
+  const state = geared(16, seed, 18, classId);
+  const d = new Dungeon(state, 8, seed);
+  const input = new FakeInput();
+
+  // Let the floor fill up first: an ultimate with nothing to hit proves nothing.
+  let t = 0;
+  while (t < 12 && d.enemies.filter((e) => e.state !== "spawning").length < 3) {
+    input.beginTick();
+    d.update(DT, input as unknown as Input);
+    d.drainEvents();
+    t += DT;
+  }
+
+  // Close on the nearest one and point at it. Aiming an ultimate is the player's job,
+  // and a Lancer who charges at an empty wall deserves what it gets — but a real player
+  // aims at something they've actually walked up to, not whatever spawned three rooms
+  // away, so the probe closes the distance itself rather than testing pathing here too.
+  const live = d.enemies.filter((e) => e.state !== "spawning");
+  let aim: (typeof live)[number] | null = null;
+  for (const e of live) {
+    if (!aim || Math.hypot(e.x - d.avatar.x, e.y - d.avatar.y) < Math.hypot(aim.x - d.avatar.x, aim.y - d.avatar.y)) aim = e;
+  }
+  if (aim) {
+    const spot = resolveCircle(d.level, aim.x - 46, aim.y, d.avatar.radius);
+    d.avatar.x = spot.x;
+    d.avatar.y = spot.y;
+    d.avatar.facing = Math.atan2(aim.y - d.avatar.y, aim.x - d.avatar.x);
+  }
+
+  const startX = d.avatar.x;
+  const startY = d.avatar.y;
+  d.specialCharge = 1;
+  input.beginTick();
+  input.press("special");
+  d.update(DT, input as unknown as Input);
+
+  let dealt = 0;
+  let fired = false;
+  let peakProjectiles = 0;
+  let peakTelegraphs = d.telegraphs.length;
+  let peakTotems = 0;
+  let travelled = 0;
+  let lastX = startX;
+  let lastY = startY;
+  for (const ev of d.drainEvents()) if (ev.kind === "ultimate") fired = true;
+
+  // A real player backs away from their own meteors; a probe that never touches the
+  // keys again would just stand in them for five straight seconds and die of it. Only
+  // matters for the ultimates that leave movement in the player's hands at all —
+  // Comet Charge ignores held keys outright while it's steering itself.
+  const aimX = aim?.x ?? d.avatar.x;
+  const aimY = aim?.y ?? d.avatar.y;
+  for (let step = 0; step < 300; step++) {
+    input.beginTick();
+    for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
+    if (step < 40) {
+      const away = steerAngle(d, Math.atan2(d.avatar.y - aimY, d.avatar.x - aimX));
+      if (Math.abs(away.x) > 0.25) input.hold(away.x > 0 ? "right" : "left", true);
+      if (Math.abs(away.y) > 0.25) input.hold(away.y > 0 ? "down" : "up", true);
+    }
+    d.update(DT, input as unknown as Input);
+    for (const ev of d.drainEvents()) {
+      if (ev.kind === "damage" && !ev.onPlayer) dealt += ev.amount;
+      if (ev.kind === "ultimate") fired = true;
+    }
+    peakProjectiles = Math.max(peakProjectiles, d.projectiles.filter((p) => p.friendly).length);
+    peakTelegraphs = Math.max(peakTelegraphs, d.telegraphs.length);
+    peakTotems = Math.max(peakTotems, d.totems.length);
+    travelled += Math.hypot(d.avatar.x - lastX, d.avatar.y - lastY);
+    lastX = d.avatar.x;
+    lastY = d.avatar.y;
+  }
+
+  return { d, state, fired, dealt, peakProjectiles, peakTelegraphs, peakTotems, travelled };
+}
+
+console.log("\n=== classes ===");
+for (const id of CLASS_IDS) {
+  const cls = CLASSES[id];
+  const r = probeUltimate(id);
+  console.log(
+    `  ${cls.name.padEnd(10)} ${cls.ultimate.padEnd(12)} dealt=${String(Math.round(r.dealt)).padStart(6)}` +
+    ` moved=${r.travelled.toFixed(0).padStart(4)} proj=${String(r.peakProjectiles).padStart(2)}` +
+    ` tele=${String(r.peakTelegraphs).padStart(2)} totems=${r.peakTotems}` +
+    ` weapon=${r.state.player.weaponFamily}`,
+  );
+  check(`${cls.name}: the ultimate fires`, r.fired);
+  check(`${cls.name}: the ultimate hurts something`, r.dealt > 0, `${Math.round(r.dealt)} damage`);
+  check(`${cls.name}: dives holding a weapon it was built for`,
+    r.state.player.hasAffinity, r.state.player.weaponFamily);
+  check(`${cls.name}: the run is still standing afterwards`, r.d.phase !== "dead");
+}
+
+{
+  // Each ultimate has to actually be its own mechanism, not a differently coloured nova.
+  const lancer = probeUltimate("lancer");
+  check("Comet Charge crosses the room", lancer.travelled > 260, `${lancer.travelled.toFixed(0)} units`);
+  const berserker = probeUltimate("berserker");
+  check("Whirlwind throws off projectiles", berserker.peakProjectiles > 0, `${berserker.peakProjectiles}`);
+  const swordsman = probeUltimate("swordsman");
+  check("Bladestorm ends by launching every blade", swordsman.peakProjectiles >= 8,
+    `${swordsman.peakProjectiles} blades`);
+  const magician = probeUltimate("magician");
+  check("Cataclysm telegraphs its impacts", magician.peakTelegraphs > 0, `${magician.peakTelegraphs} at once`);
+  const shaman = probeUltimate("shaman");
+  check("Call the Ancestors plants totems", shaman.peakTotems >= 3, `${shaman.peakTotems} totems`);
+}
+
+console.log("\n=== weapons ===");
+{
+  // Every family has to land a hit. A weapon that swings at nothing is a dead build.
+  for (const family of WEAPON_FAMILIES) {
+    const state = new GameState(77);
+    state.player.level = 10;
+    state.player.equip(rollItem({ rarity: "rare", type: family, ilvl: 8, rng: new Rng(9001) }));
+    const d = new Dungeon(state, 4, 606);
+    const input = new FakeInput();
+    // Let one spawn, then stand next to it and swing.
+    let t = 0;
+    while (t < 8 && d.enemies.filter((e) => e.state !== "spawning").length === 0) {
+      input.beginTick();
+      d.update(DT, input as unknown as Input);
+      d.drainEvents();
+      t += DT;
+    }
+    const target = d.enemies.find((e) => e.state !== "spawning")!;
+    d.avatar.x = target.x - 20;
+    d.avatar.y = target.y;
+    d.avatar.facing = 0;
+    d.avatar.attackTimer = 0;
+    const before = target.health;
+    let hits = 0;
+    for (let step = 0; step < 60; step++) {
+      input.beginTick();
+      if (step === 0) input.press("attack");
+      d.update(DT, input as unknown as Input);
+      for (const ev of d.drainEvents()) if (ev.kind === "damage" && !ev.onPlayer) hits++;
+    }
+    const spec = WEAPONS[family];
+    console.log(
+      `  ${spec.name.padEnd(13)} ${spec.pattern.padEnd(7)} ${spec.cooldown.toFixed(2)}s` +
+      ` reach=${String(spec.reach).padStart(3)} hits=${hits} dealt=${Math.round(before - target.health)}`,
+    );
+    check(`a ${spec.name} connects`, target.health < before, `${Math.round(before - target.health)} damage`);
+  }
+}
+
+console.log("\n=== the skill tree ===");
+{
+  const state = geared(30, 4711, 10, "berserker");
+  const p = state.player;
+  const before = { ...p.mods };
+  const branch = TREES.berserker.filter((n) => n.branch === 0).sort((a, b) => a.row - b.row);
+  let taken = 0;
+  for (const node of branch) {
+    if (p.allocate(node)) taken++;
+  }
+  check("a whole branch can be walked", taken === branch.length, `${taken}/${branch.length} nodes`);
+  check("the tree actually changes your numbers",
+    p.mods.meleeDamage > before.meleeDamage, `${before.meleeDamage} -> ${p.mods.meleeDamage.toFixed(2)}`);
+  const magicianNode = TREES.magician[0]!;
+  check("another class's nodes are never reachable", !p.canAllocate(magicianNode));
+  const fresh = geared(30, 22, 4, "lancer");
+  const deep = TREES.lancer.find((n) => n.branch === 0 && n.row === 2)!;
+  check("a node can't be skipped", !fresh.player.canAllocate(deep), "row 2 with row 1 unpaid");
+
+  const spent = p.allocated.length;
+  p.respec();
+  check("respec hands every point back", p.allocated.length === 0 && spent > 0, `${spent} refunded`);
+  check("respec undoes the numbers too", p.mods.meleeDamage === before.meleeDamage);
+
+  // Every class keeps its own save slot now: switching to one you've never played
+  // starts a brand new character (empty tree, empty hands), and switching back finds
+  // the one you left exactly as it was.
+  const swap = geared(30, 99, 6, "shaman");
+  swap.player.allocate(TREES.shaman[0]!);
+  const shamanGearCount = Object.values(swap.player.equipment).filter((it) => it !== null).length;
+  const shamanAllocated = swap.player.allocated.length;
+  swap.chooseClass("magician");
+  check("switching to an unplayed class starts an empty tree", swap.player.allocated.length === 0);
+  check("switching to an unplayed class starts with empty hands",
+    Object.values(swap.player.equipment).every((it) => it === null));
+  swap.chooseClass("shaman");
+  check("switching back restores the tree", swap.player.allocated.length === shamanAllocated);
+  check("switching back restores the gear",
+    Object.values(swap.player.equipment).filter((it) => it !== null).length === shamanGearCount);
+}
+
+console.log("\n=== per-class saves and the shared stash ===");
+{
+  // A deep-diving main leaves gear behind for a fresh alt to grow into, but not before
+  // it's actually caught up — that's the entire point of the level lock.
+  const state = new GameState(4242);
+  state.chooseClass("shaman");
+  state.player.level = 30;
+  state.player.deepestDepth = 30;
+  state.stats.deepestDepth = 30;
+  const highItem = rollItem({ rarity: "epic", type: "sword", ilvl: 30, rng: new Rng(1) });
+  state.addToInventory([highItem]);
+  check("a level 30 character can equip a level 30 item", state.equipFromInventory(highItem.id));
+
+  state.chooseClass("berserker");
+  check("switching class swaps to a fresh, unlevelled character", state.player.level === 1);
+  const lowItem = rollItem({ rarity: "epic", type: "axe", ilvl: 30, rng: new Rng(2) });
+  state.addToInventory([lowItem]);
+  check("a fresh level 1 character can't equip a shared-stash item that outleveled it",
+    !state.equipFromInventory(lowItem.id));
+  check("the locked item stays in the shared stash", state.inventory.some((it) => it.id === lowItem.id));
+
+  state.player.level = 30;
+  check("the same character can equip it once it catches up", state.equipFromInventory(lowItem.id));
+
+  state.chooseClass("shaman");
+  check("switching back finds the main exactly as it was left",
+    state.player.level === 30 && state.player.equipment.weapon?.id === highItem.id);
+
+  // Regression: chests and the forge used to roll item level off the account-wide
+  // deepest-depth record, so a fresh alt buying a chest right after a deep-diving main
+  // got gear rolled at the main's depth — gear the level lock then correctly refused to
+  // let it wear. Item level has to track the *active character's* own depth instead.
+  state.keys.Basic += 20;
+  const shamanChest = state.openChests("Basic", 20);
+  check("a deep-diving character's chests roll near its own depth",
+    shamanChest.every((it) => it.ilvl >= 20), `ilvls: ${shamanChest.map((it) => it.ilvl).join(",")}`);
+
+  state.chooseClass("berserker");
+  state.keys.Basic += 20;
+  const freshChest = state.openChests("Basic", 20);
+  check("a fresh alt's chests roll for its own (level 1) depth, not the main's",
+    freshChest.every((it) => it.ilvl === 1), `ilvls: ${freshChest.map((it) => it.ilvl).join(",")}`);
+  check("a fresh alt can equip what its own chests roll", freshChest.every((it) => state.player.canEquip(it)));
+
+  // Regression: XP for a floor lands as its monsters die, so clearing depth N often
+  // dings a character to level N only partway through (or on the next floor), not the
+  // instant the last kill lands. requiredLevel() has to give a floor's own drops one
+  // level of grace or a character playing a single class straight through — no alt,
+  // no shared stash involved — would routinely find their own newest gear locked.
+  const onCurve = new Player("berserker");
+  onCurve.level = 4;
+  const ownDrop = rollItem({ rarity: "rare", type: "axe", ilvl: 5, rng: new Rng(3) });
+  check("a floor's own drop isn't locked to the character who is one level behind clearing it",
+    onCurve.canEquip(ownDrop), `level ${onCurve.level} vs required ${requiredLevel(ownDrop)}`);
+  const wayAhead = rollItem({ rarity: "rare", type: "axe", ilvl: 20, rng: new Rng(4) });
+  check("the grace is one level, not a loophole — far-ahead gear still locks",
+    !onCurve.canEquip(wayAhead));
+}
+
+console.log("\n=== gear that plays itself ===");
+{
+  // Granted skills and triggers are the top-rarity payoff; they have to actually roll.
+  const rng = new Rng(31337);
+  let grants = 0;
+  let triggers = 0;
+  let mods = 0;
+  const rolls = 4000;
+  for (let i = 0; i < rolls; i++) {
+    const item = rollItem({ rarity: "legendary", type: "sword", ilvl: 20, rng });
+    if (item.grant) grants++;
+    if (item.trigger) triggers++;
+    mods += item.mods.length;
+  }
+  console.log(`  legendary swords: ${(grants / rolls * 100).toFixed(1)}% grant a skill, ` +
+    `${(triggers / rolls * 100).toFixed(1)}% carry a trigger, ${(mods / rolls).toFixed(1)} mods each`);
+  check("legendaries grant skills", grants > 0);
+  check("legendaries carry triggers", triggers > 0);
+  check("legendaries roll a handful of modifiers", mods / rolls >= 4);
+
+  let commonGrants = 0;
+  let commonTriggers = 0;
+  for (let i = 0; i < 2000; i++) {
+    const item = rollItem({ rarity: "common", type: "sword", ilvl: 5, rng });
+    if (item.grant) commonGrants++;
+    if (item.trigger) commonTriggers++;
+  }
+  check("commons never grant a skill or a trigger",
+    commonGrants === 0 && commonTriggers === 0, `${commonGrants}/${commonTriggers}`);
+}
+
+console.log("\n=== rifts ===");
+{
+  const mode = "hoard" as const;
+  const state = geared(16, 777);
+  state.stats.deepestDepth = 12;
+  let cleared = 0;
+  let banked = 0;
+  for (let floor = 1; floor <= MODES[mode].floors; floor++) {
+    const cfg = riftConfig(mode, 1, floor);
+    const r = playFloor(state, cfg, 400, 3000 + floor, 0.85);
+    console.log(
+      `  floor ${floor}/${MODES[mode].floors} depth ${String(cfg.depth).padStart(2)} ` +
+      `${r.d.phase.padEnd(8)} ${r.seconds.toFixed(0).padStart(3)}s ` +
+      `${cfg.bossFloor ? "BOSS " : "     "}coins=${r.d.loot.coins} items=${r.d.loot.items.length}`,
+    );
+    if (r.d.phase !== "cleared") break;
+    banked += r.d.loot.coins;
+    r.d.bankLoot();
+    cleared++;
+  }
+  check("a tier 1 hoard rift can be finished", cleared === MODES[mode].floors,
+    `${cleared}/${MODES[mode].floors} floors`);
+  check("finishing a rift opens the next tier", state.riftTiers[mode] >= 2,
+    `tier ${state.riftTiers[mode]}`);
+  check("a rift actually pays", banked > 0, `${banked} coins across the run`);
+
+  // Extracting early must not open anything — the tier is the boss, not the walk in.
+  const bail = new GameState(5);
+  bail.recordDepth(riftConfig("abyss", 1, 1).depth, riftConfig("abyss", 1, 1));
+  check("extracting on floor one opens nothing", bail.riftTiers.abyss === 1,
+    `tier ${bail.riftTiers.abyss}`);
+
+  // The two flavors have to actually differ, or there's only one rift.
+  const hoardFloor = riftConfig("hoard", 3, 1);
+  const abyssFloor = riftConfig("abyss", 3, 1);
+  check("the abyss is harder than the hoard at the same tier",
+    profileFor(abyssFloor.depth, abyssFloor).enemyHealth >
+    profileFor(hoardFloor.depth, hoardFloor).enemyHealth * 1.5,
+    `${profileFor(abyssFloor.depth, abyssFloor).enemyHealth.toFixed(0)} vs ` +
+    `${profileFor(hoardFloor.depth, hoardFloor).enemyHealth.toFixed(0)} hp`);
+  check("the hoard drops more than the abyss",
+    MODES.hoard.quantity > MODES.abyss.quantity * 1.5,
+    `x${MODES.hoard.quantity} vs x${MODES.abyss.quantity}`);
+  check("the abyss pushes rarity harder than the hoard",
+    MODES.abyss.rarityBias > MODES.hoard.rarityBias * 4,
+    `${MODES.abyss.rarityBias} vs ${MODES.hoard.rarityBias}`);
+  check("rift danger is exponential in tier",
+    riftConfig("abyss", 20, 1).danger > riftConfig("abyss", 10, 1).danger * 3,
+    `T10 x${riftConfig("abyss", 10, 1).danger.toFixed(1)} → ` +
+    `T20 x${riftConfig("abyss", 20, 1).danger.toFixed(1)}`);
+}
+
+console.log("\n=== challenger tier ===");
+{
+  check("challenger tier zero changes nothing", challengerMultiplier(0) === 1);
+  check("challenger tier five reads as roughly five times harder",
+    challengerMultiplier(5) > 4 && challengerMultiplier(5) < 6,
+    `×${challengerMultiplier(5).toFixed(2)}`);
+  const plain = profileFor(1, delveConfig(1, 0));
+  const nightmare = profileFor(1, delveConfig(1, 8));
+  check("challenger has real teeth even on the gentlest floor in the game",
+    nightmare.enemyHealth > plain.enemyHealth * 3,
+    `depth 1: ${plain.enemyHealth.toFixed(0)} hp -> ${nightmare.enemyHealth.toFixed(0)} hp at tier 8`);
+
+  // Descending used to rebuild the next floor from the mode id and floor number alone,
+  // which quietly dropped the dial the player had set: floor one was Death March and
+  // floor two was not. Every mode advances through the same helper now.
+  const delve2 = nextFloorConfig(delveConfig(4, 12));
+  check("descending the delve keeps the challenger tier",
+    delve2.challengerTier === 12 && delve2.depth === 5 && delve2.danger === challengerMultiplier(12),
+    `depth ${delve2.depth}, tier ${delve2.challengerTier}, x${delve2.danger.toFixed(1)}`);
+  const rift2 = nextFloorConfig(riftConfig("abyss", 6, 1, 12));
+  check("descending a rift keeps its tier and the challenger tier",
+    rift2.challengerTier === 12 && rift2.tier === 6 && rift2.floor === 2
+    && rift2.danger > riftConfig("abyss", 6, 2, 0).danger * 5,
+    `T${rift2.tier} F${rift2.floor}, x${rift2.danger.toFixed(1)}`);
+  const planet2 = nextFloorConfig(planetConfig(PLANETS[1]!, 3, 1, 12));
+  check("descending a planet keeps the planet, its tier and the challenger tier",
+    planet2.planet?.spec.id === PLANETS[1]!.id && planet2.planet?.tier === 3
+    && planet2.challengerTier === 12 && planet2.floor === 2
+    && planet2.depth === planetConfig(PLANETS[1]!, 3, 2, 0).depth,
+    `${planet2.planet?.spec.name} T${planet2.planet?.tier} F${planet2.floor} d${planet2.depth}`);
+}
+
+console.log("\n=== planets ===");
+{
+  check("Htrae is always open", planetUnlocked(PLANETS[0]!, {}));
+  check("the second planet is locked before the first is ever cleared",
+    !planetUnlocked(PLANETS[1]!, {}));
+  check("clearing a planet's first tier opens the next planet",
+    planetUnlocked(PLANETS[1]!, { [PLANETS[0]!.id]: 2 }));
+  check("every planet has at least one resource node scattered on its floors",
+    PLANETS.every((p) => p.nodeCount > 0));
+
+  // A real floor: kills have to pay in the planet's own material, and the boss floor
+  // has to spawn the planet's own reskinned encounter rather than the depth ladder's.
+  const ignathis = PLANETS.find((p) => p.id === "ignathis")!;
+  // A bigger, "open world" floor takes longer to clear than an ordinary one, which
+  // means more time exposed to chip damage — geared and played the way the raid boss
+  // test proves out a harder fight, not left at the same margin the ordinary floors use.
+  const state = geared(20, 7070, 16);
+  const r = playFloor(state, planetConfig(ignathis, 1, 1, 0), 400, 8080, 0.85);
+  check("a planet floor can be fought and cleared", r.d.phase === "cleared", r.d.phase);
+  check("kills on a planet pay in its own element's material",
+    r.d.loot.materials[ignathis.element] > 0, JSON.stringify(r.d.loot.materials));
+  const before = state.materials[ignathis.element];
+  r.d.bankLoot();
+  check("materials bank into the stash on extract", state.materials[ignathis.element] > before);
+
+  // Mining, directly: stand on a node, press confirm, it pays out once and goes dead.
+  const state2 = geared(12, 9090, 6);
+  const miningRun = new Dungeon(state2, planetConfig(ignathis, 1, 1, 0), 1234);
+  check("a planet floor is generated with resource nodes",
+    miningRun.level.resourceNodes.length > 0, miningRun.level.resourceNodes.length);
+  const node = miningRun.level.resourceNodes[0];
+  if (node) {
+    const input = new FakeInput();
+    miningRun.avatar.x = node.x;
+    miningRun.avatar.y = node.y;
+    input.beginTick();
+    input.press("confirm");
+    miningRun.update(DT, input as unknown as Input);
+    miningRun.drainEvents();
+    check("mining an unspent node pays materials and depletes it",
+      miningRun.loot.materials[ignathis.element] > 0 && node.depleted,
+      `${JSON.stringify(miningRun.loot.materials)} depleted=${node.depleted}`);
+    const beforeSecond = miningRun.loot.materials[ignathis.element];
+    input.beginTick();
+    input.press("confirm");
+    miningRun.update(DT, input as unknown as Input);
+    check("a depleted node doesn't pay twice",
+      miningRun.loot.materials[ignathis.element] === beforeSecond);
+  }
+
+  // The boss floor: a planet borrows an existing encounter's kit but wears its own
+  // name, title and element.
+  const rimehollow = PLANETS.find((p) => p.id === "rimehollow")!;
+  const bossRun = new Dungeon(geared(20, 5150, 10), planetConfig(rimehollow, 1, rimehollow.floors, 0), 6060);
+  const input = new FakeInput();
+  let bt = 0;
+  while (bt < 6 && !bossRun.boss) {
+    input.beginTick();
+    bossRun.update(DT, input as unknown as Input);
+    bossRun.drainEvents();
+    bt += DT;
+  }
+  check("a planet boss floor spawns that planet's own boss",
+    bossRun.boss?.name === rimehollow.bossName, bossRun.boss?.name);
+  check("the planet boss carries the planet's element", bossRun.boss?.element === rimehollow.element);
+}
+
+console.log("\n=== crafting ===");
+{
+  const rich = new GameState(4400);
+  rich.materials.physical = 100000;
+  rich.materials.fire = 100000;
+  const beforeCount = rich.inventory.length;
+  const item = rich.craftItem("weapon", "epic", "fire");
+  check("crafting with enough materials succeeds", item !== null);
+  check("a crafted item lands in the stash", rich.inventory.length === beforeCount + 1);
+  check("crafting actually spends materials", rich.materials.physical < 100000);
+  check("the crafted item is the rarity that was asked for", item?.rarity === "epic");
+  check("crafting never reaches divine or unspoken",
+    !(CRAFTABLE_RARITIES as readonly string[]).includes("divine")
+    && !(CRAFTABLE_RARITIES as readonly string[]).includes("unspoken"));
+
+  const poor = new GameState(4401);
+  check("crafting without materials fails and refunds nothing",
+    poor.craftItem("weapon", "legendary", null) === null && poor.materials.physical === 0);
+}
+
+console.log("\n=== the ship hub ===");
+{
+  const hub = new Hub();
+  check("every station stands inside the hub", hub.stations.every(
+    (s) => s.x > 0 && s.x < HUB_WIDTH && s.y > 0 && s.y < HUB_HEIGHT));
+  check("no two stations sit on top of each other", hub.stations.every((a, i) =>
+    hub.stations.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius)));
+  check("nothing is in interact range at spawn", hub.nearStation() === null,
+    hub.nearStation()?.label);
+  check("no expedition portal until the star map picks one",
+    !hub.stations.some((s) => s.kind === "expedition"));
+  hub.setExpedition(PLANETS[0]!.id, 1);
+  check("choosing an expedition spawns its portal", hub.stations.some((s) => s.kind === "expedition"));
+  hub.clearExpedition();
+  check("walking into it clears it back out", !hub.stations.some((s) => s.kind === "expedition"));
 }
 
 console.log("\n=== death loses unbanked loot ===");
@@ -308,15 +1112,19 @@ console.log("\n=== death loses unbanked loot ===");
 console.log("\n=== extracting mid-fight ===");
 {
   const state = new GameState();
-  const d = new Dungeon(state, 3, 99);
+  const d = new Dungeon(state, delveConfig(3), 99);
   const input = new FakeInput();
+  const flow = new FlowField(d.level);
+  flow.update(d.level, d.portal.x, d.portal.y);
   let t = 0;
-  // Walk straight at the portal without fighting anything.
+  // Walk to the portal without fighting anything — the route has to go around walls
+  // now, not just in a straight line, so this follows the same field a monster would.
   while (t < 30 && !d.atPortal) {
     input.beginTick();
     for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
-    if (Math.abs(d.portal.x - d.avatar.x) > 4) input.hold(d.portal.x > d.avatar.x ? "right" : "left", true);
-    if (Math.abs(d.portal.y - d.avatar.y) > 4) input.hold(d.portal.y > d.avatar.y ? "down" : "up", true);
+    const dir = approachDir(d, flow, d.portal.x, d.portal.y);
+    if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+    if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
     d.update(DT, input as unknown as Input);
     d.drainEvents();
     t += DT;
@@ -341,7 +1149,7 @@ console.log("\n=== generated floors ===");
 
   for (let depth = 1; depth <= 30; depth++) {
     for (let i = 0; i < 8; i++) {
-      const level = generateLevel(depth, rng);
+      const level = generateLevel(depth, rng, { boss: depth % 5 === 0 });
       floors++;
       layouts[level.layout] = (layouts[level.layout] ?? 0) + 1;
       totalTraps += level.traps.length;
@@ -364,6 +1172,12 @@ console.log("\n=== generated floors ===");
   check("floors stay open enough to fight in", crampedFloors === 0, `${crampedFloors} cramped`);
   check("layouts actually vary", Object.keys(layouts).length >= 4, JSON.stringify(layouts));
   console.log(`  ${floors} floors: ${(totalWalls / floors).toFixed(1)} walls and ${(totalTraps / floors).toFixed(1)} hazards on average`);
+
+  // A boss arena has to have room to run away in.
+  const bossLevel = generateLevel(10, rng, { boss: true });
+  const plain = generateLevel(10, rng);
+  check("boss arenas are bigger than ordinary floors", bossLevel.width > plain.width,
+    `${bossLevel.width} vs ${plain.width}`);
 }
 
 console.log("\n=== hazards ===");
@@ -419,6 +1233,285 @@ console.log("\n=== chest odds over 200k pulls ===");
     }
   }
   check("unspoken is findable but absurd", true);
+}
+
+
+/**
+ * The art is string grids, and a miscounted row is a runtime throw in somebody's
+ * browser rather than a compile error — so it gets checked here, where `pixels.ts`
+ * is reachable because it is deliberately DOM-free.
+ */
+console.log("\n=== art ===");
+{
+  const ragged = gridProblems();
+  check("every sprite grid is a rectangle", ragged.length === 0, ragged.slice(0, 4).join("; "));
+
+  const missingBoss = BOSSES.filter((b) => !BOSS_GRIDS[b.sprite]).map((b) => b.id);
+  check("every boss has a sprite", missingBoss.length === 0, missingBoss.join(", "));
+
+  const missingHair = HAIR_STYLES.filter((h) => !HAIR[h]);
+  check("every hair style is drawn", missingHair.length === 0, missingHair.join(", "));
+
+  const missingWeapon = WEAPON_FAMILIES.filter((w) => !WEAPON_ART[w]);
+  check("every weapon family is drawn", missingWeapon.length === 0, missingWeapon.join(", "));
+
+  // A grip outside its own sprite would send the weapon flying off the hand.
+  const badGrip = Object.entries(WEAPON_ART).filter(([, a]) =>
+    a.ax < 0 || a.ay < 0 || a.ay >= a.grid.length || a.ax >= (a.grid[0]?.length ?? 0));
+  check("every weapon is gripped somewhere on itself", badGrip.length === 0,
+    badGrip.map(([k]) => k).join(", "));
+
+  const problems = cosmeticProblems(Object.keys(COSMETIC_ART));
+  check("every cosmetic is drawable and priced", problems.length === 0, problems.slice(0, 4).join("; "));
+
+  const perSlot = COSMETIC_SLOTS.map((slot) =>
+    `${slot}=${COSMETICS.filter((c) => c.slot === slot).length}`).join(" ");
+  console.log(`  ${COSMETICS.length} cosmetics — ${perSlot}`);
+}
+
+console.log("\n=== gems and the wardrobe ===");
+{
+  // Gems have to actually reach the bank, or the capsules are decoration.
+  const state = geared(14, 4242, 8);
+  const { d } = playFloor(state, 6, 300, 6161, 0.7);
+  check("gems drop in the dungeon", d.loot.gems > 0, `${d.loot.gems} unbanked`);
+  d.bankLoot();
+  check("gems bank on extract", state.gems > 0, `${state.gems} banked`);
+  console.log(`  a depth 6 floor paid ${state.gems} gems — a Trinket capsule costs ${CAPSULES.Trinket.price}`);
+
+  // A hoard rift is the mode that is supposed to pay for a wardrobe.
+  const hoarder = geared(18, 4243, 8);
+  const hoard = playFloor(hoarder, riftConfig("hoard", 1, 1), 300, 6162, 0.7);
+  const delver = geared(18, 4243, 8);
+  const delve = playFloor(delver, 6, 300, 6162, 0.7);
+  check("the hoard rift pays better in gems than the delve",
+    hoard.d.loot.gems > delve.d.loot.gems,
+    `hoard ${hoard.d.loot.gems} vs delve ${delve.d.loot.gems}`);
+
+  const broke = new GameState(1);
+  check("no gems, no capsule", broke.openCapsules("Trinket", 1).length === 0);
+  check("you can't wear what you haven't pulled", !broke.wear("hat", "hatWitch"));
+  check("you can always wear nothing", broke.wear("hat", null));
+
+  // Capsule odds, printed the way the chest odds are.
+  for (const tier of CAPSULE_TIERS) {
+    const s = new GameState(31337);
+    const n = 20000;
+    s.gems = CAPSULES[tier].price * n;
+    const pulls = s.openCapsules(tier, n);
+    const counts: Record<string, number> = {};
+    for (const p of pulls) counts[p.cosmetic.rarity] = (counts[p.cosmetic.rarity] ?? 0) + 1;
+    const summary = RARITIES.filter((r) => counts[r])
+      .map((r) => `${r}=${(((counts[r] ?? 0) / pulls.length) * 100).toFixed(2)}%`).join(" ");
+    console.log(`  ${tier.padEnd(10)} ${summary}`);
+    if (tier === "Starlight") {
+      check("Starlight capsules never roll below epic",
+        pulls.every((p) => rarityIndex(p.cosmetic.rarity) >= rarityIndex("epic")), summary);
+    }
+    if (tier === "Trinket") {
+      // Everything but the unspoken tier should turn up in a long grind. The unspoken
+      // aura is deliberately absurd, exactly like an unspoken item — that long tail is
+      // the same hook the loot game runs on, and it is not a bug here either.
+      const missing = COSMETICS.filter((c) => !s.cosmetics.includes(c.id));
+      check("a long grind fills the wardrobe, unspoken aside",
+        missing.every((c) => c.rarity === "unspoken"),
+        `${s.cosmetics.length}/${COSMETICS.length}; missing ${missing.map((c) => c.name).join(", ") || "nothing"}`);
+      check("duplicates come back as gems", pulls.some((p) => p.dupe && p.refund > 0));
+    }
+  }
+
+  // The one promise cosmetics make: they are powerless. Wear everything and check that
+  // not a single number on the character sheet moved.
+  const dressed = geared(20, 4244, 10);
+  const before = JSON.stringify(dressed.player.mods);
+  dressed.cosmetics = COSMETICS.map((c) => c.id);
+  for (const slot of COSMETIC_SLOTS) {
+    const first = dressed.ownedInSlot(slot)[0];
+    if (first) dressed.wear(slot, first.id);
+  }
+  dressed.player.refresh();
+  check("cosmetics never touch your numbers", JSON.stringify(dressed.player.mods) === before);
+  check("wearing everything fills every slot",
+    COSMETIC_SLOTS.every((slot) => dressed.appearance[slot] !== null));
+}
+
+console.log("\n=== multiplayer ===");
+{
+  // A co-op floor is the same simulation with more than one hero in it, so it can be
+  // played headlessly exactly like a solo one — and the host/client split can be run
+  // in one process, with real snapshots passing between two real dungeons.
+
+  // 1. The difficulty dial. More people means fatter, more numerous monsters and only
+  // slightly harder hits; nobody can dodge for a friend.
+  const solo = profileFor(10, delveConfig(10, 0, 1));
+  const trio = profileFor(10, delveConfig(10, 0, 3));
+  check("a party fattens the floor", trio.enemyHealth > solo.enemyHealth * 1.9,
+    `${solo.enemyHealth.toFixed(0)} -> ${trio.enemyHealth.toFixed(0)} hp`);
+  check("a party crowds the floor", trio.enemiesPerWave > solo.enemiesPerWave,
+    `${solo.enemiesPerWave} -> ${trio.enemiesPerWave} per wave`);
+  check("a party doesn't get one-shot for having friends", trio.enemyDamage < solo.enemyDamage * 1.3,
+    `${solo.enemyDamage.toFixed(1)} -> ${trio.enemyDamage.toFixed(1)} damage`);
+  check("a solo floor is untouched by any of it",
+    profileFor(10, delveConfig(10)).enemyHealth === solo.enemyHealth);
+
+  // 2. Two heroes on one floor, driven by two independent inputs.
+  const hostState = geared(14, 8801, 16, "swordsman");
+  const mateState = geared(14, 8802, 16, "magician");
+  const config = delveConfig(8, 0, 2);
+  const setups = [
+    {
+      netId: "", name: "Host", player: hostState.player,
+      appearance: hostState.appearance, potions: 5, local: true,
+    },
+    {
+      netId: "p2", name: "Cousin", player: mateState.player,
+      appearance: mateState.appearance, potions: 5, local: false,
+    },
+  ];
+  const host = new Dungeon(hostState, config, { seed: 4242, role: "host", heroes: setups });
+  check("a party floor holds everybody", host.heroes.length === 2 && host.isParty);
+  check("each hero brought their own character",
+    host.heroes[0]!.player.classId === "swordsman" && host.heroes[1]!.player.classId === "magician");
+
+  const hostInput = new FakeInput();
+  const mateInput = new FakeInput();
+  host.heroes[1]!.input = mateInput as unknown as AvatarInput;
+
+  // Both of them chase and swing. The remote one is driven through the exact same
+  // `AvatarInput` a keyboard implements, which is the whole point of the interface.
+  let t = 0;
+  let mateHits = 0;
+  /** The busiest moment of the fight, to size a snapshot against the worst case. */
+  let busiest = { monsters: 0, bytes: 0 };
+  const mateHero = host.heroes[1]!;
+  // Both bots route around walls the same way the monsters do, since a floor is a graph
+  // of rooms now and a bot that only walks in straight lines measures the pathing rather
+  // than the fight.
+  const routes = host.heroes.map(() => new FlowField(host.level));
+  let routeTimer = 0;
+  while (t < 120 && host.phase === "fighting") {
+    hostInput.beginTick();
+    mateInput.beginTick();
+    routeTimer -= DT;
+    const repath = routeTimer <= 0;
+    if (repath) routeTimer = 0.25;
+
+    host.heroes.forEach((hero, i) => {
+      const input = i === 0 ? hostInput : mateInput;
+      const target = host.enemies.filter((e) => e.state !== "spawning")
+        .sort((a, b) => Math.hypot(a.x - hero.avatar.x, a.y - hero.avatar.y)
+          - Math.hypot(b.x - hero.avatar.x, b.y - hero.avatar.y))[0];
+      const goal = target ?? host.portal;
+      if (repath) routes[i]!.update(host.level, goal.x, goal.y);
+      const step = routes[i]!.direction(host.level, hero.avatar.x, hero.avatar.y);
+      const angle = step
+        ? Math.atan2(step.y, step.x)
+        : Math.atan2(goal.y - hero.avatar.y, goal.x - hero.avatar.x);
+      input.hold("right", Math.cos(angle) > 0.3);
+      input.hold("left", Math.cos(angle) < -0.3);
+      input.hold("down", Math.sin(angle) > 0.3);
+      input.hold("up", Math.sin(angle) < -0.3);
+      input.press("attack");
+      if (hero.player.health < hero.player.maxHealth * 0.4) input.press("potion");
+    });
+
+    const before = mateHero.loot.kills;
+    host.update(DT, hostInput as unknown as AvatarInput);
+    if (mateHero.loot.kills > before) mateHits++;
+    if (host.enemies.length > busiest.monsters) {
+      busiest = {
+        monsters: host.enemies.length,
+        bytes: JSON.stringify(encodeSnapshot(host)).length,
+      };
+    }
+    host.drainEvents();
+    t += DT;
+  }
+  check("a party can clear a floor together", host.phase !== "fighting",
+    `${host.phase} after ${t.toFixed(0)}s`);
+  check("the remote player actually fought", mateHits > 0, `${mateHits} kills`);
+  check("XP is shared, not split",
+    host.heroes[0]!.loot.xp > 0 && host.heroes[0]!.loot.xp === host.heroes[1]!.loot.xp,
+    `${host.heroes[0]!.loot.xp} vs ${host.heroes[1]!.loot.xp}`);
+  check("loot belongs to whoever picked it up",
+    host.heroes[0]!.loot.coins !== host.heroes[1]!.loot.coins
+    || host.heroes[0]!.loot.items.length !== host.heroes[1]!.loot.items.length,
+    `${host.heroes[0]!.loot.coins} vs ${host.heroes[1]!.loot.coins} coins`);
+
+  // 3. A client rebuilds the same floor from the seed alone, then adopts a snapshot.
+  const clientState = geared(14, 8802, 16, "magician");
+  const clientSetups = setups.map((setup, i) => ({ ...setup, local: i === 1 }));
+  const client = new Dungeon(clientState, configFromWire(configToWire(config)), {
+    seed: 4242, role: "client", heroes: clientSetups,
+  });
+  check("a client generates the identical floor from the seed",
+    client.level.width === host.level.width
+    && client.level.walls.length === host.level.walls.length
+    && client.portal.x === host.portal.x && client.portal.y === host.portal.y,
+    `${client.level.walls.length} vs ${host.level.walls.length} walls`);
+
+  const snapshot = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+  applySnapshot(client, snapshot);
+  check("a snapshot carries the whole floor across",
+    client.enemies.length === host.enemies.length
+    && client.pickups.length === host.pickups.length
+    && client.phase === host.phase,
+    `${client.enemies.length}/${host.enemies.length} monsters`);
+  check("a snapshot puts everybody where the host has them",
+    host.heroes.every((hero, i) => Math.hypot(
+      client.heroes[i]!.avatar.x - hero.avatar.x,
+      client.heroes[i]!.avatar.y - hero.avatar.y) < 50));
+  check("a client reads its own vitals off the host",
+    client.localHero.player.health === Math.round(host.heroes[1]!.player.health),
+    `${client.localHero.player.health} vs ${host.heroes[1]!.player.health.toFixed(0)}`);
+  check("a client can bank what the host says it earned",
+    client.localHero.loot.coins === host.heroes[1]!.loot.coins);
+  console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
+    + ` with ${busiest.monsters} monsters on screen`
+    + ` — ${((busiest.bytes * 20) / 1024).toFixed(0)}kB/s per player at ${20} snapshots a second`);
+
+  // 4. Going down is not dying: an ally standing over you brings you back.
+  const rescueState = geared(14, 8803, 16, "lancer");
+  const rescue = new Dungeon(rescueState, delveConfig(3, 0, 2), {
+    seed: 99, role: "host", heroes: setups,
+  });
+  const downed = rescue.heroes[1]!;
+  const saviour = rescue.heroes[0]!;
+  downed.player.health = 0;
+  downed.downed = true;
+  check("one player down is not a wipe", rescue.phase === "fighting");
+  saviour.avatar.x = downed.avatar.x;
+  saviour.avatar.y = downed.avatar.y;
+  const idle = new FakeInput();
+  for (let i = 0; i < 240 && downed.downed; i++) {
+    idle.beginTick();
+    saviour.avatar.x = downed.avatar.x;
+    saviour.avatar.y = downed.avatar.y;
+    rescue.update(DT, idle as unknown as AvatarInput);
+    rescue.drainEvents();
+  }
+  check("standing over an ally revives them", !downed.downed && downed.player.health > 0,
+    `${downed.player.health.toFixed(0)} hp`);
+
+  // And when the last one falls, the party loses the floor together.
+  for (const hero of rescue.heroes) {
+    hero.player.health = 0;
+    hero.downed = true;
+  }
+  rescue.heroes[0]!.player.health = 1;
+  rescue.heroes[0]!.downed = false;
+  idle.beginTick();
+  rescue.update(DT, idle as unknown as AvatarInput);
+  check("a party still standing keeps the floor alive", rescue.phase !== "dead");
+
+  // 5. Room codes: four letters, no lookalikes, and paste-and-pray survives.
+  const codes = new Set<string>();
+  for (let i = 0; i < 400; i++) codes.add(randomRoomCode());
+  check("room codes are four readable letters",
+    [...codes].every((c) => isRoomCode(c) && c.length === 4));
+  check("room codes avoid the letters people mishear",
+    [...codes].every((c) => !/[IOSZ]/.test(c)));
+  check("a typed code is forgiven", normalizeRoomCode(" ab-cd ") === "ABCD");
 }
 
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}\n`);

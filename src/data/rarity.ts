@@ -30,18 +30,22 @@ export const RARITY_VALUE: Record<Rarity, number> = {
 };
 
 /**
- * Base drop odds. These are the original numbers and they are deliberately brutal:
- * unspoken is roughly 1 in 20,000. The long tail is the whole point of the game.
+ * Base drop odds. Tightened well past the original numbers: the top of the ladder was
+ * landing too often, so common/uncommon/rare stayed close to where they were and
+ * everything from epic up got cut hard, divine and unspoken hardest of all — unspoken
+ * is now roughly 1 in 250,000 from a Basic chest, rarer than divine rather than tied
+ * with it. The long tail is still the whole point of the game; it just needed to be
+ * longer.
  */
 export const BASE_RARITY_WEIGHTS: Record<Rarity, number> = {
-  common: 0.515,
-  uncommon: 0.215,
+  common: 0.68,
+  uncommon: 0.24,
   rare: 0.065,
-  epic: 0.015,
-  legendary: 0.005,
-  mythic: 0.0005,
-  divine: 0.00005,
-  unspoken: 0.00005,
+  epic: 0.012,
+  legendary: 0.0028,
+  mythic: 0.00018,
+  divine: 0.000012,
+  unspoken: 0.000004,
 };
 
 export function rarityIndex(r: Rarity): number {

@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "host": "vite --host",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "smoke": "esbuild tools/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/smoke.mjs --log-level=error && node node_modules/.cache/smoke.mjs",
-    "test": "npm run check && npm run smoke"
+    "test": "npm run check && npm run smoke",
+    "art": "esbuild tools/artsheet.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/artsheet.mjs --log-level=error && node node_modules/.cache/artsheet.mjs",
+    "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

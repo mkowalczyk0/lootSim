@@ -1,9 +1,29 @@
+import { clamp } from "../core/math";
 import { Rng } from "../core/rng";
-import { loadRaw, saveRaw } from "../core/save";
+import { clearSave, loadRaw, saveRaw } from "../core/save";
+import { MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../data/chests";
-import { ITEM_TYPES, type ItemType, type EquipSlot } from "../data/items";
+import {
+  BASE_COSMETIC_WEIGHTS, CAPSULES, COSMETICS, COSMETICS_BY_ID,
+  DUPE_REFUND, defaultAppearance, normalizeAppearance, normalizeOwned,
+  type Appearance, type CapsuleTier, type Cosmetic, type CosmeticSlot,
+} from "../data/cosmetics";
+import {
+  CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, type CraftCategory,
+} from "../data/crafting";
+import type { EquipSlot } from "../data/items";
+import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
+import type { Element } from "../data/elements";
+import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
+import { isWeaponType, slotForType } from "../data/items";
+import { emptyMaterials, type MaterialBag } from "../data/materials";
+import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
+import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
-import { primeItemIds, rollItem, type Item } from "./item";
+import { normalizeSettings, type Settings } from "../data/settings";
+import { SKILL_IDS, type SkillId } from "../data/skills";
+import { MOD_KEYS, type ModKey } from "../data/mods";
+import { primeItemIds, randomItemType, rollItem, type Item, type ItemMod, type Stats } from "./item";
 import { Player, emptyEquipment } from "./player";
 
 export interface RunStats {
@@ -16,6 +36,12 @@ export interface RunStats {
   deepestDepth: number;
   runsCompleted: number;
   deaths: number;
+  /** Rifts finished, per mode. The number people actually brag about. */
+  riftsCleared: Record<RunModeId, number>;
+  bossesKilled: number;
+  /** Vanity bookkeeping. Nobody needs it; everybody looks at it. */
+  gemsEarned: number;
+  capsulesOpened: number;
 }
 
 function freshStats(): RunStats {
@@ -29,7 +55,28 @@ function freshStats(): RunStats {
     deepestDepth: 0,
     runsCompleted: 0,
     deaths: 0,
+    riftsCleared: Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>,
+    bossesKilled: 0,
+    gemsEarned: 0,
+    capsulesOpened: 0,
   };
+}
+
+function freshTiers(): Record<RunModeId, number> {
+  return Object.fromEntries(RUN_MODES.map((m) => [m, 1])) as Record<RunModeId, number>;
+}
+
+/** Highest tier open per planet — same shape as `freshTiers`, keyed by planet id instead
+ *  of `RunModeId` since the roster is its own open-ended list, not a fixed union. */
+function freshPlanetProgress(): Record<string, number> {
+  return Object.fromEntries(PLANETS.map((p) => [p.id, 1]));
+}
+
+/** One capsule opening: what came out, and what it was worth if you already had it. */
+export interface CapsulePull {
+  readonly cosmetic: Cosmetic;
+  readonly dupe: boolean;
+  readonly refund: number;
 }
 
 /**
@@ -49,7 +96,19 @@ export function sellPrice(item: Item): number {
 
 /** Everything that persists between dives. */
 export class GameState {
-  player = new Player();
+  /**
+   * One character sheet per class — level, XP, tree, equipped skills and gear are each
+   * class's own. Picking a class you haven't played yet starts that character at level
+   * 1 with an empty tree and empty hands, exactly like a brand new save; the class you
+   * were just playing is left exactly as you last had it, waiting for when you switch
+   * back. The stash, coins, materials and everything else below are account-wide and
+   * shared by every class — only the character sheet itself is split out.
+   */
+  players: Record<ClassId, Player> = Object.fromEntries(
+    CLASS_IDS.map((id) => [id, new Player(id)]),
+  ) as Record<ClassId, Player>;
+  /** Which class's sheet is live right now. */
+  activeClassId: ClassId = DEFAULT_CLASS;
   coins = 250;
   keys: Record<ChestTier, number> = Object.fromEntries(
     CHEST_TIERS.map((t) => [t, 0]),
@@ -58,9 +117,48 @@ export class GameState {
   stats = freshStats();
   /** Deepest floor unlocked for a direct dive; you always earn the next one by clearing. */
   maxUnlockedDepth = 1;
+  /** Highest rift tier opened per mode. Clearing a rift opens the next one. */
+  riftTiers: Record<RunModeId, number> = freshTiers();
+  /** Highest tier opened per planet. Clearing a planet's first tier opens the next planet. */
+  planetProgress: Record<string, number> = freshPlanetProgress();
+  /** One per element, spent at the forge. Dropped and mined on planets, nowhere else. */
+  materials: MaterialBag = emptyMaterials();
+  /**
+   * The player's own difficulty dial — zero is plain. Set at a portal or the star map
+   * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
+   */
+  challengerTier = 0;
   /** Potions carried into a dive. Refilled by picking them up in the dungeon. */
   potions = 3;
+  /**
+   * The vanity currency. Drops in the dungeon, banks like coins, and buys nothing but
+   * cosmetic capsules — gems and coins deliberately never convert into each other.
+   */
+  gems = 0;
+  /** Cosmetic ids pulled from capsules. Owning one is permanent. */
+  cosmetics: string[] = [];
+  /** What the character looks like. Read by the renderer and the wardrobe, nothing else. */
+  appearance: Appearance = defaultAppearance();
+  /**
+   * False until the player has actually picked a class. Town opens on the Path tab
+   * and won't let a dive start until they do — a class is the first real decision in
+   * the game and it shouldn't be made for you by a default.
+   */
+  classChosen = false;
+  /**
+   * Cosmetic and control options. Never allowed to touch the simulation — see
+   * `data/settings.ts`. Built through `normalizeSettings` rather than a plain spread of
+   * `DEFAULT_SETTINGS` so a fresh character gets its own `keybinds` object instead of
+   * sharing — and being able to mutate — the shared default.
+   */
+  settings: Settings = normalizeSettings(undefined);
   private readonly rng: Rng;
+  /**
+   * Set by `wipe`. A wiped state must never write itself back: the page is about to
+   * reload into a fresh character, and the `beforeunload` save would otherwise put
+   * the erased progress straight back into storage.
+   */
+  private wiped = false;
 
   /** The seed is only ever passed by tests, so a run of chest pulls is reproducible. */
   constructor(seed?: number) {
@@ -68,6 +166,12 @@ export class GameState {
   }
 
   static INVENTORY_CAP = 200;
+
+  /** The character sheet actually in play. Every other method reads through this one
+   *  getter, so nothing downstream needs to know classes have separate sheets at all. */
+  get player(): Player {
+    return this.players[this.activeClassId];
+  }
 
   addCoins(n: number): void {
     this.coins += n;
@@ -91,6 +195,116 @@ export class GameState {
     return true;
   }
 
+  addGems(n: number): void {
+    this.gems += n;
+    this.stats.gemsEarned += n;
+  }
+
+  addMaterials(element: Element, n: number): void {
+    this.materials[element] += n;
+  }
+
+  setChallengerTier(tier: number): void {
+    this.challengerTier = clamp(Math.round(tier), 0, MAX_CHALLENGER_TIER);
+  }
+
+  /** One button, one direction — wraps back to plain once it passes the top. */
+  cycleChallengerTier(): void {
+    this.challengerTier = (this.challengerTier + 1) % (MAX_CHALLENGER_TIER + 1);
+  }
+
+  /** True once the wardrobe has anything in it, so town can stop advertising an empty tab. */
+  get ownsAnyCosmetic(): boolean {
+    return this.cosmetics.length > 0;
+  }
+
+  owns(id: string): boolean {
+    return this.cosmetics.includes(id);
+  }
+
+  /** Everything owned for one slot, in wardrobe order. */
+  ownedInSlot(slot: CosmeticSlot): Cosmetic[] {
+    return COSMETICS.filter((c) => c.slot === slot && this.cosmetics.includes(c.id));
+  }
+
+  /**
+   * Wears a cosmetic, or takes the slot off with null. Refuses anything unowned so a
+   * stale save can never dress you in something you never pulled.
+   */
+  wear(slot: CosmeticSlot, id: string | null): boolean {
+    if (id !== null) {
+      const c = COSMETICS_BY_ID[id];
+      if (!c || c.slot !== slot || !this.owns(id)) return false;
+    }
+    this.appearance = { ...this.appearance, [slot]: id };
+    return true;
+  }
+
+  /**
+   * Opens `count` capsules of `tier`. A duplicate is refunded in gems rather than
+   * silently vanishing — a run of dupes should still walk you toward the next pull.
+   */
+  openCapsules(tier: CapsuleTier, count = 1): CapsulePull[] {
+    const info = CAPSULES[tier];
+    const affordable = Math.min(count, Math.floor(this.gems / info.price));
+    if (affordable <= 0) return [];
+    this.gems -= info.price * affordable;
+    this.stats.capsulesOpened += affordable;
+
+    // Only rarities this capsule can roll *and* that something actually exists at.
+    const weights = {} as Record<Rarity, number>;
+    for (const r of RARITIES) {
+      const any = COSMETICS.some((c) => c.rarity === r);
+      weights[r] = any ? BASE_COSMETIC_WEIGHTS[r] * info.weights[r] : 0;
+    }
+
+    const pulls: CapsulePull[] = [];
+    for (let i = 0; i < affordable; i++) {
+      const rarity = this.rng.weighted(weights);
+      const pool = COSMETICS.filter((c) => c.rarity === rarity);
+      const cosmetic = this.rng.pick(pool);
+      const dupe = this.owns(cosmetic.id);
+      if (dupe) {
+        const refund = DUPE_REFUND[cosmetic.rarity];
+        this.gems += refund;
+        pulls.push({ cosmetic, dupe: true, refund });
+      } else {
+        this.cosmetics.push(cosmetic.id);
+        pulls.push({ cosmetic, dupe: false, refund: 0 });
+      }
+    }
+    return pulls;
+  }
+
+  /**
+   * The forge: the deterministic half of getting an item. A chest gambles on
+   * everything at once; this spends materials for a chosen category at a chosen
+   * rarity, optionally biased toward a chosen essence, up to mythic — divine and
+   * unspoken stay chest-only, on purpose, so the long tail never becomes a shopping list.
+   */
+  craftItem(category: CraftCategory, rarity: Rarity, essence: Element | null): Item | null {
+    if (!(CRAFTABLE_RARITIES as readonly Rarity[]).includes(rarity)) return null;
+    const usedEssence = essence && essence !== "physical" ? essence : null;
+    const bulk = craftBulkCost(rarity);
+    const essenceCost = usedEssence ? craftEssenceCost(rarity) : 0;
+    if (this.materials.physical < bulk) return null;
+    if (usedEssence && this.materials[usedEssence] < essenceCost) return null;
+
+    this.materials.physical -= bulk;
+    if (usedEssence) this.materials[usedEssence] -= essenceCost;
+
+    const pool = CRAFT_TYPES[category];
+    const affinity = this.player.heroClass.affinity;
+    const type = category === "weapon" && affinity.length > 0 && this.rng.chance(0.6)
+      ? this.rng.pick(affinity)
+      : this.rng.pick(pool);
+    const ilvl = Math.max(1, this.player.deepestDepth);
+    const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: usedEssence ?? undefined });
+    this.stats.raritiesFound[rarity]++;
+    this.addToInventory([item]);
+    return item;
+  }
+
   buyKey(tier: ChestTier, count = 1): boolean {
     const cost = CHESTS[tier].price * count;
     if (!this.spendCoins(cost)) return false;
@@ -100,23 +314,28 @@ export class GameState {
 
   /**
    * Opens `count` chests of `tier`, returning what dropped. Rarity weights are the
-   * chest's multipliers applied to the base odds; item level tracks your deepest run
-   * so chests stay relevant as you progress.
+   * chest's multipliers applied to the base odds; item level tracks the *active
+   * character's* deepest run (not the account-wide record) so a chest always rolls
+   * gear the class opening it can actually catch up to and equip.
    */
   openChests(tier: ChestTier, count = 1): Item[] {
     const available = Math.min(count, this.keys[tier]);
     if (available <= 0) return [];
     this.keys[tier] -= available;
 
+    const info = CHESTS[tier];
     const weights = {} as Record<Rarity, number>;
-    for (const r of RARITIES) weights[r] = BASE_RARITY_WEIGHTS[r] * CHESTS[tier].weights[r];
+    for (const r of RARITIES) weights[r] = BASE_RARITY_WEIGHTS[r] * info.weights[r];
 
-    const ilvl = Math.max(1, this.stats.deepestDepth);
+    const ilvl = Math.max(1, this.player.deepestDepth);
+    const affinity = this.player.heroClass.affinity;
     const found: Item[] = [];
     for (let i = 0; i < available; i++) {
       const rarity = this.rng.weighted(weights);
-      const type = this.rng.pick(ITEM_TYPES) as ItemType;
-      const item = rollItem({ rarity, type, ilvl, rng: this.rng });
+      const type = info.types && info.types.length > 0
+        ? this.rng.pick(info.types)
+        : randomItemType(this.rng, affinity, info.classAdaptive);
+      const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: info.favorElement });
       found.push(item);
       this.stats.raritiesFound[rarity]++;
     }
@@ -139,6 +358,22 @@ export class GameState {
     }
   }
 
+  /**
+   * Switches which class's character sheet is live. Nothing about the class you're
+   * leaving changes — its level, tree, skills and gear are exactly where you left them
+   * for whenever you come back to it.
+   */
+  chooseClass(id: ClassId): void {
+    this.activeClassId = id;
+    this.classChosen = true;
+    this.player.fullHeal();
+  }
+
+  /** The class the player is currently playing, for anything that needs its data. */
+  get heroClass() {
+    return CLASSES[this.player.classId];
+  }
+
   sell(ids: readonly string[]): number {
     const idSet = new Set(ids);
     let total = 0;
@@ -154,10 +389,12 @@ export class GameState {
     return total;
   }
 
+  /** False either for a missing item or one this character isn't level enough to wear. */
   equipFromInventory(id: string): boolean {
     const idx = this.inventory.findIndex((it) => it.id === id);
     if (idx < 0) return false;
     const item = this.inventory[idx]!;
+    if (!this.player.canEquip(item)) return false;
     this.inventory.splice(idx, 1);
     const displaced = this.player.equip(item);
     if (displaced) this.inventory.push(displaced);
@@ -171,9 +408,31 @@ export class GameState {
     return true;
   }
 
-  recordDepth(depth: number): void {
+  /**
+   * Called when a floor's loot is banked. A delve floor unlocks the next depth; a rift
+   * floor unlocks nothing until the boss at the bottom of it is dead, which is what
+   * stops the tier ladder from being climbed by extracting on floor one.
+   */
+  recordDepth(depth: number, config?: RunConfig): void {
     if (depth > this.stats.deepestDepth) this.stats.deepestDepth = depth;
-    if (depth + 1 > this.maxUnlockedDepth) this.maxUnlockedDepth = depth + 1;
+    if (depth > this.player.deepestDepth) this.player.deepestDepth = depth;
+    // A planet is rift-shaped (`mode.isRift` is true for it too) but each one keeps its
+    // own tier ladder, so it's tracked by planet id rather than the shared rift Records.
+    if (config?.planet) {
+      if (!config.lastFloor) return;
+      const id = config.planet.spec.id;
+      const next = config.planet.tier + 1;
+      if (next > (this.planetProgress[id] ?? 1)) this.planetProgress[id] = next;
+      return;
+    }
+    if (!config || !config.mode.isRift) {
+      if (depth + 1 > this.maxUnlockedDepth) this.maxUnlockedDepth = depth + 1;
+      return;
+    }
+    if (!config.lastFloor) return;
+    this.stats.riftsCleared[config.mode.id]++;
+    const next = config.tier + 1;
+    if (next > this.riftTiers[config.mode.id]) this.riftTiers[config.mode.id] = next;
   }
 
   // --- persistence -------------------------------------------------------
@@ -183,48 +442,209 @@ export class GameState {
       coins: this.coins,
       keys: this.keys,
       potions: this.potions,
+      gems: this.gems,
+      cosmetics: this.cosmetics,
+      appearance: this.appearance,
       maxUnlockedDepth: this.maxUnlockedDepth,
+      riftTiers: this.riftTiers,
+      planetProgress: this.planetProgress,
+      materials: this.materials,
+      challengerTier: this.challengerTier,
       stats: this.stats,
       inventory: this.inventory,
-      player: {
-        level: this.player.level,
-        xp: this.player.xp,
-        health: this.player.health,
-        equipment: this.player.equipment,
-      },
+      players: Object.fromEntries(
+        CLASS_IDS.map((id) => [id, playerToJSON(this.players[id])]),
+      ),
+      activeClassId: this.activeClassId,
+      classChosen: this.classChosen,
+      settings: this.settings,
     };
   }
 
   save(): void {
+    if (this.wiped) return;
     saveRaw(this.toJSON());
+  }
+
+  /**
+   * Erases the save. The live state is left alone because the caller is expected to
+   * reload immediately — rebuilding a whole GameState in place would leave the town,
+   * the renderer and the loop holding the old one.
+   */
+  wipe(): void {
+    this.wiped = true;
+    clearSave();
   }
 
   static load(): GameState {
     const state = new GameState();
-    const raw = loadRaw() as ReturnType<GameState["toJSON"]> | null;
-    if (!raw) return state;
+    const saved = loadRaw();
+    if (!saved) return state;
 
     try {
-      const d = raw as Record<string, unknown>;
+      const d = saved.data;
       state.coins = Number(d.coins ?? state.coins);
       state.potions = Number(d.potions ?? state.potions);
+      // Saves from before the wardrobe existed have none of these; the normalizers
+      // hand back a fresh look and an empty collection rather than throwing.
+      state.gems = Number(d.gems ?? 0);
+      state.cosmetics = normalizeOwned(d.cosmetics);
+      state.appearance = normalizeAppearance(d.appearance);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
       state.keys = { ...state.keys, ...(d.keys as Record<ChestTier, number>) };
       state.stats = { ...freshStats(), ...(d.stats as RunStats) };
-      state.inventory = (d.inventory as Item[]) ?? [];
+      // Saves from before rifts existed have neither of these.
+      state.stats.riftsCleared = { ...freshStats().riftsCleared, ...state.stats.riftsCleared };
+      state.riftTiers = { ...freshTiers(), ...(d.riftTiers as Record<RunModeId, number> | undefined) };
+      // Saves from before planets and the forge existed have none of these; a fresh
+      // ladder and an empty materials bag is exactly what a brand new save gets too.
+      state.planetProgress = { ...freshPlanetProgress(), ...(d.planetProgress as Record<string, number> | undefined) };
+      state.materials = { ...emptyMaterials(), ...(d.materials as Partial<MaterialBag> | undefined) };
+      state.setChallengerTier(Number(d.challengerTier ?? 0));
+      state.inventory = ((d.inventory as Item[]) ?? []).map(normalizeItem);
 
-      const p = d.player as Record<string, unknown> | undefined;
-      if (p) {
-        state.player.level = Number(p.level ?? 1);
-        state.player.xp = Number(p.xp ?? 0);
-        state.player.equipment = { ...emptyEquipment(), ...(p.equipment as object) };
-        state.player.health = Number(p.health ?? state.player.maxHealth);
+      state.classChosen = d.classChosen === true;
+      state.settings = normalizeSettings(d.settings);
+
+      const playersRaw = d.players as Record<string, unknown> | undefined;
+      if (playersRaw) {
+        for (const id of CLASS_IDS) {
+          applyPlayerJSON(state.players[id], playersRaw[id] as Record<string, unknown> | undefined);
+        }
+        state.activeClassId = isClassId(d.activeClassId) ? d.activeClassId : state.activeClassId;
+      } else {
+        // Pre-v10 save: one shared character. Fold it into whichever class it was
+        // playing; every other class starts fresh, exactly like a brand new one does.
+        const p = d.player as Record<string, unknown> | undefined;
+        if (p) {
+          const legacyClass: ClassId = isClassId(p.classId) ? p.classId : DEFAULT_CLASS;
+          applyPlayerJSON(state.players[legacyClass], p);
+          state.activeClassId = legacyClass;
+        }
       }
-      primeItemIds([...state.inventory, ...Object.values(state.player.equipment).filter(Boolean) as Item[]]);
+
+      const allEquipped = CLASS_IDS.flatMap(
+        (id) => Object.values(state.players[id].equipment).filter(Boolean) as Item[],
+      );
+      primeItemIds([...state.inventory, ...allEquipped]);
     } catch {
       // A save from a broken build shouldn't brick the game — fall back to a new one.
       return new GameState();
     }
     return state;
   }
+}
+
+/**
+ * One class's character sheet, as it's actually persisted — and, unchanged, as it
+ * crosses the network to a co-op host, which rebuilds a real `Player` from it with
+ * `playerFromJSON`. A remote player's damage is then computed by exactly the same code
+ * as everyone else's, because it is the same object.
+ */
+export function playerToJSON(p: Player) {
+  return {
+    level: p.level,
+    xp: p.xp,
+    deepestDepth: p.deepestDepth,
+    health: p.health,
+    mana: p.mana,
+    skills: p.skills,
+    allocated: p.allocated,
+    equipment: p.equipment,
+  };
+}
+
+/** Builds a character sheet from somebody else's `playerToJSON` blob. */
+export function playerFromJSON(classId: ClassId, raw: Record<string, unknown> | undefined): Player {
+  const player = new Player(classId);
+  applyPlayerJSON(player, raw);
+  return player;
+}
+
+/**
+ * Applies one saved character sheet onto a fresh `Player` of the matching class. Used
+ * once per class on a current save, and once for whichever class a pre-v10 save's
+ * single shared character belonged to.
+ */
+function applyPlayerJSON(p: Player, raw: Record<string, unknown> | undefined): void {
+  if (!raw) return;
+  p.level = Number(raw.level ?? 1);
+  // Saves from before per-character progress existed (or a class that predates this
+  // field) have no `deepestDepth` of their own — estimate one from level rather than
+  // falling back to the account-wide record, which is exactly the bug this fixed: a
+  // fresh alt would otherwise inherit the main's depth and get gear it can't wear.
+  p.deepestDepth = Number(raw.deepestDepth ?? Math.max(0, p.level - 1));
+  p.allocated = Array.isArray(raw.allocated)
+    ? (raw.allocated as unknown[]).filter((id): id is string => typeof id === "string")
+    : [];
+  p.xp = Number(raw.xp ?? 0);
+  const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
+  for (const slot of Object.keys(equipment) as EquipSlot[]) {
+    const item = equipment[slot];
+    if (item) equipment[slot] = normalizeItem(item);
+  }
+  p.equipment = equipment;
+  p.refresh();
+  p.normalizeTree();
+  p.health = Number(raw.health ?? p.maxHealth);
+  p.mana = Number(raw.mana ?? p.maxMana);
+  p.skills = readSkills(raw.skills);
+  p.autoSlotNewSkills();
+}
+
+/**
+ * Brings an item from an older save up to the current shape. Saves from before the
+ * class overhaul hold a single `affix` and a single `essence` and call every melee
+ * weapon "weapon"; both are translated into the modifier list rather than thrown away,
+ * because somebody's unspoken sword is not something to casually delete.
+ */
+function normalizeItem(raw: Item): Item {
+  const legacy = raw as unknown as {
+    affix?: { stat?: string; label?: string } | null;
+    essence?: { element?: string; kind?: string; value?: number } | null;
+  };
+
+  const stats = {
+    attack: 0, defense: 0, maxHealth: 0, power: 0, haste: 0, maxMana: 0,
+    ...(raw.stats as Partial<Stats>),
+  };
+
+  // "weapon" used to mean any melee weapon, and staves were their own type.
+  const type = ((raw.type as string) === "weapon" ? "sword" : raw.type) as Item["type"];
+  const family = isWeaponType(type) ? type : null;
+
+  const mods: ItemMod[] = Array.isArray(raw.mods)
+    ? raw.mods.filter((m): m is ItemMod =>
+        !!m && typeof m.value === "number" && (MOD_KEYS as readonly string[]).includes(m.key))
+    : [];
+
+  const essence = legacy.essence;
+  if (mods.length === 0 && essence && typeof essence.value === "number") {
+    const element = essence.element as keyof typeof ELEMENT_RESIST_KEY;
+    const key = essence.kind === "resist"
+      ? ELEMENT_RESIST_KEY[element]
+      : ELEMENT_DAMAGE_KEY[element];
+    if (key) mods.push({ id: `legacy-${key}`, key: key as ModKey, value: essence.value });
+  }
+
+  return {
+    ...raw,
+    type,
+    slot: slotForType(type),
+    family,
+    stats,
+    mods,
+    grant: raw.grant ?? null,
+    trigger: raw.trigger ?? null,
+  };
+}
+
+function readSkills(raw: unknown): (SkillId | null)[] {
+  if (!Array.isArray(raw)) return [null, null, null];
+  return [0, 1, 2].map((i) => {
+    const id = raw[i];
+    return typeof id === "string" && (SKILL_IDS as readonly string[]).includes(id)
+      ? (id as SkillId)
+      : null;
+  });
 }

@@ -1,0 +1,196 @@
+/**
+ * Run modes — how a dive is configured before you ever set foot in it.
+ *
+ * The **Delve** is the original ladder: one floor at a time, descend or extract, no
+ * upper bound. **Rifts** are the Diablo-shaped alternative: a fixed sequence of floors
+ * ending in a boss, opened at a tier you choose, where the difficulty is exponential in
+ * that tier rather than linear in depth. Clearing a rift unlocks the next tier of it.
+ *
+ * The two rift flavors are deliberately opposite. The **Abyssal Rift** is brutal and
+ * pays in rarity — it bends the loot table upward and hands out very little else. The
+ * **Hoard Rift** is a step easier and pays in volume: coins, keys and a pile of drops
+ * you'll mostly sell. Which one you run is the interesting decision.
+ *
+ * Everything a mode changes lives here, so a new mode is a data entry rather than a
+ * branch in the simulation.
+ */
+
+import { challengerMultiplier } from "./challenger";
+import type { PlanetSpec } from "./planets";
+
+export const RUN_MODES = ["delve", "abyss", "hoard", "planet"] as const;
+export type RunModeId = (typeof RUN_MODES)[number];
+
+export interface RunMode {
+  readonly id: RunModeId;
+  readonly name: string;
+  readonly short: string;
+  readonly blurb: string;
+  readonly color: string;
+  /** Rifts are a fixed run of floors ending in a boss. The delve is open-ended. */
+  readonly isRift: boolean;
+  /** Floors in one rift, the last of which is the boss. Zero means endless. */
+  readonly floors: number;
+  /** Effective depth of tier 1, floor 1, and how fast that climbs per tier. */
+  readonly baseDepth: number;
+  readonly depthPerTier: number;
+  /** Effective depth added by each floor within a single rift. */
+  readonly depthPerFloor: number;
+  /**
+   * Multiplies enemy health, damage and count on top of depth, compounding per tier.
+   * This is the exponential in "exponentially difficult" — depth alone is too gentle
+   * to ever actually stop somebody.
+   */
+  readonly dangerPerTier: number;
+  /** Added to the rarity roll's depth bias. Abyss pushes hard, hoard barely at all. */
+  readonly rarityBias: number;
+  /** Multiplies how many things drop — the hoard's whole pitch. */
+  readonly quantity: number;
+  readonly coinMult: number;
+  readonly keyMult: number;
+  /**
+   * Multiplies gem drops — the cosmetic currency. The hoard is where you farm a
+   * wardrobe, the abyss barely pays in them at all: it is already paying in rarity.
+   */
+  readonly gemMult: number;
+  readonly xpMult: number;
+  /** Deepest delve floor you must have cleared before this appears in town. */
+  readonly unlockDepth: number;
+}
+
+export const MODES: Record<RunModeId, RunMode> = {
+  delve: {
+    id: "delve", name: "The Delve", short: "Delve",
+    blurb: "One floor at a time, as deep as you dare. Descend or extract after every clear.",
+    color: "#7dd3fc",
+    isRift: false, floors: 0,
+    baseDepth: 1, depthPerTier: 0, depthPerFloor: 1,
+    dangerPerTier: 1, rarityBias: 0, quantity: 1,
+    coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1, unlockDepth: 0,
+  },
+  abyss: {
+    id: "abyss", name: "Abyssal Rift", short: "Abyss",
+    blurb: "Four floors and a warden at the bottom. It hits like a truck and pays in rarity.",
+    color: "#ff1493",
+    isRift: true, floors: 4,
+    baseDepth: 8, depthPerTier: 2.2, depthPerFloor: 1.4,
+    dangerPerTier: 1.17,
+    // Roughly triples the odds of the top end at the same depth as a delve floor.
+    rarityBias: 0.16, quantity: 1,
+    coinMult: 0.75, keyMult: 1, gemMult: 0.8, xpMult: 1.3,
+    // Gated later than the hoard: its first tier already asks for a level 11 character,
+    // so meeting it at depth 6 would just be a wall with a nice name on it.
+    unlockDepth: 8,
+  },
+  hoard: {
+    id: "hoard", name: "Hoard Rift", short: "Hoard",
+    blurb: "Three floors, a softer beating, and far more of everything. This is where you farm.",
+    color: "#fbbf24",
+    isRift: true, floors: 3,
+    baseDepth: 5, depthPerTier: 1.7, depthPerFloor: 1.1,
+    dangerPerTier: 1.1,
+    rarityBias: 0.02, quantity: 2.1,
+    coinMult: 2.8, keyMult: 2.4, gemMult: 1.9, xpMult: 0.9, unlockDepth: 3,
+  },
+  /**
+   * The generic mechanical shell every planet expedition shares — rift-shaped, and a
+   * step easier than the abyss, because a planet pays in materials rather than rarity.
+   * A specific planet's own depth curve, boss and material payout ride along on
+   * `RunConfig.planet` instead of here; unlocking is per-planet (`planetUnlocked` in
+   * `data/planets.ts`), not gated by this mode's `unlockDepth`.
+   */
+  planet: {
+    id: "planet", name: "Planet Expedition", short: "Expedition",
+    blurb: "Fight and mine your way to the boss. This is where materials come from.",
+    color: "#4ade80",
+    isRift: true, floors: 3,
+    baseDepth: 1, depthPerTier: 0, depthPerFloor: 0,
+    dangerPerTier: 1,
+    rarityBias: 0.03, quantity: 1.6,
+    coinMult: 1.4, keyMult: 1.3, gemMult: 1.1, xpMult: 1, unlockDepth: 0,
+  },
+};
+
+/** One floor's worth of run configuration. Everything downstream reads this. */
+export interface RunConfig {
+  readonly mode: RunMode;
+  /** Rift tier. Zero for the delve. */
+  readonly tier: number;
+  /** 1-based floor index within this run. For the delve it equals the depth. */
+  readonly floor: number;
+  /** Effective depth: what the difficulty curve, biome and loot table are told. */
+  readonly depth: number;
+  /** Compounding multiplier on enemy stats from the rift tier, challenger tier included. */
+  readonly danger: number;
+  readonly bossFloor: boolean;
+  /** True on the floor that ends the run. Always false for the endless delve. */
+  readonly lastFloor: boolean;
+  /** The player's own difficulty dial, zero for plain. Already folded into `danger`. */
+  readonly challengerTier: number;
+  /**
+   * How many people are on this floor. One for every solo run, which is why nothing
+   * downstream had to change — `partyScale` in `data/depth.ts` is the only thing that
+   * reads it, and at one player every multiplier it produces is exactly 1.
+   */
+  readonly players?: number;
+  /** Set only for a planet expedition — its own visuals, boss and material payout. */
+  readonly planet?: { readonly spec: PlanetSpec; readonly tier: number };
+}
+
+export function delveConfig(depth: number, challengerTier = 0, players = 1): RunConfig {
+  const d = Math.max(1, Math.floor(depth));
+  return {
+    mode: MODES.delve,
+    tier: 0,
+    floor: d,
+    depth: d,
+    danger: challengerMultiplier(challengerTier),
+    bossFloor: d % 5 === 0,
+    lastFloor: false,
+    challengerTier,
+    players,
+  };
+}
+
+export function riftConfig(modeId: RunModeId, tier: number, floor: number, challengerTier = 0): RunConfig {
+  const mode = MODES[modeId];
+  if (!mode.isRift) return delveConfig(floor, challengerTier);
+  const t = Math.max(1, Math.floor(tier));
+  const f = Math.min(Math.max(1, Math.floor(floor)), mode.floors);
+  const depth = Math.round(mode.baseDepth + mode.depthPerTier * (t - 1) + mode.depthPerFloor * (f - 1));
+  return {
+    mode,
+    tier: t,
+    floor: f,
+    depth: Math.max(1, depth),
+    danger: Math.pow(mode.dangerPerTier, t - 1) * challengerMultiplier(challengerTier),
+    // Every rift ends on its boss. That's the contract: you don't get paid without one.
+    bossFloor: f === mode.floors,
+    lastFloor: f === mode.floors,
+    challengerTier,
+  };
+}
+
+export function modeUnlocked(mode: RunMode, deepestDepth: number): boolean {
+  return deepestDepth >= mode.unlockDepth;
+}
+
+/**
+ * What a party does to a floor.
+ *
+ * Two people bring roughly twice the damage and twice the health pool, so monsters get
+ * fatter and there are more of them — but their *damage* barely moves. A party can't
+ * dodge for each other: a hit that one-shots somebody is a wipe waiting to happen no
+ * matter how many friends are watching. The pressure comes from volume, which is also
+ * what makes a party fight look like a party fight.
+ *
+ * At one player every number here is 1, which is why a solo dive is untouched.
+ */
+export function partyScale(players: number): { health: number; count: number; damage: number } {
+  const extra = Math.max(0, (players || 1) - 1);
+  return {
+    health: 1 + 0.65 * extra,
+    count: 1 + 0.4 * extra,
+    damage: 1 + 0.1 * extra,
+  };
+}

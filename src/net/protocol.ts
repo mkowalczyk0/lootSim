@@ -1,0 +1,206 @@
+/**
+ * The multiplayer wire format, and nothing else.
+ *
+ * Pure types and pure helpers — no DOM, no WebSocket, no simulation — so the relay
+ * (which runs in Node) and the game (which runs in a browser) can agree on the shape of
+ * every message without either of them importing the other's world.
+ *
+ * The architecture is deliberately the simplest one that is actually co-op:
+ * **one authoritative simulation, running on the host**. Clients send the buttons they
+ * pressed and draw the snapshots that come back. Nobody's browser has to agree with
+ * anybody else's about where a monster is, because only one browser decides.
+ *
+ * The relay in `tools/relay.ts` never looks inside a `party` message. It knows about
+ * rooms and peers and forwards bytes; every rule of the game lives on the host.
+ */
+
+/** WebSocket path the relay listens on, alongside the dev server on the same port. */
+export const NET_PATH = "/party";
+
+/** Bumped if the shape below changes in a way an older client would misread. */
+export const PROTOCOL_VERSION = 1;
+
+/** Four players is where the difficulty scaling and the screen both stop being sane. */
+export const MAX_PARTY = 4;
+
+/** Snapshots per second the host broadcasts. The sim still runs at 60. */
+export const SNAPSHOT_HZ = 20;
+
+/** Room codes are Among Us shaped: four letters, said out loud over a call. */
+export const ROOM_CODE_LENGTH = 4;
+/** No I/O/S/Z — they get misheard and mistyped as 1/0/5/2 every single time. */
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXY";
+
+export function randomRoomCode(random: () => number = Math.random): string {
+  let out = "";
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+    out += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length)];
+  }
+  return out;
+}
+
+/** Uppercases and strips anything that can't be in a code, so paste-and-pray works. */
+export function normalizeRoomCode(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z]/g, "").slice(0, ROOM_CODE_LENGTH);
+}
+
+export function isRoomCode(raw: string): boolean {
+  return raw.length === ROOM_CODE_LENGTH && [...raw].every((c) => CODE_ALPHABET.includes(c));
+}
+
+// --- relay envelope --------------------------------------------------------
+// Everything below `party` is opaque to the relay.
+
+export type ToRelay =
+  | { t: "host"; v: number; name: string }
+  | { t: "join"; v: number; code: string; name: string }
+  | { t: "msg"; to?: string; d: PartyMessage };
+
+export type FromRelay =
+  /** You're in. `peers` is everyone already here, you excluded; `hostId` is whose
+   *  browser is running the simulation, so input can be addressed rather than shouted. */
+  | { t: "joined"; code: string; id: string; host: boolean; hostId: string; peers: PeerInfo[] }
+  | { t: "peer"; id: string; name: string }
+  | { t: "gone"; id: string }
+  | { t: "msg"; from: string; d: PartyMessage }
+  /** The host left, so the room is over. Everybody goes back to their own ship. */
+  | { t: "closed"; reason: string }
+  | { t: "error"; reason: string };
+
+export interface PeerInfo {
+  readonly id: string;
+  readonly name: string;
+}
+
+// --- game messages ---------------------------------------------------------
+
+/** Everything a peer needs to draw somebody else and to simulate them on the host. */
+export interface HeroWire {
+  readonly id: string;
+  readonly name: string;
+  readonly classId: string;
+  /** `playerToJSON` output: level, tree, gear. The host rebuilds a real `Player`. */
+  readonly player: Record<string, unknown>;
+  readonly appearance: Record<string, unknown>;
+  readonly potions: number;
+}
+
+/** A `RunConfig`, flattened. Rebuilt by `configFromWire` in `net/sync.ts`. */
+export interface RunConfigWire {
+  readonly mode: string;
+  readonly tier: number;
+  readonly floor: number;
+  readonly depth: number;
+  readonly danger: number;
+  readonly bossFloor: boolean;
+  readonly lastFloor: boolean;
+  readonly challengerTier: number;
+  readonly players: number;
+  readonly planetId?: string;
+  readonly planetTier?: number;
+}
+
+export type PartyMessage =
+  /** Sent on arrival, and again whenever your gear or your look changes in town. */
+  | { k: "hello"; hero: HeroWire }
+  /** Where you are on the ship, and whether you're standing in the party portal. */
+  | { k: "hub"; x: number; y: number; facing: number; ready: boolean }
+  /** Host only: what the party is about to dive into, for everyone else's lobby. */
+  | { k: "plan"; depth: number; players: number }
+  /** Host only: everyone into the portal, here is the floor. */
+  | { k: "start"; seed: number; config: RunConfigWire; heroes: HeroWire[] }
+  /** Client → host, every tick. */
+  | { k: "in"; move: [number, number]; aim: number | null; press: number }
+  /** Host → all, `SNAPSHOT_HZ` times a second. */
+  | { k: "snap"; s: Snapshot }
+  /** Host → all (or one, when it's personal): renderer events. */
+  | { k: "fx"; e: unknown[] }
+  /** Host → one: an item you picked up, and XP you earned. Reliable, unlike a snapshot. */
+  | { k: "got"; item?: unknown; xp?: number }
+  /** Host → all: the floor is over. `descend` is always followed by a fresh `start`. */
+  | { k: "end"; how: "extract" | "descend" | "wipe" };
+
+// --- snapshot --------------------------------------------------------------
+//
+// Heroes are objects (there are at most four and their state is wide); everything the
+// floor is full of is a flat number array, because at 20 Hz with sixty monsters on
+// screen the difference between `{"x":123}` and `123` is the whole bandwidth budget.
+
+export interface HeroSnap {
+  /** Index into the party's hero list, which never changes during a run. */
+  readonly i: number;
+  readonly x: number;
+  readonly y: number;
+  readonly f: number;
+  readonly hp: number;
+  readonly mp: number;
+  readonly wd: number;
+  /** Ultimate meter, 0..1. */
+  readonly ch: number;
+  /** Ultimate id, or "" for none. */
+  readonly ul: string;
+  readonly ut: number;
+  readonly sw: number;
+  readonly sa: number;
+  readonly dt: number;
+  readonly iv: number;
+  readonly hf: number;
+  readonly bt: number;
+  /** Skill cooldowns, four of them. */
+  readonly cd: number[];
+  readonly pot: number;
+  /** Dead and waiting for a revive. */
+  readonly down: boolean;
+  /** Seconds of revive progress somebody has put in, 0..REVIVE_TIME. */
+  readonly rev: number;
+  /** Unbanked loot: coins, gems, xp, kills, item count. */
+  readonly lt: [number, number, number, number, number];
+  /** Unbanked keys, in `CHEST_TIERS` order, and materials in `ELEMENTS` order. The
+   *  snapshot is authoritative for both, so a client banks exactly what the host says
+   *  it earned rather than keeping its own tally and hoping the two agree. */
+  readonly ky: number[];
+  readonly mt: number[];
+}
+
+export interface Snapshot {
+  readonly t: number;
+  /** 0 fighting, 1 cleared, 2 everybody down. */
+  readonly ph: number;
+  readonly wv: number;
+  readonly left: number;
+  readonly h: HeroSnap[];
+  /** [id, kindIndex, x, y, facing, radius, hp, maxHp, eliteIndex, state, spawnTimer,
+   *   windup, hitFlash, elementIndex, isBoss, statusBits] */
+  readonly e: number[][];
+  /** [x, y, radius, colorIndex, friendly] */
+  readonly p: number[][];
+  /** [kindIndex, x, y, value, rarityIndex, elementIndex] */
+  readonly k: number[][];
+  /** [shape, x, y, angle, radius, inner, arc, width, remaining, total, colorIndex] */
+  readonly tg: number[][];
+  /** [x, y, radius, colorIndex] */
+  readonly g: number[][];
+  /** [x, y, colorIndex] */
+  readonly tm: number[][];
+  /** [state, t, angle] per trap, in level order. */
+  readonly tr: number[][];
+  /** Bitmask of mined resource nodes. */
+  readonly nd: number;
+  /** The boss, if one is alive: [phase, castTimer, castTotal] plus its ability name. */
+  readonly b?: { p: number; c: number; ct: number; ab: string; nm: string; sp: string };
+}
+
+// --- input bits ------------------------------------------------------------
+
+/** The buttons that survive the trip. Movement and aim ride alongside as numbers. */
+export const NET_ACTIONS = [
+  "attack", "dash", "potion", "special",
+  "skill1", "skill2", "skill3", "skill4",
+  "confirm", "cancel",
+] as const;
+
+export type NetAction = (typeof NET_ACTIONS)[number];
+
+export function actionBit(action: NetAction): number {
+  return 1 << NET_ACTIONS.indexOf(action);
+}

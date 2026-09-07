@@ -1,14 +1,35 @@
 import { clamp, lerp, TAU } from "../core/math";
 import type { PropKind } from "../data/biomes";
+import { COSMETICS_BY_ID } from "../data/cosmetics";
+import { ELEMENT_COLORS, STATUSES } from "../data/elements";
 import { RARITY_COLORS } from "../data/rarity";
-import type { Dungeon } from "../game/dungeon";
-import type { Body, Enemy, Pickup } from "../game/entities";
+import { ULTIMATES } from "../data/ultimates";
+import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
+import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
-import { silhouette, sprite, tinted, type SpriteName } from "./sprites";
+import {
+  heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, tinted, weaponGlow,
+  weaponGrip, weaponSprite, type SpriteName,
+} from "./sprites";
 
-/** World units per sprite pixel. Sprites are authored small and blown up. */
-const SPRITE_SCALE = 1.9;
+/**
+ * World units per sprite pixel. Change this and `WEAPON_SCALE` together, and only
+ * together — if the character grid's authoring resolution ever changes, this and the
+ * boss `spriteScale` table in `data/bosses.ts` have to move the other way in the same
+ * commit or every hitbox will lie about what's on screen.
+ */
+const SPRITE_SCALE = 1.2;
+/**
+ * Weapons are drawn larger than their pixel size relative to bodies — a sword ends up
+ * about as long as the character is tall, which is both the genre convention and closer
+ * to the reach the hitbox actually has than a scrupulously realistic one would be.
+ */
+const WEAPON_SCALE = 1.5;
+/** How long a swing's animation runs. Mirrors `SWING_TIME` in the simulation. */
+const SWING_DRAW_TIME = 0.13;
+/** Seconds between motes of a cosmetic aura. Slow on purpose; it's jewellery. */
+const AURA_INTERVAL = 0.09;
 /**
  * Screen pixels per world unit. Tuned so sprites read as chunky pixel art while most
  * of the arena still fits on screen — enemies you can't see aren't fun to dodge.
@@ -25,7 +46,7 @@ function lerpPos(b: Body, alpha: number): { x: number; y: number } {
   return { x: lerp(b.px, b.x, alpha), y: lerp(b.py, b.y, alpha) };
 }
 
-function drawSprite(
+export function drawSprite(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   x: number, y: number,
@@ -46,6 +67,11 @@ const PROP_SPRITES: Record<PropKind, SpriteName> = {
   torch: "torch", bones: "bones", mushroom: "mushroom", crystal: "crystal", rock: "rock",
 };
 
+/** Non-weapon gear on the floor. Weapons draw as the actual weapon instead. */
+const ITEM_ICONS: Record<string, SpriteName> = {
+  armor: "armor", shield: "shield", ring: "ring", gloves: "gloves", necklace: "necklace",
+};
+
 export class WorldRenderer {
   private camX = 0;
   private camY = 0;
@@ -53,6 +79,21 @@ export class WorldRenderer {
   /** The floor is static for the life of a level, so it's painted once and blitted. */
   private floorCanvas: HTMLCanvasElement | null = null;
   private floorFor: Level | null = null;
+  /** Aura motes are emitted from the render loop, so they need their own clock. */
+  private auraClock = 0;
+  private lastElapsed = 0;
+
+  /**
+   * The inverse of the camera transform `render` sets up, for turning a mouse position
+   * into the world point it's over. One frame behind the very latest camera lerp at
+   * worst, which is well under the threshold of noticing on a cursor.
+   */
+  screenToWorld(screenX: number, screenY: number, viewW: number, viewH: number): { x: number; y: number } {
+    return {
+      x: this.camX + (screenX - viewW / 2) / ZOOM,
+      y: this.camY + (screenY - viewH / 2) / ZOOM,
+    };
+  }
 
   /** Draws the whole dungeon. `alpha` is the fixed-timestep interpolation factor. */
   render(
@@ -80,6 +121,8 @@ export class WorldRenderer {
       this.camY = lerp(this.camY, targetY, 0.16);
     }
 
+    this.emitAura(fx, dungeon, hero.x, hero.y);
+
     const shake = fx.shakeOffset();
 
     ctx.save();
@@ -89,16 +132,39 @@ export class WorldRenderer {
     ctx.translate(-this.camX + shake.x, -this.camY + shake.y);
 
     this.drawFloor(ctx, dungeon);
+    this.drawGround(ctx, dungeon);
     this.drawTraps(ctx, dungeon);
+    this.drawTelegraphs(ctx, dungeon);
     this.drawWalls(ctx, dungeon.level);
     this.drawProps(ctx, dungeon.level);
+    this.drawResourceNodes(ctx, dungeon);
     this.drawPortal(ctx, dungeon);
     this.drawPickups(ctx, dungeon, alpha);
+    this.drawTotems(ctx, dungeon);
     this.drawActors(ctx, dungeon, alpha);
     this.drawProjectiles(ctx, dungeon, alpha);
     fx.draw(ctx);
 
     ctx.restore();
+  }
+
+  /**
+   * Trails whatever cosmetic aura the player is wearing. It runs off the simulation
+   * clock rather than real time so it stops dead when the game is paused, which is what
+   * everything else on screen does.
+   */
+  private emitAura(fx: Fx, d: Dungeon, x: number, y: number): void {
+    const id = d.appearance.aura;
+    const dt = Math.max(0, Math.min(0.1, d.elapsed - this.lastElapsed));
+    this.lastElapsed = d.elapsed;
+    if (!id) { this.auraClock = 0; return; }
+    const cosmetic = COSMETICS_BY_ID[id];
+    if (!cosmetic?.aura) return;
+    this.auraClock += dt;
+    while (this.auraClock >= AURA_INTERVAL) {
+      this.auraClock -= AURA_INTERVAL;
+      fx.aura(x, y, cosmetic.aura.kind, cosmetic.aura.color);
+    }
   }
 
   private drawFloor(ctx: CanvasRenderingContext2D, d: Dungeon): void {
@@ -147,8 +213,52 @@ export class WorldRenderer {
     }
   }
 
+  /**
+   * Planet floors only. A live node is a glowing crystal tinted the planet's element,
+   * with a pulsing ring so it reads as interactable rather than decoration — the same
+   * "stand here and press confirm" affordance a portal gives you. A mined one goes flat
+   * grey and stops glowing so it's obvious there's nothing left to take.
+   */
+  private drawResourceNodes(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    const planet = d.config.planet?.spec;
+    if (!planet) return;
+    const color = ELEMENT_COLORS[planet.element];
+    for (const node of d.level.resourceNodes) {
+      ctx.save();
+      if (!node.depleted) {
+        const pulse = 0.5 + Math.sin(d.elapsed * 4) * 0.2;
+        ctx.globalAlpha = pulse;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius + 6 + Math.sin(d.elapsed * 3) * 2, 0, TAU);
+        ctx.stroke();
+        ctx.globalAlpha = 0.95;
+        drawSprite(ctx, tinted("crystal", color, 0.7), node.x, node.y, false, 1.4);
+      } else {
+        ctx.globalAlpha = 0.45;
+        drawSprite(ctx, tinted("crystal", "#6b7480", 0.7), node.x, node.y, false, 1.1);
+      }
+      ctx.restore();
+    }
+  }
+
   private drawTraps(ctx: CanvasRenderingContext2D, d: Dungeon): void {
     for (const t of d.level.traps) drawTrap(ctx, t, d.elapsed);
+  }
+
+  /**
+   * Boss telegraphs. This is the most important thing on the screen: the shape says
+   * where the damage will be and the sweep says how long you have. Everything else in
+   * the render can be pretty; this has to be legible.
+   */
+  private drawTelegraphs(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    for (const t of d.telegraphs) drawTelegraph(ctx, t, d.elapsed);
+  }
+
+  /** Whatever a mechanic left burning on the floor. */
+  private drawGround(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    for (const g of d.ground) drawGroundZone(ctx, g, d.elapsed);
   }
 
   private drawPortal(ctx: CanvasRenderingContext2D, d: Dungeon): void {
@@ -156,24 +266,7 @@ export class WorldRenderer {
     // it's always a usable exit, so it must never look sealed.
     const open = d.canDescend;
     const { x, y } = d.portal;
-    const t = d.elapsed;
-
-    ctx.save();
-    ctx.globalAlpha = open ? 1 : 0.22;
-    for (let i = 0; i < 3; i++) {
-      const r = 20 + i * 7 + Math.sin(t * 2 + i) * 3;
-      ctx.strokeStyle = open ? "#7dd3fc" : "#4a7f9a";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y, r, t * (0.7 + i * 0.3), t * (0.7 + i * 0.3) + Math.PI * 1.35);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = open ? 0.28 : 0.14;
-    ctx.fillStyle = "#7dd3fc";
-    ctx.beginPath();
-    ctx.arc(x, y, 18, 0, TAU);
-    ctx.fill();
-    ctx.restore();
+    drawPortalGlyph(ctx, x, y, d.elapsed, open ? "#7dd3fc" : "#4a7f9a", open ? 1 : 0.22);
   }
 
   private drawPickups(ctx: CanvasRenderingContext2D, d: Dungeon, alpha: number): void {
@@ -186,15 +279,48 @@ export class WorldRenderer {
       if (p.rarity) {
         ctx.shadowColor = RARITY_COLORS[p.rarity];
         ctx.shadowBlur = 12;
+      } else if (p.kind === "gem") {
+        ctx.shadowColor = "#f0abfc";
+        ctx.shadowBlur = 14;
       }
-      drawSprite(ctx, canvas, x, y + bob, false, 1.4);
+      // Weapons lie flat on the floor rather than standing on end.
+      const flat = p.kind === "item" && !!p.item?.family;
+      if (flat) {
+        ctx.translate(x, y + bob);
+        ctx.rotate(-0.35);
+        drawSprite(ctx, canvas, 0, 0, false, 1.0);
+      } else {
+        drawSprite(ctx, canvas, x, y + bob, false, 1.4);
+      }
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Totems. They're stakes in the ground with something angry tied to the top, and
+   * they need a pulse ring so you can see the moment one goes off.
+   */
+  private drawTotems(ctx: CanvasRenderingContext2D, d: Dungeon): void {
+    for (const t of d.totems) {
+      const fade = clamp(t.remaining / 2, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(d.elapsed * 6);
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 16 + Math.sin(d.elapsed * 5) * 3, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = t.color;
+      ctx.fillRect(t.x - 2, t.y - 16, 4, 20);
+      ctx.beginPath();
+      ctx.arc(t.x, t.y - 18, 5, 0, TAU);
+      ctx.fill();
       ctx.restore();
     }
   }
 
   private drawActors(ctx: CanvasRenderingContext2D, d: Dungeon, alpha: number): void {
-    const hero = lerpPos(d.avatar, alpha);
-
     // Painter's algorithm on the Y axis so nearer things overlap farther ones.
     const drawables: { y: number; draw: () => void }[] = [];
 
@@ -202,7 +328,12 @@ export class WorldRenderer {
       const pos = lerpPos(e, alpha);
       drawables.push({ y: pos.y, draw: () => this.drawEnemy(ctx, e, pos.x, pos.y, d.elapsed) });
     }
-    drawables.push({ y: hero.y, draw: () => this.drawHero(ctx, d, hero.x, hero.y) });
+    // Everybody on the floor, sorted into the same painter's pass as the monsters —
+    // an ally standing behind a grunt is drawn behind it, same as you are.
+    for (const hero of d.heroes) {
+      const pos = lerpPos(hero.avatar, alpha);
+      drawables.push({ y: pos.y, draw: () => this.drawHero(ctx, d, hero, pos.x, pos.y) });
+    }
     drawables.sort((a, b) => a.y - b.y);
 
     for (const item of drawables) {
@@ -211,59 +342,194 @@ export class WorldRenderer {
     }
   }
 
-  private drawHero(ctx: CanvasRenderingContext2D, d: Dungeon, x: number, y: number): void {
-    const a = d.avatar;
+  private drawHero(ctx: CanvasRenderingContext2D, d: Dungeon, hero: Hero, x: number, y: number): void {
+    const a = hero.avatar;
+    const classColor = hero.player.heroClass.color;
     blob(ctx, x, y, 9);
 
-    // A ring at the feet plus a pip in the facing direction. In a crowd of a dozen
-    // sprites you must be able to find yourself instantly and see where a swing will go.
+    // A downed ally is a slumped, faded body with a revive meter over it. Standing on
+    // them is the whole interaction, so it has to be obvious from across the room.
+    if (hero.downed) {
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      drawSprite(ctx, heroSprite(hero.appearance), x, y + 4, false);
+      ctx.restore();
+      const pct = clamp(hero.reviveProgress / REVIVE_TIME, 0, 1);
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(x - 16, y - 26, 32, 4);
+      ctx.fillStyle = "#4ade80";
+      ctx.fillRect(x - 16, y - 26, 32 * pct, 4);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "#ef4444";
+      ctx.font = "7px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(hero.local ? "DOWN" : hero.name.toUpperCase(), x, y - 30);
+      ctx.restore();
+      return;
+    }
+
+    // In a party everyone needs a name over their head, yours included — four identical
+    // silhouettes in a scrum is exactly when you most need to know which one is you.
+    if (d.isParty) {
+      ctx.save();
+      ctx.globalAlpha = hero.local ? 0.55 : 0.9;
+      ctx.fillStyle = hero.local ? "#9aa4b2" : classColor;
+      ctx.font = "7px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(hero.name.toUpperCase(), x, y - 30);
+      ctx.restore();
+    }
+
+    // A ring at the feet plus a pip in the facing direction, in your class's colour. The
+    // body is now yours to dress however you like, so this ring is what tells you which
+    // of a dozen sprites in a crowd is the one you're driving — it never changes.
     ctx.save();
-    ctx.strokeStyle = "rgba(125,211,252,0.75)";
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = classColor;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.ellipse(x, y + 2, 12, 5, 0, 0, TAU);
     ctx.stroke();
-    ctx.fillStyle = "rgba(125,211,252,0.95)";
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = classColor;
     ctx.beginPath();
     ctx.arc(x + Math.cos(a.facing) * 17, y + 2 + Math.sin(a.facing) * 7, 2.6, 0, TAU);
     ctx.fill();
     ctx.restore();
 
-    // The swing arc is drawn before the body so the blade reads as coming from the hand.
-    if (a.swingTimer > 0 && !d.player.usesStaff) {
-      const t = 1 - a.swingTimer / 0.13;
+    // An ultimate gets a ring of its own colour so it is never in doubt.
+    if (a.ultimate) {
+      const spec = ULTIMATES[a.ultimate];
+      const areaMult = hero.player.areaMult;
       ctx.save();
-      ctx.globalAlpha = 0.85 * (1 - t);
-      ctx.strokeStyle = "#e8f4ff";
-      ctx.lineWidth = 7;
-      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.5 + Math.sin(d.elapsed * 22) * 0.18;
+      ctx.strokeStyle = spec.color;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      const spread = Math.PI * 0.75;
-      const from = a.swingAngle - spread / 2 + spread * t * 0.4;
-      ctx.arc(x, y - 8, 42, from, from + spread * 0.8);
+      ctx.arc(x, y - 6, 18 + Math.sin(d.elapsed * 14) * 3, 0, TAU);
       ctx.stroke();
+      if (spec.kind === "spin" || spec.kind === "storm") {
+        ctx.globalAlpha = 0.28;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(x, y - 6, spec.radius * areaMult * 0.9, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // The ward reads as a bubble, because that is what everyone expects a shield to
+    // look like and this is not the place to be clever.
+    if (hero.ward > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.35 + Math.sin(d.elapsed * 6) * 0.1;
+      ctx.strokeStyle = "#c084fc";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y - 6, 20, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = "#c084fc";
+      ctx.fill();
       ctx.restore();
     }
 
     const flip = Math.cos(a.facing) < 0;
+    // Facing away from the camera puts the weapon behind the body, which is the whole
+    // reason the two are drawn separately rather than baked into one sprite.
+    const behind = Math.sin(a.facing) < -0.25;
+    if (behind) this.drawWeapon(ctx, hero, x, y);
+
+    const body = heroSprite(hero.appearance);
+    const key = heroKey(hero.appearance);
     // Blink during i-frames so it's obvious when you're safe.
     const blinking = a.invulnTimer > 0 && Math.floor(d.elapsed * 22) % 2 === 0;
     ctx.save();
     if (a.dashTimer > 0) ctx.globalAlpha = 0.65;
     if (a.hitFlash > 0) {
-      drawSprite(ctx, silhouette("hero", "#ff6b6b"), x, y, flip);
-    } else if (blinking) {
-      ctx.globalAlpha *= 0.45;
-      drawSprite(ctx, sprite("hero"), x, y, flip);
+      drawSprite(ctx, silhouetteCanvas(body, key, "#ff6b6b"), x, y, flip);
     } else {
-      drawSprite(ctx, sprite("hero"), x, y, flip);
+      if (blinking) ctx.globalAlpha *= 0.45;
+      drawSprite(ctx, body, x, y, flip);
     }
+    ctx.restore();
+
+    if (!behind) this.drawWeapon(ctx, hero, x, y);
+  }
+
+  /**
+   * The weapon in your hand, drawn as the thing it actually is and animated along the
+   * swing the simulation resolved. Everything else about a build is a number on a menu;
+   * this is the one part of it you can see from across the room.
+   */
+  private drawWeapon(ctx: CanvasRenderingContext2D, hero: Hero, x: number, y: number): void {
+    const a = hero.avatar;
+    const spec = hero.player.weapon;
+    const item = hero.player.equipment.weapon;
+    const skinId = hero.appearance.weapon;
+    const rarity = item?.rarity ?? null;
+    const canvas = weaponSprite(spec.id, skinId, rarity);
+    const grip = weaponGrip(spec.id);
+    const glow = weaponGlow(skinId, rarity);
+
+    const swinging = a.swingTimer > 0;
+    const t = swinging ? clamp(1 - a.swingTimer / SWING_DRAW_TIME, 0, 1) : 0;
+    // At rest the weapon is held out to one side; in a swing it follows the same arc,
+    // thrust or spin the hitbox took.
+    let angle = a.facing + 0.45;
+    let hold = 7;
+    if (swinging) {
+      switch (spec.pattern) {
+        case "thrust":
+          angle = a.swingAngle;
+          hold = 6 + spec.reach * 0.3 * t;
+          break;
+        case "bolt":
+          angle = a.swingAngle - 0.55 + t * 0.35;
+          hold = 8;
+          break;
+        case "orb":
+          angle = a.swingAngle + t * TAU;
+          hold = 11;
+          break;
+        default: {
+          const spread = Math.min(spec.arc, TAU - 0.01);
+          angle = a.swingAngle - spread / 2 + spread * t;
+          hold = 9;
+        }
+      }
+    }
+
+    const px = x + Math.cos(angle) * hold;
+    const py = y - 8 + Math.sin(angle) * hold;
+    ctx.save();
+    if (a.dashTimer > 0) ctx.globalAlpha = 0.65;
+    if (glow) {
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 9;
+    }
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    // Mirror across the weapon's own axis when it points left, or the art hangs upside
+    // down for half of the compass.
+    if (Math.cos(angle) < 0) ctx.scale(1, -1);
+    ctx.drawImage(
+      canvas,
+      -grip.x * WEAPON_SCALE, -grip.y * WEAPON_SCALE,
+      canvas.width * WEAPON_SCALE, canvas.height * WEAPON_SCALE,
+    );
     ctx.restore();
   }
 
-  private drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, time: number): void {
-    const name = ENEMY_SPRITES[e.archetype.kind] ?? "grunt";
-    blob(ctx, x, y, e.radius);
+  private drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x0: number, y0: number, time: number): void {
+    const name: SpriteName = e.boss ? e.boss.spec.sprite : ENEMY_SPRITES[e.archetype.kind] ?? "grunt";
+    const scale = e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE;
+    // A slow bob, phase-shifted by position so a pack doesn't breathe in unison. The
+    // shadow stays put: it's the body that hops, not the monster's footing.
+    const x = x0;
+    const y = y0 - (e.boss ? 0 : Math.abs(Math.sin(time * 3.4 + x0 * 0.07)) * 1.6);
+    blob(ctx, x0, y0, e.radius);
 
     if (e.state === "spawning") {
       // Telegraph the spawn point so nothing appears without warning.
@@ -276,7 +542,7 @@ export class WorldRenderer {
       ctx.arc(x, y, e.radius * (2.4 - t * 1.4), 0, TAU);
       ctx.stroke();
       ctx.globalAlpha = t * 0.6;
-      drawSprite(ctx, sprite(name), x, y, false);
+      drawSprite(ctx, sprite(name), x, y, false, scale);
       ctx.restore();
       return;
     }
@@ -295,19 +561,37 @@ export class WorldRenderer {
       ctx.restore();
     }
 
-    if (e.hitFlash > 0) {
-      drawSprite(ctx, silhouette(name), x, y, flip);
+    // A boss winding something up glows in its own element — the same colour as the
+    // shape it is about to paint on the floor, so the two read as one warning.
+    const casting = e.boss ? e.boss.castTimer > 0 : false;
+    if (e.hitFlash > 0 && e.boss) {
+      // A boss is being hit constantly. A full white silhouette would strobe for the
+      // entire fight and hide the thing you're supposed to be reading, so it only
+      // brightens.
+      drawSprite(ctx, tinted(name, "#ffffff", 0.4), x, y, flip, scale);
+    } else if (e.hitFlash > 0) {
+      drawSprite(ctx, silhouette(name), x, y, flip, scale);
+    } else if (casting) {
+      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale);
     } else if (e.windup > 0) {
       // Flash red while winding up — this is the player's cue to dash.
-      drawSprite(ctx, silhouette(name, "#ff8a5c"), x, y, flip);
+      drawSprite(ctx, silhouette(name, "#ff8a5c"), x, y, flip, scale);
     } else if (e.elite) {
-      drawSprite(ctx, tinted(name, RARITY_COLORS[e.elite], 0.35), x, y, flip);
+      drawSprite(ctx, tinted(name, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale);
+    } else if (e.element !== "physical") {
+      // Infused monsters wear their element, so you can tell what is about to hit you.
+      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale);
     } else {
-      drawSprite(ctx, sprite(name), x, y, flip);
+      drawSprite(ctx, sprite(name), x, y, flip, scale);
     }
 
-    if (e.health < e.maxHealth) {
-      healthBar(ctx, x, y - e.radius * 2.6, e.health / e.maxHealth, e.archetype.kind === "boss" ? 44 : 26);
+    // The boss's own health lives on the frame at the top of the screen, not over its
+    // head — a bar 44 pixels wide under a forty-foot monster reads as a joke.
+    if (!e.boss && e.health < e.maxHealth) {
+      healthBar(ctx, x, y - e.radius * 2.6, e.health / e.maxHealth, 26);
+    }
+    if (e.statuses.length > 0) {
+      statusPips(ctx, e, x, y - e.radius * 2.6 - (e.health < e.maxHealth ? 8 : 0));
     }
   }
 
@@ -316,15 +600,24 @@ export class WorldRenderer {
       const { x, y } = lerpPos(p, alpha);
       ctx.save();
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 12;
+      // A tapering tail behind it, then the bolt, then a white core. Three passes and
+      // a bolt stops being a dot and starts being a thing travelling somewhere.
+      ctx.globalAlpha = 0.3;
       ctx.fillStyle = p.color;
+      for (let i = 3; i >= 1; i--) {
+        ctx.beginPath();
+        ctx.arc(x - p.vx * 0.012 * i, y - p.vy * 0.012 * i, p.radius * (1 - i * 0.22), 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.arc(x, y, p.radius, 0, TAU);
       ctx.fill();
-      // A short tail sells the direction of travel.
-      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = "#ffffff";
+      ctx.globalAlpha = 0.85;
       ctx.beginPath();
-      ctx.arc(x - p.vx * 0.02, y - p.vy * 0.02, p.radius * 0.7, 0, TAU);
+      ctx.arc(x, y, p.radius * 0.42, 0, TAU);
       ctx.fill();
       ctx.restore();
     }
@@ -334,6 +627,54 @@ export class WorldRenderer {
   reset(): void {
     this.initialized = false;
   }
+}
+
+/**
+ * A summoning-circle portal glyph: counter-rotating arcs, six turning runes, a lit
+ * core. Shared by a dungeon's own exit and every portal station in the ship hub, so a
+ * portal always reads as the same promise wherever it stands. `strength` is how active
+ * it looks — a dungeon exit dims while the floor still needs clearing; a hub portal is
+ * always at full strength, just in whichever colour its destination is known by.
+ */
+export function drawPortalGlyph(
+  ctx: CanvasRenderingContext2D, x: number, y: number, time: number, color: string, strength = 1,
+): void {
+  const t = time;
+  ctx.save();
+  ctx.globalAlpha = strength;
+  for (let i = 0; i < 3; i++) {
+    const r = 20 + i * 7 + Math.sin(t * 2 + i) * 3;
+    const spin = t * (0.7 + i * 0.3) * (i % 2 === 0 ? 1 : -1);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, spin, spin + Math.PI * 1.35);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = color;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU - t * 0.5;
+    const r = 30;
+    const s = 2.4 + Math.sin(t * 4 + i) * 0.8;
+    ctx.save();
+    ctx.translate(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.6);
+    ctx.rotate(a);
+    ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.restore();
+  }
+
+  ctx.globalAlpha = 0.28 * strength;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x, y, 18, 11, 0, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 0.5 * strength;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.ellipse(x, y, 6 + Math.sin(t * 3) * 1.5, 4, 0, 0, TAU);
+  ctx.fill();
+  ctx.restore();
 }
 
 /**
@@ -527,12 +868,29 @@ function drawTrap(ctx: CanvasRenderingContext2D, t: Trap, time: number): void {
   ctx.restore();
 }
 
+/**
+ * What a drop looks like on the floor. Gear used to be one gem glyph tinted by rarity;
+ * a dropped sword is now a sword, which is the difference between "loot appeared" and
+ * "a sword appeared" from twenty feet away.
+ */
 function pickupSprite(p: Pickup): HTMLCanvasElement {
   switch (p.kind) {
     case "coin": return sprite("coin");
     case "key": return sprite("key");
     case "potion": return sprite("potion");
-    case "item": return tinted("gem", p.rarity ? RARITY_COLORS[p.rarity] : "#ffffff", 0.95);
+    case "gem": return sprite("gem");
+    // No dedicated art for materials — a gem tinted by the element it's made of reads
+    // clearly enough at a glance, and it keeps every planet from needing its own icon.
+    case "material": return p.element ? tinted("gem", ELEMENT_COLORS[p.element], 0.75) : sprite("gem");
+    case "item": {
+      const item = p.item;
+      if (!item) return sprite("capsule");
+      if (item.family) return weaponSprite(item.family, null, item.rarity);
+      const icon = ITEM_ICONS[item.type];
+      return icon
+        ? tinted(icon, RARITY_COLORS[item.rarity], 0.4)
+        : tinted("capsule", RARITY_COLORS[item.rarity], 0.6);
+    }
     default: return sprite("coin");
   }
 }
@@ -557,4 +915,148 @@ function healthBar(ctx: CanvasRenderingContext2D, x: number, y: number, pct: num
   ctx.fillRect(x - width / 2 - 1, y - 1, width + 2, h + 2);
   ctx.fillStyle = pct > 0.5 ? "#4ade80" : pct > 0.22 ? "#fbbf24" : "#ef4444";
   ctx.fillRect(x - width / 2, y, width * clamp(pct, 0, 1), h);
+}
+
+
+/**
+ * A telegraph, drawn as the shape it will damage plus a sweep that fills as the
+ * wind-up runs out. Read the shape, then read how long you have — that pair is the
+ * entire skill of a boss fight, so both have to be unmistakable at a glance.
+ */
+function drawTelegraph(ctx: CanvasRenderingContext2D, t: Telegraph, time: number): void {
+  const progress = clamp(1 - t.remaining / Math.max(0.001, t.total), 0, 1);
+  // Ramps up as it approaches: a zone that is about to go off should be shouting.
+  const urgency = 0.18 + progress * 0.3;
+
+  ctx.save();
+  ctx.strokeStyle = t.color;
+  ctx.fillStyle = t.color;
+  ctx.lineWidth = 2.5;
+
+  switch (t.shape) {
+    case "circle": {
+      ctx.globalAlpha = urgency;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius, 0, TAU);
+      ctx.fill();
+      // The filling disc is the clock.
+      ctx.globalAlpha = 0.32;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * progress, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius, 0, TAU);
+      ctx.stroke();
+      break;
+    }
+    case "donut": {
+      // Everything outside the hole is lethal, so the hole is drawn as the safe thing:
+      // green, outlined, and impossible to mistake for the danger.
+      ctx.globalAlpha = urgency;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius, 0, TAU);
+      ctx.arc(t.x, t.y, t.inner, 0, TAU, true);
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "#4ade80";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.inner, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.inner + (t.radius - t.inner) * progress * 0.35, 0, TAU);
+      ctx.stroke();
+      break;
+    }
+    case "cone": {
+      ctx.globalAlpha = urgency;
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.arc(t.x, t.y, t.radius, t.angle - t.arc / 2, t.angle + t.arc / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.34;
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.arc(t.x, t.y, t.radius * progress, t.angle - t.arc / 2, t.angle + t.arc / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      break;
+    }
+    case "line": {
+      ctx.translate(t.x, t.y);
+      ctx.rotate(t.angle);
+      ctx.globalAlpha = urgency;
+      ctx.fillRect(0, -t.width, t.radius, t.width * 2);
+      ctx.globalAlpha = 0.34;
+      ctx.fillRect(0, -t.width, t.radius * progress, t.width * 2);
+      ctx.globalAlpha = 0.9;
+      ctx.strokeRect(0, -t.width, t.radius, t.width * 2);
+      break;
+    }
+    case "none":
+      break;
+  }
+
+  // A pulse on the outline in the last third, for anyone watching their own feet.
+  if (progress > 0.66 && t.shape !== "none") {
+    ctx.globalAlpha = 0.25 + Math.sin(time * 34) * 0.25;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Fire, rot or worse, left on the floor. Drawn as something you'd rather not step in. */
+function drawGroundZone(ctx: CanvasRenderingContext2D, g: GroundZone, time: number): void {
+  const fade = clamp(g.remaining, 0, 1);
+  ctx.save();
+  ctx.globalAlpha = 0.28 * fade;
+  ctx.fillStyle = g.color;
+  ctx.beginPath();
+  ctx.ellipse(g.x, g.y, g.radius, g.radius * 0.72, 0, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 0.5 * fade;
+  ctx.strokeStyle = g.color;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Licks of whatever it is, so a puddle doesn't read as a decal.
+  ctx.globalAlpha = 0.4 * fade;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU + time * 1.4;
+    const r = g.radius * (0.3 + 0.4 * Math.abs(Math.sin(time * 3 + i)));
+    ctx.beginPath();
+    ctx.arc(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r * 0.7, 2.5 + Math.sin(time * 6 + i) * 1.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Little coloured squares over a monster for whatever is currently eating it. */
+function statusPips(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number): void {
+  const pips = e.statuses.slice(0, 4);
+  const size = 4;
+  const gap = 2;
+  const total = pips.length * (size + gap) - gap;
+  ctx.save();
+  pips.forEach((s, i) => {
+    const spec = STATUSES[s.kind];
+    ctx.fillStyle = ELEMENT_COLORS[spec.element];
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(x - total / 2 + i * (size + gap), y - size - 2, size, size);
+    // A stacked ailment gets a brighter cap, so five stacks of poison is visible.
+    if (s.stacks > 1) {
+      ctx.fillStyle = "#ffffff";
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(x - total / 2 + i * (size + gap), y - size - 2, size, 1);
+    }
+  });
+  ctx.restore();
 }

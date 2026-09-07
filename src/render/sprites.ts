@@ -1,25 +1,47 @@
 /**
- * Procedural pixel art. Every sprite is a grid of characters plus a palette, baked
- * into an offscreen canvas once at boot. There are no binary art assets in this
- * project on purpose — to add a sprite, add a grid here.
+ * Baking, compositing and caching. The pixels live next door in `pixels.ts`, which is
+ * pure; this module is the half that needs a DOM, so it owns every canvas.
  *
- * Palette keys are shared across grids so the same silhouette can be recolored into
- * a different monster without duplicating the artwork.
+ * Two things happen here that didn't used to:
+ *
+ * 1. **A character is composed, not drawn.** Back item, body, hair, face, ears and hat
+ *    are separate grids stacked into one canvas and cached against the appearance that
+ *    produced it. That's what makes a wardrobe possible without an artist: a witch hat
+ *    is one grid, and it lands correctly on all five hairstyles and eight skin tones.
+ * 2. **A weapon is its own sprite.** It's authored pointing right and rotated to the
+ *    swing at draw time, and its palette comes from the item's rarity unless a cosmetic
+ *    skin overrides it — so what's in your hand is visible, and reskinnable.
  */
 
-export type Palette = Record<string, string>;
+import { CHESTS, type ChestTier } from "../data/chests";
+import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
+import { isWeaponType, type ItemType } from "../data/items";
+import { RARITY_COLORS, type Rarity } from "../data/rarity";
+import type { WeaponFamily } from "../data/weapons";
+import {
+  BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
+  ICON_ARMOR, ICON_CAPSULE, ICON_COIN,
+  ICON_GEM, ICON_GLOVES, ICON_KEY, ICON_NECKLACE, ICON_POTION, ICON_RING, ICON_SHIELD,
+  MOB_BRUTE, MOB_CASTER, MOB_CRAWLER, MOB_IMP, MOB_RANGER, PALETTES as P, PROP_BONES,
+  PROP_CHEST, PROP_CRYSTAL, PROP_MUSHROOM, PROP_ROCK, PROP_TORCH, WEAPON_ART,
+  bodyPalette, cosmeticPalette, hairPalette, rarityWeaponPalette, weaponPalette,
+  type Grid, type Palette,
+} from "./pixels";
 
-/** '.' is always transparent. Every row in a grid must be the same length. */
-export type Grid = readonly string[];
+export type { Grid, Palette } from "./pixels";
+export { CHAR_W, CHAR_H } from "./pixels";
 
-function bake(grid: Grid, palette: Palette): HTMLCanvasElement {
-  const h = grid.length;
-  const w = grid[0]?.length ?? 0;
+function blank(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  for (let y = 0; y < h; y++) {
+  return { canvas, ctx: canvas.getContext("2d")! };
+}
+
+/** Paints one grid into a context at an offset. Unknown palette keys are skipped. */
+function stamp(ctx: CanvasRenderingContext2D, grid: Grid, palette: Palette, dx = 0, dy = 0): void {
+  const w = grid[0]?.length ?? 0;
+  for (let y = 0; y < grid.length; y++) {
     const row = grid[y]!;
     if (row.length !== w) throw new Error(`ragged sprite row ${y}: ${row.length} != ${w}`);
     for (let x = 0; x < w; x++) {
@@ -28,272 +50,60 @@ function bake(grid: Grid, palette: Palette): HTMLCanvasElement {
       const color = palette[ch];
       if (!color) continue;
       ctx.fillStyle = color;
-      ctx.fillRect(x, y, 1, 1);
+      ctx.fillRect(dx + x, dy + y, 1, 1);
     }
   }
+}
+
+function bake(grid: Grid, palette: Palette): HTMLCanvasElement {
+  const { canvas, ctx } = blank(grid[0]?.length ?? 0, grid.length);
+  stamp(ctx, grid, palette);
   return canvas;
 }
 
-// --- grids ----------------------------------------------------------------
-
-/** Hooded adventurer, 12x14. Also the base silhouette for humanoid enemies. */
-const HUMANOID: Grid = [
-  "............",
-  "....4444....",
-  "...444444...",
-  "...411114...",
-  "...417714...",
-  "...411114...",
-  "..22222222..",
-  ".2223223222.",
-  ".2222222222.",
-  "..22222222..",
-  "..22222222..",
-  "..11....11..",
-  "..66....66..",
-  "..66....66..",
-];
-
-/** Low, many-legged, 12x10. */
-const CRAWLER: Grid = [
-  "............",
-  "..6......6..",
-  "...6....6...",
-  "....2222....",
-  "...222222...",
-  "..22722722..",
-  "..22222222..",
-  "...222222...",
-  "..6......6..",
-  "............",
-];
-
-/** Heavy armored bruiser, 16x16. */
-const BRUTE: Grid = [
-  "................",
-  ".....444444.....",
-  "....44444444....",
-  "....47744774....",
-  "....44444444....",
-  "...4444444444...",
-  "..222222222222..",
-  ".22233222233222.",
-  ".22222222222222.",
-  ".22222222222222.",
-  "..222222222222..",
-  "..222222222222..",
-  "..222......222..",
-  "..111......111..",
-  "..666......666..",
-  "..666......666..",
-];
-
-/** Floating robed caster, 12x14 — no legs, hem frays into nothing. */
-const CASTER: Grid = [
-  "............",
-  "....2222....",
-  "...222222...",
-  "...277772...",
-  "...222222...",
-  "..22222222..",
-  ".2222222222.",
-  ".2223223222.",
-  ".2222222222.",
-  "..22222222..",
-  "..22222222..",
-  "...222222...",
-  "..2.2..2.2..",
-  "............",
-];
-
-/** Boss: huge, horned, 20x20. */
-const BOSS: Grid = [
-  "....................",
-  "..5..............5..",
-  "..55..........55....",
-  "...555......555.....",
-  ".....44444444.......",
-  "....4444444444......",
-  "....4477444477......",
-  "....4444444444......",
-  "...444444444444.....",
-  "..2222222222222.....",
-  ".222222222222222....",
-  ".223332222233322....",
-  ".222222222222222....",
-  ".222222222222222....",
-  "..2222222222222.....",
-  "..2222222222222.....",
-  "..222.......222.....",
-  "..111.......111.....",
-  "..666.......666.....",
-  "..666.......666.....",
-];
-
-const COIN: Grid = [
-  "..####..",
-  ".######.",
-  "#####5##",
-  "####55##",
-  "###55###",
-  "##55####",
-  ".######.",
-  "..####..",
-];
-
-const KEY: Grid = [
-  "..###...",
-  ".#...#..",
-  ".#...#..",
-  "..###...",
-  "...#....",
-  "...##...",
-  "...#....",
-  "...##...",
-];
-
-const POTION: Grid = [
-  "..####..",
-  "...##...",
-  "...##...",
-  "..####..",
-  ".##77##.",
-  "#777777#",
-  "#7777777",
-  ".######.",
-];
-
-/** Generic dropped-gear glyph; tinted by the item's rarity at draw time. */
-const GEM: Grid = [
-  "...##...",
-  "..####..",
-  ".##55##.",
-  "########",
-  ".######.",
-  "..####..",
-  "...##...",
-  "........",
-];
-
-/** Wall torch: a bracket and a flame. Placed against blocks by the level generator. */
-const TORCH: Grid = [
-  "..55..",
-  ".5775.",
-  ".5775.",
-  "..77..",
-  "..44..",
-  "..44..",
-  "..44..",
-  "..44..",
-  "..44..",
-];
-
-const BONES: Grid = [
-  "..........",
-  ".##....##.",
-  "..######..",
-  ".##....##.",
-  "..........",
-  "..........",
-];
-
-const MUSHROOM: Grid = [
-  "..####..",
-  ".######.",
-  "##5##5##",
-  ".######.",
-  "...44...",
-  "...44...",
-  "..4444..",
-  "........",
-];
-
-/** Tinted to the biome accent at draw time, so one grid covers every cave. */
-const CRYSTAL: Grid = [
-  "...##...",
-  "..####..",
-  ".######.",
-  ".##55##.",
-  ".######.",
-  "..####..",
-  "..####..",
-  "...##...",
-];
-
-const ROCK: Grid = [
-  "..........",
-  "...####...",
-  "..######..",
-  ".########.",
-  ".########.",
-  "..######..",
-  "..........",
-];
-
-const CHEST: Grid = [
-  "................",
-  "..############..",
-  ".##44444444444#.",
-  ".#4444444444444.",
-  ".##############.",
-  ".#4444##44444444",
-  ".#4444##44444444",
-  ".##############.",
-  "..############..",
-  "................",
-];
-
-// --- palettes -------------------------------------------------------------
-
-const P = {
-  hero: { "1": "#e8b98a", "2": "#3f5f9e", "3": "#2c4272", "4": "#c9d3e0", "6": "#3a3a48", "7": "#7fe3ff" },
-  grunt: { "1": "#8a6a52", "2": "#7a3b3b", "3": "#5a2a2a", "4": "#9a9a86", "6": "#2e2626", "7": "#ff8a5c" },
-  swarmer: { "2": "#5c3f7a", "6": "#33244a", "7": "#ff5cf0" },
-  archer: { "1": "#8a6a52", "2": "#2f6b4a", "3": "#1f4a33", "4": "#a8b08a", "6": "#28301f", "7": "#c8ff5c" },
-  brute: { "1": "#6f5a44", "2": "#5a4a3a", "3": "#3d3227", "4": "#8f8f9c", "6": "#241e18", "7": "#ff5c3c" },
-  caster: { "2": "#4b2f7a", "3": "#2f1c52", "7": "#d08cff" },
-  boss: { "1": "#4a3a4a", "2": "#3a1230", "3": "#220a1c", "4": "#b0304a", "5": "#ffd34d", "6": "#160610", "7": "#ff2d2d" },
-  coin: { "#": "#e0a020", "5": "#ffe9a8" },
-  key: { "#": "#dde5ef" },
-  potion: { "#": "#cfd8e3", "7": "#4ade80" },
-  gem: { "#": "#ffffff", "5": "#ffffff" },
-  chest: { "#": "#5a3b22", "4": "#c8912f" },
-  torch: { "4": "#5a3b22", "5": "#ffe9a8", "7": "#ff8a3c" },
-  bones: { "#": "#d9d4c5" },
-  mushroom: { "#": "#b23a48", "4": "#e6d6b8", "5": "#f7e3d0" },
-  crystal: { "#": "#8b5cf6", "5": "#e9d5ff" },
-  rock: { "#": "#6b7280" },
-} satisfies Record<string, Palette>;
-
-// --- baked atlas ----------------------------------------------------------
+// --- the baked atlas ------------------------------------------------------
 
 export type SpriteName =
-  | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster" | "boss"
-  | "coin" | "key" | "potion" | "gem" | "chest"
-  | "torch" | "bones" | "mushroom" | "crystal" | "rock";
+  | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster"
+  | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
+  | "coin" | "key" | "potion" | "gem" | "capsule" | "chest"
+  | "torch" | "bones" | "mushroom" | "crystal" | "rock"
+  | "armor" | "shield" | "ring" | "gloves" | "necklace";
 
 let atlas: Record<SpriteName, HTMLCanvasElement> | null = null;
 
-/** Bakes every sprite. Must be called once after the DOM exists, before rendering. */
+/** Bakes every fixed sprite. Must run once after the DOM exists, before rendering. */
 export function buildSprites(): void {
   atlas = {
-    hero: bake(HUMANOID, P.hero),
-    grunt: bake(HUMANOID, P.grunt),
-    archer: bake(HUMANOID, P.archer),
-    brute: bake(BRUTE, P.brute),
-    swarmer: bake(CRAWLER, P.swarmer),
-    caster: bake(CASTER, P.caster),
-    boss: bake(BOSS, P.boss),
-    coin: bake(COIN, P.coin),
-    key: bake(KEY, P.key),
-    potion: bake(POTION, P.potion),
-    gem: bake(GEM, P.gem),
-    chest: bake(CHEST, P.chest),
-    torch: bake(TORCH, P.torch),
-    bones: bake(BONES, P.bones),
-    mushroom: bake(MUSHROOM, P.mushroom),
-    crystal: bake(CRYSTAL, P.crystal),
-    rock: bake(ROCK, P.rock),
+    // A generic adventurer, for anything that needs a body without an appearance
+    // behind it. The player is composed instead — see `heroSprite`.
+    hero: composeCharacter(null),
+    grunt: bake(MOB_IMP, P.imp),
+    archer: bake(MOB_RANGER, P.ranger),
+    brute: bake(MOB_BRUTE, P.brute),
+    swarmer: bake(MOB_CRAWLER, P.crawler),
+    caster: bake(MOB_CASTER, P.caster),
+    boss: bake(BOSS_GRIDS.boss!, P.warden),
+    bossChoir: bake(BOSS_GRIDS.bossChoir!, P.choir),
+    bossColossus: bake(BOSS_GRIDS.bossColossus!, P.colossus),
+    bossHerald: bake(BOSS_GRIDS.bossHerald!, P.herald),
+    bossNameless: bake(BOSS_GRIDS.bossNameless!, P.nameless),
+    coin: bake(ICON_COIN, P.coin),
+    key: bake(ICON_KEY, P.key),
+    potion: bake(ICON_POTION, P.potion),
+    gem: bake(ICON_GEM, P.gem),
+    capsule: bake(ICON_CAPSULE, P.capsule),
+    chest: bake(PROP_CHEST, P.chest),
+    torch: bake(PROP_TORCH, P.torch),
+    bones: bake(PROP_BONES, P.bones),
+    mushroom: bake(PROP_MUSHROOM, P.mushroom),
+    crystal: bake(PROP_CRYSTAL, P.crystal),
+    rock: bake(PROP_ROCK, P.rock),
+    armor: bake(ICON_ARMOR, P.armor),
+    shield: bake(ICON_SHIELD, P.shield),
+    ring: bake(ICON_RING, P.ring),
+    gloves: bake(ICON_GLOVES, P.gloves),
+    necklace: bake(ICON_NECKLACE, P.necklace),
   };
 }
 
@@ -302,43 +112,238 @@ export function sprite(name: SpriteName): HTMLCanvasElement {
   return atlas[name];
 }
 
-/** Returns a recolored copy of a sprite, for rarity-tinted elites and gear drops. */
-const tintCache = new Map<string, HTMLCanvasElement>();
-export function tinted(name: SpriteName, color: string, strength = 0.6): HTMLCanvasElement {
-  const key = `${name}|${color}|${strength}`;
-  const hit = tintCache.get(key);
+// --- characters -----------------------------------------------------------
+
+function worn(id: string | null): Cosmetic | null {
+  if (!id) return null;
+  return COSMETICS_BY_ID[id] ?? null;
+}
+
+/**
+ * Stacks a character into one canvas: back item behind everything, then the body, hair,
+ * face, ears and finally the hat. Order matters and is the whole trick — cat ears go on
+ * top of the hair and under the witch hat, exactly as anyone would expect.
+ */
+function composeCharacter(appearance: Appearance | null): HTMLCanvasElement {
+  const a = appearance ?? {
+    skin: 1, hair: 0, hairStyle: "bob" as const, eyes: 0, dye: 0,
+    hat: null, ears: null, face: null, back: null, aura: null, weapon: null,
+  };
+  const { canvas, ctx } = blank(CHAR_W, CHAR_H);
+
+  const back = worn(a.back);
+  if (back?.art) {
+    const art = COSMETIC_ART[back.art];
+    if (art) stamp(ctx, art.grid, cosmeticPalette(back), art.dx, art.dy);
+  }
+
+  stamp(ctx, BODY, bodyPalette(a), BODY_DX, BODY_DY);
+
+  const hair = HAIR[a.hairStyle] ?? HAIR.bob!;
+  stamp(ctx, hair, hairPalette(a), BODY_DX, BODY_DY);
+
+  for (const id of [a.face, a.ears, a.hat]) {
+    const c = worn(id);
+    if (!c?.art) continue;
+    const art = COSMETIC_ART[c.art];
+    if (art) stamp(ctx, art.grid, cosmeticPalette(c), art.dx, art.dy);
+  }
+
+  return canvas;
+}
+
+/** Everything about an appearance that changes the pixels, as one cache key. */
+function appearanceKey(a: Appearance): string {
+  return [
+    a.skin, a.hair, a.hairStyle, a.eyes, a.dye,
+    a.hat ?? "-", a.ears ?? "-", a.face ?? "-", a.back ?? "-",
+  ].join("|");
+}
+
+const heroCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * The player's body, composed and cached. An appearance only changes in town, so this
+ * misses once per wardrobe edit and never during a dive.
+ */
+export function heroSprite(appearance: Appearance): HTMLCanvasElement {
+  const key = appearanceKey(appearance);
+  const hit = heroCache.get(key);
+  if (hit) return hit;
+  const made = composeCharacter(appearance);
+  // A wardrobe session can produce a lot of one-off looks; keep the map from growing
+  // without bound while still holding everything anyone is actually wearing.
+  if (heroCache.size > 64) heroCache.clear();
+  heroCache.set(key, made);
+  return made;
+}
+
+/** Cache key for anything derived from an appearance, so tints can be cached too. */
+export function heroKey(appearance: Appearance): string {
+  return appearanceKey(appearance);
+}
+
+// --- weapons --------------------------------------------------------------
+
+const weaponCache = new Map<string, HTMLCanvasElement>();
+
+/** The weapon in your hand, skinned by cosmetic if you have one and by rarity if not. */
+export function weaponSprite(
+  family: WeaponFamily,
+  skinId: string | null,
+  rarity: Rarity | null,
+): HTMLCanvasElement {
+  const key = `${family}|${skinId ?? "-"}|${rarity ?? "-"}`;
+  const hit = weaponCache.get(key);
   if (hit) return hit;
 
-  const src = sprite(name);
-  const out = document.createElement("canvas");
-  out.width = src.width;
-  out.height = src.height;
-  const ctx = out.getContext("2d")!;
+  const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
+  const skin = skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
+  const made = bake(art.grid, weaponPalette(skin ?? rarityWeaponPalette(rarity)));
+  if (weaponCache.size > 128) weaponCache.clear();
+  weaponCache.set(key, made);
+  return made;
+}
+
+/** Where the grip sits inside a weapon sprite, so it can be rotated around the hand. */
+export function weaponGrip(family: WeaponFamily): { x: number; y: number } {
+  const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
+  return { x: art.ax, y: art.ay };
+}
+
+/** The bloom colour around a weapon, if it has one. Null for ordinary metal. */
+export function weaponGlow(skinId: string | null, rarity: Rarity | null): string | null {
+  const skin = skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
+  return (skin ?? rarityWeaponPalette(rarity)).glow;
+}
+
+// --- chests -----------------------------------------------------------
+
+/**
+ * A little icon for the chest shop. A cache with exactly one weapon family shows that
+ * weapon for real; the two armor/trinket category caches show their slot's icon; a
+ * cache open to a whole group (any weapon, or nothing narrower than a rarity floor)
+ * falls back to the chest prop, tinted with the chest's own listed colour so the shop
+ * still reads as one colour per chest even without a bespoke grid for each of the 28.
+ */
+export function chestIcon(tier: ChestTier): HTMLCanvasElement {
+  const info = CHESTS[tier];
+  const types = info.types;
+
+  const only = types?.length === 1 ? types[0]! : null;
+  if (only && isWeaponType(only)) {
+    return weaponSprite(only, null, null);
+  }
+  if (types?.includes("armor")) {
+    return tintedCanvas(sprite("armor"), "chestIcon:armor", info.color, 0.55);
+  }
+  if (types?.includes("ring")) {
+    return tintedCanvas(sprite("ring"), "chestIcon:ring", info.color, 0.55);
+  }
+  if (types && types.length > 1 && types.every(isWeaponType)) {
+    return tintedCanvas(
+      weaponSprite("sword", null, null), "chestIcon:anyWeapon", info.color, 0.4,
+    );
+  }
+  return tintedCanvas(sprite("chest"), "chestIcon:chest", info.color, 0.55);
+}
+
+// --- items ----------------------------------------------------------------
+
+/**
+ * One rolled item as an icon, for anywhere the loot itself has to be *seen* rather than
+ * listed — the chest slot machine, mainly. A weapon is its real family sprite painted in
+ * its rarity's palette (so a mythic axe already glows before anyone reads the word); the
+ * five non-weapon slots share their existing atlas icon, tinted toward the rarity colour,
+ * because a ring is a ring and the rarity is the only thing worth telling apart at 32px.
+ */
+export function itemIcon(type: ItemType, rarity: Rarity): HTMLCanvasElement {
+  if (isWeaponType(type)) return weaponSprite(type, null, rarity);
+  return tintedCanvas(sprite(type), `itemIcon:${type}`, RARITY_COLORS[rarity], 0.5);
+}
+
+// --- cosmetic previews ----------------------------------------------------
+
+const previewCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * One cosmetic on its own, for the wardrobe list. Auras and weapon skins have no grid,
+ * so they preview as a swatch of their colour instead of nothing at all.
+ */
+export function cosmeticPreview(id: string): HTMLCanvasElement {
+  const hit = previewCache.get(id);
+  if (hit) return hit;
+
+  const c = COSMETICS_BY_ID[id];
+  let made: HTMLCanvasElement;
+  if (!c) {
+    made = blank(1, 1).canvas;
+  } else if (c.art && COSMETIC_ART[c.art]) {
+    const art = COSMETIC_ART[c.art]!;
+    made = bake(art.grid, cosmeticPalette(c));
+  } else if (c.weapon) {
+    made = bake(WEAPON_ART.sword!.grid, weaponPalette(c.weapon));
+  } else {
+    const { canvas, ctx } = blank(8, 8);
+    ctx.fillStyle = c.colors[0] ?? "#ffffff";
+    ctx.beginPath();
+    ctx.arc(4, 4, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    made = canvas;
+  }
+  previewCache.set(id, made);
+  return made;
+}
+
+// --- derived canvases -----------------------------------------------------
+
+const tintCache = new Map<string, HTMLCanvasElement>();
+
+/** A recoloured copy of any canvas. `key` must identify the source uniquely. */
+export function tintedCanvas(
+  src: HTMLCanvasElement, key: string, color: string, strength = 0.6,
+): HTMLCanvasElement {
+  const id = `${key}|${color}|${strength}`;
+  const hit = tintCache.get(id);
+  if (hit) return hit;
+
+  const { canvas, ctx } = blank(src.width, src.height);
   ctx.drawImage(src, 0, 0);
   ctx.globalCompositeOperation = "source-atop";
   ctx.globalAlpha = strength;
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, out.width, out.height);
-  tintCache.set(key, out);
-  return out;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (tintCache.size > 512) tintCache.clear();
+  tintCache.set(id, canvas);
+  return canvas;
 }
 
-/** Solid-color silhouette, used for the white flash when something takes a hit. */
 const flashCache = new Map<string, HTMLCanvasElement>();
-export function silhouette(name: SpriteName, color = "#ffffff"): HTMLCanvasElement {
-  const key = `${name}|${color}`;
-  const hit = flashCache.get(key);
+
+/** Solid-colour silhouette of any canvas — the white flash when something takes a hit. */
+export function silhouetteCanvas(
+  src: HTMLCanvasElement, key: string, color = "#ffffff",
+): HTMLCanvasElement {
+  const id = `${key}|${color}`;
+  const hit = flashCache.get(id);
   if (hit) return hit;
 
-  const src = sprite(name);
-  const out = document.createElement("canvas");
-  out.width = src.width;
-  out.height = src.height;
-  const ctx = out.getContext("2d")!;
+  const { canvas, ctx } = blank(src.width, src.height);
   ctx.drawImage(src, 0, 0);
   ctx.globalCompositeOperation = "source-in";
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, out.width, out.height);
-  flashCache.set(key, out);
-  return out;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (flashCache.size > 512) flashCache.clear();
+  flashCache.set(id, canvas);
+  return canvas;
+}
+
+/** Tinted copy of an atlas sprite, for rarity-tinted elites and infused monsters. */
+export function tinted(name: SpriteName, color: string, strength = 0.6): HTMLCanvasElement {
+  return tintedCanvas(sprite(name), name, color, strength);
+}
+
+/** Silhouette of an atlas sprite. */
+export function silhouette(name: SpriteName, color = "#ffffff"): HTMLCanvasElement {
+  return silhouetteCanvas(sprite(name), name, color);
 }

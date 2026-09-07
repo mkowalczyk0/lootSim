@@ -1,14 +1,26 @@
 /**
- * Procedural floor generation. Every dive builds a fresh arena: a layout of solid
- * blocks, a scatter of hazards, and biome decoration — seeded, so a floor can be
- * rebuilt exactly from its seed.
+ * Procedural floor generation. Every dive builds a fresh dungeon: a graph of connected
+ * rooms, each with its own interior obstacles and a scatter of hazards and decoration —
+ * seeded, so a floor can be rebuilt exactly from its seed.
+ *
+ * The floor is a *dungeon*, not one big rectangle with furniture scattered on it. A
+ * macro grid of room slots is walked with a randomized spanning search (a handful of
+ * extra edges are added afterward so it has loops and side rooms, not one corridor),
+ * each visited slot becomes a real room with its own interior layout and doors only
+ * where it actually connects to a neighbor, and the gaps between connected rooms become
+ * corridors. Slots the walk never reaches are sealed off as solid rock rather than left
+ * as an unexplained gap in the floor. A boss floor is the one exception: it stays a
+ * single large arena, because the boss kit's ability radii are tuned against that shape
+ * and fragmenting it into rooms would quietly break "every phase needs an ability that
+ * reaches across the arena."
  *
  * Simulation only. Nothing here touches the DOM or the canvas; the renderer reads the
  * `Level` it produces and draws it.
  *
  * The generator's one hard promise is that the portal is always walkable from the
  * spawn point. It builds walls, checks connectivity on a coarse grid, and carves a
- * corridor if a layout ever manages to seal itself off.
+ * corridor if a layout ever manages to seal itself off — belt and braces on top of a
+ * room graph that is connected by construction.
  */
 
 import { clamp } from "../core/math";
@@ -59,6 +71,18 @@ export interface Prop {
   readonly scale: number;
 }
 
+/**
+ * Something to mine, planet floors only. It pays out once and then sits there dead —
+ * scattered preferentially into dead-end rooms, so a detour off the critical path is
+ * the thing that makes it worth taking.
+ */
+export interface ResourceNode {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  depleted: boolean;
+}
+
 export interface Level {
   readonly depth: number;
   readonly width: number;
@@ -71,6 +95,9 @@ export interface Level {
   readonly walls: readonly Wall[];
   readonly traps: Trap[];
   readonly props: readonly Prop[];
+  readonly resourceNodes: ResourceNode[];
+  /** How many rooms this floor is built from. One for a boss arena. */
+  readonly rooms: number;
   readonly start: { x: number; y: number };
   readonly portal: { x: number; y: number };
   readonly cols: number;
@@ -87,25 +114,62 @@ export interface Level {
 const GRID = 16;
 /** Half-width of the widest body that must fit through a gap. */
 const BODY_PAD = 14;
-/** Walls stay this far inside the arena so the perimeter is always a walkable ring. */
+/** Walls stay this far inside a room so its edges are always a walkable ring. */
 const MARGIN = 54;
 /** No walls within this radius of the spawn point or the portal. */
 const CLEAR_RADIUS = 78;
+/** World-unit gap between adjacent room slots — the corridor's length. */
+const ROOM_GAP = 76;
+/** Doorway and corridor width. Comfortably wider than anything that has to fit through. */
+const DOOR = 100;
+const WALL_T = 16;
+/** A room's interior only gets the subdividing layouts (chambers/gauntlet/ring) once
+ *  it's big enough for their internal doorway math to make sense; smaller rooms fall
+ *  back to open/pillars/rubble, which have no such minimum. */
+const SAFE_SUBDIV_MIN = 500;
 
-export function generateLevel(depth: number, rng: Rng): Level {
+export interface LevelOptions {
+  /**
+   * A boss floor. Raid abilities paint circles a hundred and eighty units across, so
+   * the arena stays a single big room from one of the open layouts, sized up rather
+   * than split into a graph — there is far less clutter to get pinned against while a
+   * quake goes off, and every ability radius in `data/bosses.ts` is tuned against a
+   * room shaped like this one.
+   */
+  readonly boss?: boolean;
+  /** Planet expeditions bring their own visual identity instead of the depth-bucketed biome. */
+  readonly biome?: BiomeStyle;
+  /** A bigger room graph — planets are meant to feel like somewhere to actually explore. */
+  readonly big?: boolean;
+  /** Resource nodes to scatter (planet floors only; zero or omitted means none). */
+  readonly nodeCount?: number;
+}
+
+const BOSS_LAYOUTS: readonly LayoutKind[] = ["open", "ring"];
+
+export function generateLevel(depth: number, rng: Rng, opts: LevelOptions = {}): Level {
   const d = Math.max(1, Math.floor(depth));
-  const biome = biomeFor(d);
+  const biome = opts.biome ?? biomeFor(d);
   const seed = rng.int(0, 2 ** 30);
+  const boss = opts.boss === true;
 
-  // Arenas grow with depth so the bigger swarms still have room to flank you.
-  const width = 640 + Math.min(380, d * 22);
+  if (boss) return generateBossFloor(d, biome, seed, rng);
+  return generateDungeon(d, biome, seed, rng, opts);
+}
+
+// --- the boss arena: one big room, not a graph -----------------------------
+
+function generateBossFloor(d: number, biome: BiomeStyle, seed: number, rng: Rng): Level {
+  // Bigger than an ordinary floor and sized up again from what it used to be, but not
+  // pushed as far as the room graph below — the ability radii in data/bosses.ts are
+  // tuned against this arena shape, and quietly shrinking them relative to the room
+  // would make "every phase needs an ability that reaches across the arena" stop
+  // being true.
+  const width = 1360 + Math.min(520, d * 13);
   const height = Math.round(width * 0.72);
-
-  const start = { x: width / 2, y: height - 84 };
-  const portal = { x: width / 2, y: 74 };
-
-  // Depth 1 is the tutorial floor: an empty room and nothing that can bite you.
-  const layout: LayoutKind = d === 1 ? "open" : rng.pick(biome.layouts);
+  const start = { x: width / 2, y: height - 100 };
+  const portal = { x: width / 2, y: 90 };
+  const layout = rng.pick(BOSS_LAYOUTS);
 
   let walls = buildWalls(layout, width, height, rng)
     .filter((w) => !nearPoint(w, start.x, start.y, CLEAR_RADIUS))
@@ -117,7 +181,6 @@ export function generateLevel(depth: number, rng: Rng): Level {
     grid = buildGrid(walls, width, height);
   }
   if (!isConnected(grid, width, height, start, portal)) {
-    // Should be unreachable; an empty room beats a floor you can't leave.
     walls = [];
     grid = buildGrid(walls, width, height);
   }
@@ -130,16 +193,321 @@ export function generateLevel(depth: number, rng: Rng): Level {
   const level: Level = {
     depth: d, width, height, biome, layout,
     label: LAYOUT_LABELS[layout], seed,
-    walls, traps: [], props: [],
+    walls, traps: [], props: [], resourceNodes: [], rooms: 1,
     start, portal, cols, rows, blocked, open, openCells,
   };
 
-  const traps = placeTraps(level, rng);
+  const traps = placeTraps(level, rng, true);
   const props = placeProps(level, rng);
   return { ...level, traps, props };
 }
 
-// --- layouts ---------------------------------------------------------------
+// --- the dungeon: a graph of connected rooms --------------------------------
+
+interface RoomSlot {
+  readonly col: number;
+  readonly row: number;
+  readonly x0: number;
+  readonly y0: number;
+  readonly w: number;
+  readonly h: number;
+  readonly cx: number;
+  readonly cy: number;
+}
+
+function generateDungeon(
+  d: number, biome: BiomeStyle, seed: number, rng: Rng, opts: LevelOptions,
+): Level {
+  // Depth one stays the tutorial floor: two empty rooms and nothing that can bite you,
+  // just enough to introduce a doorway before the game asks anything of you.
+  const tutorial = d === 1 && !opts.big;
+  const { cols, rows } = tutorial ? { cols: 2, rows: 1 } : gridDims(d, opts.big === true);
+
+  const roomSize = tutorial ? 340 : 360 + Math.min(170, d * 5);
+  const roomH = Math.round(roomSize * 0.82);
+  const outerMargin = 44;
+
+  const graph = buildRoomGraph(cols, rows, rng);
+  const slots = new Map<string, RoomSlot>();
+  for (const key of graph.visited) {
+    const [col, row] = parseKey(key);
+    const x0 = outerMargin + col * (roomSize + ROOM_GAP);
+    const y0 = outerMargin + row * (roomH + ROOM_GAP);
+    slots.set(key, { col, row, x0, y0, w: roomSize, h: roomH, cx: x0 + roomSize / 2, cy: y0 + roomH / 2 });
+  }
+
+  const width = outerMargin * 2 + cols * roomSize + (cols - 1) * ROOM_GAP;
+  const height = outerMargin * 2 + rows * roomH + (rows - 1) * ROOM_GAP;
+
+  const startSlot = slots.get(graph.startKey)!;
+  const endSlot = slots.get(graph.endKey)!;
+  const start = { x: startSlot.cx, y: startSlot.cy };
+  const portal = { x: endSlot.cx, y: endSlot.cy };
+
+  const degree = new Map<string, number>();
+  for (const key of graph.visited) degree.set(key, 0);
+  for (const e of graph.edges) {
+    const [a, b] = e.split("|");
+    degree.set(a!, (degree.get(a!) ?? 0) + 1);
+    degree.set(b!, (degree.get(b!) ?? 0) + 1);
+  }
+
+  let walls: Wall[] = [];
+  const roomLayouts: LayoutKind[] = [];
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const key = slotKey(col, row);
+      const slot = slots.get(key);
+      if (!slot) {
+        // Never reached by the walk: sealed off as solid rock rather than an
+        // unexplained gap in the floor.
+        walls.push({ x: outerMargin + col * (roomSize + ROOM_GAP), y: outerMargin + row * (roomH + ROOM_GAP), w: roomSize, h: roomH });
+        continue;
+      }
+
+      const up = neighborConnected(graph, col, row, 0, -1);
+      const down = neighborConnected(graph, col, row, 0, 1);
+      const left = neighborConnected(graph, col, row, -1, 0);
+      const right = neighborConnected(graph, col, row, 1, 0);
+      walls.push(...roomSide("h", slot.y0, slot.x0, slot.x0 + slot.w, slot.cx, up));
+      walls.push(...roomSide("h", slot.y0 + slot.h, slot.x0, slot.x0 + slot.w, slot.cx, down));
+      walls.push(...roomSide("v", slot.x0, slot.y0, slot.y0 + slot.h, slot.cy, left));
+      walls.push(...roomSide("v", slot.x0 + slot.w, slot.y0, slot.y0 + slot.h, slot.cy, right));
+
+      if (tutorial) { roomLayouts.push("open"); continue; }
+      // A room now and then is left empty on purpose — a breather, and one fewer
+      // chance for the obstacle scatter to read as clutter for its own sake.
+      if (rng.chance(0.22)) { roomLayouts.push("open"); continue; }
+      const roomSafe = slot.w >= SAFE_SUBDIV_MIN && slot.h >= SAFE_SUBDIV_MIN;
+      const pool = roomSafe ? biome.layouts : biome.layouts.filter((k) => k !== "chambers" && k !== "gauntlet" && k !== "ring");
+      const kind = pool.length > 0 ? rng.pick(pool) : "open";
+      roomLayouts.push(kind);
+      const interior = buildWalls(kind, slot.w, slot.h, rng);
+      walls.push(...translateWalls(interior, slot.x0, slot.y0));
+    }
+  }
+
+  // Corridors: a straight hallway through the gap between every pair of connected
+  // rooms, the same width as the doorways it lines up with on both ends.
+  for (const e of graph.edges) {
+    const [ak, bk] = e.split("|") as [string, string];
+    const a = slots.get(ak)!;
+    const b = slots.get(bk)!;
+    if (a.row === b.row) {
+      const left = a.col < b.col ? a : b;
+      const gx = left.x0 + left.w;
+      const midY = left.cy;
+      pushLane(walls, gx, left.y0, ROOM_GAP, left.h, midY, true);
+    } else {
+      const top = a.row < b.row ? a : b;
+      const gy = top.y0 + top.h;
+      const midX = top.cx;
+      pushLane(walls, top.x0, gy, top.w, ROOM_GAP, midX, false);
+    }
+  }
+
+  walls = walls
+    .filter((w) => !nearPoint(w, start.x, start.y, CLEAR_RADIUS))
+    .filter((w) => !nearPoint(w, portal.x, portal.y, CLEAR_RADIUS));
+
+  let grid = buildGrid(walls, width, height);
+  if (!isConnected(grid, width, height, start, portal)) {
+    walls = carveCorridor(walls, start, portal);
+    grid = buildGrid(walls, width, height);
+  }
+  if (!isConnected(grid, width, height, start, portal)) {
+    walls = [];
+    grid = buildGrid(walls, width, height);
+  }
+
+  const { cols: gcols, rows: grows, blocked } = grid;
+  const open = floodFrom(grid, width, height, start);
+  const openCells: number[] = [];
+  for (let i = 0; i < open.length; i++) if (open[i]) openCells.push(i);
+
+  const roomCount = slots.size;
+  const layout = roomLayouts.length > 0 ? rng.pick(roomLayouts) : "open";
+  const level: Level = {
+    depth: d, width, height, biome, layout,
+    label: roomCountLabel(roomCount), seed,
+    walls, traps: [], props: [], resourceNodes: [], rooms: roomCount,
+    start, portal, cols: gcols, rows: grows, blocked, open, openCells,
+  };
+
+  const traps = placeTraps(level, rng, false);
+  const props = placeProps(level, rng);
+  const leaves = [...slots.entries()]
+    .filter(([key]) => key !== graph.startKey && key !== graph.endKey && (degree.get(key) ?? 0) <= 1)
+    .map(([, slot]) => slot);
+  const others = [...slots.values()].filter((s) => !leaves.includes(s) && s !== startSlot && s !== endSlot);
+  const resourceNodes = placeResourceNodes(level, leaves, others, rng, opts.nodeCount ?? 0);
+  return { ...level, traps, props, resourceNodes };
+}
+
+function roomCountLabel(rooms: number): string {
+  if (rooms <= 1) return "A Single Chamber";
+  if (rooms <= 3) return "A Few Small Rooms";
+  if (rooms <= 6) return "Connected Chambers";
+  if (rooms <= 9) return "A Sprawling Warren";
+  return "A Vast Complex";
+}
+
+/** Bigger and busier the deeper you go; a `big` (planet) floor gets a room more in both directions. */
+function gridDims(depth: number, big: boolean): { cols: number; rows: number } {
+  const step = clamp(Math.floor(depth / 7), 0, 2);
+  const cols = clamp(2 + step + (big ? 1 : 0), 2, 5);
+  const rows = clamp(2 + Math.max(0, step - 1) + (big ? 1 : 0), 2, 4);
+  return { cols, rows };
+}
+
+function slotKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+function parseKey(key: string): [number, number] {
+  const [c, r] = key.split(",");
+  return [Number(c), Number(r)];
+}
+
+function edgeKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+interface RoomGraph {
+  readonly visited: Set<string>;
+  readonly edges: Set<string>;
+  readonly startKey: string;
+  readonly endKey: string;
+}
+
+/**
+ * A randomized spanning walk over the macro grid (a recursive backtracker, same family
+ * of algorithm as a classic maze generator, just one room per cell instead of one tile).
+ * A handful of extra edges are added afterward between rooms the walk already reached,
+ * so the result has loops and dead-end side rooms instead of reading as one corridor.
+ */
+function buildRoomGraph(cols: number, rows: number, rng: Rng): RoomGraph {
+  const startCol = Math.floor(cols / 2);
+  const startKey = slotKey(startCol, rows - 1);
+  const visited = new Set<string>([startKey]);
+  const edges = new Set<string>();
+  const stack: [number, number][] = [[startCol, rows - 1]];
+  // Small grids skip almost nothing — sealing off a whole quarter of a four-room floor
+  // reads as cramped rather than as a dungeon with a locked wing.
+  const totalCells = cols * rows;
+  const minFraction = totalCells <= 6 ? 0.92 : 0.82;
+  const targetRooms = Math.max(2, Math.round(totalCells * rng.range(minFraction, 0.98)));
+
+  while (stack.length > 0 && visited.size < targetRooms) {
+    const [c, r] = stack[stack.length - 1]!;
+    const options = shuffledNeighbors(c, r, cols, rows, rng).filter(([nc, nr]) => !visited.has(slotKey(nc, nr)));
+    if (options.length === 0) { stack.pop(); continue; }
+    const [nc, nr] = options[0]!;
+    const nk = slotKey(nc, nr);
+    visited.add(nk);
+    edges.add(edgeKey(slotKey(c, r), nk));
+    stack.push([nc, nr]);
+  }
+
+  for (const key of visited) {
+    const [c, r] = parseKey(key);
+    for (const [nc, nr] of shuffledNeighbors(c, r, cols, rows, rng)) {
+      const nk = slotKey(nc, nr);
+      if (!visited.has(nk) || edges.has(edgeKey(key, nk))) continue;
+      if (rng.chance(0.16)) edges.add(edgeKey(key, nk));
+    }
+  }
+
+  // The portal lands as far from the start as the graph actually reaches, so there is
+  // always a real dungeon to walk through rather than a coin-flip distance.
+  const dist = bfsDistances(startKey, visited, edges);
+  let endKey = startKey;
+  let best = -1;
+  for (const [key, dd] of dist) {
+    if (dd > best) { best = dd; endKey = key; }
+  }
+
+  return { visited, edges, startKey, endKey };
+}
+
+function neighborConnected(graph: RoomGraph, col: number, row: number, dx: number, dy: number): boolean {
+  const nk = slotKey(col + dx, row + dy);
+  if (!graph.visited.has(nk)) return false;
+  return graph.edges.has(edgeKey(slotKey(col, row), nk));
+}
+
+function shuffledNeighbors(c: number, r: number, cols: number, rows: number, rng: Rng): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const nc = c + dx;
+    const nr = r + dy;
+    if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+    out.push([nc, nr]);
+  }
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = rng.int(0, i);
+    const tmp = out[i]!;
+    out[i] = out[j]!;
+    out[j] = tmp;
+  }
+  return out;
+}
+
+function bfsDistances(start: string, visited: Set<string>, edges: Set<string>): Map<string, number> {
+  const dist = new Map<string, number>([[start, 0]]);
+  const queue = [start];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++]!;
+    const dd = dist.get(cur)!;
+    for (const other of visited) {
+      if (dist.has(other) || !edges.has(edgeKey(cur, other))) continue;
+      dist.set(other, dd + 1);
+      queue.push(other);
+    }
+  }
+  return dist;
+}
+
+/**
+ * One side of a room's perimeter: a solid wall, or a wall with a doorway centered on
+ * `center` when this side actually connects to a neighbor. Reuses the same "wall with
+ * one gap" builder a corridor lane does, just by aiming the gap off the near end of the
+ * span when there's nothing to connect to — see `runH`/`runV` below.
+ */
+function roomSide(
+  orientation: "h" | "v", fixed: number, start: number, end: number, center: number, connected: boolean,
+): Wall[] {
+  const gapAt = connected ? center - DOOR / 2 : start - DOOR * 4;
+  return orientation === "h" ? runH(fixed, start, end, WALL_T, gapAt, DOOR) : runV(fixed, start, end, WALL_T, gapAt, DOOR);
+}
+
+/** The corridor lane between two connected rooms: two wall strips either side of a
+ *  doorway-width gap, spanning the room-gap distance between them. */
+function pushLane(
+  walls: Wall[], gx: number, gy: number, gw: number, gh: number, mid: number, horizontal: boolean,
+): void {
+  if (horizontal) {
+    const topH = mid - DOOR / 2 - gy;
+    const botY = mid + DOOR / 2;
+    const botH = gy + gh - botY;
+    if (topH > 2) walls.push({ x: gx, y: gy, w: gw, h: topH });
+    if (botH > 2) walls.push({ x: gx, y: botY, w: gw, h: botH });
+  } else {
+    const leftW = mid - DOOR / 2 - gx;
+    const rightX = mid + DOOR / 2;
+    const rightW = gx + gw - rightX;
+    if (leftW > 2) walls.push({ x: gx, y: gy, w: leftW, h: gh });
+    if (rightW > 2) walls.push({ x: rightX, y: gy, w: rightW, h: gh });
+  }
+}
+
+function translateWalls(walls: readonly Wall[], dx: number, dy: number): Wall[] {
+  return walls.map((w) => ({ x: w.x + dx, y: w.y + dy, w: w.w, h: w.h }));
+}
+
+// --- layouts (room interiors, and the whole arena on a boss floor) --------
 
 function buildWalls(kind: LayoutKind, w: number, h: number, rng: Rng): Wall[] {
   switch (kind) {
@@ -411,12 +779,13 @@ function hasClearance(level: Level, cx: number, cy: number, r: number): boolean 
   return true;
 }
 
-function placeTraps(level: Level, rng: Rng): Trap[] {
+function placeTraps(level: Level, rng: Rng, boss = false): Trap[] {
   const specs = trapsFor(level.depth, level.biome.traps);
   const out: Trap[] = [];
   if (specs.length === 0) return out;
 
-  const want = trapCount(level.depth);
+  // A boss floor gets a token scatter of hazards. The boss is the hazard.
+  const want = boss ? Math.min(3, Math.floor(trapCount(level.depth) / 3)) : trapCount(level.depth);
   for (let i = 0; i < want; i++) {
     const spec = pickSpec(specs, rng);
     const away = [
@@ -515,6 +884,26 @@ function wallSidePoint(level: Level, rng: Rng): { x: number; y: number } | null 
     case 2: return { x: w.x - off, y: rng.range(w.y, w.y + w.h) };
     default: return { x: w.x + w.w + off, y: rng.range(w.y, w.y + w.h) };
   }
+}
+
+/**
+ * Resource nodes prefer dead-end rooms — a detour off the critical path is what makes
+ * one worth taking. Whatever doesn't fit in a dead end spills into ordinary rooms.
+ */
+function placeResourceNodes(
+  level: Level, leafSlots: readonly RoomSlot[], otherSlots: readonly RoomSlot[], rng: Rng, count: number,
+): ResourceNode[] {
+  if (count <= 0) return [];
+  const order = [...leafSlots, ...otherSlots];
+  const out: ResourceNode[] = [];
+  for (let i = 0; i < count && i < order.length; i++) {
+    const slot = order[i]!;
+    const jitterX = clamp(rng.range(-slot.w * 0.22, slot.w * 0.22), -slot.w / 2 + 30, slot.w / 2 - 30);
+    const jitterY = clamp(rng.range(-slot.h * 0.22, slot.h * 0.22), -slot.h / 2 + 30, slot.h / 2 - 30);
+    const spot = resolveCircle(level, slot.cx + jitterX, slot.cy + jitterY, 14);
+    out.push({ x: spot.x, y: spot.y, radius: 14, depleted: false });
+  }
+  return out;
 }
 
 // --- navigation ------------------------------------------------------------
