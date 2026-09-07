@@ -244,7 +244,7 @@ export const CORSAIR_BROADSIDE: Ability = {
   tags: ["ultimate", "area", "projectile"],
   cooldown: 0,
   isUltimate: true,
-  targeting: "direction",
+  targeting: "line",
   range: 400,
   shape: { width: 260, length: 400 },
   telegraph: { shape: "line", windup: 0.6, width: 260 },

@@ -486,7 +486,11 @@ export function runEffect(
       let count = step.count;
       if (step.fromCorpses !== undefined) {
         const taken = host.consumeCorpses(step.fromCorpses);
-        count = step.fromCorpses === "all" ? taken : Math.min(count, taken);
+        // A fixed corpse cost is a hard requirement (Raise Skeleton needs a body).
+        // "all" consumes the whole field as fuel but still raises at least `count` —
+        // an ultimate ("every corpse rises, and then some") must never whiff to zero
+        // just because the floor was freshly entered.
+        count = step.fromCorpses === "all" ? Math.max(count, taken) : Math.min(count, taken);
         if (count <= 0) return;
       }
       host.spawnMinion({

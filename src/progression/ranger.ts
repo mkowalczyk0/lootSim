@@ -189,8 +189,7 @@ export const RANGER_PINNING_SHOT: Ability = {
   targeting: "direction",
   range: 280,
   effects: [
-    { kind: "projectile", projectile: { damage: { base: 1.2, scale: "attack", type: "physical", canCrit: true, knockback: 90 }, speed: 500, radius: 8, life: 0.9 } },
-    { kind: "status", status: "pinned", chance: 1, to: "allTargets" },
+    { kind: "projectile", projectile: { damage: { base: 1.2, scale: "attack", type: "physical", canCrit: true, knockback: 90, inflict: { status: "pinned", chance: 1 } }, speed: 500, radius: 8, life: 0.9 } },
   ],
 };
 

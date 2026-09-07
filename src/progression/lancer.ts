@@ -138,9 +138,10 @@ export const LANCER_VAULTING_SPEAR: Ability = {
   cooldown: 7,
   targeting: "point",
   range: 180,
+  shape: { radius: 90 },
   effects: [
     { kind: "move", style: "vault", distance: 180, iframes: 0.35 },
-    { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true, knockback: 40 }, to: "allTargets" },
+    { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true, knockback: 40 }, to: "enemies" },
   ],
   mutationHooks: [{ id: "vaulting_spear.landing", kind: "movement", note: "Vaultmaster clears larger bodies and pays Momentum." }],
 };

@@ -248,10 +248,10 @@ export const MONK_HEAVENLY_FIST: Ability = {
   telegraph: { shape: "circle", windup: 0.8, radius: 150 },
   effects: [
     { kind: "move", style: "vault", iframes: 0.6 },
-    { kind: "damage", damage: { base: 3.6, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", knockback: 120 }, to: "allTargets" },
+    { kind: "damage", damage: { base: 3.6, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", knockback: 120 }, to: "enemies" },
     { kind: "delay", seconds: 0.7, effects: [
-      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate" }, to: "allTargets" },
-      { kind: "status", status: "stunned", chance: 1, to: "allTargets" },
+      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate" }, to: "enemies" },
+      { kind: "status", status: "stunned", chance: 1, to: "enemies" },
     ] },
   ],
   mutationHooks: [{ id: "heavenly_fist.followup", kind: "followUp", note: "Infinite Motion lets the Monk keep comboing on landing." }],
