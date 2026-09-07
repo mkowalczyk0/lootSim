@@ -135,7 +135,13 @@ generation so the new elements don't dilute itemization/difficulty yet; `SAVE_VE
 > 10. Tests (below, "Stage 8")
 > 11. Validation & tuning pass (§4)
 
-### Stage 1 — `Dungeon` implements `CombatHost`
+### Stage 1 — `Dungeon` implements `CombatHost` — ✅ DONE (green: full npm test)
+Landed additively (commit "Dungeon implements CombatHost; attach combat primitives to
+entities"): `Hero`/`Enemy` get a `StatusContainer` (`sc`), `Hero` gets a `ResourceSet`
++ `AbilityRuntime`, all ticked in the loop; host-id space + lazy `HostActor` adapters;
+the ~30 executor methods mapped (minion/terrain/corpse/redirect/threat are minimal
+stubs pending Stage 4); a typed `EventBus` on the Dungeon. Nothing casts through the
+executor yet. Original notes:
 - Implement the ~30 `CombatHost` methods against the existing entity arrays:
   `dealDamage` → `damageEnemy` / hero mitigation; `spawnProjectile` → `this.projectiles`;
   `spawnZone` → `this.ground` (+ a benefit variant); `moveActor` → dash/blink/charge on
