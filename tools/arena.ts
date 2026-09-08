@@ -357,7 +357,12 @@ function kitCensus(classId: ClassId): KitCensus {
 // --- driver ---------------------------------------------------------------------------
 
 const SEED = 0xa5e4;
-console.log("\n=== arena: sustained single-target / burst / AoE / meter-fill ===");
+// Level/keys default to the 18 / 14–18 the 12-axis table is read at; ARENA_LEVEL and
+// ARENA_KEYS override them for a curve probe (Cluster 3 — L3 vs L50 summon scaling).
+const LVL = Number(process.env.ARENA_LEVEL) || 18;
+const KEYS_FAIR = Number(process.env.ARENA_KEYS) || 14;
+const KEYS_OUT = Number(process.env.ARENA_KEYS) || 18;
+console.log(`\n=== arena: sustained single-target / burst / AoE / meter-fill  (L${LVL}) ===`);
 console.log(
   "class".padEnd(12) +
   "ST dps".padStart(9) + "burst3".padStart(9) + "AoE dps".padStart(9) + "per-tgt".padStart(9) +
@@ -369,10 +374,10 @@ const rows: Record<string, ArenaResult & { aoe: number; aoePerTarget: number; ce
 for (const classId of CLASS_IDS) {
   // Fair fight for the meter + resource read: geared kit online, dummies hitting back,
   // ultimate held so we can time it filling.
-  const fair = run(classId, { level: 18, keys: 14, seed: SEED, dummies: 4, dummyHp: 4, dummyDamage: 4, fireUlt: false, seconds: 120 });
+  const fair = run(classId, { level: LVL, keys: KEYS_FAIR, seed: SEED, dummies: 4, dummyHp: 4, dummyDamage: 4, fireUlt: false, seconds: 120 });
   // Geared single-target and AoE for the output read: ultimate dumped on cooldown, dummies inert.
-  const st = run(classId, { level: 18, keys: 18, seed: SEED, dummies: 1, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
-  const aoe = run(classId, { level: 18, keys: 18, seed: SEED, dummies: 6, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
+  const st = run(classId, { level: LVL, keys: KEYS_OUT, seed: SEED, dummies: 1, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
+  const aoe = run(classId, { level: LVL, keys: KEYS_OUT, seed: SEED, dummies: 6, dummyHp: 120, dummyDamage: 0, fireUlt: true, seconds: 30 });
   const census = kitCensus(classId);
   rows[classId] = {
     ...st,
