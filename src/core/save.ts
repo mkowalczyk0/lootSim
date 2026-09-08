@@ -98,11 +98,13 @@
  * `ash`, the crafting currency salvaged items return. An older save loads with none, which
  * is what a new account has; nothing else about the shape moved.
  *
- * Version 20 added the weekly Convergence (UAT §17, the Vigil's harder sibling) — one
+ * Version 20 is reserved for relics (lootsim-97, in flight) — do not use it here.
+ *
+ * Version 21 added the weekly Convergence (UAT §17, the Vigil's harder sibling) — one
  * new persisted field, `GameState.weekly.clearedWeek` (0 for never), the same shape as
  * the Vigil's own `daily.clearedDay`. An older save has simply never closed one.
  */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

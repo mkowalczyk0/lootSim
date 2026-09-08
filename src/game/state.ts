@@ -841,7 +841,7 @@ export class GameState {
       // Version 16 added the daily Vigil; an older save has simply never closed one.
       const daily = d.daily as { clearedDay?: unknown } | undefined;
       state.daily = { clearedDay: Math.max(0, Math.floor(Number(daily?.clearedDay ?? 0)) || 0) };
-      // Version 20 added the weekly Convergence; an older save has simply never closed one.
+      // Version 21 added the weekly Convergence; an older save has simply never closed one.
       const weekly = d.weekly as { clearedWeek?: unknown } | undefined;
       state.weekly = { clearedWeek: Math.max(0, Math.floor(Number(weekly?.clearedWeek ?? 0)) || 0) };
       state.setChallengerTier(Number(d.challengerTier ?? 0));

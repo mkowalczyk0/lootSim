@@ -111,6 +111,23 @@ below: the exact final band (12-16/9-11) is this session's judgment call on wher
 but not zero" sits, not a number PM specifically approved; and the boss/trash depth
 split is a bigger structural change than a plain retune and is exactly the kind of
 finding the PM's own escalated endgame-reachability item probably wants to know about.
+Both were reviewed and approved by the PM (2026-09-08) — see the ledger.
+
+**`WEEKLY_BOSS_DEPTH_MIN`/`MAX` is a workaround, not a fix, and should say so for as long
+as it exists.** It exists purely because raid bosses and trash floors currently sit on
+different difficulty curves — a boss at depth N is dramatically, not incrementally,
+harder than trash at the same N — and that gap is not something this mode's own
+tunables can close. Two other, independent sessions hit the same discontinuity the same
+day from different angles (class-completion's Proving: only 3 of 8 classes beat depth 30
+at level 60 in legendary gear; this mode's own depth-10/15 delve-boss numbers above), which
+is why the PM is treating it as one finding — "boss encounters and trash floors are on
+different curves, across the whole depth range" — rather than three unrelated ones. **If
+the owner ever rebalances boss difficulty globally, this split is the first thing that
+should collapse back into a single escalating band**: re-run `tools/smoke.ts` section 6b
+after that rebalance, and if the boss floor clears at a depth matching floors 1-3's own
+band, delete `WEEKLY_BOSS_DEPTH_MIN`/`MAX` and let `weeklyConfig` compute floor 4's depth
+the same way it computes floors 1-3's, the way the Vigil's single-band `dailyConfig`
+already does.
 
 ## Modifiers
 
@@ -280,3 +297,4 @@ plain "closed for the day/week" flash instead (`src/main.ts`, `handleRunDecision
 | 2026-09-08 | v1 built | data + sim + save + hub + screen + smoke; see "Where it lives". `npm test` green including a full four-floor playthrough. Not browser-verified — nobody on this build has a browser. Handed to the PM (`lootsim-70`) for review and merge. |
 | 2026-09-08 | PM review: blocker | The smoke coverage teleported every floor to "cleared" — reward plumbing, not a fight — and the original 18-30/unlock-16 band was 2-4x past the delve's measured frontier. |
 | 2026-09-08 | Retuned + real fight added | Band retuned to 12-16/unlock-12 for floors 1-3; boss floor decoupled to its own 9-11 band after the survivability pass showed deep raid bosses broadly unbeatable game-wide, not just in this mode. New `tools/smoke.ts` section 6b fights real sharp-campaign characters (not a synthetic stand-in) across five weeks; floor 1 clears 10-70% and the boss 70-95% depending on the week drawn, both strictly above the original band's ~0%. `npm test` green (1189 checks). Re-handed to the PM — the final band and the boss/trash depth split are this session's judgment call, not yet PM-approved numbers. |
+| 2026-09-08 | PM approved | Both the retuned band and the boss/trash depth split signed off explicitly as a mode-local workaround, not an answer to the global endgame-reachability question — this session is the third independent confirmation that day that raid bosses and trash floors sit on different difficulty curves across the whole depth range (alongside the Proving's own class-completion numbers). PM is folding all three into one sharpened finding. Also caught (separately) that `docs/uat-ledger.md` had live, unresolved git conflict markers checked into master; a `npm run markers` guard now runs first in `npm test` and found a second set in CLAUDE.md the same pass. Rebased again onto master (item-visuals, the markers guard); `SAVE_VERSION` renumbered 20→21 since lootsim-97 has 20 provisionally reserved for relics. |
