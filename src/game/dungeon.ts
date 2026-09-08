@@ -1535,7 +1535,7 @@ export class Dungeon implements CombatHost, RuleHost {
       a.dashTimer -= dt;
     } else if (dash && a.dashCooldown <= 0 && !disabled.move) {
       a.dashTimer = DASH_TIME;
-      a.dashCooldown = DASH_COOLDOWN * player.dashCooldownMult;
+      a.dashCooldown = DASH_COOLDOWN * hero.player.dashCooldownMult;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
       a.invulnTimer = Math.max(a.invulnTimer, DASH_TIME + 0.08);
       a.dashInvuln = DASH_TIME + 0.08;
