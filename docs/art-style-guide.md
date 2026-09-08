@@ -592,6 +592,16 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   falls back to the procedural grid. whip / scythe / rapier want an Aseprite tidy-up
   pass (the extend-along-a-line families are the hardest for PixelLab to keep crisp).
 
+- **The Citadel deck** (`SCENES["hub.citadel-deck"]`, `atlas/scenes/`) — a baked top-down
+  backdrop stretched under the hub stations, replacing the old black-void + cyan-grid
+  `drawDeck`. `SCENES` is a third manifest table (like `ATLAS` / `ATLAS_WEAPONS`) for
+  full backdrops that have a size but no world footprint. Stations, terminals and the
+  hub player still draw procedurally on top. Wants a reroll toward the §1.1 era-collage.
+- **The six Reliquary sectors** are re-themed in `data/planets.ts` (names, blurbs, biome
+  palettes — ash over dead-civilisation stone pulled toward the element, `#0e0b14` for
+  the Black Archive). Still rendered by the procedural `bakeFloor` / `drawWalls`; bespoke
+  sector backdrop art is the next environment pass. The **Delve** keeps its legacy biome
+  palettes until its own Nine-Circles art pass.
 - **All six dungeon props** (`torch`/`bones`/`mushroom`/`crystal`/`rock`/`chest`) and
   **all ten drop icons** (`coin`/`key`/`potion`/`gem`/`capsule` + the five gear-slot
   icons `armor`/`shield`/`ring`/`gloves`/`necklace`). Props draw through `drawProps` at

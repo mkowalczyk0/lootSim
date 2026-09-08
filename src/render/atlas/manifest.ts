@@ -136,6 +136,25 @@ export const SPRITE_OVERRIDES: Record<string, string> = {
   necklace: "icon.necklace",
 };
 
+// --- scenes -------------------------------------------------------------
+
+/**
+ * A full baked backdrop — the hub deck, and (later) per-realm establishing art. Unlike
+ * an {@link AtlasSprite} it has no world footprint: it is drawn stretched to fill a
+ * fixed viewport (the hub) or as a scrolling parallax, so it carries only its size.
+ */
+export interface AtlasScene {
+  readonly id: string;
+  readonly w: number;
+  readonly h: number;
+}
+
+export const SCENES: Record<string, AtlasScene> = {
+  // §4 The Citadel of the Threshold — the hub deck. Drawn scaled to HUB_WIDTH×HUB_HEIGHT
+  // (640×460, same 1.39 aspect) under the stations. Replaces the old black void + grid.
+  "hub.citadel-deck": { id: "hub.citadel-deck", w: 384, h: 276 },
+};
+
 // --- weapons -------------------------------------------------------------
 
 /**

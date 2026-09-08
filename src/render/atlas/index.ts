@@ -6,7 +6,7 @@
  * and serves them straight in dev, so nothing here changes between the two.
  */
 
-import { ATLAS, ATLAS_WEAPONS } from "./manifest";
+import { ATLAS, ATLAS_WEAPONS, SCENES } from "./manifest";
 
 const pngUrls = import.meta.glob("./**/*.png", {
   eager: true,
@@ -39,7 +39,9 @@ function toCanvas(img: HTMLImageElement): HTMLCanvasElement {
  * that sprite's world footprint slightly wrong.
  */
 export async function loadAtlas(): Promise<void> {
-  const entries = [...Object.values(ATLAS), ...Object.values(ATLAS_WEAPONS)];
+  const entries = [
+    ...Object.values(ATLAS), ...Object.values(ATLAS_WEAPONS), ...Object.values(SCENES),
+  ];
   await Promise.all(
     entries.map(
       (spr) =>

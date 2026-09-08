@@ -10,6 +10,7 @@ import { drawPortalGlyph, drawSprite } from "./draw";
 import {
   HUB_HEIGHT, HUB_WIDTH, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
+import { atlasCanvas } from "./atlas/index";
 import { heroSprite } from "./sprites";
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -78,21 +79,26 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
   ctx.restore();
 }
 
+/**
+ * The Citadel of the Threshold — the hub floor (§4). A baked top-down backdrop stretched
+ * to fill the fixed hub viewport, with the stations drawn on top of it. Falls back to a
+ * plain ash fill until the atlas has loaded, so the first frame is never black.
+ */
 function drawDeck(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = "#12141c";
-  ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+  const deck = atlasCanvas("hub.citadel-deck");
+  if (deck) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(deck, 0, 0, HUB_WIDTH, HUB_HEIGHT);
+  } else {
+    ctx.fillStyle = "#2a2733";
+    ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+  }
 
-  ctx.strokeStyle = "rgba(255,255,255,0.035)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = 0; x <= HUB_WIDTH; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, HUB_HEIGHT); }
-  for (let y = 0; y <= HUB_HEIGHT; y += 40) { ctx.moveTo(0, y); ctx.lineTo(HUB_WIDTH, y); }
-  ctx.stroke();
-
+  // A heavy dark frame so the deck reads as an enclosed hall, not an open plane.
   ctx.strokeStyle = "rgba(0,0,0,0.6)";
   ctx.lineWidth = 12;
   ctx.strokeRect(3, 3, HUB_WIDTH - 6, HUB_HEIGHT - 6);
-  ctx.strokeStyle = "rgba(125,211,252,0.3)";
+  ctx.strokeStyle = "rgba(201,194,180,0.22)";
   ctx.lineWidth = 2;
   ctx.strokeRect(6, 6, HUB_WIDTH - 12, HUB_HEIGHT - 12);
 }
