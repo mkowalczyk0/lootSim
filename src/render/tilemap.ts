@@ -41,6 +41,18 @@ export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: Lo
 
   ctx.imageSmoothingEnabled = false;
 
+  // A PixelLab tile carries a fixed internal texture, so a big open room stamped
+  // with the one all-floor tile reads as graph paper. Flip the two *uniform*
+  // tiles (all floor, all rock) into one of four orientations, chosen from the
+  // level seed so a floor still looks like itself — the transition tiles are left
+  // alone, since flipping them would break which side the wall is on.
+  const seed = level.seed >>> 0;
+  const orient = (nx: number, ny: number): number => {
+    let h = (seed ^ (nx * 374761393) ^ (ny * 668265263)) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    return h & 3;
+  };
+
   // One tile per grid node, offset half a cell so its corners land on cell
   // centres — the dual grid. Nodes run one past the far edge to cap the border.
   for (let ny = 0; ny <= rows; ny++) {
@@ -52,7 +64,18 @@ export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: Lo
       const mask = (nw << 3) | (ne << 2) | (sw << 1) | se;
       const box = ts.boxes[mask];
       if (!box) continue;
-      ctx.drawImage(sheet, box[0], box[1], T, T, nx * T - T / 2, ny * T - T / 2, T, T);
+      const dx = nx * T - T / 2;
+      const dy = ny * T - T / 2;
+      if (mask === 0 || mask === 15) {
+        const o = orient(nx, ny);
+        ctx.save();
+        ctx.translate(dx + T / 2, dy + T / 2);
+        ctx.scale(o & 1 ? -1 : 1, o & 2 ? -1 : 1);
+        ctx.drawImage(sheet, box[0], box[1], T, T, -T / 2, -T / 2, T, T);
+        ctx.restore();
+      } else {
+        ctx.drawImage(sheet, box[0], box[1], T, T, dx, dy, T, T);
+      }
     }
   }
   return true;

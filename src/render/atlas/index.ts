@@ -89,14 +89,19 @@ export async function loadAtlas(): Promise<void> {
     ...sprites.map(async (spr) => {
       canvases.set(spr.id, await loadImage(spr.id, spr.w, spr.h));
     }),
+    // Tilesets degrade rather than throw: a biome that names one we can't load
+    // (PNG or `<id>.json` missing, or the sheet the wrong size) just falls back
+    // to `bakeFloor`. A malformed committed sheet is still worth a console shout.
     ...Object.values(TILESETS).map(async (ts) => {
-      const layout = layoutById[ts.id];
-      if (!layout) throw new Error(`atlas: no <id>.json for tileset "${ts.id}" — run npm run tileset`);
-      if (layout.boxes.length !== 16) {
-        throw new Error(`atlas: tileset "${ts.id}" has ${layout.boxes.length} tiles, expected 16`);
+      try {
+        const layout = layoutById[ts.id];
+        if (!layout) throw new Error(`no <id>.json — run npm run tileset`);
+        if (layout.boxes.length !== 16) throw new Error(`${layout.boxes.length} tiles, expected 16`);
+        const canvas = await loadImage(ts.id, ts.w, ts.h);
+        tilesets.set(ts.id, { canvas, tile: layout.tile, boxes: layout.boxes });
+      } catch (err) {
+        console.warn(`atlas: tileset "${ts.id}" not loaded — ${(err as Error).message}`);
       }
-      const canvas = await loadImage(ts.id, ts.w, ts.h);
-      tilesets.set(ts.id, { canvas, tile: layout.tile, boxes: layout.boxes });
     }),
   ]);
 }

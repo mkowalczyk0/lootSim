@@ -179,10 +179,26 @@ export interface AtlasTileset {
 }
 
 export const TILESETS: Record<string, AtlasTileset> = {
-  // §5 The Descent — Circle I, Limbo: drained-to-ash flagstone, ruined classical
-  // masonry, no fire. Also the shallow Delve's default until each circle has its
-  // own set.
-  "tiles.delve-limbo": { id: "tiles.delve-limbo", w: 64, h: 64, tile: 16 },
+  // The Delve (§5) — one per legacy biome, themed toward the Nine Circles it's
+  // becoming. Floor mid-tone, wall near-black, on the ash/Hell palette.
+  "tiles.delve-limbo":    { id: "tiles.delve-limbo",    w: 64, h: 64, tile: 16 }, // Training Grounds — Circle I, drained ash flagstone
+  "tiles.delve-gluttony": { id: "tiles.delve-gluttony", w: 64, h: 64, tile: 16 }, // Whispering Forest — Circle III, bile-stained stone, wet rot
+  "tiles.delve-cave":     { id: "tiles.delve-cave",     w: 64, h: 64, tile: 16 }, // Dark Cave — frozen cavern rock, ice rime
+  "tiles.delve-wrath":    { id: "tiles.delve-wrath",    w: 64, h: 64, tile: 16 }, // Ashen Wastes — Circle V, scorched flagstone, dull embers
+  "tiles.delve-heresy":   { id: "tiles.delve-heresy",   w: 64, h: 64, tile: 16 }, // Dragon's Lair — Circle VI, black cathedral, gold used wrong
+  "tiles.delve-veil":     { id: "tiles.delve-veil",     w: 64, h: 64, tile: 16 }, // The Veil — Abyss-touched, warped violet-black stone
+
+  // The Ashen Reliquary (§8.2) — one per sector, warm/element ash over
+  // dead-civilisation stone.
+  "tiles.reliquary-wargrave":  { id: "tiles.reliquary-wargrave",  w: 64, h: 64, tile: 16 }, // churned earth over buried armour
+  "tiles.reliquary-garden":    { id: "tiles.reliquary-garden",    w: 64, h: 64, tile: 16 }, // corrupted celestial garden, poison bloom
+  "tiles.reliquary-catacombs": { id: "tiles.reliquary-catacombs", w: 64, h: 64, tile: 16 }, // ash-buried catacombs still burning
+  "tiles.reliquary-basilica":  { id: "tiles.reliquary-basilica",  w: 64, h: 64, tile: 16 }, // cathedral frozen solid
+  "tiles.reliquary-sepulcher": { id: "tiles.reliquary-sepulcher", w: 64, h: 64, tile: 16 }, // battlefield of higher armies, embedded blades
+  "tiles.reliquary-archive":   { id: "tiles.reliquary-archive",   w: 64, h: 64, tile: 16 }, // where the Reliquary touches the Abyss
+
+  // The Abyssal Rift (§7) — null-black, one wrong colour, geometry that doesn't close.
+  "tiles.abyss": { id: "tiles.abyss", w: 64, h: 64, tile: 16 },
 };
 
 export const SCENES: Record<string, AtlasScene> = {

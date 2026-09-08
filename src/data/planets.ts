@@ -69,7 +69,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "Armies of three worlds, piled where they fell. Buried swords, dead horses, mountains of armour.",
     element: "physical",
     biome: {
-      name: "The Wargrave", tint: "#2f2620", floorAlt: "#3a2f26", wall: "#574a3d", wallSide: "#231b15",
+      name: "The Wargrave", tileset: "tiles.reliquary-wargrave",
+      tint: "#2f2620", floorAlt: "#3a2f26", wall: "#574a3d", wallSide: "#231b15",
       accent: "#e2e8f0", props: ["rock", "bones", "torch"],
       layouts: ["open", "rubble", "pillars"], traps: ["spike"],
       element: "physical",
@@ -86,7 +87,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "A garden of Heaven that Hell got into. The flowers grow out of the dead and breathe poison.",
     element: "poison",
     biome: {
-      name: "The Rotting Garden", tint: "#282b1b", floorAlt: "#313620", wall: "#49512f", wallSide: "#1b1e12",
+      name: "The Rotting Garden", tileset: "tiles.reliquary-garden",
+      tint: "#282b1b", floorAlt: "#313620", wall: "#49512f", wallSide: "#1b1e12",
       accent: "#84cc16", props: ["mushroom", "bones", "rock"],
       layouts: ["chambers", "rubble", "open"], traps: ["mire", "spike"],
       element: "poison",
@@ -103,7 +105,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "Tombs under a ceiling of ash. The stone has been burning for a thousand years and has not gone out.",
     element: "fire",
     biome: {
-      name: "The Cinder Catacombs", tint: "#331f17", floorAlt: "#3f271c", wall: "#5d3b2c", wallSide: "#241310",
+      name: "The Cinder Catacombs", tileset: "tiles.reliquary-catacombs",
+      tint: "#331f17", floorAlt: "#3f271c", wall: "#5d3b2c", wallSide: "#241310",
       accent: "#ff7a2f", props: ["rock", "torch", "bones"],
       layouts: ["gauntlet", "chambers", "pillars"], traps: ["flame", "turret"],
       element: "fire",
@@ -120,7 +123,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "A cathedral frozen through. The statues in the nave were angels once, and the ice kept them.",
     element: "cold",
     biome: {
-      name: "The Frozen Basilica", tint: "#232e37", floorAlt: "#2b3843", wall: "#43566a", wallSide: "#18212a",
+      name: "The Frozen Basilica", tileset: "tiles.reliquary-basilica",
+      tint: "#232e37", floorAlt: "#2b3843", wall: "#43566a", wallSide: "#18212a",
       accent: "#7dd3fc", props: ["crystal", "rock", "bones"],
       layouts: ["ring", "pillars", "rubble"], traps: ["spike", "saw"],
       element: "cold",
@@ -137,7 +141,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "Where two armies of higher beings wiped each other out. Their weapons are still in the ground and the sky still hasn't settled.",
     element: "lightning",
     biome: {
-      name: "The Storm Sepulcher", tint: "#2e2a1d", floorAlt: "#393324", wall: "#544a34", wallSide: "#211c13",
+      name: "The Storm Sepulcher", tileset: "tiles.reliquary-sepulcher",
+      tint: "#2e2a1d", floorAlt: "#393324", wall: "#544a34", wallSide: "#211c13",
       accent: "#fde047", props: ["crystal", "torch", "rock"],
       layouts: ["ring", "gauntlet", "chambers"], traps: ["turret", "saw"],
       element: "lightning",
@@ -154,7 +159,8 @@ export const PLANETS: readonly PlanetSpec[] = [
     blurb: "Where the Reliquary has started touching the Abyss. The rooms overlap and the distance is wrong.",
     element: "void",
     biome: {
-      name: "The Black Archive", tint: "#100c17", floorAlt: "#17121f", wall: "#281f38", wallSide: "#0a0710",
+      name: "The Black Archive", tileset: "tiles.reliquary-archive",
+      tint: "#100c17", floorAlt: "#17121f", wall: "#281f38", wallSide: "#0a0710",
       accent: "#c084fc", props: ["crystal", "bones", "torch"],
       layouts: ["ring", "gauntlet", "rubble", "chambers"], traps: ["turret", "flame", "saw", "mire"],
       element: "void",

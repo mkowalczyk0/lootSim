@@ -56,6 +56,14 @@ export interface RunMode {
   readonly xpMult: number;
   /** Deepest delve floor you must have cleared before this appears in town. */
   readonly unlockDepth: number;
+  /**
+   * A floor tileset id (`render/atlas/manifest.ts` → `TILESETS`) that overrides the
+   * depth-bucketed biome's own tileset for this mode — the Abyssal Rift reads as
+   * *beneath* the Delve, not as a deep Delve floor. Optional; the delve, the hoard
+   * rift and planets all take the biome tileset. Only the tileset is swapped, not
+   * the biome's palette / props / hazards.
+   */
+  readonly tileset?: string;
 }
 
 export const MODES: Record<RunModeId, RunMode> = {
@@ -81,6 +89,9 @@ export const MODES: Record<RunModeId, RunMode> = {
     // Gated later than the hoard: its first tier already asks for a level 11 character,
     // so meeting it at depth 6 would just be a wall with a nice name on it.
     unlockDepth: 8,
+    // §7 — null-black, one wrong colour, geometry that doesn't close. Overrides
+    // whatever deep-Delve biome the effective depth would otherwise hand it.
+    tileset: "tiles.abyss",
   },
   hoard: {
     id: "hoard", name: "Hoard Rift", short: "Hoard",

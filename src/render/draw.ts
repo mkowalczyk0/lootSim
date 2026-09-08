@@ -179,7 +179,7 @@ export class WorldRenderer {
 
   private drawFloor(ctx: CanvasRenderingContext2D, d: Dungeon): void {
     if (this.floorFor !== d.level || !this.floorCanvas) {
-      const baked = bakeFloor(d.level);
+      const baked = bakeFloor(d.level, d.config.mode.tileset);
       this.floorCanvas = baked.canvas;
       this.floorTiled = baked.tiled;
       this.floorFor = d.level;
@@ -735,14 +735,21 @@ export function drawPortalGlyph(
  * back to the flat bake — base colour, a scatter of darker tiles for texture, a border —
  * and `drawWalls` paints the wall boxes on top as before.
  */
-function bakeFloor(level: Level): { canvas: HTMLCanvasElement; tiled: boolean } {
+function bakeFloor(
+  level: Level, tilesetOverride?: string,
+): { canvas: HTMLCanvasElement; tiled: boolean } {
   const { width, height, biome } = level;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
 
-  const ts = biome.tileset ? atlasTileset(biome.tileset) : null;
+  // A run mode (the Abyssal Rift) can override the biome's own tileset; fall back
+  // to the biome's if the override isn't loaded.
+  const tilesetId = tilesetOverride ?? biome.tileset;
+  const ts = tilesetId
+    ? atlasTileset(tilesetId) ?? (biome.tileset ? atlasTileset(biome.tileset) : null)
+    : null;
   if (ts) {
     // A dark ground behind the stamp, so any half-transparent tile edge reads as
     // shadow between stones rather than a hole to the void.

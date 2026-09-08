@@ -65,6 +65,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Whispering Forest",
+    tileset: "tiles.delve-gluttony",
     tint: "#1e3326", floorAlt: "#24402d", wall: "#3c5a3f", wallSide: "#1a2c1e",
     accent: "#86efac",
     props: ["mushroom", "rock", "bones"],
@@ -74,6 +75,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Dark Cave",
+    tileset: "tiles.delve-cave",
     tint: "#241f2e", floorAlt: "#2c2637", wall: "#463c56", wallSide: "#1c1826",
     accent: "#c084fc",
     props: ["crystal", "rock", "bones"],
@@ -83,6 +85,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Ashen Wastes",
+    tileset: "tiles.delve-wrath",
     tint: "#33241d", floorAlt: "#3d2b21", wall: "#5c4335", wallSide: "#251a14",
     accent: "#fb923c",
     props: ["bones", "rock", "torch"],
@@ -92,6 +95,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Dragon's Lair",
+    tileset: "tiles.delve-heresy",
     tint: "#3a1c1c", floorAlt: "#472222", wall: "#6b3535", wallSide: "#2a1212",
     accent: "#ef4444",
     props: ["bones", "torch", "crystal"],
@@ -101,6 +105,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "The Veil",
+    tileset: "tiles.delve-veil",
     tint: "#2a1836", floorAlt: "#331d42", wall: "#4e2f63", wallSide: "#1e1128",
     accent: "#ff1493",
     props: ["crystal", "bones", "torch"],
