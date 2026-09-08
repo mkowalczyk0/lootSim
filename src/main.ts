@@ -64,6 +64,10 @@ const town = new TownUI(
     enterHub();
   },
   party,
+  // Placeholder: `feature/accounts` (lootsim-bc) owns the real AccountClient and the
+  // boot() rewrite that gates everything behind login. This call site gets replaced
+  // wholesale when that branch integrates — see docs/accounts.md.
+  () => window.location.reload(),
 );
 
 /**

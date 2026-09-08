@@ -41,6 +41,95 @@ html, body {
 }
 #town[hidden] { display: none; }
 
+/* --- login gate ------------------------------------------------------ */
+/* No guest mode (docs/accounts.md): this sits in front of everything else until
+   AccountClient.me() resolves to a real session, so it gets the same fixed-overlay
+   treatment as #game/#town rather than living inside either of them. */
+
+#login {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  z-index: 10;
+}
+#login[hidden] { display: none; }
+
+.login-card {
+  width: 300px;
+  padding: 28px 26px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.login-brand {
+  font-size: 15px;
+  letter-spacing: 3px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.login-brand span { color: #ff1493; }
+
+.login-blurb {
+  margin: 0 0 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+
+.login-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.login-tabs .tab { flex: 1; text-align: center; }
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-field {
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  outline: none;
+}
+.login-field:focus { border-color: var(--accent); }
+.login-field::placeholder { color: var(--muted); }
+.login-field:disabled { opacity: 0.6; }
+
+.login-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.login-submit {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.login-submit:hover:not(:disabled) { border-color: var(--accent); }
+.login-submit:disabled { opacity: 0.6; cursor: default; }
+
 .town {
   height: 100%;
   max-width: 1240px;

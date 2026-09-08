@@ -224,6 +224,8 @@ export class TownUI {
     private readonly onExpedition: (planet: PlanetSpec, tier: number) => void,
     /** The party, for the Comms Relay screen. It owns the connection; this only shows it. */
     private readonly party: Party,
+    /** Settings' "Log out" row. `main.ts` owns what logging out actually does. */
+    private readonly onLogout: () => void,
   ) {
     this.roll = new ChestRoll(this.root.parentElement ?? document.body);
 
@@ -482,6 +484,7 @@ export class TownUI {
   private get keybindStartIndex(): number { return SETTING_SPECS.length + 2; }
   private get challengerIndex(): number { return this.keybindStartIndex + REBINDABLE_ACTIONS.length; }
   private get resetIndex(): number { return this.challengerIndex + 1; }
+  private get logoutIndex(): number { return this.resetIndex + 1; }
   /** The rebindable action a Settings row indexes to, or null off that stretch. */
   private keybindRowAction(index: number): RebindableAction | null {
     const i = index - this.keybindStartIndex;
@@ -510,7 +513,7 @@ export class TownUI {
       case "Capsules": return CAPSULE_TIERS.length;
       case "Codex": return ALL_CLASSES.length;
       case "Records": return 0;
-      case "Settings": return this.resetIndex + 1;
+      case "Settings": return this.logoutIndex + 1;
     }
   }
 
@@ -1056,6 +1059,10 @@ export class TownUI {
             `${k(this.state.settings, "left")} / ${k(this.state.settings, "right")} raises or lowers it.`,
             "#9aa4b2",
           );
+          break;
+        }
+        if (this.cursor === this.logoutIndex) {
+          this.onLogout();
           break;
         }
         if (!this.resetArmed) {
@@ -2670,6 +2677,14 @@ export class TownUI {
         <div class="row-side warn">wipes the save</div>
       </div>`);
 
+    rows.push(`
+      <div class="row ${this.logoutIndex === this.cursor ? "on" : ""}" data-index="${this.logoutIndex}">
+        <div class="row-main">
+          <span class="name">Log out</span>
+        </div>
+        <div class="row-side muted">back to the login screen</div>
+      </div>`);
+
     const selected = SETTING_SPECS[this.cursor];
     const rebindAction = this.keybindRowAction(this.cursor);
     const blurb = selected
@@ -2695,13 +2710,18 @@ export class TownUI {
                 and depth already imply. Applies to the delve, every rift and every
                 Reliquary sector — even the gentlest floor in the game gets real teeth at a high
                 tier. ${challenger > 0 ? `Currently ×${challengerMultiplier(challenger).toFixed(1)} danger.` : ""}</p>`
-              : `<p class="danger">Erases your class, level, tree, gear, stash, coins, keys
-                and every record. There is no undo and no backup. The page reloads into a
-                brand new character.</p>`;
+              : this.cursor === this.logoutIndex
+                ? `<p>Signs you out of this account and back to the login screen. Your
+                  progress lives on the server, not this browser, so it's exactly where you
+                  left it next time you log in — here or anywhere else.</p>`
+                : `<p class="danger">Erases your class, level, tree, gear, stash, coins, keys
+                  and every record. There is no undo and no backup. The page reloads into a
+                  brand new character.</p>`;
 
     const title = selected ? selected.label
       : this.cursor === this.controlSchemeIndex ? "Controls"
       : this.cursor === this.mouseSecondaryIndex ? "Right click casts"
+      : this.cursor === this.logoutIndex ? "Log out"
       : rebindAction ? ACTION_LABELS[rebindAction]
       : this.cursor === this.challengerIndex ? "Challenger"
       : "Reset progress";
