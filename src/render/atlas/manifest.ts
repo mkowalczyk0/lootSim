@@ -163,6 +163,13 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "relic.hollow-of-the-unfinished-word":  { id: "relic.hollow-of-the-unfinished-word",  w: 18, h: 28, worldScale: 0.60, feet: 0.15 },
   "relic.sigil-of-the-unfinished-art":    { id: "relic.sigil-of-the-unfinished-art",    w: 26, h: 27, worldScale: 0.60, feet: 0.15 },
   "relic.measure-of-the-unfinished-duel": { id: "relic.measure-of-the-unfinished-duel", w: 30, h: 25, worldScale: 0.60, feet: 0.15 },
+
+  // The remaining 4 relics — the two Nameless drops, the deepest Delve cache, and the
+  // Abyss's own top tier. Completes all 12 relics; the artifacts follow in later batches.
+  "relic.the-name-it-kept":            { id: "relic.the-name-it-kept",            w: 28, h: 14, worldScale: 0.60, feet: 0.15 },
+  "relic.silence-between-sentences":   { id: "relic.silence-between-sentences",   w: 33, h: 29, worldScale: 0.60, feet: 0.15 },
+  "relic.sandals-of-the-swift-messenger": { id: "relic.sandals-of-the-swift-messenger", w: 34, h: 21, worldScale: 0.60, feet: 0.15 },
+  "relic.remnant-of-what-was-not":     { id: "relic.remnant-of-what-was-not",     w: 26, h: 32, worldScale: 0.60, feet: 0.15 },
 };
 
 /**
