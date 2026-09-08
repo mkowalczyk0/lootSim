@@ -774,6 +774,31 @@ function probeUltimate(classId: ClassId, seed = 8100) {
   };
 }
 
+console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
+{
+  // THE ULTIMATE RULE is enforced at runtime in src/combat/resources.ts (an
+  // ultimate-sourced event never generates), and tools/vocab.ts §13 pins that mechanism.
+  // This is the *data-shape* guard: the two exploits that shipped (Engineer, Warlock)
+  // were both an untagged `{ on: "damageDealt", perUnit: "damage" }` rule on the ultimate
+  // meter with a fat coefficient — so every construct shell / lingering zone tick refilled
+  // the meter and the ultimate was up on cooldown. THE ULTIMATE RULE blocks a pure
+  // self-loop but not "ultimate leaves a thing, the thing charges the meter". Keep the
+  // door shut: no `allowFromUltimate` opt-out, and any untagged damage-scaled rule on an
+  // ultimate meter stays a small top-up, never the whole meter.
+  const DAMAGE_TOPUP_CAP = 0.05; // Warlock's tuned-safe value is 0.03; the exploit was 0.3
+  for (const id of CLASS_IDS) {
+    const def = CLASS_BY_ID[id];
+    const meter = def?.resources.find((r) => r.isUltimateMeter === true);
+    const rules = meter?.generation ?? [];
+    const optOut = rules.filter((r) => r.allowFromUltimate === true);
+    check(`${CLASSES[id].name}: no ultimate-meter rule opts out of THE ULTIMATE RULE`,
+      optOut.length === 0, optOut.map((r) => r.on).join(", "));
+    const loopy = rules.filter((r) => r.perUnit === "damage" && !r.requireTags?.length && r.amount > DAMAGE_TOPUP_CAP);
+    check(`${CLASSES[id].name}: no untagged damage-scaled ultimate-meter rule above the top-up cap`,
+      loopy.length === 0, loopy.map((r) => `${r.on} ${r.amount}/dmg`).join(", "));
+  }
+}
+
 console.log("\n=== classes ===");
 let ultsThatMoved = 0;
 let ultsThatSummoned = 0;
