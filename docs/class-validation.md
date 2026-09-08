@@ -219,10 +219,14 @@ folds into Cluster 2 below.
   - **Engineer** — ST 395, AoE 1384 / 231 per-tgt, census `heal 0 / shld 2 / … / sum 5`.
     Stage 11 cut its ultimate-generation loop and nothing replaced the output; it now
     reads as the weakest class on the board. Curve is fine (5.5×).
-  Both are also being measured with part of their kit switched off — the B-4 Corsair
-  (`ghost_crew`, `harpooner`, crew/plunder hybrids) and Engineer (×11 construct keystones)
-  rules are still inert. **Wire those first** (`docs/rule-coverage.md` B-4), then propose a
-  numbers pass against the kit that's actually online.
+  Both were being measured with part of their kit switched off. **B-4 is now wired
+  (Batch 6, `docs/rule-coverage.md`)**: Engineer's `automated_army`, `artillery_platform`,
+  `auto_repair`, `self_repairing_workshop`, `chain_detonation`, `mobile_armory`, the
+  `killbox` / `recursive_explosives` / `field_workshop` hybrids and `the_foundry`;
+  Corsair's `ghost_crew` and `dread_admiral`. Still inert for these two: `corsair.cm.harpooner`
+  (tether primitive, its own follow-up). **Next: re-run `npm run arena` for corsair +
+  engineer with the keystone paths allocated, then propose the numbers pass against the
+  kit that's now online.**
 - **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** `npm run rules` now
   proves ~40 of the wired rules do something; extend it to assert every hybrid/keystone/
   archetype changes a number or an effect list the harness can see. Feeds `npm run

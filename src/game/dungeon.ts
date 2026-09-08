@@ -35,7 +35,7 @@ import {
 import { applyRuleFx, runBuildGrants, type BuildRuleContext } from "./abilities";
 import {
   HeroRuleState, rulesOnAvoid, rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill,
-  rulesOnUltimate, rulesTick, type RuleHost,
+  rulesOnMinionDeath, rulesOnUltimate, rulesTick, type MinionView, type RuleHost,
 } from "./rules";
 
 /** Fraction of a ward's pool that also counts as flat resistance while it holds — was
@@ -1799,8 +1799,13 @@ export class Dungeon implements CombatHost, RuleHost {
     if (i < 0) return;
     this.minions.splice(i, 1);
     this.hostActors.delete(Dungeon.MINION_ID_BASE + m.id);
-    if (dead) this.events.push({ kind: "death", x: m.x, y: m.y, elite: null });
-    else this.events.push({ kind: "nova", x: m.x, y: m.y, radius: 12 });
+    if (dead) {
+      this.events.push({ kind: "death", x: m.x, y: m.y, elite: null });
+      const owner = this.heroes[m.owner];
+      if (owner && owner.player.build.rules.size > 0) rulesOnMinionDeath(this, owner, m.x, m.y);
+    } else {
+      this.events.push({ kind: "nova", x: m.x, y: m.y, radius: 12 });
+    }
   }
 
   private updateCorpses(dt: number): void {
@@ -2938,6 +2943,56 @@ export class Dungeon implements CombatHost, RuleHost {
       out.push({ x: g.x, y: g.y, radius: g.radius, element: g.element, benefit: !!g.benefit });
     }
     return out;
+  }
+
+  // --- RuleHost: the summon layer, for the construct/summon keystones (B-4) ---
+
+  minionsOwnedBy(hero: Hero): MinionView[] {
+    const out: MinionView[] = [];
+    for (const m of this.minions) {
+      if (m.owner !== hero.index || m.health <= 0) continue;
+      out.push({
+        id: Dungeon.MINION_ID_BASE + m.id,
+        x: m.x, y: m.y, health: m.health, maxHealth: m.maxHealth, unit: m.unit,
+      });
+    }
+    return out;
+  }
+
+  summonFor(
+    hero: Hero, x: number, y: number, count: number,
+    opts: { lifespan?: number; inherit?: number; unit?: string } = {},
+  ): number[] {
+    return this.spawnMinion({
+      ownerId: hero.index,
+      unit: opts.unit ?? "construct",
+      x, y, count,
+      duration: opts.lifespan ?? 0,
+      command: { behavior: "guardPoint", inheritPower: opts.inherit ?? MINION_DEFAULT_INHERIT },
+    });
+  }
+
+  repairMinion(id: number, amount: number): void {
+    const m = this.minionByHostId(id);
+    if (m && m.health > 0) m.health = Math.min(m.maxHealth, m.health + amount);
+  }
+
+  sustainMinion(id: number, seconds: number): void {
+    const m = this.minionByHostId(id);
+    if (m && m.health > 0) m.remaining = Math.max(m.remaining, seconds);
+  }
+
+  focusSummons(hero: Hero, target: Enemy | null): void {
+    for (const m of this.minions) {
+      if (m.owner !== hero.index) continue;
+      if (target) {
+        m.behavior = "commandTarget";
+        m.commandTargetId = target.id;
+      } else {
+        m.behavior = "aggroNearest";
+        m.commandTargetId = null;
+      }
+    }
   }
 
   hitEnemy(

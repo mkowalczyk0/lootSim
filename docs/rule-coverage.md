@@ -130,23 +130,57 @@ give the rule engine a read of "the zones you hold".
   decaying; the "double for detonations" half waits on a detonation seam).
 - Still out of B-1: `corsair.cm.harpooner` (Hookshot tether — deferred with B-4).
 
+**Batch 6** — B-4 construct/summon seam: **+13 rule ids**. A summon layer on `RuleHost`
+(`minionsOwnedBy` → `MinionView[]`, `summonFor`, `repairMinion`, `sustainMinion`,
+`focusSummons`) plus a new `rulesOnMinionDeath(host, hero, x, y)` hook fired from
+`Dungeon.despawnMinion` when a hero-owned summon is destroyed. `HeroRuleState.persistentMythics`
++ `PERSISTENT_MYTHIC` latch the "ultimate becomes permanent" Mythics on the cast (never
+cleared this floor) — the parallel to the timed `MYTHIC_WINDOW`.
+- **Engineer** (`rules.ts`): `engineer.gn.automated_army` (`rulesOnKill` — a kill next to
+  a turret spawns one, gated 1.5 s); `engineer.se.artillery_platform` (`rulesTick` aura —
+  while stationary, every construct focus-fires the nearest enemy, ×`min(count,6)`);
+  `engineer.mc.auto_repair` (`rulesTick` aura — heals + `sustainMinion` nearby constructs);
+  `engineer.mc.self_repairing_workshop` (`rulesTick` — sustains all owned permanently,
+  rebuilds toward 3, gated 8 s); `engineer.sa.chain_detonation` (`rulesOnMinionDeath` —
+  fire nova on death, enemy-only so it can't chain minion deaths); `engineer.qm.mobile_armory`
+  (`rulesTick` aura — self + nearby allies `reduceCooldowns`); hybrids `killbox`
+  (`focusSummons` onto the tagged target + refresh), `recursive_explosives`
+  (`rulesOnMinionDeath` — rebuild once, gated 4 s), `field_workshop` (`rulesTick` aura —
+  tends allies' constructs + cooldowns); `engineer.mythic.the_foundry` (persistent aura —
+  sustains + repairs all owned, assembles one every 4 s).
+- **Corsair**: `corsair.pk.ghost_crew` (`rulesOnKill` tops the crew back to 2 + `rulesTick`
+  sustains the two oldest); `corsair.mythic.dread_admiral` (persistent — every kill presses
+  the slain into the crew).
+- **Ranger**: `ranger.bm.alpha_companion` (`rulesTick` — sustains the companion permanent,
+  resummons one if it ever falls, gated 5 s).
+
+Still deferred (documented, not wired):
+- `corsair.cm.harpooner` — a multi-enemy tether is a genuinely new movement primitive
+  (`RuleHost` has no pull), and it is not a summon. Its own follow-up.
+- `necromancer.deathknight.champion_of_death`, `necromancer.bonelord.ossuary` — the two
+  necro keystones carry **no `note`**, so their mechanical intent is undefined; every
+  other necro rule is companion-backed (M/G/R). Needs a spec line before wiring, and necro
+  is not a problem class (Cluster 3 found its curve healthy).
+- `trickster.mythic.reality_killer`, `necromancer.mythic.soul_legion`,
+  `warlock.mythic.the_reckoning` — each ships a `mutate` that does the mechanical change;
+  the extra "kill resets all copies" / "mass-Doom detonation" clauses want a detonation
+  seam (its own backlog item), and trickster decoys are not `Minion`s.
+- `engineer.hybrid.autonomous_army` — "turrets pick their own repositions / no LOS": the
+  minion pather already routes around walls, so there is nothing inert to wire.
+
 **Mutation-only Mythics — no engine work, verified against their `mutations`:**
 `lancer.mythic.comet_vanguard`, `swordsman.mythic.sword_saint`,
 `ranger.mythic.winters_quarry`, `duelist.mythic.the_last_word`, `bard.mythic.the_symphony`
 — each ships a `mutate` that already does the mechanical change; the `rule` string is a
-label. **Deferred to B-4** (need the summon layer): `corsair.mythic.dread_admiral`,
-`engineer.mythic.the_foundry`, `trickster.mythic.reality_killer`,
-`necromancer.mythic.soul_legion`, `warlock.mythic.the_reckoning` (mass-Doom detonation).
+label.
 
 ## Backlog (ordered)
 
-- **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
-  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`,
-  `corsair.cm.harpooner` (Hookshot tether), plus the 5 summon/detonation Mythics
-  (`dread_admiral`, `the_foundry`, `reality_killer`, `soul_legion`, `the_reckoning`).
-  **Folded into Part 3** — it overlaps the concurrent minion work on `uat/combat-content`
-  and the Part 3 "Necromancer vs Engineer summon scaling" cluster; wiring each summoner's
-  keystones in the same pass that fixes its minion scaling avoids tuning them twice.
+- **B-4 construct/summon keystones** — **DONE (Batch 6)** for engineer (5 keystones +
+  `killbox` / `recursive_explosives` / `field_workshop` hybrids + `the_foundry`), corsair
+  (`ghost_crew`, `dread_admiral`), and `ranger.bm.alpha_companion`. Deferred with reasons
+  above: `corsair.cm.harpooner` (tether primitive), the two un-noted necro keystones, the
+  three mutation-backed detonation Mythics, `engineer.hybrid.autonomous_army`.
 - **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form
   abilities gated on an Aspect/Site ability that isn't a rule).
 - **D** — the ~20 "pure passive" rules turned out to be mostly *conditional* passives
