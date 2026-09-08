@@ -199,6 +199,10 @@ export function layerAt(axis: "down" | "up", depth: number): WorldLayer {
 export function layerFor(config: RunConfig): WorldLayer {
   switch (config.mode.id) {
     case "delve": return layerAt("down", config.depth);
+    // Keyed on the *height*, not the depth: they are the same number today (the Tower
+    // walks the one curve at the Delve's rate) but the height is what the band means, and
+    // a config that ever carried one without the other must not read the descent's table.
+    case "tower": return layerAt("up", config.tower?.height ?? config.depth);
     case "abyss": return RIFT_LAYERS.abyss;
     case "hoard": return RIFT_LAYERS.avarice;
     case "planet":

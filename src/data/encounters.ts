@@ -1,10 +1,10 @@
 /**
  * Which encounter a run's boss floor will actually spawn — the one answer, shared.
  *
- * There are three ways a boss gets picked and they take precedence over each other: the
+ * There are four ways a boss gets picked and they take precedence over each other: the
  * Proving at the bottom of the Delve is the class (`legendBossSpec`), a Reliquary sector
- * is the sector (`planetBossSpec`), and everything else works down the depth-bucketed
- * ladder (`bossFor`). That is a small conditional, and it used to live inline in
+ * is the sector (`planetBossSpec`), the Tower is the height (`towerBossSpec`), and
+ * everything else works down the depth-bucketed ladder (`bossFor`). That is a small conditional, and it used to live inline in
  * `Dungeon.spawnBoss` where it was the only thing that needed it.
  *
  * It lives here now because the drop preview (UAT §20) has to ask the same question, and
@@ -26,6 +26,7 @@ import type { ClassId } from "./classes";
 import { legendBossSpec } from "./legends";
 import type { RunConfig } from "./modes";
 import { planetBossSpec } from "./planets";
+import { towerBossSpec } from "./tower";
 
 /**
  * The encounter a boss floor under `config` will spawn.
@@ -40,5 +41,9 @@ import { planetBossSpec } from "./planets";
 export function bossSpecForRun(config: RunConfig, proving: ClassId | null = null): BossSpec {
   if (proving) return legendBossSpec(proving);
   if (config.planet) return planetBossSpec(config.planet.spec);
+  // The ascent has its own five (UAT §21), borrowed and reskinned the same way a sector's
+  // is, and picked by height rather than depth. Here rather than in `spawnBoss` for the
+  // reason this module exists at all: the §20 preview asks the identical question.
+  if (config.tower) return towerBossSpec(config.tower.height);
   return bossFor(config.depth);
 }

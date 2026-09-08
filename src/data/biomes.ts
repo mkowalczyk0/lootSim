@@ -7,6 +7,7 @@
  */
 
 import type { Element } from "./elements";
+import type { EnemyKind } from "./enemies";
 import type { TrapKind } from "./traps";
 
 export type PropKind =
@@ -57,6 +58,19 @@ export interface BiomeStyle {
    * chestplate from a number into a decision about where you're going.
    */
   readonly element: Element;
+  /**
+   * Flavor names for the ordinary archetypes, so a place's roster reads as its own.
+   *
+   * Optional and additive: a biome that sets nothing (every Delve biome) leaves the
+   * archetype's own name alone. A Reliquary sector says the same thing on `PlanetSpec`
+   * and that one still wins — the sector is the more specific answer, and moving it
+   * would rewrite six specs to say what they already say. The Tower sets it here because
+   * the Tower has no spec of its own: its three bands *are* three places, and the
+   * celestial orders belong to the band rather than to the run (`data/tower.ts`).
+   *
+   * Same eleven archetypes fighting the same eleven ways underneath. This is a name.
+   */
+  readonly enemyNames?: Partial<Record<EnemyKind, string>>;
 }
 
 export const BIOMES: readonly BiomeStyle[] = [

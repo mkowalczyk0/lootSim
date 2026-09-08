@@ -109,8 +109,13 @@
  * (the collection, by definition id), one new per-character list, `relics` on each
  * `Player` (the three slots), and a `relicsFound` counter on the stats. An older save
  * loads owning none and wearing none, which is what a new account has.
+ *
+ * Version 23 opens the second ladder (UAT §21, the Tower). `RunStats.riftsCleared` and
+ * `GameState.riftTiers` are keyed by `RunModeId` and gain a `tower` entry, which both
+ * already fill in through `{ ...fresh, ...saved }`; the climb's own records arrive with
+ * the mode itself. An older save loads having climbed nothing, which is true.
  */
-export const SAVE_VERSION = 22;
+export const SAVE_VERSION = 23;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

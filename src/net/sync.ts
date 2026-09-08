@@ -25,6 +25,7 @@ import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { RELICS } from "../data/relics";
+import { towerConfig } from "../data/tower";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
 import type { Enemy, Minion } from "../game/entities";
@@ -82,9 +83,14 @@ export function configFromWire(wire: RunConfigWire): RunConfig {
   const planet = wire.planetId ? PLANETS_BY_ID[wire.planetId] : undefined;
   const base: RunConfig = planet
     ? planetConfig(planet, wire.planetTier ?? 1, wire.floor, wire.challengerTier)
-    : MODES[wire.mode as RunModeId]?.isRift
-      ? riftConfig(wire.mode as RunModeId, wire.tier, wire.floor, wire.challengerTier)
-      : delveConfig(wire.depth, wire.challengerTier);
+    // The Tower needed no new wire field: `mode` already names it and `floor` already
+    // carries the height. It is rebuilt through its own builder rather than reassembled
+    // here, so a climb the host started is the climb every client builds.
+    : wire.mode === "tower"
+      ? towerConfig(wire.floor, wire.challengerTier)
+      : MODES[wire.mode as RunModeId]?.isRift
+        ? riftConfig(wire.mode as RunModeId, wire.tier, wire.floor, wire.challengerTier)
+        : delveConfig(wire.depth, wire.challengerTier);
   return { ...base, players: wire.players };
 }
 

@@ -46,7 +46,7 @@ import type { DailyRun } from "./daily";
 import type { PlanetSpec } from "./planets";
 import type { WeeklyRun } from "./weekly";
 
-export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence"] as const;
+export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower"] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
 export interface RunMode {
@@ -224,6 +224,31 @@ export const MODES: Record<RunModeId, RunMode> = {
     rarityBias: 0, quantity: 1,
     coinMult: 1, keyMult: 1, gemMult: 1.3, xpMult: 1.6, unlockDepth: 0,
   },
+  /**
+   * The Tower — the ascent (UAT §21), and the Delve's mirror in every mechanical respect:
+   * not a rift, one floor at a time, every fifth height an encounter, no upper bound. Its
+   * curve is the Delve's curve — `towerConfig` in `data/tower.ts` hands `profileFor` an
+   * effective depth equal to the height and a `danger` of 1 — because §21 asked for a
+   * second *direction*, not a second difficulty model. What differs is the place: holy
+   * biomes that infuse the wildlife as you climb, the celestial orders as the roster, five
+   * reskinned encounters, and (UAT §16 stays neutral at ordinary danger) rewards that
+   * differ in kind rather than in amount.
+   *
+   * `unlockDepth` 5 is the ruling: one axis teaches the game before the second appears,
+   * and the Keepers send you up once you have shown you can hold the down.
+   */
+  tower: {
+    id: "tower", name: "The Tower", short: "Tower",
+    blurb: "One floor at a time, as high as you last. Climb or extract after every clear.",
+    lore: "Heaven descended. Heaven does not leave a wound ragged: it ordered it, and it "
+      + "is still ordering it, one perfect floor at a time. The Keepers' doctrine says "
+      + "Heaven must not descend. Somebody has to go up and see how far it has.",
+    color: "#d8cfa8",
+    isRift: false, floors: 0,
+    baseDepth: 1, depthPerTier: 0, depthPerFloor: 1,
+    dangerPerTier: 1, rarityBias: 0, quantity: 1,
+    coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1, unlockDepth: 5,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -250,6 +275,16 @@ export interface RunConfig {
   readonly players?: number;
   /** Set only for a planet expedition — its own visuals, boss and material payout. */
   readonly planet?: { readonly spec: PlanetSpec; readonly tier: number };
+  /**
+   * Set only for a Tower climb (UAT §21) — how far up this floor is.
+   *
+   * Identical to `depth` at every call site, because the Tower walks the one difficulty
+   * curve at the Delve's own rate. It is carried separately anyway because *height* is
+   * what picks the band, the biome and the encounter, and a caller holding only a depth
+   * would be handed the descent's answers for all three. An inline shape rather than an
+   * import so `data/tower.ts` can depend on this file and not the other way round.
+   */
+  readonly tower?: { readonly height: number };
   /** Set only for the daily Vigil — the day, its seed, its modifiers and its key. */
   readonly daily?: DailyRun;
   /** Set only for the weekly Convergence — the week, its base seed, its modifiers and

@@ -20,7 +20,7 @@ import {
 } from "../data/weapons";
 import { weaponAbilityFor } from "../data/weapon-abilities";
 import type { TriggerKind, TriggerSpec } from "../data/items";
-import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
+import { biomeForRun, coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
 import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
 import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
@@ -529,7 +529,9 @@ export class Dungeon implements CombatHost, RuleHost {
     const planet = this.config.planet?.spec;
     this.level = generateLevel(this.config.depth, this.rng, {
       boss: this.profile.isBoss,
-      biome: planet?.biome,
+      // The same answer the profile drew its colours from — a sector's own, the Tower's
+      // band, or the depth bucket (`biomeForRun` in data/depth.ts).
+      biome: biomeForRun(this.config),
       big: planet !== undefined,
       nodeCount: planet && !this.profile.isBoss ? planet.nodeCount : undefined,
     });
@@ -846,9 +848,13 @@ export class Dungeon implements CombatHost, RuleHost {
     if (element !== "physical") resists[element] += 55 + this.profile.depth * 1.5;
 
     const prefix = element !== archetype.element ? `${ELEMENT_PREFIX[element]} ` : "";
-    // A planet renames its ordinary archetypes so the roster reads as this planet's
-    // own, even though it's the same five kinds fighting the same way underneath.
-    const baseName = this.config.planet?.spec.enemyNames[archetype.kind] ?? archetype.name;
+    // A place renames its ordinary archetypes so the roster reads as its own, even
+    // though it's the same kinds fighting the same way underneath: a Reliquary sector
+    // says so on its spec, and a biome (the Tower's three bands) says so on itself.
+    const baseName =
+      this.config.planet?.spec.enemyNames[archetype.kind]
+      ?? this.level.biome.enemyNames?.[archetype.kind]
+      ?? archetype.name;
     const attackCooldown = archetype.attackCooldown * aff.attackRateMult;
     return {
       id: this.nextEnemyId++,
