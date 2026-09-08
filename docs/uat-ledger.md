@@ -25,8 +25,8 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 5 — Universal progression | universal skill tree | done |
 | 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | class completion done; weekly + previews in flight |
 | 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
-| 8 — Crafting | forge overhaul, reforging, currency, recipes | in flight |
-| 9 — Relics | relic system, ~20 relics, equip, acquisition | open |
+| 8 — Crafting | forge overhaul, reforging, currency, recipes | **done** |
+| 9 — Relics | relic system, ~20 relics, equip, acquisition | in flight |
 | 10 — Raids | raid framework, 4–20 players, weekly scheduling, named loot | open (blocked) |
 | 11 — World / tower / delve | tower climbing, heaven/hell split, lore integration | open |
 
@@ -52,15 +52,15 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 16 | Raid drop rarity | open | Blocked on §15. `NamedSource` already scales drop chance with `danger`, which is the hook §16 asks for. |
 | 17 | Daily & weekly dungeons | partial | Daily shipped as **The Vigil** (`data/daily.ts`, `daily-dungeon.md`). Weekly **assigned** to Sonnet 5, `feature/weekly-dungeon`. |
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
-| 19 | Relics & artifacts | open | Nothing built. (Grep hits for "relic" are the *Reliquary Portal*, an unrelated rename.) Next major unclaimed item. |
-| 20 | Endgame drop previews | partial | Seeded by §28: the Records "Named items" list shows each item's source, and `namedForSource()` is the pure read a real preview UI would use. The per-activity "here is what this can drop" screen is still open. |
+| 19 | Relics & artifacts | **assigned** | Fable 5.1, `feat/relics`. Reuses the named-item effect vocabulary rather than inventing a third one. Artifacts from the Abyssal Rift (as §19 specifies), relics from the Proving and bosses, since raids don't exist yet — with seams left for raid/tower sources. Fills the relic slots §12 anticipated. |
+| 20 | Endgame drop previews | **assigned** | Opus 5, `feat/drop-previews`. Seeded by §28's `namedForSource()`. Must read the existing tables, never duplicate them — a preview that can drift from the real drop table is worse than none. |
 | 21 | Titan rush / tower | open | Lore is written (`game_story_worldbuilding.md`), mechanics aren't. |
 | 22 | Rifts / war concept | open | |
 | 23 | Planets / materials layers | partial | Planets, materials and the star map all exist; the §23 restructuring doesn't. |
-| 24 | Forge overhaul | **assigned** | Fable 5.1, `feat/forge-overhaul`. Today `data/crafting.ts` is 58 lines; Chunk 8 wants rerolling, skill-slot work, recipes, currency. |
-| 25 | Named item crafting | **assigned** | Unblocked by §28; part of the Chunk 8 assignment. One craft-only mythic already ships as a proof. |
-| 26 | Reforging | done | `feature/reforging` merged; Reforge is a real grid screen in the Craft station. |
-| 27 | Crafting currency | **assigned** | Part of Chunk 8. Spec says explicitly: do not overcomplicate initially. |
+| 24 | Forge overhaul | **done** | The Reforge grid became a workbench: Temper, Recast, Augment, Inscribe, Awaken, Ascend, Salvage. `src/game/forge.ts` + `tools/forge.ts` in `npm test`. Inscribe *rolls* the grant from the pool rather than letting you pick it — a deterministic choice would collapse every character onto the strongest grant. See `docs/forge.md`. |
+| 25 | Named item crafting | **done** | Multi-item recipes: `NamedSource.craft` takes an item list consumed from the stash, cheapest first, never equipped gear. The Seal Unbroken needs the Warden's own drop + 3 legendary shields + materials — §24's core example, literally. |
+| 26 | Reforging | done | Extended by the Forge overhaul into the full workbench; `reforgeItem` and its smoke section untouched. |
+| 27 | Crafting currency | **done** | One currency, **Ash**, minted *only* by salvaging found items (asserted: chests, crafts and dives mint zero). Coins stay bulk cost, the nine materials stay recipe currency. Deliberately simpler than §27's own three-currency example. |
 | 28 | Data-driven named items | done | Merged 8c21eae. `src/data/named.ts` + `tools/named.ts` (238 checks). A def forges an ordinary `Item`: stats bake at drop, behaviour is looked up by id and folded through the class-tree build. 9 items shipped, art on the documented fallback until a PNG pass. See `docs/named-items.md`. |
 | 29 | Named item requirements | done | Basic + skill-effect + passive tiers. Cross-class keystone theft (an item flipping another class's rule) deliberately deferred to v2 — it would bypass the anti-overlap audit. |
 
