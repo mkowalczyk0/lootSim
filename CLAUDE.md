@@ -25,7 +25,7 @@ npm run test      # the full acceptance gate — see package.json for the exact 
                   # currently check+vocab+prog+classes+roster+rules+universal+named+legends+forge+deadpaths+smoke
 =======
                   # currently check+vocab+prog+classes+roster+rules+universal+named+legends+
-                  # previews+deadpaths+smoke
+                  # forge+previews+itemart+deadpaths+smoke
 >>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
@@ -42,6 +42,8 @@ npm run named     # named-item definitions, acquisition table, save/wire, live p
 =======
 npm run previews  # drop previews (tools/previews.ts) — proves a preview lists exactly
                   # what the real roll can produce; part of npm test
+npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
+                  # everywhere" as a property; part of npm test
 >>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
@@ -675,7 +677,19 @@ change:
   rotated at draw time along the arc/thrust/spin actually resolved, drawn at the size
   they hit at (an axe really is wider than a torso).
 - `pixels.ts` is grids *and palettes* with no DOM (testable/viewable from Node);
-  `sprites.ts` is the half that owns canvases. Keep that split.
+  `sprites.ts` is the half that owns canvases. Keep that split. `render/itemart.ts` is the
+  same exception for the same reason: it holds the *decision* about what an item looks
+  like, purely, so it can be checked from Node.
+- **One item, one picture.** Six surfaces draw an item — stash card, chest reel, loot
+  banner, paper-doll slot, compare panel, and the drop on the dungeon floor — and all six
+  go through `itemSprite` (`render/sprites.ts`), which executes `chooseItemArt`
+  (`render/itemart.ts`). That is UAT §11's critical requirement, and it is by construction
+  rather than by discipline because it had already broken once: `pickupSprite` in `draw.ts`
+  kept its own copy and washed a non-weapon icon at 0.4 where the stash washed it at 0.5.
+  **If you add a surface that draws an item, call `itemSprite`** — never reach for `ATLAS`,
+  a weapon sprite or a rarity tint directly. `npm run itemart` fails if the wash constant
+  forks again. The fallback ladder (authored art → weapon family → type icon → capsule)
+  never throws, so a missing PNG is never a broken screen.
 
 ### Cosmetics: gems, capsules and the wardrobe
 

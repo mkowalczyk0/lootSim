@@ -12,7 +12,7 @@ import { atlasCanvas, atlasTileset } from "./atlas/index";
 import { ATLAS } from "./atlas/manifest";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
-  heroKey, heroSprite, itemArtId, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
+  heroKey, heroSprite, itemSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
   tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
 } from "./sprites";
 
@@ -102,10 +102,6 @@ const PROP_ATLAS: Partial<Record<PropKind, string>> = {
 };
 
 /** Non-weapon gear on the floor. Weapons draw as the actual weapon instead. */
-const ITEM_ICONS: Record<string, SpriteName> = {
-  armor: "armor", shield: "shield", ring: "ring", gloves: "gloves", necklace: "necklace",
-};
-
 export class WorldRenderer {
   private camX = 0;
   private camY = 0;
@@ -1109,19 +1105,13 @@ function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
     case "item": {
       const item = p.item;
       if (!item) return named("capsule");
-      // A named item with authored art lies on the floor as itself. No art (yet), and it
-      // falls through to its type exactly like any other drop.
-      const artId = itemArtId(item);
-      const art = artId && ATLAS[artId] ? atlasCanvas(artId) : null;
-      if (artId && art) return { canvas: art, scale: ATLAS[artId]!.worldScale };
-      if (item.family) return {
-        canvas: weaponSprite(item.family, null, item.rarity),
-        scale: weaponWorldScale(item.family) ?? 1.0,
-      };
-      const icon = ITEM_ICONS[item.type];
-      return icon
-        ? { canvas: tinted(icon, RARITY_COLORS[item.rarity], 0.4), scale: spriteWorldScale(icon) ?? 1.4 }
-        : { canvas: tinted("capsule", RARITY_COLORS[item.rarity], 0.6), scale: spriteWorldScale("capsule") ?? 1.4 };
+      // What an item looks like is decided in exactly one place (`itemSprite`), so the
+      // thing lying on this floor is the same picture the stash card, the chest reel, the
+      // loot banner and the paper-doll show — UAT §11's critical requirement. This used
+      // to be a second copy of that resolution and it had already drifted: it washed a
+      // non-weapon icon at 0.4 where the stash washed it at 0.5.
+      const art = itemSprite(item);
+      return { canvas: art.canvas, scale: art.worldScale };
     }
     default: return named("coin");
   }
