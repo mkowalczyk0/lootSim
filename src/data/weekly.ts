@@ -10,12 +10,12 @@
  * event in the lore, not just a longer timer.
  *
  * Everything about the week's run derives from one integer, the **UTC week number**
- * (`weekNumber`, itself `dayNumber` / 7): the base seed, the depth band it draws from,
- * three modifiers instead of the Vigil's two, and the tier of the guaranteed key it
- * pays. Every floor mixes that base seed with its own floor index (`weeklyFloorSeed`),
- * so all four floors are each individually deterministic and distinct rather than one
- * layout repeated four times. Only the Challenger dial is personal, exactly as with the
- * Vigil.
+ * (`weekNumber`, itself `dayNumber` / 7): the base seed, the depth band floors 1-3 draw
+ * from and escalate through, the boss floor's own separate (shallower) depth band, three
+ * modifiers instead of the Vigil's two, and the tier of the guaranteed key it pays. Every
+ * floor mixes that base seed with its own floor index (`weeklyFloorSeed`), so all four
+ * floors are each individually deterministic and distinct rather than one layout
+ * repeated four times. Only the Challenger dial is personal, exactly as with the Vigil.
  *
  * Reuses the Vigil's whole idiom rather than inventing a second one: a modifier is
  * still nothing but a multiplier on a `DepthProfile` field (or the elite quota) riding
@@ -23,7 +23,9 @@
  * `data/planets.ts` (a fixed run of floors, tier fixed at zero since there is no ladder
  * to climb — clearing it marks the week, it doesn't open anything), and the boss on the
  * last floor is picked the same depth-bucketed way any rift's boss is, wholesale reuse
- * `planetBossSpec` didn't need a counterpart here.
+ * `planetBossSpec` didn't need a counterpart here. The one deliberate deviation from that
+ * idiom is that the boss floor's depth does **not** continue floors 1-3's escalation —
+ * see `WEEKLY_BOSS_DEPTH_MIN` below for the survivability finding that drove it.
  *
  * Solo only for v1, matching the Vigil's own call: the once-a-week bookkeeping is per
  * account and `RunConfigWire` doesn't carry a weekly plan.
@@ -41,16 +43,45 @@ export const WEEKLY_NAME = "The Convergence";
 /** The depth band a week's floor 1 is drawn from. Meaningfully above the Vigil's 6-14
  *  band — the weekly is supposed to be the thing a Vigil-capable character grows into,
  *  not another version of the same wall. */
-export const WEEKLY_DEPTH_MIN = 18;
-export const WEEKLY_DEPTH_MAX = 30;
-/** Deepest delve floor required before the portal opens — well past the Vigil's 6, and
- *  past the Abyssal Rift's own 8, since this is meant to be the harder of the two. */
-export const WEEKLY_UNLOCK_DEPTH = 16;
+export const WEEKLY_DEPTH_MIN = 12;
+export const WEEKLY_DEPTH_MAX = 16;
+/** Deepest delve floor required before the portal opens — well past the Vigil's 6.
+ *  Retuned down from an original 16 after `tools/smoke.ts`'s survivability pass (a
+ *  playFloor-driven fight, not the reward-plumbing check) showed depth 18-30 was two
+ *  to four times past what even a strong, campaign-progressed sharp character could
+ *  reach — the delve's own measured frontier averages depth 10.3, best single seed 16.
+ *  12 sits inside a sharp character's *reachable peak* (not their sustainable average)
+ *  without being trivial. */
+export const WEEKLY_UNLOCK_DEPTH = 12;
 /** Floors before the boss, plus the boss floor itself — shaped like the Abyssal Rift's
  *  four, since a Convergence is meant to hit at least as hard. */
 export const WEEKLY_FLOORS = 4;
-/** How much deeper each successive floor reads, on top of the week's own base depth. */
-export const WEEKLY_DEPTH_PER_FLOOR = 3;
+/** How much deeper each successive *trash* floor (1-3) reads, on top of the week's own
+ *  base depth. Does not apply to floor 4 — see `WEEKLY_BOSS_DEPTH_MIN`/`MAX` below. */
+export const WEEKLY_DEPTH_PER_FLOOR = 1;
+/**
+ * The boss floor's depth is drawn from its own, much shallower band, independent of how
+ * deep floors 1-3 escalated to. This was a direct finding of the survivability pass, not
+ * a guess: a raid boss is a fundamentally different fight from a trash floor at the same
+ * nominal depth (one high-HP encounter that has to be soloed start to finish, not a wave
+ * that can be kited, thinned or retreated from) and the game has only ever measured one
+ * boss for survivability (`tools/smoke.ts`, "the first raid boss (depth 5)" — the depth-10
+ * and depth-15 delve bosses turned out to be effectively unbeatable for the same
+ * campaign-progressed sharp characters that clear the escalated trash floors above without
+ * trouble; that gap is the same "is the endgame reachable at all" question already
+ * escalated to the owner separately, not something this mode can fix on its own). Rather
+ * than inherit an unmeasured wall, the boss floor's depth stays in the narrow band the
+ * survivability pass actually confirmed a geared, attentive character can fight (roughly
+ * on par with the one boss difficulty the game has proven out) — the run's "significantly
+ * harder than the Vigil" promise is carried entirely by the escalated trash floors, the
+ * elite/kill quota, three modifiers instead of two, and up to three floors' accumulated
+ * wear arriving into the boss without a full heal, not by the boss's raw depth number.
+ * A bad-modifier week (Onslaught and Dire both drawn — about one week in eight) still
+ * makes the boss a real wall; that's an intentional worst case in an otherwise
+ * free-retry mode, not a bug.
+ */
+export const WEEKLY_BOSS_DEPTH_MIN = 9;
+export const WEEKLY_BOSS_DEPTH_MAX = 11;
 /** Odds of the week's guaranteed key being each tier; the rest of the mass is
  *  Legendary. Never worse than Legendary — this is the mode that pays in the two
  *  chests the Quartermaster otherwise only sells outright. */
@@ -208,12 +239,16 @@ export interface WeeklyRun {
   readonly keyTier: ChestTier;
 }
 
-export function weeklyPlan(week: number): WeeklyRun & { readonly depth: number } {
+export function weeklyPlan(week: number): WeeklyRun & { readonly depth: number; readonly bossDepth: number } {
   // Drawn from a side stream, not the level seed itself, so a tuning change here never
   // moves a layout everybody already knows for that week (and vice versa) — same trick
   // the Vigil's `dailyPlan` uses.
   const rng = new Rng((weeklySeed(week) ^ 0x0b17_da11) >>> 0);
   const depth = rng.int(WEEKLY_DEPTH_MIN, WEEKLY_DEPTH_MAX);
+  // The boss floor's depth is its own draw from its own (much shallower, survivability-
+  // tested) band — see the comment on `WEEKLY_BOSS_DEPTH_MIN` for why it isn't just
+  // `depth` continuing to escalate.
+  const bossDepth = rng.int(WEEKLY_BOSS_DEPTH_MIN, WEEKLY_BOSS_DEPTH_MAX);
   // Three distinct modifiers, at most one of them reward-flavoured.
   const pool = [...WEEKLY_MODIFIER_IDS];
   for (let i = pool.length - 1; i > 0; i--) {
@@ -233,7 +268,7 @@ export function weeklyPlan(week: number): WeeklyRun & { readonly depth: number }
   const keyTier: ChestTier = roll < WEEKLY_KEY_ODDS.CollectorsHoard
     ? "CollectorsHoard"
     : roll < WEEKLY_KEY_ODDS.CollectorsHoard + WEEKLY_KEY_ODDS.AdeptsTrove ? "AdeptsTrove" : "Legendary";
-  return { week, seed: weeklySeed(week), depth, modifiers, keyTier };
+  return { week, seed: weeklySeed(week), depth, bossDepth, modifiers, keyTier };
 }
 
 /**
@@ -247,7 +282,9 @@ export function weeklyConfig(week: number, floor: number, challengerTier = 0): R
   const plan = weeklyPlan(week);
   const fx = weeklyEffects(plan.modifiers);
   const f = Math.min(Math.max(1, Math.floor(floor)), WEEKLY_FLOORS);
-  const depth = Math.max(1, Math.round(plan.depth + WEEKLY_DEPTH_PER_FLOOR * (f - 1)));
+  const depth = f === WEEKLY_FLOORS
+    ? plan.bossDepth
+    : Math.max(1, Math.round(plan.depth + WEEKLY_DEPTH_PER_FLOOR * (f - 1)));
   return {
     mode: MODES.convergence,
     tier: 0,

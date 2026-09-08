@@ -29,10 +29,10 @@ import {
   type DailyModifierId,
 } from "../src/data/daily";
 import {
-  WEEKLY_DEPTH_MAX, WEEKLY_DEPTH_MIN, WEEKLY_DEPTH_PER_FLOOR, WEEKLY_FLOORS, WEEKLY_GUARANTEED_RARITY,
-  WEEKLY_KEY_ODDS, WEEKLY_MODIFIERS, WEEKLY_MODIFIER_IDS, WEEKLY_UNLOCK_DEPTH,
-  msUntilWeeklyReset, weekNumber, weeklyConfig, weeklyEffects, weeklyFloorSeed, weeklyPlan, weeklySeed,
-  weeklyUnlocked, type WeeklyModifierId,
+  WEEKLY_BOSS_DEPTH_MAX, WEEKLY_BOSS_DEPTH_MIN, WEEKLY_DEPTH_MAX, WEEKLY_DEPTH_MIN, WEEKLY_DEPTH_PER_FLOOR,
+  WEEKLY_FLOORS, WEEKLY_GUARANTEED_RARITY, WEEKLY_KEY_ODDS, WEEKLY_MODIFIERS, WEEKLY_MODIFIER_IDS,
+  WEEKLY_UNLOCK_DEPTH, msUntilWeeklyReset, weekNumber, weeklyConfig, weeklyEffects, weeklyFloorSeed, weeklyPlan,
+  weeklySeed, weeklyUnlocked, type WeeklyModifierId,
 } from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
@@ -531,9 +531,14 @@ function campaign(seed: number, dodge: number, dives = 20, log = false) {
 const CAMPAIGN_SEEDS = [4242, 991, 7777, 31337, 606, 5150, 20226, 88813, 41029, 63071, 17402, 94651];
 
 let sharpDeepest = 0;
+// Lifted out of the block below (rather than recomputed) so the Convergence's
+// survivability check can fight real characters a sharp player actually produced,
+// instead of a synthetic stand-in — see "=== the convergence ===" further down.
+let sharpRuns: ReturnType<typeof campaign>[] = [];
 console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraphs) ===");
 {
   const runs = CAMPAIGN_SEEDS.map((seed, i) => campaign(seed, 0.55, 20, i === 0));
+  sharpRuns = runs;
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -2259,9 +2264,15 @@ console.log("\n=== the convergence ===");
   const wNextWeek = new Dungeon(geared(30, 9201, 20, "swordsman"), weeklyConfig(week + 1, 1));
   check("…and floor 1 of next week is different again", fingerprint(wOne) !== fingerprint(wNextWeek));
 
-  check("depth escalates by exactly the per-floor step across all four floors",
-    Array.from({ length: WEEKLY_FLOORS }, (_, i) => i + 1).every((f) =>
+  check("the trash floors (1-3) escalate by exactly the per-floor step",
+    [1, 2, 3].every((f) =>
       weeklyConfig(week, f).depth === Math.max(1, Math.round(wa.depth + WEEKLY_DEPTH_PER_FLOOR * (f - 1)))));
+  // The boss floor deliberately does NOT continue that escalation — see the comment on
+  // `WEEKLY_BOSS_DEPTH_MIN` in data/weekly.ts. It draws from its own, much shallower,
+  // survivability-tested band instead, independent of how deep the trash floors got.
+  check("the boss floor's depth is its own draw, inside its own band",
+    weeklyConfig(week, WEEKLY_FLOORS).depth >= WEEKLY_BOSS_DEPTH_MIN
+    && weeklyConfig(week, WEEKLY_FLOORS).depth <= WEEKLY_BOSS_DEPTH_MAX);
   check("only the last of the four floors is the boss", [1, 2, 3].every((f) =>
     !weeklyConfig(week, f).bossFloor && !weeklyConfig(week, f).lastFloor)
     && weeklyConfig(week, WEEKLY_FLOORS).bossFloor && weeklyConfig(week, WEEKLY_FLOORS).lastFloor);
@@ -2279,9 +2290,13 @@ console.log("\n=== the convergence ===");
   check("the Convergence's floor 1 hits harder than the Vigil's one floor",
     convergenceProfile.enemyDamage > vigilProfile.enemyDamage && convergenceProfile.enemyHealth > vigilProfile.enemyHealth,
     `damage ${convergenceProfile.enemyDamage.toFixed(0)} vs ${vigilProfile.enemyDamage.toFixed(0)}, health ${convergenceProfile.enemyHealth.toFixed(0)} vs ${vigilProfile.enemyHealth.toFixed(0)}`);
-  const convergenceBoss = profileFor(weeklyConfig(week, WEEKLY_FLOORS, 0).depth, weeklyConfig(week, WEEKLY_FLOORS, 0));
-  check("…and the boss floor hits harder still than its own floor 1",
-    convergenceBoss.enemyDamage > convergenceProfile.enemyDamage);
+  // The boss floor is deliberately NOT deeper than floor 1 — see WEEKLY_BOSS_DEPTH_MIN
+  // in data/weekly.ts. Its threat comes from being a solo raid encounter, the quota
+  // being the boss itself, and arriving there with three floors of wear already on the
+  // clock, not from a bigger depth number; the survivability check below is what
+  // actually proves the boss is a real fight rather than a free win or a certain wipe.
+  check("the boss floor sits inside its own shallower band, not the trash floors' escalation",
+    weeklyConfig(week, WEEKLY_FLOORS, 0).depth <= weeklyConfig(week, 1, 0).depth);
 
   // 5. Each modifier moves exactly what it says. Build a Convergence floor-1 config with
   // a chosen set and compare its profile against the same week with no twists at all.
@@ -2324,9 +2339,12 @@ console.log("\n=== the convergence ===");
       danger: 1, count: 1, health: 1, telegraph: 1, aggression: 1, speed: 1, quantity: 1, coins: 1, rarityBias: 0, elites: 0,
     }));
 
-  // 6. Play all four floors end to end. Floors 1-3 bank ordinary loot and must not close
-  // the week; the boss floor pays the guaranteed key and item and is what actually
-  // closes it.
+  // 6. The reward and close-out plumbing, all four floors end to end. This teleports
+  // every floor straight to "cleared" (`killsSoFar = killsRequired` etc.) rather than
+  // fighting anything — it proves floors 1-3 bank ordinary loot and must not close the
+  // week, and that the boss floor pays the guaranteed key and item and is what actually
+  // closes it, but it says nothing about whether the floor is survivable. That's what
+  // section 6b, right after this block, is for — it actually fights.
   {
     const st = geared(30, 9204, 20, "lancer");
     let config: RunConfig = weeklyConfig(week, 1, st.challengerTier);
@@ -2376,6 +2394,47 @@ console.log("\n=== the convergence ===");
       new GameState().weekly.clearedWeek === 0 && !weeklyUnlocked(new GameState().stats.deepestDepth));
     check("the portal opens well past the Vigil's own unlock, at the bottom of its band",
       weeklyUnlocked(WEEKLY_UNLOCK_DEPTH) && !weeklyUnlocked(WEEKLY_UNLOCK_DEPTH - 1) && WEEKLY_UNLOCK_DEPTH > DAILY_UNLOCK_DEPTH);
+  }
+
+  /**
+   * 6b. Survivability, for real — the raid-boss section's precedent (playFloor against a
+   * kitted character), not the teleport-to-cleared plumbing above. This is what actually
+   * answers "can anyone survive this" rather than just "does the reward land correctly."
+   *
+   * Reuses the exact characters the sharp campaign (dodge 0.55, "=== a campaign: 20
+   * dives, a sharp player ===" above) already produced, rather than a synthetic
+   * fixed-level-plus-N-chests stand-in — a first pass at this check used the synthetic
+   * kind and it cleared almost nothing anywhere in the depth 18-30 band the mode
+   * originally shipped with, which is what caught that the band was two to four times
+   * past the delve's own measured frontier (sharp bot averages deepest depth ~10.3, best
+   * single seed ~16) before it ever reached a real player.
+   *
+   * Filtered to characters whose campaign actually reached `WEEKLY_UNLOCK_DEPTH` — testing
+   * ones that never unlocked the mode would prove nothing about it.
+   */
+  {
+    const qualified = sharpRuns.filter((r) => r.deepest >= WEEKLY_UNLOCK_DEPTH);
+    check("the sharp campaign produces at least one character that actually unlocks the Convergence",
+      qualified.length > 0, `${qualified.length}/${sharpRuns.length} reached depth ${WEEKLY_UNLOCK_DEPTH}+`);
+    // A single fixed week draws one fixed depth for floor 1 (12-18) and one for the
+    // boss (9-11) — testing only that one week makes the result hostage to whichever
+    // end of the band it happened to land on, exactly the "five seeds routinely flipped
+    // the ordering" problem the campaign comparison above widened to twelve seeds for.
+    // Spreading across several consecutive weeks, crossed with every qualifying
+    // character, samples the whole band instead of one draw from it.
+    const TEST_WEEKS = [week, week + 1, week + 2, week + 3, week + 4];
+    const floor1Results = qualified.flatMap((r) =>
+      TEST_WEEKS.map((w, wi) => playFloor(r.state, weeklyConfig(w, 1), 400, 6100 + wi, 0.85)));
+    const bossResults = qualified.flatMap((r) =>
+      TEST_WEEKS.map((w, wi) => playFloor(r.state, weeklyConfig(w, WEEKLY_FLOORS), 400, 6200 + wi, 0.85)));
+    const wins = (rs: typeof floor1Results) => rs.filter((r) => r.d.phase === "cleared").length;
+    console.log(`  across ${TEST_WEEKS.length} weeks × ${qualified.length} qualifying characters ` +
+      `(their own deepest: ${qualified.map((r) => r.deepest).join(",")}): ` +
+      `floor 1 ${wins(floor1Results)}/${floor1Results.length} cleared, boss ${wins(bossResults)}/${bossResults.length} cleared`);
+    check("a character who just unlocked it can actually clear floor 1 on at least some weeks",
+      wins(floor1Results) >= 1, `${wins(floor1Results)}/${floor1Results.length}`);
+    check("…and can actually clear the boss floor on at least some weeks — the mode is beatable, not a wall",
+      wins(bossResults) >= 1, `${wins(bossResults)}/${bossResults.length}`);
   }
 
   // 7. The save remembers it, and a save from before the Convergence existed loads clean.

@@ -29,10 +29,11 @@ rather than inventing a second one):
   integer never share a seed). **Each of the four floors mixes this base seed with its
   own floor index** (`weeklyFloorSeed`) before handing it to `Dungeon`, so all four
   floors are individually deterministic and none of them repeat each other.
-- **Depth** = a week-derived pick from a band (18-30), **escalating by a fixed step
-  (currently 3) per floor** — floor 4, the boss floor, reads noticeably deeper than
-  floor 1. The whole band sits meaningfully above the Vigil's 6-14, on purpose: this is
-  the mode a Vigil-capable character grows into.
+- **Depth** = a week-derived pick from a band (12-16) for floors 1-3, **escalating by a
+  fixed step (1) per floor**. The whole band sits above the Vigil's 6-14, on purpose:
+  this is the mode a Vigil-capable character grows into. **The boss floor (4) does not
+  continue that escalation** — it draws its own depth from a separate, much shallower
+  band (9-11). See "Depth band, retuned from a survivability finding" below for why.
 - **Three modifiers** (the Vigil draws two) from their own pool, at most one
   reward-flavoured, same rule as the Vigil.
 - **The week's key tier** = day-derived, but skewed to never be worse than Legendary —
@@ -64,6 +65,52 @@ else, including the Vigil.
   (`bossFor(profile.depth)`, purely a function of depth — no rng involved) — no
   `planetBossSpec`-style reskin for v1. A named Convergence boss is a reasonable follow-up,
   not required for the mode to work.
+- The one place this deliberately does *not* mirror the Vigil's idiom: floor 4's depth is
+  drawn from its own band instead of continuing floors 1-3's escalation. See the next
+  section — this was forced by a real survivability finding, not a stylistic choice.
+
+## Depth band, retuned from a survivability finding
+
+The first pass shipped `WEEKLY_DEPTH_MIN/MAX` at 18-30 (unlock 16), reasoning "the Vigil
+sits at the delve's frontier (6-14), so the weekly should sit a tier past it." PM review
+caught that the reasoning had no numbers behind it — the delve's own measured frontier
+(`tools/smoke.ts`'s sharp-bot campaign) averages depth 10.3 over 20 dives, best single
+seed 16, so 18-30 was two to four times past what anyone had actually been measured
+reaching, gated behind an unlock bar only the single best of twelve seeds had ever hit.
+
+Retuning it exposed a second, more fundamental problem a `playFloor`-driven fight (the
+`tools/smoke.ts` raid-boss section's own precedent, not the teleport-to-cleared plumbing
+check) surfaced directly: **a raid boss at the same depth as an ordinary trash floor is
+dramatically harder**, not incrementally harder. The same campaign-progressed sharp
+characters that clear an escalated trash floor at depth 12-16 without much trouble go
+0-for-4 against a boss at that same depth, and 0-for-4 at every depth from 12 to 21. Depth
+9-11 raid bosses are winnable (50-95% depending on where the trash floors landed); depth
+12+ ones currently are not, for anyone this build could produce. The delve's own boss
+ladder confirms it isn't specific to the Convergence: the same sharp characters clear the
+depth-5 boss most of the time but the depth-15 one essentially never — a second, larger
+gap the PM has separately escalated to the owner as its own "is the endgame reachable at
+all" item. `WEEKLY_BOSS_DEPTH_MIN`/`MAX` sidesteps inheriting that gap rather than trying
+to close it (out of scope here — this mode doesn't touch `profileFor` or the delve curve):
+floors 1-3 escalate through the harder, but *proven-survivable-for-trash* 12-16 band and
+carry the entire "significantly harder than the Vigil" promise (plus the elite/kill
+quota, three modifiers, and arriving at the boss with no full heal after three floors);
+floor 4 draws its depth from 9-11 instead, the range the survivability pass actually
+confirmed a geared, attentive character can fight.
+
+Measured result (`tools/smoke.ts`, section 6b — real characters produced by the sharp
+20-dive campaign, filtered to the ones that actually reached depth 12+, fighting five
+different weeks' worth of floor 1 and floor 4 with `playFloor`, not the teleport-to-
+cleared shortcut): floor 1 cleared 2/20 to 14/20 depending on which end of the band a
+given week landed on (10-70%), the boss floor 14/20 to 19/20 (70-95%) — both strictly
+above zero across the sample, unlike the original band's 0/20 nearly everywhere. A week
+that draws both `onslaught` and `dire` (about one week in eight) still makes the boss a
+real wall on top of this — an intentional worst case in a free-retry mode, not a bug.
+
+**This produced two decisions that need a second pair of eyes**, flagged in the ledger
+below: the exact final band (12-16/9-11) is this session's judgment call on where "hard
+but not zero" sits, not a number PM specifically approved; and the boss/trash depth
+split is a bigger structural change than a plain retune and is exactly the kind of
+finding the PM's own escalated endgame-reachability item probably wants to know about.
 
 ## Modifiers
 
@@ -101,8 +148,10 @@ closes it — `GameState.recordDepth`'s `config.weekly` branch returns early on 
 mark the week done. Deaths and bail-outs on any floor don't mark it either, so a failed
 attempt costs the run's loot like any other floor but never costs the weekly shot.
 
-Unlock: `deepestDepth >= 16` — past the Vigil's 6 and past the Abyssal Rift's own 8,
-since the Convergence is meant to be the harder of the two.
+Unlock: `deepestDepth >= 12` — past the Vigil's 6 and past the Abyssal Rift's own 8,
+since the Convergence is meant to be the harder of the two, and inside a sharp
+character's measured *reachable peak* rather than past it (see the depth-band section
+above).
 
 ## Entry
 
@@ -137,18 +186,26 @@ plain "closed for the day/week" flash instead (`src/main.ts`, `handleRunDecision
 - Two `Dungeon`s built from the same week's floor 1 produce identical level
   fingerprints; floor 2 of that same week is a different floor; floor 1 of next week is
   different again.
-- Depth escalates by exactly the per-floor step across all four floors; only floor 4 is
-  the boss floor; the run really is four floors long.
+- Floors 1-3 escalate by exactly the per-floor step; floor 4's depth is its own draw,
+  inside its own (shallower) band, distinct from where floors 1-3 landed; only floor 4
+  is the boss floor; the run really is four floors long.
 - **Compared directly against the Vigil**, not just bounded on its own: floor 1 of a
   Convergence hits harder (both `enemyDamage` and `enemyHealth`) than the Vigil's one
-  floor at the same (zero) Challenger tier, and the boss floor hits harder still than the
-  Convergence's own floor 1.
+  floor at the same (zero) Challenger tier.
 - Each modifier moves exactly the field(s) it claims and nothing else, `feral` included
   (proof the new `speed` knob actually reaches `enemySpeed` and nothing else).
-- A full four-floor playthrough: floors 1-3 bank without closing the week; the boss floor
-  guarantees the week's key tier and a Legendary-or-better item, banking it closes the
-  week and bumps the counter; a death or bail-out anywhere doesn't touch either; a second
-  attempt after closing doesn't double-count; it never opens a rift tier by accident.
+- A full four-floor playthrough via the teleport-to-cleared shortcut (reward plumbing
+  only, not a fight — see below): floors 1-3 bank without closing the week; the boss
+  floor guarantees the week's key tier and a Legendary-or-better item, banking it closes
+  the week and bumps the counter; a death or bail-out anywhere doesn't touch either; a
+  second attempt after closing doesn't double-count; it never opens a rift tier by
+  accident.
+- **A real fight, separately**: the sharp campaign's own characters (dodge 0.55, 20
+  dives), filtered to the ones that actually reached the unlock depth, playing floor 1
+  and floor 4 of five different weeks with the same bot the raid-boss check uses (dodge
+  0.85) — asserting at least one win at each, not zero, across the sample. This is the
+  check that caught the original band being unwinnable and the boss-floor depth needing
+  to be decoupled; see "Depth band, retuned from a survivability finding" above.
 - Save round-trips `weekly` and a pre-Convergence save loads with `clearedWeek 0`.
 
 ## Decisions (v1, this build)
@@ -157,11 +214,19 @@ plain "closed for the day/week" flash instead (`src/main.ts`, `handleRunDecision
    colliding into one) without reusing any name already claimed (*Standard/Avarice/
    Abyssal Rift*, *Infernal Breach*). Flagged to the PM for confirmation the way the
    Vigil's name was approved before it shipped.
-2. **Depth band 18-30, unlock at 16, four floors escalating by 3 depth each.** A guess in
-   the same spirit as the Vigil's band — nobody has measured how many weeks a
-   depth-20-ish character can't close, or how trivial floor 1 reads for a much deeper
-   one. `WEEKLY_DEPTH_MIN`/`MAX`/`WEEKLY_UNLOCK_DEPTH`/`WEEKLY_DEPTH_PER_FLOOR` in
-   `src/data/weekly.ts` are the knobs.
+2. **Depth band 12-16 for floors 1-3 (unlock 12), boss floor 9-11, decoupled from the
+   trash floors' escalation.** Not a guess — retuned from an original 18-30/unlock-16
+   after `tools/smoke.ts`'s survivability pass (section 6b, a real `playFloor` fight,
+   not the reward-plumbing check) showed that band unwinnable and, separately, that raid
+   bosses past the very first one appear to be broadly unbalanced game-wide (0/4 at
+   every boss depth from 12 to 21 for the same characters that clear escalated trash
+   floors fine). **This is a bigger call than a plain retune** — decoupling the boss
+   floor's depth from floors 1-3 is new structure, not just new numbers — and it
+   surfaced a finding (deep raid bosses may be a wall for everyone, not just this mode)
+   that overlaps the endgame-reachability item already escalated to the owner
+   separately. Flagging both explicitly rather than presenting it as a routine tuning
+   pass. `WEEKLY_DEPTH_MIN`/`MAX`/`WEEKLY_UNLOCK_DEPTH`/`WEEKLY_DEPTH_PER_FLOOR`/
+   `WEEKLY_BOSS_DEPTH_MIN`/`MAX` in `src/data/weekly.ts` are the knobs.
 3. **Reward reaches into the coin-only capstone chests.** `data/chests.ts` says outright
    that Adept's Trove and Collector's Hoard are meant to be bought, not dropped
    ("monster drops only ever hand out the four original tiers"). The Convergence is a
@@ -204,10 +269,14 @@ plain "closed for the day/week" flash instead (`src/main.ts`, `handleRunDecision
 - `src/main.ts` — station → screen; a room refuses it (solo in v1); the shared
   completion-portal flash no longer misreports a tier ladder for either the Vigil or the
   Convergence.
-- `tools/smoke.ts` — `=== the convergence ===` plus two hub-gating checks.
+- `tools/smoke.ts` — `=== the convergence ===` plus two hub-gating checks; `sharpRuns` is
+  lifted out of the sharp-campaign block so section 6b can fight real characters instead
+  of a synthetic stand-in.
 
 ## Ledger
 
 | Date | Item | Status |
 | --- | --- | --- |
 | 2026-09-08 | v1 built | data + sim + save + hub + screen + smoke; see "Where it lives". `npm test` green including a full four-floor playthrough. Not browser-verified — nobody on this build has a browser. Handed to the PM (`lootsim-70`) for review and merge. |
+| 2026-09-08 | PM review: blocker | The smoke coverage teleported every floor to "cleared" — reward plumbing, not a fight — and the original 18-30/unlock-16 band was 2-4x past the delve's measured frontier. |
+| 2026-09-08 | Retuned + real fight added | Band retuned to 12-16/unlock-12 for floors 1-3; boss floor decoupled to its own 9-11 band after the survivability pass showed deep raid bosses broadly unbeatable game-wide, not just in this mode. New `tools/smoke.ts` section 6b fights real sharp-campaign characters (not a synthetic stand-in) across five weeks; floor 1 clears 10-70% and the boss 70-95% depending on the week drawn, both strictly above the original band's ~0%. `npm test` green (1189 checks). Re-handed to the PM — the final band and the boss/trash depth split are this session's judgment call, not yet PM-approved numbers. |
