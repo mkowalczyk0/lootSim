@@ -299,7 +299,7 @@ function encodeHero(hero: Hero): HeroSnap {
     ch: r2(hero.specialCharge),
     sw: r2(a.swingTimer), sa: r2(a.swingAngle),
     dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash),
-    dc: r2(a.dashCooldown), vx: r2(a.vx), vy: r2(a.vy),
+    dc: r2(a.dashCooldown), ds: a.dashStock, vx: r2(a.vx), vy: r2(a.vy),
     ack: hero.input instanceof NetInput ? hero.input.lastSeq : 0,
     ...(st !== 0 ? { st } : {}),
     cd: hero.skillCooldowns.map(r2),
@@ -397,6 +397,7 @@ function applyHero(d: Dungeon, hero: Hero, h: HeroSnap, log?: InputLog): void {
     a.vy = h.vy ?? 0;
     a.dashTimer = h.dt;
     a.dashCooldown = h.dc ?? 0;
+    a.dashStock = h.ds ?? 1;
     a.invulnTimer = h.iv;
     if (log && !hero.downed && d.phase !== "dead") {
       for (const cmd of log.since(h.ack ?? 0)) d.predictStep(hero, cmd.move, cmd.dash, TICK);

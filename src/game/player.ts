@@ -352,6 +352,15 @@ export class Player {
     return Math.max(0.25, 1 / (1 + this.mods.dashRate));
   }
 
+  /**
+   * How many dashes this character can hold at once — one, plus every whole
+   * `dashCharges` its build carries. The dungeon keeps the live stock on the avatar
+   * (`Avatar.dashStock`) and refills it one charge per cooldown; this is only the cap.
+   */
+  get dashCharges(): number {
+    return 1 + Math.max(0, Math.floor(this.mods.dashCharges));
+  }
+
   get pickupRangeMult(): number {
     return Math.max(0.25, 1 + this.mods.pickupRadius);
   }

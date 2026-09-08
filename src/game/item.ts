@@ -397,6 +397,8 @@ const MOD_SCORE: Record<ModKey, number> = {
   // these only exist because the record is exhaustive — but if one is ever put on an
   // affix, a wrong score here would quietly misrank it, so they're priced properly.
   dashRate: 100, pickupRadius: 15, coinFind: 45, gemFind: 45,
+  // A whole extra dodge is worth about what +1 projectile is: a new answer, not a bigger number.
+  dashCharges: 320,
   fireDamage: 130, coldDamage: 130, lightningDamage: 130, poisonDamage: 130, voidDamage: 130,
   holyDamage: 130, arcaneDamage: 130, natureDamage: 130,
   fireResist: 1.1, coldResist: 1.1, lightningResist: 1.1, poisonResist: 1.1, voidResist: 1.1,

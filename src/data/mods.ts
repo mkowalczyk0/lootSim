@@ -42,6 +42,13 @@ export const COMBAT_MOD_KEYS = [
   "healthPercent", "defensePercent", "manaRegen",
   "evasion", "blockChance",
   "dashRate", "pickupRadius", "coinFind", "gemFind",
+  /**
+   * Extra dodges — whole charges on top of the one every hero has (UAT §19's own
+   * example, "gain an additional Dodge"). Flat, not a percentage, and floored: 0.5 of a
+   * dash is no dash. The stock refills one charge at a time on the ordinary cooldown, so
+   * a second charge is a second *answer*, not a faster one — `dashRate` is that.
+   */
+  "dashCharges",
 ] as const;
 export type CombatModKey = (typeof COMBAT_MOD_KEYS)[number];
 
@@ -133,6 +140,7 @@ export const MOD_LABELS: Record<ModKey, string> = {
   evasion: "evasion",
   blockChance: "block chance",
   dashRate: "dodge recovery",
+  dashCharges: "extra dodge",
   pickupRadius: "pickup radius",
   coinFind: "coins found",
   gemFind: "gems found",

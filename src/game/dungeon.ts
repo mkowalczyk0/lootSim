@@ -303,6 +303,8 @@ export class Hero {
     this.potions = setup.potions;
     this.local = setup.local;
     this.avatar = avatar;
+    // Start a floor with every dash you own ready, not just the one `makeAvatar` assumes.
+    this.avatar.dashStock = setup.player.dashCharges;
     this.sc = new StatusContainer(index);
     this.resources = setup.player.makeResources();
     this.syncChargeRate();
@@ -1124,7 +1126,7 @@ export class Dungeon implements CombatHost, RuleHost {
    */
   predictStep(hero: Hero, move: { x: number; y: number }, dash: boolean, dt: number): void {
     const a = hero.avatar;
-    a.dashCooldown = Math.max(0, a.dashCooldown - dt);
+    this.tickDash(hero, dt);
     a.invulnTimer = Math.max(0, a.invulnTimer - dt);
     a.dashInvuln = Math.max(0, a.dashInvuln - dt);
     this.moveHero(hero, move, dash, dt, false);
@@ -1539,7 +1541,7 @@ export class Dungeon implements CombatHost, RuleHost {
 
     a.attackTimer = Math.max(0, a.attackTimer - dt);
     a.swingTimer = Math.max(0, a.swingTimer - dt);
-    a.dashCooldown = Math.max(0, a.dashCooldown - dt);
+    this.tickDash(hero, dt);
     a.invulnTimer = Math.max(0, a.invulnTimer - dt);
     a.dashInvuln = Math.max(0, a.dashInvuln - dt);
     a.hitFlash = Math.max(0, a.hitFlash - dt);
@@ -1589,6 +1591,31 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   /**
+   * Refills the dash stock, one charge per cooldown, up to the character's cap. Shared
+   * by the live tick and the client's prediction step so both ends of the wire run the
+   * identical timer — the same reason `moveHero` is shared. With the default cap of one
+   * this is exactly the old single cooldown: spend it, wait, have it back.
+   *
+   * The cap is re-read every tick rather than cached because it comes off `Player.mods`,
+   * and a stock above a cap that just shrank (a relic taken off between floors) is
+   * clamped rather than left as a free dash.
+   */
+  private tickDash(hero: Hero, dt: number): void {
+    const a = hero.avatar;
+    const cap = hero.player.dashCharges;
+    if (a.dashStock >= cap) {
+      a.dashStock = cap;
+      a.dashCooldown = 0;
+      return;
+    }
+    a.dashCooldown -= dt;
+    if (a.dashCooldown <= 0) {
+      a.dashStock++;
+      a.dashCooldown = a.dashStock < cap ? DASH_COOLDOWN * hero.player.dashCooldownMult : 0;
+    }
+  }
+
+  /**
    * The movement half of a hero tick — dash start, dash travel or walking, wall
    * resolution. Shared by the host's real update and a client's prediction and replay
    * (UAT §1 B2), so both ends compute the identical position from the identical inputs;
@@ -1601,9 +1628,12 @@ export class Dungeon implements CombatHost, RuleHost {
     const disabled = hero.sc.disables();
     if (a.dashTimer > 0) {
       a.dashTimer -= dt;
-    } else if (dash && a.dashCooldown <= 0 && !disabled.move) {
+    } else if (dash && a.dashStock > 0 && !disabled.move) {
       a.dashTimer = DASH_TIME;
-      a.dashCooldown = DASH_COOLDOWN * hero.player.dashCooldownMult;
+      // Spend a charge. The refill timer only starts if one isn't already running — a
+      // second dash mid-cooldown doesn't push the first charge's return further out.
+      a.dashStock--;
+      if (a.dashCooldown <= 0) a.dashCooldown = DASH_COOLDOWN * hero.player.dashCooldownMult;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
       a.invulnTimer = Math.max(a.invulnTimer, DASH_TIME + 0.08);
       a.dashInvuln = DASH_TIME + 0.08;
@@ -4299,7 +4329,7 @@ function makeAvatar(x: number, y: number): Avatar {
     radius: PLAYER_RADIUS,
     vx: 0, vy: 0, facing: -Math.PI / 2,
     attackTimer: 0, swingTimer: 0, swingAngle: 0,
-    dashTimer: 0, dashCooldown: 0, invulnTimer: 0, dashInvuln: 0, hitFlash: 0,
+    dashTimer: 0, dashCooldown: 0, dashStock: 1, invulnTimer: 0, dashInvuln: 0, hitFlash: 0,
     buffAttackSpeed: 0, buffLifeOnHit: 0,
   };
 }

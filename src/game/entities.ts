@@ -26,7 +26,17 @@ export interface Avatar extends Body {
   swingTimer: number;
   swingAngle: number;
   dashTimer: number;
+  /**
+   * Time until the *next* charge comes back. Zero whenever the stock is full — it only
+   * runs while something is owed, so a full stock never has a phantom timer.
+   */
   dashCooldown: number;
+  /**
+   * Dashes ready right now. `Player.dashCharges` is the cap (1 for almost everyone); a
+   * dash spends one, the cooldown returns one. Both ends of the co-op wire carry it, so
+   * a client with two charges predicts its second dash exactly like its first.
+   */
+  dashStock: number;
   invulnTimer: number;
   /**
    * Invulnerability that came from a dash specifically. Boss mechanics ignore the
