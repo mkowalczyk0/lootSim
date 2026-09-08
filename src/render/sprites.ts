@@ -24,7 +24,7 @@ import { isWeaponType, type ItemType } from "../data/items";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
-  BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
+  BODY, BODY_DX, BODY_DY, BODY_H, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
   ICON_ARMOR, ICON_CAPSULE, ICON_COIN,
   ICON_GEM, ICON_GLOVES, ICON_KEY, ICON_NECKLACE, ICON_POTION, ICON_RING, ICON_SHIELD,
   MOB_BRUTE, MOB_CASTER, MOB_CRAWLER, MOB_IMP, MOB_RANGER, PALETTES as P, PROP_BONES,
@@ -315,15 +315,30 @@ function appearanceKey(a: Appearance): string {
 
 const heroCache = new Map<string, HTMLCanvasElement>();
 
+/**
+ * The fallback for the pipeline body's height, for the impossible case of the hero being
+ * absent from the atlas manifest — normally it is `ATLAS["hero.legend-base"].h`.
+ *
+ * Both canvases `heroSprite` can return are bigger than the body they hold (the extra is
+ * headroom a hat grows into) and they pad it by very different fractions — 4 rows of 26
+ * procedurally against 20 of 68 in the stage — so canvas height is no use as a stand-in
+ * for how big the character *looks*. Both do stand their body flush on their own bottom
+ * row, though, which is what lets one bottom-aligned box hold either; the smoke test
+ * measures the art to keep that true. See `src/ui/portrait.ts`.
+ */
+const PIPELINE_BODY_H = 48;
+
 /** How a hero body wants to be drawn: the canvas plus its world scale and feet offset. */
 export interface HeroSprite {
   readonly canvas: HTMLCanvasElement;
   readonly scale: number;
   readonly feet: number;
+  /** The character's own height in authored pixels, not the canvas's — see `src/ui/portrait.ts`. */
+  readonly bodyHeight: number;
 }
 
 /** The procedural composed character's draw params (matches `drawSprite`'s old defaults). */
-const PROC_HERO: Omit<HeroSprite, "canvas"> = { scale: 1.2, feet: 0.22 };
+const PROC_HERO: Omit<HeroSprite, "canvas"> = { scale: 1.2, feet: 0.22, bodyHeight: BODY_H };
 
 const pipelineHeroCache = new Map<string, HTMLCanvasElement | null>();
 
@@ -356,16 +371,26 @@ export function heroSprite(appearance: Appearance): HeroSprite {
     // — it's world units per authored pixel, so padding the canvas costs nothing (see
     // `HERO_STAGE_*` in the manifest).
     const feet = meta ? (meta.feet * meta.h) / HERO_STAGE_H : PROC_HERO.feet;
-    return { canvas: pipeline, scale: meta?.worldScale ?? PROC_HERO.scale, feet };
+    return {
+      canvas: pipeline,
+      scale: meta?.worldScale ?? PROC_HERO.scale,
+      feet,
+      bodyHeight: meta?.h ?? PIPELINE_BODY_H,
+    };
   }
   return { canvas: heroComposite(appearance), ...PROC_HERO };
 }
 
 /**
  * The procedurally composed character, always — every cosmetic layer stacked, cached
- * against the appearance. The town wardrobe preview uses this directly (not `heroSprite`)
- * so it keeps showing the layered look and a stable aspect ratio while the pipeline base
- * only carries the plain body.
+ * against the appearance.
+ *
+ * This used to be what the town's big portraits called, back when the pipeline base
+ * carried only a plain body and routing them through `heroSprite` would have dropped
+ * every hat. `composePipelineHero` layers the migrated cosmetics now, so that reason is
+ * gone and both portraits go through `heroSprite` like the world and hub renderers do —
+ * this stays exported for the fallback path inside `heroSprite` and for anything that
+ * genuinely wants the procedural stack regardless of what has migrated.
  */
 export function heroComposite(appearance: Appearance): HTMLCanvasElement {
   const key = appearanceKey(appearance);

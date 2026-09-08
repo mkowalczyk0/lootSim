@@ -7,6 +7,8 @@
  * The character portrait deliberately doesn't: it changes with every press, which is
  * the point.
  */
+import { portraitScale } from "./portrait";
+
 const imageCache = new Map<string, string>();
 
 /**
@@ -17,6 +19,23 @@ const imageCache = new Map<string, string>();
 export function pixelImageFit(src: HTMLCanvasElement, targetWidth: number, key?: string): string {
   const scale = Math.max(1, Math.round(targetWidth / Math.max(1, src.width)));
   return pixelImage(src, scale, key ? `${key}|fit${targetWidth}` : undefined);
+}
+
+/**
+ * Like {@link pixelImageFit} but sizes against the *subject* rather than the canvas — see
+ * `./portrait` for why a hero has to be sized by its body and not by its canvas, and why
+ * the boxes in `styles.css` pin a height instead of hugging the image.
+ *
+ * `bodyHeight` is in the canvas's own authored pixels — `HeroSprite.bodyHeight`.
+ */
+export function pixelImageBody(
+  src: HTMLCanvasElement,
+  bodyHeight: number,
+  targetBodyPx: number,
+  key?: string,
+): string {
+  const scale = portraitScale(bodyHeight, targetBodyPx);
+  return pixelImage(src, scale, key ? `${key}|body${targetBodyPx}` : undefined);
 }
 
 export function pixelImage(src: HTMLCanvasElement, scale: number, key?: string): string {

@@ -37,9 +37,16 @@ import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, HAIR_STYLES,
   cosmeticProblems,
 } from "../src/data/cosmetics";
-import { BOSS_GRIDS, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems } from "../src/render/pixels";
+import {
+  BODY, BODY_DY, BODY_H, BOSS_GRIDS, CHAR_H, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems,
+} from "../src/render/pixels";
 import { FLOOR_GRADE, gradeSheet, tileLuminance } from "../src/render/grade";
-import { TILESETS } from "../src/render/atlas/manifest";
+import {
+  ATLAS, ATLAS_COSMETICS, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
+} from "../src/render/atlas/manifest";
+import {
+  HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX, portraitScale, portraitSpread,
+} from "../src/ui/portrait";
 import { BIOMES } from "../src/data/biomes";
 import { decodePng } from "./png";
 import { readFileSync } from "node:fs";
@@ -2378,6 +2385,97 @@ console.log("\n=== art ===");
   const perSlot = COSMETIC_SLOTS.map((slot) =>
     `${slot}=${COSMETICS.filter((c) => c.slot === slot).length}`).join(" ");
   console.log(`  ${COSMETICS.length} cosmetics — ${perSlot}`);
+}
+
+/**
+ * The town's two big portraits, whose one hard job is to show the same character at the
+ * same size whichever composer it came from. `heroSprite` returns either a 30x26
+ * procedural field or a 56x68 pipeline stage depending on whether every cosmetic worn has
+ * migrated — all-or-nothing — so the sizing is done on the *body* inside those canvases
+ * (`src/ui/portrait.ts`), and that only works while three things stay true. Canvas
+ * compositing needs a DOM and can't be reached from here, but all three are geometry, and
+ * geometry is checkable: the art is measured off the committed PNGs and the string grids
+ * rather than restated from the constants it is supposed to be validating.
+ */
+console.log("\n=== hero portraits (§12 — one size, either composer) ===");
+{
+  // 1. Each body stands flush on its canvas's bottom row. This is what lets one
+  //    bottom-aligned CSS box hold either canvas without the feet moving; if a redraw
+  //    ever left a gap below the feet, the character would appear to float.
+  const bodyRows = BODY.flatMap((row, y) => ([...row].some((ch) => ch !== "." && ch !== " ") ? [y] : []));
+  const bodyBottom = BODY_DY + Math.max(...bodyRows);
+  const bodyTop = BODY_DY + Math.min(...bodyRows);
+  check("the procedural body stands on the bottom row of its field",
+    bodyBottom === CHAR_H - 1, `body ends at y${bodyBottom} of ${CHAR_H - 1}`);
+  check(`BODY_H (${BODY_H}) is still the body's measured height`,
+    bodyBottom - bodyTop + 1 === BODY_H, `measured ${bodyBottom - bodyTop + 1}`);
+
+  const heroMeta = ATLAS[SPRITE_OVERRIDES.hero!]!;
+  const heroPng = decodePng(readFileSync(`src/render/atlas/characters/${SPRITE_OVERRIDES.hero}.png`));
+  check("the pipeline hero PNG is the size the manifest promises",
+    heroPng.width === heroMeta.w && heroPng.height === heroMeta.h,
+    `${heroPng.width}x${heroPng.height} vs ${heroMeta.w}x${heroMeta.h}`);
+  const opaqueBottom = (png: { width: number; height: number; data: Uint8Array }): number => {
+    for (let y = png.height - 1; y >= 0; y--) {
+      for (let x = 0; x < png.width; x++) if (png.data[(y * png.width + x) * 4 + 3]! > 0) return y;
+    }
+    return -1;
+  };
+  check("the pipeline hero stands on the bottom row of its stage",
+    HERO_STAGE_DY + opaqueBottom(heroPng) === HERO_STAGE_H - 1,
+    `hero ends at y${HERO_STAGE_DY + opaqueBottom(heroPng)} of ${HERO_STAGE_H - 1}`);
+
+  // 2. Nothing the stage holds is clipped by it. The stage's headroom is not slack — a
+  //    migrated witch hat uses almost all of it — so an oversized new layer would be
+  //    silently cropped rather than fail.
+  const clipped = Object.entries(ATLAS_COSMETICS).filter(([, c]) =>
+    c.dx < 0 || c.dy < 0 || c.dx + c.w > HERO_STAGE_W || c.dy + c.h > HERO_STAGE_H);
+  check("every migrated cosmetic fits inside the hero stage", clipped.length === 0,
+    clipped.map(([k]) => k).join(", "));
+  const wrongSize = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
+    const png = decodePng(readFileSync(`src/render/atlas/cosmetics/${c.id}.png`));
+    return png.width !== c.w || png.height !== c.h;
+  });
+  check("every migrated cosmetic PNG is the size the manifest promises",
+    wrongSize.length === 0, wrongSize.map(([k]) => k).join(", "));
+
+  // 3. The two composers land close enough in size that flipping between them isn't a
+  //    visible jump. Integer scaling is required (smoothing is off, so a fractional
+  //    factor renders uneven pixels), which is the whole reason this can't be exact.
+  const MAX_SPREAD = 0.12;
+  const pipeH = heroMeta.h;
+  for (const [name, target] of [["Hero", HERO_PORTRAIT_BODY_PX], ["Style", STYLE_PORTRAIT_BODY_PX]] as const) {
+    const spread = portraitSpread(BODY_H, pipeH, target);
+    const proc = BODY_H * portraitScale(BODY_H, target);
+    const pipe = pipeH * portraitScale(pipeH, target);
+    check(`the ${name} portrait sizes both composers within ${(MAX_SPREAD * 100).toFixed(0)}%`,
+      spread <= MAX_SPREAD,
+      `procedural ${proc}px vs pipeline ${pipe}px — ${(spread * 100).toFixed(1)}%`);
+    console.log(`  ${name}: target ${target}px body — procedural ${proc}px (x${portraitScale(BODY_H, target)}), pipeline ${pipe}px (x${portraitScale(pipeH, target)})`);
+  }
+
+  // The pinned box heights in the stylesheet have to clear the taller of the two canvases,
+  // or the portrait it was pinned for gets cropped. CSS is out of reach of a typechecker,
+  // so it is read as text — a rule that stops matching fails loudly rather than passing.
+  const css = readFileSync("src/styles.css", "utf8");
+  const boxHeight = (selector: string): number | null => {
+    const rule = new RegExp(`\\${selector}\\s*\\{[^}]*?height:\\s*(\\d+)px`, "m").exec(css);
+    return rule ? Number(rule[1]) : null;
+  };
+  const stageH = HERO_STAGE_H;
+  for (const [selector, target, padY] of [
+    [".doll-portrait", HERO_PORTRAIT_BODY_PX, 14 + 10],
+    [".portrait.hero", STYLE_PORTRAIT_BODY_PX, 10 + 6],
+  ] as const) {
+    const pinned = boxHeight(selector);
+    const tallest = Math.max(
+      CHAR_H * portraitScale(BODY_H, target),
+      stageH * portraitScale(pipeH, target),
+    );
+    check(`${selector} pins a height that clears its tallest portrait`,
+      pinned !== null && pinned >= tallest + padY,
+      pinned === null ? "no height rule found" : `${pinned}px vs ${tallest} + ${padY} padding`);
+  }
 }
 
 /**
