@@ -34,6 +34,7 @@ export class Hud {
     this.drawSkills(ctx, d, w, h);
     this.drawControls(ctx, h, d);
     if (d.boss) this.drawBossFrame(ctx, d, w);
+    else this.drawEliteBars(ctx, d, w);
 
     if (d.phase !== "dead" && d.localHero.downed) this.drawDownedPrompt(ctx, w, h);
     if (d.phase !== "dead") this.drawPortalPrompt(ctx, d, w, h);
@@ -316,6 +317,48 @@ export class Hud {
       ctx.fillStyle = "#fff";
       ctx.font = `bold 11px ${MONO}`;
       ctx.fillText(label.toUpperCase(), w / 2, cy + 3);
+    }
+    ctx.textAlign = "left";
+  }
+
+  /**
+   * Elite frames (UAT §4): a distinct, rarity-coloured health bar per active elite,
+   * stacked below where the boss frame would sit. Up to three — a fourth on screen is
+   * already a different kind of problem.
+   */
+  private drawEliteBars(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
+    const elites = d.enemies
+      .filter((e) => e.elite && !e.summoned && e.state !== "spawning")
+      .slice(0, 3);
+    if (elites.length === 0) return;
+
+    const bw = Math.min(380, w - 80);
+    const bx = (w - bw) / 2;
+    let by = 74;
+    for (const e of elites) {
+      const col = RARITY_COLORS[e.elite!];
+      const bh = 34;
+      panel(ctx, bx, by, bw, bh);
+      ctx.textAlign = "left";
+      ctx.font = `bold 10px ${MONO}`;
+      ctx.fillStyle = col;
+      ctx.fillText(e.name.toUpperCase(), bx + 12, by + 6);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#6b7480";
+      ctx.fillText("ELITE", bx + bw - 12, by + 6);
+
+      const barX = bx + 12;
+      const barW = bw - 24;
+      const barY = by + 20;
+      const pct = clamp(e.health / e.maxHealth, 0, 1);
+      ctx.fillStyle = "#16121a";
+      ctx.fillRect(barX, barY, barW, 8);
+      ctx.fillStyle = col;
+      ctx.fillRect(barX, barY, barW * pct, 8);
+      ctx.strokeStyle = "rgba(255,255,255,0.2)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, 7);
+      by += bh + 6;
     }
     ctx.textAlign = "left";
   }

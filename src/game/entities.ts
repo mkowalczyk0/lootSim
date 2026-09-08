@@ -100,8 +100,11 @@ export interface Enemy extends Body {
   hitFlash: number;
   knockX: number;
   knockY: number;
-  /** Elites are tinted by a rarity and drop noticeably better loot. */
+  /** Elites are a mini-boss tier (UAT §4): rarer, much stronger, a guaranteed handful
+   *  of affixes, a distinct health bar, a bigger body and one telegraphed slam. */
   elite: Rarity | null;
+  /** Seconds until this elite's next telegraphed slam. 0 / unused on everything else. */
+  eliteCast: number;
   facing: number;
   /** Immunity window after a hazard hits it, so one spike plate can't chain-kill. */
   trapCooldown: number;

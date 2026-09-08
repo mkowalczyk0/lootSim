@@ -383,6 +383,10 @@ export class Dungeon implements CombatHost, RuleHost {
   wave = 0;
   /** The one enemy that is a raid boss, while it lives. */
   boss: Enemy | null = null;
+  /** Elites spawned / killed on this floor — the mini-boss tier is rate-limited per floor
+   *  (UAT §4) and the counts feed the floor-clear objective (UAT §5). */
+  private elitesSpawned = 0;
+  elitesKilled = 0;
   /** Enemies still owed by the current wave. */
   private queued = 0;
   private waveGap = 0.6;
@@ -554,19 +558,42 @@ export class Dungeon implements CombatHost, RuleHost {
     );
   }
 
+  /**
+   * How many elites this whole floor is allowed — the mini-boss tier is deliberately
+   * rate-limited (UAT §4: "Rare", "a player should not treat it as another normal mob").
+   * Roughly one on an ordinary floor, a second deep or on a rift, more only under a hard
+   * Challenger dial. Boss floors get none — the boss is the encounter.
+   */
+  private eliteCapForFloor(): number {
+    if (this.profile.isBoss) return 0;
+    const d = this.profile.depth;
+    // The opening floors stay a straight fight — an elite is a mid-game escalation, not
+    // something a fresh character meets on floor 2.
+    if (d < 4 && this.config.danger < 1.4) return 0;
+    return 1
+      + (this.config.danger > 1.6 ? 1 : 0)
+      + Math.floor(d / 18)
+      + (this.config.danger > 3.5 ? 1 : 0);
+  }
+
   /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
   private placeMonsterAt(spot: { x: number; y: number }): void {
     const kinds = this.spawnableKinds();
     const weights = Object.fromEntries(kinds.map((k) => [k, ARCHETYPES[k].weight])) as Record<EnemyKind, number>;
     const archetype = ARCHETYPES[this.rng.weighted(weights)];
     const at = resolveCircle(this.level, spot.x, spot.y, archetype.radius);
-    // Elites scale with depth: deeper floors roll higher tints and much fatter loot.
+    // An elite is a capped, per-floor event now — a moderate roll, but only until the
+    // floor's budget is spent. Later waves are likelier to carry the elite, so it lands
+    // as an escalation rather than in the opening trickle.
     let elite: Rarity | null = null;
-    const eliteChance = clamp(
-      (0.03 + this.profile.depth * 0.008) * (1 + (this.config.danger - 1) * 0.6), 0, 0.35);
-    if (this.rng.chance(eliteChance)) {
-      const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
-      elite = RARITIES[this.rng.int(1, maxTier)]!;
+    if (this.elitesSpawned < this.eliteCapForFloor()) {
+      const waveProgress = this.wave / Math.max(1, this.profile.waves);
+      const chance = clamp(0.03 + waveProgress * 0.05 + (this.config.danger - 1) * 0.02, 0, 0.4);
+      if (this.rng.chance(chance)) {
+        const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
+        elite = RARITIES[this.rng.int(1, maxTier)]!;
+        this.elitesSpawned++;
+      }
     }
     // The discount is for chaff only — an elite in the swarm is still the real threat.
     this.enemies.push(
@@ -600,9 +627,17 @@ export class Dungeon implements CombatHost, RuleHost {
     this.queued -= size;
   }
 
-  /** Bigger, chunkier bursts the deeper — and the more dangerous — the floor gets. */
+  /**
+   * Bigger, chunkier bursts the deeper — and the more dangerous — the floor gets, and
+   * bigger again on a floor's later waves (UAT §8): a floor should ramp toward its own
+   * peak pressure by the last wave, not field the same trickle from start to finish.
+   */
   private burstSizeFor(): number {
-    return clamp(Math.round(2 + this.profile.depth * 0.1 + (this.profile.crowd - 1) * 3), 2, 6);
+    const waveRamp = this.wave > 1 ? (this.wave - 1) / Math.max(1, this.profile.waves - 1) : 0;
+    return clamp(
+      Math.round(2 + this.profile.depth * 0.1 + (this.profile.crowd - 1) * 3 + waveRamp * 1.5),
+      2, 7,
+    );
   }
 
   /** Time between bursts. Deep floors don't just field more monsters, they field them faster. */
@@ -640,7 +675,10 @@ export class Dungeon implements CombatHost, RuleHost {
     opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number; noAffixes?: boolean } = {},
   ): Enemy {
     const elite = opts.elite ?? null;
-    const eliteMult = elite ? 1 + rarityIndex(elite) * 0.55 : 1;
+    // A mini-boss, not a fat mob (UAT §4). The health lasts through a rotation of the
+    // player's kit; the damage is high but every big hit is the telegraphed slam, which
+    // is dodgeable — so it forces a change of approach without being a one-shot wall.
+    const eliteMult = elite ? 1.9 + rarityIndex(elite) * 0.65 : 1;
 
     // Modular monster affixes (UAT §3). Boss bodies, boss-summoned chaff and the split
     // spawn of a Splitting monster never roll them; everything else on a wave can.
@@ -678,16 +716,17 @@ export class Dungeon implements CombatHost, RuleHost {
     return {
       id: this.nextEnemyId++,
       x, y, px: x, py: y,
-      radius: (archetype.radius + aff.radius) * (elite ? 1.18 : 1),
+      radius: (archetype.radius + aff.radius) * (elite ? 1.5 : 1),
       archetype,
       name: `${affixPrefix(affixes)}${prefix}${elite ? `${cap(elite)} ` : ""}${baseName}`,
       health, maxHealth: health,
       damage:
         this.profile.enemyDamage * archetype.damage
-        * (elite ? 1 + rarityIndex(elite) * 0.12 : 1) * aff.damageMult,
+        * (elite ? 1.28 + rarityIndex(elite) * 0.12 : 1) * aff.damageMult,
       speed: this.profile.enemySpeed * archetype.speed * aff.speedMult,
       attackTimer: this.rng.range(0, attackCooldown * this.profile.aggression),
       attackCooldown,
+      eliteCast: elite ? this.affixRng.range(2.5, 4) : 0,
       windup: 0,
       state: "spawning",
       spawnTimer: 0.45,
@@ -701,7 +740,7 @@ export class Dungeon implements CombatHost, RuleHost {
       element,
       resists,
       sc: new StatusContainer(Dungeon.ENEMY_ID_BASE + this.nextEnemyId - 1),
-      knockResist: 1,
+      knockResist: elite ? 0.35 : 1,
       boss: null,
       summoned: opts.summoned ?? false,
       affixes,
@@ -2130,8 +2169,12 @@ export class Dungeon implements CombatHost, RuleHost {
     // ordinary kills" bonus the legacy charge economy had — never from an ultimate kill.
     this.bus.emit({ type: "kill", actorId: source.index, x: e.x, y: e.y });
     this.bus.emit({ type: "enemyDeath", actorId: Dungeon.ENEMY_ID_BASE + e.id, x: e.x, y: e.y });
+    if (e.elite && !e.summoned) {
+      this.elitesKilled++;
+      this.events.push({ kind: "shake", amount: 9 });
+    }
     if (!fromUltimate) {
-      const bonus = e.boss ? 5 : e.elite ? 2 : 0;
+      const bonus = e.boss ? 5 : e.elite ? 3 : 0;
       for (let n = 0; n < bonus; n++) {
         source.resources.broadcast({ type: "kill" });
         source.resources.broadcast({ type: "enemyDeath" });
@@ -2317,6 +2360,8 @@ export class Dungeon implements CombatHost, RuleHost {
 
       // Periodic affix behaviours — blink, ward regen, a summoner's timer, a heal aura.
       if (e.affixes.length > 0) this.tickAffixes(e, dt);
+      // An elite's signature move: a telegraphed ground slam it winds up on its own timer.
+      if (e.elite) this.tickEliteSlam(e, dt);
 
       // Everything chases whoever is nearest to it, which is all the "aggro" a horde
       // shooter needs: bodies flow to the nearest player and the party gets split up
@@ -2437,6 +2482,32 @@ export class Dungeon implements CombatHost, RuleHost {
       this.hurtPlayer(target, e.damage, e.element, AILMENT_CHANCE);
       if (e.affixes.length > 0) this.affixOnHitHero(e, target);
     }
+  }
+
+  /**
+   * An elite's signature attack (UAT §4): a telegraphed ground slam on its own timer,
+   * separate from its ordinary swing. Big, readable, dodgeable — the shape the fight is
+   * asking you to respect. Follows the elite while winding up, so burning it down through
+   * the cast beats the hit outright, exactly like a boss telegraph.
+   */
+  private tickEliteSlam(e: Enemy, dt: number): void {
+    if (e.state !== "active" || e.sc.disables().attack) return;
+    e.eliteCast -= dt;
+    if (e.eliteCast > 0) return;
+    e.eliteCast = this.affixRng.range(4.5, 6.5);
+    const rarity = e.elite ? rarityIndex(e.elite) : 1;
+    this.addTelegraph({
+      shape: "circle", x: e.x, y: e.y, angle: 0,
+      radius: 94 + rarity * 6, inner: 0, arc: 0, width: 0,
+      total: 1.05 * this.profile.telegraph,
+      damage: e.damage * 2.3,
+      element: e.element,
+      color: ELEMENT_COLORS[e.element],
+      hitsPlayer: true, hitsEnemies: false,
+      linger: 0,
+      followId: e.id,
+    });
+    this.events.push({ kind: "shake", amount: 5 });
   }
 
   // --- monster affixes (UAT §3) ------------------------------------------

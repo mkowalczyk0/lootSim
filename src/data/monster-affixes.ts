@@ -203,12 +203,12 @@ export const AFFIX_BY_ID: Readonly<Record<string, MonsterAffix>> = Object.fromEn
 export function affixCountFor(depth: number, danger: number, isElite: boolean, rng: Rng): number {
   const d = Math.max(1, depth);
   if (isElite) {
-    // Item E only gives an elite a modest edge — one trait always, a second on deeper or
-    // higher-danger floors. Item F is what turns an elite into a real mini-boss (a
-    // guaranteed 2-3, a distinct health bar, a telegraphed ability) and thins the elite
-    // spawn rate to roughly one a floor so they stay an event rather than a tax.
-    const second = rng.chance(clampNum(0.12 + d * 0.012 + (danger - 1) * 0.12, 0, 0.7));
-    return 1 + (second ? 1 : 0);
+    // An elite is a mini-boss (UAT §4): a guaranteed 2 traits, a third on deeper or
+    // higher-danger floors. The elite spawn rate is capped per floor (see
+    // `Dungeon.eliteCapForFloor`), so a rich affix set here is a memorable encounter,
+    // not a tax on every third mob.
+    const third = rng.chance(clampNum(d * 0.012 + (danger - 1) * 0.12, 0, 0.7));
+    return 2 + (third ? 1 : 0);
   }
   const anyChance = clampNum(
     0.028 + d * 0.007 + (d > 12 ? (d - 12) * 0.006 : 0) + (danger - 1) * 0.14, 0, 0.6);

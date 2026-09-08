@@ -564,7 +564,10 @@ export class WorldRenderer {
     // A pipeline sprite carries its own world scale and feet offset; a procedural one
     // rides the global constant (or the boss's own tuned `spriteScale`).
     const atlasScale = spriteWorldScale(name);
-    const scale = atlasScale ?? (e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE);
+    // An elite is a mini-boss — draw its body noticeably larger so it reads as a threat
+    // before the health bar or the aura do (UAT §4: "immediately recognizable").
+    const eliteScale = e.elite && !e.boss ? 1.4 : 1;
+    const scale = (atlasScale ?? (e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE)) * eliteScale;
     const feet = spriteFeet(name) ?? 0.22;
     // A slow bob, phase-shifted by position so a pack doesn't breathe in unison. The
     // shadow stays put: it's the body that hops, not the monster's footing.
@@ -590,8 +593,27 @@ export class WorldRenderer {
 
     const flip = Math.cos(e.facing) < 0;
 
-    // Elite aura, in the rarity color that also determines its loot.
-    if (e.elite) {
+    // Elite aura, in the rarity color that also determines its loot — heavier now that an
+    // elite is a mini-boss, plus a chevron overhead so it's spotted across the room.
+    if (e.elite && !e.boss) {
+      ctx.save();
+      ctx.globalAlpha = 0.4 + Math.sin(time * 4) * 0.12;
+      ctx.strokeStyle = RARITY_COLORS[e.elite];
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y - e.radius * 0.5, e.radius * 1.7, 0, TAU);
+      ctx.stroke();
+      const my = y - e.radius * 3.1 + Math.sin(time * 3) * 1.5;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = RARITY_COLORS[e.elite];
+      ctx.beginPath();
+      ctx.moveTo(x, my + 6);
+      ctx.lineTo(x - 6, my - 3);
+      ctx.lineTo(x + 6, my - 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (e.elite) {
       ctx.save();
       ctx.globalAlpha = 0.35 + Math.sin(time * 4) * 0.1;
       ctx.strokeStyle = RARITY_COLORS[e.elite];
@@ -651,13 +673,15 @@ export class WorldRenderer {
       drawSprite(ctx, sprite(name), x, y, flip, scale, feet);
     }
 
-    // The boss's own health lives on the frame at the top of the screen, not over its
-    // head — a bar 44 pixels wide under a forty-foot monster reads as a joke.
-    if (!e.boss && e.health < e.maxHealth) {
+    // The boss's own health lives on the frame at the top of the screen, and so does an
+    // elite's now (`hud.ts` drawEliteBars) — a bar 44 pixels wide under a mini-boss reads
+    // as a joke the same way.
+    const barred = e.health < e.maxHealth;
+    if (!e.boss && !e.elite && barred) {
       healthBar(ctx, x, y - e.radius * 2.6, e.health / e.maxHealth, 26);
     }
     if (e.sc.list.length > 0) {
-      statusPips(ctx, e, x, y - e.radius * 2.6 - (e.health < e.maxHealth ? 8 : 0));
+      statusPips(ctx, e, x, y - e.radius * 2.6 - (!e.elite && barred ? 8 : 0));
     }
   }
 

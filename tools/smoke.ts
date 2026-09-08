@@ -695,6 +695,74 @@ console.log("\n=== monster affixes (UAT §3 — a modular trait system) ===");
   }
 }
 
+console.log("\n=== elite monsters — a mini-boss tier (UAT §4) ===");
+{
+  // An attacking bot that never dodges — enough to keep a floor alive long enough to
+  // watch the elite population, not enough to trivialise it.
+  const sampleFloor = (run: number | RunConfig, seed: number, level: number) => {
+    const d = new Dungeon(geared(level, seed, level), run, seed);
+    const input = new FakeInput();
+    let peakElites = 0;
+    let peakTrash = 0;
+    let sawEliteTelegraph = false;
+    let minAffixOnElite = 9;
+    // Health wall, measured per archetype so a fat brute-trash isn't compared to a
+    // thin swarmer-elite: the biggest ratio of an elite to same-kind trash seen.
+    const eliteHp = new Map<string, number>();
+    const trashHp = new Map<string, number>();
+    const raritiesSeen = new Set<string>();
+    for (let i = 0; i < 5000 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      const near = d.enemies.filter((e) => e.state !== "spawning")
+        .sort((a, b) => Math.hypot(a.x - d.avatar.x, a.y - d.avatar.y) - Math.hypot(b.x - d.avatar.x, b.y - d.avatar.y))[0];
+      if (near) {
+        input.hold("left", near.x < d.avatar.x - 8);
+        input.hold("right", near.x > d.avatar.x + 8);
+        input.hold("up", near.y < d.avatar.y - 8);
+        input.hold("down", near.y > d.avatar.y + 8);
+        input.press("attack");
+      }
+      d.update(DT, input as unknown as Input);
+      const elites = d.enemies.filter((e) => e.elite && !e.summoned);
+      const trash = d.enemies.filter((e) => !e.elite && !e.summoned && !e.boss);
+      peakElites = Math.max(peakElites, elites.length);
+      peakTrash = Math.max(peakTrash, trash.length);
+      for (const e of elites) {
+        eliteHp.set(e.archetype.kind, Math.max(eliteHp.get(e.archetype.kind) ?? 0, e.maxHealth));
+        minAffixOnElite = Math.min(minAffixOnElite, e.affixes.length);
+        if (e.elite) raritiesSeen.add(e.elite);
+      }
+      for (const e of trash) {
+        trashHp.set(e.archetype.kind, Math.max(trashHp.get(e.archetype.kind) ?? 0, e.maxHealth));
+      }
+      if (d.telegraphs.some((t) => t.followId !== null && elites.some((e) => e.id === t.followId))) {
+        sawEliteTelegraph = true;
+      }
+    }
+    let wallRatio = 0;
+    for (const [kind, ehp] of eliteHp) {
+      const thp = trashHp.get(kind);
+      if (thp) wallRatio = Math.max(wallRatio, ehp / thp);
+    }
+    return { d, peakElites, peakTrash, wallRatio, sawEliteTelegraph, minAffixOnElite };
+  };
+
+  const deep = sampleFloor(delveConfig(18, 3), 4477, 24);
+  check("elites do spawn on a deep dangerous floor", deep.peakElites >= 1, `${deep.peakElites} at once`);
+  check("elites stay rare — never a big share of the pack",
+    deep.peakTrash === 0 || deep.peakElites <= Math.max(2, deep.peakTrash * 0.35),
+    `${deep.peakElites} elite vs ${deep.peakTrash} trash`);
+  check("an elite is a genuine health wall next to its own kind of trash",
+    deep.wallRatio === 0 || deep.wallRatio > 2.4, `x${deep.wallRatio.toFixed(1)}`);
+  check("an elite always carries at least two affixes",
+    deep.peakElites === 0 || deep.minAffixOnElite >= 2, `min seen ${deep.minAffixOnElite}`);
+  check("an elite telegraphs its signature slam", deep.sawEliteTelegraph);
+
+  const early = sampleFloor(6, 909, 6);
+  check("the elite cap holds on an ordinary early floor", early.peakElites <= 1,
+    `${early.peakElites} at once`);
+}
+
 console.log("\n=== minion subsystem ===");
 {
   // The mobile-summon subsystem, driven straight through the CombatHost seam the way
