@@ -54,6 +54,18 @@ export const CHAR_H = 26;
 export const BODY_DX = 5;
 export const BODY_DY = 4;
 
+/**
+ * How tall the character actually is inside that field: `BODY`'s opaque rows, which run
+ * from `BODY_DY` to the field's own bottom row. The four rows of difference from `CHAR_H`
+ * are headroom a hat grows up into.
+ *
+ * Anything scaling a hero to a fixed on-screen size wants this rather than `CHAR_H`,
+ * because the pipeline art's stage pads its body by a quite different fraction — see
+ * `HeroSprite.bodyHeight`. The smoke test re-measures the grid against this, so it can't
+ * quietly stop being true if the body is ever redrawn.
+ */
+export const BODY_H = CHAR_H - BODY_DY;
+
 // --- the character body ---------------------------------------------------
 
 /**

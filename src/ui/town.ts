@@ -61,9 +61,10 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroComposite, itemIcon, weaponSprite } from "../render/sprites";
+import { chestIcon, cosmeticPreview, heroSprite, itemIcon, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
-import { pixelImage, pixelImageFit } from "./pixelimage";
+import { pixelImage, pixelImageBody, pixelImageFit } from "./pixelimage";
+import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
 
 /**
  * Reached by walking to a station in the ship hub and never by cycling — the dive, each
@@ -2151,7 +2152,8 @@ export class TownUI {
     const p = this.state.player;
     const cls = p.heroClass;
     const a = this.state.appearance;
-    const portrait = pixelImage(heroComposite(a), 8);
+    const hero = heroSprite(a);
+    const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, HERO_PORTRAIT_BODY_PX);
     const xpPct = p.xpNeeded > 0 ? Math.max(0, Math.min(100, (p.xp / p.xpNeeded) * 100)) : 0;
 
     const doll = `
@@ -2812,7 +2814,8 @@ export class TownUI {
 
     const a = this.state.appearance;
     const held = this.state.player.equipment.weapon;
-    const portrait = pixelImage(heroComposite(a), 7);
+    const hero = heroSprite(a);
+    const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, STYLE_PORTRAIT_BODY_PX);
     const weapon = pixelImageFit(
       weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 72);
     const selected = STYLE_ROWS[this.cursor];
@@ -2822,7 +2825,7 @@ export class TownUI {
     return `<div class="list">${rows}</div>
       <aside class="side">
         <h3>You</h3>
-        <div class="portrait"><img src="${portrait}" alt="your character"></div>
+        <div class="portrait hero"><img src="${portrait}" alt="your character"></div>
         <div class="portrait weapon"><img src="${weapon}" alt="your weapon"></div>
         ${info ? `<p><b style="color:${info.color}">${escapeHtml(info.value)}</b></p>
           <p class="muted">${escapeHtml(info.blurb)}</p>` : ""}
