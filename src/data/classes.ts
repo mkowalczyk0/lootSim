@@ -309,10 +309,10 @@ export const CLASSES: Record<ClassId, HeroClass> = {
       + "a turret, a wall and a mine doing it instead, and none of them get tired.",
     playstyle: "Spend the first seconds building, then keep the machines fed and aimed.",
     base: {
-      attack: 9, defense: 8, maxHealth: 128, maxMana: 55,
+      attack: 8, defense: 8, maxHealth: 128, maxMana: 55,
       projectileDamage: 0.1, skillDamage: 0.08, thorns: 1,
     },
-    growth: { attack: 2.05, defense: 1.4, maxHealth: 16, maxMana: 4 },
+    growth: { attack: 1.9, defense: 1.4, maxHealth: 16, maxMana: 4 },
     affinity: ["bow", "hammer"], affinityBonus: 0.2,
     element: "physical",
   },
