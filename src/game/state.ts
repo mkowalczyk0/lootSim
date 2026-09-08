@@ -23,6 +23,7 @@ import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
+import { universalPointsFor } from "../progression/universal";
 import {
   primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
 } from "./item";
@@ -179,6 +180,26 @@ export class GameState {
    *  getter, so nothing downstream needs to know classes have separate sheets at all. */
   get player(): Player {
     return this.players[this.activeClassId];
+  }
+
+  /**
+   * The universal tree's point pool — UAT §18. **Account-wide**, unlike the class tree's,
+   * and derived from the lifetime record depth across every character rather than from
+   * any one character's level.
+   *
+   * That is the whole reason the tree feels different from a second class tree: the class
+   * tree is what *this* character earned, and this is what the *account* earned. A brand
+   * new alt starts with the full pool already spendable, which is the payoff — the
+   * account's progress is inherited, while how to spend it stays a per-class decision
+   * (`Player.universalAllocated`).
+   */
+  get universalPool(): number {
+    return universalPointsFor(this.stats.deepestDepth);
+  }
+
+  /** What's left to spend on the active character's universal tree. */
+  get universalPoints(): number {
+    return this.universalPool - this.player.universalSpent;
   }
 
   addCoins(n: number): void {
@@ -560,11 +581,17 @@ export class GameState {
       // the town can tell the player once.
       const preProgression = saved.version < 14;
 
+      // The universal pool is derived from the account record, which is already loaded
+      // above — so every class's universal allocation can be validated against the pool
+      // it was actually spent from.
+      const universalPool = universalPointsFor(state.stats.deepestDepth);
+
       const playersRaw = d.players as Record<string, unknown> | undefined;
       if (playersRaw) {
         for (const id of CLASS_IDS) {
           state.treePointsRefunded += applyPlayerJSON(
             state.players[id], playersRaw[id] as Record<string, unknown> | undefined, preProgression,
+            universalPool,
           );
         }
         state.activeClassId = isClassId(d.activeClassId) ? d.activeClassId : state.activeClassId;
@@ -574,7 +601,9 @@ export class GameState {
         const p = d.player as Record<string, unknown> | undefined;
         if (p) {
           const legacyClass: ClassId = isClassId(p.classId) ? p.classId : DEFAULT_CLASS;
-          state.treePointsRefunded += applyPlayerJSON(state.players[legacyClass], p, preProgression);
+          state.treePointsRefunded += applyPlayerJSON(
+            state.players[legacyClass], p, preProgression, universalPool,
+          );
           state.activeClassId = legacyClass;
         }
       }
@@ -606,14 +635,28 @@ export function playerToJSON(p: Player) {
     mana: p.mana,
     skills: p.skills,
     allocated: p.allocated,
+    // The universal tree (UAT §18) travels with the sheet for the same reason the class
+    // allocation does: the host rebuilds a remote hero from exactly this blob, and a
+    // universal node left behind here would mean the host computing that player's damage
+    // from a weaker character than the one sitting on their own screen.
+    universalAllocated: p.universalAllocated,
     equipment: p.equipment,
   };
 }
 
-/** Builds a character sheet from somebody else's `playerToJSON` blob. */
+/**
+ * Builds a character sheet from somebody else's `playerToJSON` blob.
+ *
+ * The universal pool is `Infinity` here, deliberately: a remote player's pool is derived
+ * from *their* account record, which this machine has no way to know, and trimming their
+ * tree against the local pool would nerf anyone whose account is further along than the
+ * host's. Their allocation is still pruned for structure. This trusts the sheet exactly
+ * as much as the existing model already trusts its `level`, `allocated` and `equipment`
+ * — it is not a new hole, but it is the same one.
+ */
 export function playerFromJSON(classId: ClassId, raw: Record<string, unknown> | undefined): Player {
   const player = new Player(classId);
-  applyPlayerJSON(player, raw, false);
+  applyPlayerJSON(player, raw, false, Infinity);
   return player;
 }
 
@@ -629,6 +672,7 @@ function applyPlayerJSON(
   p: Player,
   raw: Record<string, unknown> | undefined,
   preProgression: boolean,
+  universalPool: number,
 ): number {
   if (!raw) return 0;
   p.level = Number(raw.level ?? 1);
@@ -641,6 +685,11 @@ function applyPlayerJSON(
   p.allocated = preProgression || !Array.isArray(raw.allocated)
     ? []
     : (raw.allocated as unknown[]).filter((id): id is string => typeof id === "string");
+  // A save from before v15 has no universal tree; an empty allocation is exactly what a
+  // brand new character gets, so there is nothing to migrate and nothing to refund.
+  p.universalAllocated = Array.isArray(raw.universalAllocated)
+    ? (raw.universalAllocated as unknown[]).filter((id): id is string => typeof id === "string")
+    : [];
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {
@@ -650,6 +699,7 @@ function applyPlayerJSON(
   p.equipment = equipment;
   p.refresh();
   p.normalizeTree();
+  p.normalizeUniversalTree(universalPool);
   p.health = Number(raw.health ?? p.maxHealth);
   p.mana = Number(raw.mana ?? p.maxMana);
   p.skills = preProgression ? [null, null, null] : readSkills(raw.skills);

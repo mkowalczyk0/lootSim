@@ -19,6 +19,9 @@ import {
 import {
   canAllocateV2, progNodeById, pruneAllocationV2, spentPointsV2, type TreeNodeV2,
 } from "../progression/nodes";
+import {
+  UNIVERSAL_TREE, UNIVERSAL_TREE_ID, resolveUniversalBuild,
+} from "../progression/universal";
 import { itemMods, requiredLevel, zeroStats, type Item, type Stats } from "./item";
 
 /** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
@@ -96,6 +99,18 @@ export class Player {
   equipment: Equipment = emptyEquipment();
   /** Allocated v2 behaviour-tree node ids (`<class>.<path>.<row>`), for the current class. */
   allocated: string[] = [];
+  /**
+   * Allocated *universal*-tree node ids (`universal.<path>.<key>`) — UAT §18.
+   *
+   * Kept in its own list, not merged into `allocated`: `normalizeTree` prunes that one
+   * against the class tree and would eat every universal id on load. Per-`Player` rather
+   * than account-wide on `GameState` for two reasons — `Player.mods` stays the one
+   * self-contained answer to "how strong is this character" with no `GameState`
+   * dependency, and `playerToJSON` is *also* the co-op wire payload, so a remote hero's
+   * universal nodes reach the host along the path a character sheet already travels.
+   * The point *pool* it spends is account-wide; see `GameState.universalPoints`.
+   */
+  universalAllocated: string[] = [];
   deepestDepth = 0;
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
@@ -107,6 +122,7 @@ export class Player {
 
   private cachedMods: Mods | null = null;
   private cachedBuild: ResolvedBuild | null = null;
+  private cachedUniversalBuild: ResolvedBuild | null = null;
 
   constructor(classId: ClassId = DEFAULT_CLASS) {
     this.classId = classId;
@@ -139,6 +155,7 @@ export class Player {
   refresh(): void {
     this.cachedMods = null;
     this.cachedBuild = null;
+    this.cachedUniversalBuild = null;
   }
 
   /** The tree + hybrids + archetypes, folded into one readable result the dungeon casts through. */
@@ -155,8 +172,20 @@ export class Player {
   }
 
   /**
-   * Class base + per-level growth + every equipped item + the resolved build's stat
-   * contribution. One record, and the only place power is ever added up.
+   * The universal tree's half of the build — UAT §18. Mods only, by design: the class
+   * tree owns behaviour, this one owns the basics, and nothing here is allowed to
+   * mutate an ability or flip a rule.
+   */
+  get universalBuild(): ResolvedBuild {
+    if (!this.cachedUniversalBuild) {
+      this.cachedUniversalBuild = resolveUniversalBuild(this.universalAllocated);
+    }
+    return this.cachedUniversalBuild;
+  }
+
+  /**
+   * Class base + per-level growth + every equipped item + both resolved builds' stat
+   * contributions. One record, and the only place power is ever added up.
    */
   get mods(): Mods {
     if (this.cachedMods) return this.cachedMods;
@@ -176,6 +205,7 @@ export class Player {
       if (item) addMods(m, itemMods(item));
     }
     addMods(m, this.build.mods);
+    addMods(m, this.universalBuild.mods);
     this.cachedMods = m;
     return m;
   }
@@ -290,6 +320,28 @@ export class Player {
 
   get moveMult(): number {
     return 1 + this.mods.moveSpeed;
+  }
+
+  /**
+   * Dodge cooldown, as a multiplier on the base. Reciprocal like `cooldownMult`, so the
+   * mod is asymptotic and stacking it can never reach a free dash. Floored anyway,
+   * because a keystone is allowed to be negative and an i-frame with no cooldown at all
+   * would make the dash the only defence anyone ever needed.
+   */
+  get dashCooldownMult(): number {
+    return Math.max(0.25, 1 / (1 + this.mods.dashRate));
+  }
+
+  get pickupRangeMult(): number {
+    return Math.max(0.25, 1 + this.mods.pickupRadius);
+  }
+
+  get coinFindMult(): number {
+    return Math.max(0, 1 + this.mods.coinFind);
+  }
+
+  get gemFindMult(): number {
+    return Math.max(0, 1 + this.mods.gemFind);
   }
 
   get damageReduction(): number {
@@ -434,6 +486,56 @@ export class Player {
       const deepest = [...this.allocated]
         .sort((a, b) => (progNodeById(this.tree, b)?.row ?? 0) - (progNodeById(this.tree, a)?.row ?? 0))[0]!;
       this.allocated = this.allocated.filter((id) => id !== deepest);
+    }
+    this.refresh();
+  }
+
+  // --- the universal tree (UAT §18) -------------------------------------
+
+  /** Points this character has committed to the universal tree. */
+  get universalSpent(): number {
+    return spentPointsV2(UNIVERSAL_TREE, this.universalAllocated);
+  }
+
+  /** `available` is the account-wide pool less what's spent — `GameState.universalPoints`. */
+  canAllocateUniversal(node: TreeNodeV2, available: number): boolean {
+    if (node.classId !== UNIVERSAL_TREE_ID) return false;
+    return canAllocateV2(this.universalAllocated, node, available);
+  }
+
+  allocateUniversal(node: TreeNodeV2, available: number): boolean {
+    if (!this.canAllocateUniversal(node, available)) return false;
+    this.universalAllocated.push(node.id);
+    this.refresh();
+    // A keystone can *lower* max health, so the current pool has to be re-clamped —
+    // otherwise Windborne leaves you standing there with more health than your maximum.
+    this.health = Math.min(this.health, this.maxHealth);
+    return true;
+  }
+
+  /** Free, exactly like the class respec, and independent of it. */
+  respecUniversal(): void {
+    this.universalAllocated = [];
+    this.refresh();
+    this.health = Math.min(this.health, this.maxHealth);
+    this.mana = Math.min(this.mana, this.maxMana);
+  }
+
+  /**
+   * The universal-tree twin of `normalizeTree`, called on load. Takes the pool rather
+   * than reading it, since the pool is account-wide and `Player` deliberately knows
+   * nothing about `GameState`. Trims the deepest nodes first if the pool ever shrinks
+   * below what's already spent — which a retune of `universalPointsFor` could do.
+   */
+  normalizeUniversalTree(pool: number): void {
+    this.universalAllocated = pruneAllocationV2(UNIVERSAL_TREE, this.universalAllocated);
+    while (this.universalSpent > pool && this.universalAllocated.length > 0) {
+      const deepest = [...this.universalAllocated]
+        .sort((a, b) =>
+          (progNodeById(UNIVERSAL_TREE, b)?.row ?? 0) - (progNodeById(UNIVERSAL_TREE, a)?.row ?? 0))[0]!;
+      this.universalAllocated = this.universalAllocated.filter((id) => id !== deepest);
+      // Pruning again matters: dropping a node can orphan a cross-path child of it.
+      this.universalAllocated = pruneAllocationV2(UNIVERSAL_TREE, this.universalAllocated);
     }
     this.refresh();
   }

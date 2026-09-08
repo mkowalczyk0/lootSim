@@ -36,6 +36,8 @@ import {
   ALL_CLASSES, CLASS_BY_ID, classMatrixRow,
   categoryGloss, describeEffects, describeNode, describeNodeLong, pathPointsByName,
   unlockProgress,
+  UNIVERSAL_PATH_BLURBS, UNIVERSAL_PATH_COUNT, UNIVERSAL_PATH_DEPTH, UNIVERSAL_PATH_NAMES,
+  UNIVERSAL_TREE, UNIVERSAL_UNLOCKS, isCrossLinked,
   type DescribeCtx, type PilotClass, type PathUnlockDef, type TreeNodeV2,
 } from "../progression/index";
 import type { Ability } from "../combat/ability";
@@ -43,6 +45,12 @@ import type { Ability } from "../combat/ability";
 /** Tree shape after the class refactor: five behaviour paths, five rows deep. */
 const TREE_PATH_COUNT = 5;
 const TREE_PATH_DEPTH = 5;
+/**
+ * The universal tree's accent. Every class tree is tinted with the class's own colour;
+ * this one belongs to no class, so it gets one fixed colour of its own — which is also
+ * the point being made on screen.
+ */
+const UNIVERSAL_ACCENT = "#7dd3fc";
 import { cleanPlayerName } from "../data/settings";
 import type { Party } from "../net/party";
 import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
@@ -60,7 +68,8 @@ import { pixelImage, pixelImageFit } from "./pixelimage";
  * the Quartermaster's screen, browsed the old way with [I]/[O].
  */
 const CYCLE_TABS = [
-  "Chests", "Stash", "Hero", "Skills", "Tree", "Path", "Style", "Capsules", "Codex", "Records", "Settings",
+  "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
+  "Records", "Settings",
 ] as const;
 const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party"] as const;
 type StationTab = (typeof STATION_TABS)[number];
@@ -132,6 +141,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"
     case "Hero": return `${sel} / ${adj} pick a slot · ${e} unequip`;
     case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
+    case "Universal": return `${sel} walk a path · ${adj} switch path · ${e} spend a point · ${q} refund it all — shared by every class`;
     case "Path": return `${sel} choose a class · ${e} commit to it`;
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
@@ -172,6 +182,9 @@ export class TownUI {
   private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
+  /** The same, for the universal tree's six paths. Its own field, since the two screens
+   *  are browsed independently and switching tabs shouldn't move the other one. */
+  private universalBranch = 0;
   private toast: { text: string; color: string; until: number } | null = null;
   /**
    * Wiping the save is the one irreversible thing in the game, so it takes two presses
@@ -458,6 +471,9 @@ export class TownUI {
       case "Hero": return EQUIP_SLOTS.length;
       case "Skills": return SKILL_SLOTS;
       case "Tree": return TREE_PATH_DEPTH;
+      // Row 0 is the shared root, which sits above the columns and is reachable by
+      // walking up out of any of them — exactly what the tree's DAG says it is.
+      case "Universal": return UNIVERSAL_PATH_DEPTH + 1;
       case "Path": return CLASS_IDS.length;
       case "Style": return STYLE_ROWS.length;
       case "Capsules": return CAPSULE_TIERS.length;
@@ -515,6 +531,10 @@ export class TownUI {
     }
     if (this.tab === "Tree") {
       this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_PATH_COUNT - 1);
+      return true;
+    }
+    if (this.tab === "Universal") {
+      this.universalBranch = clamp(this.universalBranch + dir, 0, UNIVERSAL_PATH_COUNT - 1);
       return true;
     }
     if (this.tab === "Settings") {
@@ -891,6 +911,36 @@ export class TownUI {
         }
         break;
       }
+      case "Universal": {
+        const p = this.state.player;
+        const node = this.universalNodeAt(this.universalBranch, this.cursor);
+        if (!node) break;
+        if (p.universalAllocated.includes(node.id)) {
+          this.notify("Already yours. Points don't come back one at a time.", "#9aa4b2");
+          break;
+        }
+        const before = unlockIds(p.universalBuild);
+        if (p.allocateUniversal(node, this.state.universalPoints)) {
+          this.notify(`${node.name} taken`, UNIVERSAL_ACCENT);
+          for (const u of p.universalBuild.hybrids) {
+            if (!before.has(u.id)) this.announce(`${u.name} unlocked.`, UNIVERSAL_ACCENT);
+          }
+          for (const u of p.universalBuild.archetypes) {
+            if (!before.has(u.id)) this.announce(`${u.name} — every basic improved at once.`, "#ff1493");
+          }
+        } else if (this.state.universalPoints < node.cost) {
+          this.notify(
+            `Needs ${node.cost} universal point${node.cost > 1 ? "s" : ""}. Go deeper to earn ${node.cost > 1 ? "them" : "one"}.`,
+            "#ef4444",
+          );
+        } else {
+          const need = node.requires
+            ? UNIVERSAL_TREE.find((n) => n.id === node.requires)
+            : undefined;
+          this.notify(need ? `Take ${need.name} first.` : "Take the node above it first.", "#ef4444");
+        }
+        break;
+      }
       case "Path": {
         const id = CLASS_IDS[this.cursor]!;
         const cls = CLASSES[id];
@@ -1076,6 +1126,16 @@ export class TownUI {
         this.notify(`Refunded ${spent} nodes. Changing your mind is free.`, "#7dd3fc");
         break;
       }
+      case "Universal": {
+        const spent = this.state.player.universalAllocated.length;
+        if (spent === 0) {
+          this.notify("Nothing to refund — you haven't spent a universal point yet.", "#9aa4b2");
+          break;
+        }
+        this.state.player.respecUniversal();
+        this.notify(`Refunded ${spent} nodes. This class only — your others keep theirs.`, "#7dd3fc");
+        break;
+      }
       default:
         break;
     }
@@ -1186,6 +1246,7 @@ export class TownUI {
       case "Hero": return this.renderHero();
       case "Skills": return this.renderSkills();
       case "Tree": return this.renderTree();
+      case "Universal": return this.renderUniversal();
       case "Path": return this.renderPath();
       case "Style": return this.renderStyle();
       case "Capsules": return this.renderCapsules();
@@ -2216,6 +2277,129 @@ export class TownUI {
         <p class="muted">
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund the whole tree</span>
           free, any time. Nobody is going to charge you for changing your mind.</p>
+      </aside>`;
+  }
+
+  /**
+   * The node at a grid position on the universal screen. Row 0 is the shared root for
+   * every column, so walking up out of any path lands on it — which is exactly the
+   * prerequisite the tree data describes, rather than a UI convenience.
+   */
+  private universalNodeAt(branch: number, row: number): TreeNodeV2 | null {
+    return row === 0
+      ? treeNodeAt(UNIVERSAL_TREE, -1, 0)
+      : treeNodeAt(UNIVERSAL_TREE, branch, row - 1);
+  }
+
+  /**
+   * The universal tree — UAT §18. Six paths off one shared root, walked the same way the
+   * class tree is, and deliberately looking like it: the two screens are siblings, and a
+   * player who has learned one shouldn't have to learn the other.
+   *
+   * What it says differently is whose progress it is. The class tree's header counts the
+   * points *this character* levelled into; this one counts the pool the **account**
+   * earned, spent per class — so the copy has to make clear both that an alt inherits the
+   * points and that the spending is this character's own.
+   */
+  private renderUniversal(): string {
+    const p = this.state.player;
+    const left = this.state.universalPoints;
+    const columns: string[] = [];
+
+    for (let b = 0; b < UNIVERSAL_PATH_COUNT; b++) {
+      const nodes: string[] = [];
+      for (let row = 1; row <= UNIVERSAL_PATH_DEPTH; row++) {
+        const node = this.universalNodeAt(b, row);
+        if (!node) continue;
+        const taken = p.universalAllocated.includes(node.id);
+        const open = p.canAllocateUniversal(node, left);
+        const here = b === this.universalBranch && row === this.cursor;
+        const state = taken ? "taken" : open ? "open" : "locked";
+        nodes.push(`
+          <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${isCrossLinked(node) ? "crosslink" : ""} ${here ? "on" : ""}"
+               style="--accent:${UNIVERSAL_ACCENT}">
+            <span class="tree-name">${escapeHtml(node.name)}</span>
+            <span class="tree-mods">${escapeHtml(describeNode(node))}</span>
+          </div>`);
+      }
+      columns.push(`
+        <div class="tree-col ${b === this.universalBranch ? "on" : ""}">
+          <h4>${escapeHtml(UNIVERSAL_PATH_NAMES[b] ?? "")}</h4>
+          ${nodes.join("")}
+        </div>`);
+    }
+
+    const root = this.universalNodeAt(0, 0);
+    const rootTaken = root ? p.universalAllocated.includes(root.id) : false;
+    const rootHere = this.cursor === 0;
+    const rootCell = root
+      ? `<div class="tree-root">
+           <div class="tree-node ${rootTaken ? "taken" : p.canAllocateUniversal(root, left) ? "open" : "locked"} ${rootHere ? "on" : ""}"
+                style="--accent:${UNIVERSAL_ACCENT}">
+             <span class="tree-name">${escapeHtml(root.name)}</span>
+             <span class="tree-mods">${escapeHtml(describeNode(root))} · every path starts here</span>
+           </div>
+         </div>`
+      : "";
+
+    const sel = this.universalNodeAt(this.universalBranch, this.cursor);
+    const selTaken = sel ? p.universalAllocated.includes(sel.id) : false;
+    const selLines = sel ? describeNodeLong(sel) : [];
+    const prereq = sel?.requires
+      ? UNIVERSAL_TREE.find((n) => n.id === sel.requires)
+      : undefined;
+    const crossed = sel ? isCrossLinked(sel) : false;
+
+    const points = pathPointsByName(UNIVERSAL_TREE, p.universalAllocated);
+    const unlockRow = (u: PathUnlockDef): string => {
+      const prog = unlockProgress(u, points);
+      const tint = u.tier === "mythic" ? "#ff1493" : UNIVERSAL_ACCENT;
+      const bits = prog.parts
+        .map((pt) => `<span class="${pt.ok ? "up" : "muted"}">${escapeHtml(pt.path)} ${pt.have}/${pt.need}</span>`)
+        .join(" · ");
+      return `<li class="${prog.met ? "up" : ""}">
+        <b style="color:${tint}">${escapeHtml(u.name)}</b>${prog.met ? " — unlocked" : ""}
+        <em>${escapeHtml(u.description)}</em>
+        <span class="muted">${bits}</span></li>`;
+    };
+    const hybridRows = UNIVERSAL_UNLOCKS.filter((u) => u.tier === "hybrid").map(unlockRow).join("");
+    const archRows = UNIVERSAL_UNLOCKS.filter((u) => u.tier === "mythic").map(unlockRow).join("");
+    const blurb = UNIVERSAL_PATH_BLURBS[this.universalBranch];
+
+    return `<div class="list"><div class="tree universal">${rootCell}${columns.join("")}</div></div>
+      <aside class="side">
+        <h3 style="color:${UNIVERSAL_ACCENT}">Universal · ${left} of ${this.state.universalPool} points</h3>
+        <p class="muted">Every class shares this tree. The points are the <b>account's</b> —
+        earned by how deep anyone has ever been, so a brand new alt starts with all
+        ${this.state.universalPool} of them — but how they're spent is
+        ${escapeHtml(p.heroClass.name)}'s own choice, and refunding here leaves your other
+        characters alone.</p>
+        <p class="muted">Where the class tree asks how your build works, this one asks how
+        your character improves. ${p.universalAllocated.length} nodes lit.</p>
+        ${sel ? `
+          <h3>${escapeHtml(sel.name)}</h3>
+          <p class="muted">${escapeHtml(categoryGloss(sel.category))}${sel.cost > 1 ? " · costs 2 points" : ""}</p>
+          ${selLines.length
+            ? `<ul class="pulls">${selLines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
+            : `<p class="muted">${escapeHtml(sel.blurb)}</p>`}
+          ${crossed && prereq
+            ? `<p class="muted">Reached from <b>${escapeHtml(prereq.name)}</b> in
+               ${escapeHtml(prereq.pathName)} — this path's lower half is only open to
+               someone who has been down the one next to it.</p>`
+            : ""}
+          <p class="${selTaken ? "up" : p.canAllocateUniversal(sel, left) ? "" : "muted"}">
+            ${selTaken ? "Lit."
+              : p.canAllocateUniversal(sel, left) ? `Press ${k(this.state.settings, "confirm")} to take it.`
+              : prereq && !p.universalAllocated.includes(prereq.id) ? `Take ${escapeHtml(prereq.name)} first.`
+              : `Needs ${sel.cost} point${sel.cost > 1 ? "s" : ""}. The pool grows as the account goes deeper.`}</p>
+        ` : ""}
+        ${blurb ? `<h3>${escapeHtml(UNIVERSAL_PATH_NAMES[this.universalBranch] ?? "")}</h3><p class="muted">${escapeHtml(blurb)}</p>` : ""}
+        ${hybridRows ? `<h3>Cross-path payoffs</h3><ul class="pulls">${hybridRows}</ul>` : ""}
+        ${archRows ? `<h3>Paragon</h3><ul class="pulls">${archRows}</ul>` : ""}
+        <p class="muted">
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund this class's universal tree</span>
+          free, any time — and every keystone here costs you something, so changing your
+          mind is part of the design.</p>
       </aside>`;
   }
 

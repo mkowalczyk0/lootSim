@@ -387,6 +387,18 @@ html, body {
 .tree-name { display: block; font-size: 12px; color: #e8eef7; }
 .tree-mods { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
 
+/* The universal tree (UAT §18) is six paths wide and every one of them hangs off a
+   single shared root, so it needs its own column count and a full-width cell up top. */
+.tree.universal { grid-template-columns: repeat(6, 1fr); }
+.tree-root { grid-column: 1 / -1; }
+.tree-root .tree-node { margin-bottom: 14px; text-align: center; }
+
+/* A cross-linked node's prerequisite is in a *different* column, so the connector line
+   the rule above draws between stacked nodes would be claiming a prerequisite that isn't
+   there. Suppress it and mark the node instead — the aside names the real one. */
+.tree-node.crosslink::before { display: none; }
+.tree-node.crosslink { border-left: 2px dashed rgba(125, 211, 252, 0.55); }
+
 /* --- gems and the wardrobe ------------------------------------------- */
 
 .purse .gemcount { color: #f0abfc; font-weight: 700; }

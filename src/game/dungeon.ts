@@ -1412,7 +1412,7 @@ export class Dungeon implements CombatHost, RuleHost {
       a.dashTimer -= dt;
     } else if (input.wasPressed("dash") && a.dashCooldown <= 0 && !disabled.move) {
       a.dashTimer = DASH_TIME;
-      a.dashCooldown = DASH_COOLDOWN;
+      a.dashCooldown = DASH_COOLDOWN * player.dashCooldownMult;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
       a.invulnTimer = Math.max(a.invulnTimer, DASH_TIME + 0.08);
       a.dashInvuln = DASH_TIME + 0.08;
@@ -3275,8 +3275,13 @@ export class Dungeon implements CombatHost, RuleHost {
       const claimant = this.nearestHero(p.x, p.y);
       const a = claimant.avatar;
       const d = dist(p.x, p.y, a.x, a.y);
+      // The universal tree's pickup-radius nodes (UAT §18) widen both ranges. Applied to
+      // the *claimant* rather than to whoever has the biggest radius on the floor, which
+      // keeps the loot rule above intact: a wider magnet reaches further, but it still
+      // can't reach past a hero standing closer.
+      const reach = claimant.player.pickupRangeMult;
       // A short delay before magnetism kicks in lets the drop pop out and be seen.
-      if (p.life > 0.35 && d < MAGNET_RANGE) p.magnet = true;
+      if (p.life > 0.35 && d < MAGNET_RANGE * reach) p.magnet = true;
 
       if (p.magnet) {
         const pull = clamp(520 - d * 2, 180, 520);
@@ -3295,7 +3300,7 @@ export class Dungeon implements CombatHost, RuleHost {
       p.x = clear.x;
       p.y = clear.y;
 
-      if (p.life > 0.3 && d < PICKUP_RANGE) {
+      if (p.life > 0.3 && d < PICKUP_RANGE * reach) {
         this.collect(claimant, p);
         this.pickups.splice(i, 1);
       }
@@ -3304,20 +3309,29 @@ export class Dungeon implements CombatHost, RuleHost {
 
   private collect(hero: Hero, p: Pickup): void {
     switch (p.kind) {
-      case "coin":
-        hero.loot.coins += p.value;
-        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${p.value}`, color: "#fbbf24" });
+      // The universal tree's Avarice path (UAT §18) is the only *player-sourced* loot
+      // multiplier in the game — everything else (mode, depth, Challenger) is decided by
+      // where you went, not by who went there. It lands here, at the moment of pickup,
+      // because this is the one place a drop has an owner: `dropPickup` doesn't, and the
+      // clear cache is dropped for the floor rather than for a hero.
+      case "coin": {
+        const coins = Math.round(p.value * hero.player.coinFindMult);
+        hero.loot.coins += coins;
+        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${coins}`, color: "#fbbf24" });
         break;
+      }
       case "key":
         if (p.keyTier) {
           hero.loot.keys[p.keyTier as ChestTier]++;
           this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `${p.keyTier} Key`, color: "#e2e8f0" });
         }
         break;
-      case "gem":
-        hero.loot.gems += p.value;
-        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${p.value} gems`, color: "#f0abfc" });
+      case "gem": {
+        const gems = Math.round(p.value * hero.player.gemFindMult);
+        hero.loot.gems += gems;
+        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${gems} gems`, color: "#f0abfc" });
         break;
+      }
       case "material":
         if (p.element) {
           hero.loot.materials[p.element] += p.value;
