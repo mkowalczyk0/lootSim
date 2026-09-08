@@ -35,5 +35,12 @@ export default {
     // `npm run host` is the intended way in, but plain `npm run dev` should be reachable
     // from another laptop on the same network too — that's the entire point.
     host: true,
+    port: 5173,
+    // Fail loudly instead of quietly moving to 5174. Vite's default is to hunt for the
+    // next free port, which meant a second `npm run dev` in another terminal came up as
+    // a whole second copy of the game rather than an error — and since the two are
+    // usually different checkouts, you end up playing a build you didn't just change and
+    // concluding the change didn't work. One port, one game, one relay.
+    strictPort: true,
   },
 };
