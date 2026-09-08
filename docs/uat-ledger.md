@@ -49,14 +49,14 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 13 | Endgame class completion | **done** | `feat/class-completion`. The Proving: `src/data/legends.ts` + `tools/legends.ts` (wired into `npm test`). One new persisted field, `Player.legendComplete` (SAVE_VERSION 18); gold border on the Path cards, a side-panel state per class, Records rows, a one-time announcement. Powerless — asserted to leave the sheet byte-identical. Solo only in v1. See `docs/class-completion.md`. Now also pays a mythic exclusive, `proof-of-the-whole` (one generated source per class), added with §20. |
 | 14 | Final boss / delve concept | **done** | Tied into the Delve, at depth 30, with **no** new mode, station, portal, tab or wire field. Depth 30 because that is where the authored world already ends (`biomeFor` caps from 26, `bossFor` from 25). The ladder is deliberately **not** capped. Gate is a per-class *banked* clear of the bottom, so no new unlock state. 21 encounters borrowed-and-reskinned per the `planetBossSpec` precedent. |
 | 15 | Raid bosses (4–20p) | open | **Unblocked** — §28 landed, and boss-exclusive named drops now work (5 encounters already have one). The raid framework itself is untouched. |
-| 16 | Raid drop rarity | open | Blocked on §15. `NamedSource` already scales drop chance with `danger`, which is the hook §16 asks for. |
+| 16 | Raid drop rarity | **assigned** | Opus 5, `feat/drop-tiers`. Not actually blocked on §15 — it is about the reward curve across the difficulty range that already exists. Most machinery is present but scattered; "number of possible drops" and "special variants" are unexpressed. §9's reward caps are deliberate and stay. |
 | 17 | Daily & weekly dungeons | **done** | Daily is **The Vigil** (`data/daily.ts`); weekly is **The Convergence** (`data/weekly.ts`) — four floors from the UTC week number, three modifiers, Capstone chests on the boss floor. Floor 4 draws a separate, shallower depth band (`WEEKLY_BOSS_DEPTH_MIN/MAX`) — a **labelled workaround** for the boss-vs-trash curve finding, with undo instructions in `docs/weekly-dungeon.md`. Solo v1. |
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
 | 19 | Relics & artifacts | **assigned** | Fable 5.1, `feat/relics`. Reuses the named-item effect vocabulary rather than inventing a third one. Artifacts from the Abyssal Rift (as §19 specifies), relics from the Proving and bosses, since raids don't exist yet — with seams left for raid/tower sources. Fills the relic slots §12 anticipated. |
 | 20 | Endgame drop previews | **done** | `feat/drop-previews`. `src/data/previews.ts` + `tools/previews.ts`, wired into `npm test`. Every commit screen (Dive, Rifts, Star Map, Vigil, Path) renders one `previewForRun`. Holds **no** table of its own: reads `namedMatchesFor`, `namedDropChance`, `bossSpecForRun` and the `RunMode`. The gate proves the preview lists exactly what the sim's own `rollNamedDrops` can produce, dice rigged, across 13 activities. §17's "clear rewards preview" and §19's "where does this drop?" are the same read. See `docs/drop-previews.md`. |
 | 21 | Titan rush / tower | open | Lore is written (`game_story_worldbuilding.md`), mechanics aren't. |
-| 22 | Rifts / war concept | open | |
-| 23 | Planets / materials layers | partial | Planets, materials and the star map all exist; the §23 restructuring doesn't. |
+| 22 | Rifts / war concept | open | Audited, genuinely not started. The lore exists in `game_story_worldbuilding.md` (the three-sided cosmology, the war) but nothing surfaces it: every `RunMode.blurb` is purely mechanical ("Four floors and a warden at the bottom"). §22 wants a rift to read as a consequence of the war rather than a game mode. Cheap to do, and it is mostly writing. |
+| 23 | Planets / materials layers | open | Re-audited: the *existing* systems (planets, materials, star map) are done, but §23 asks to reconsider whether they should be **layers** — Surface → Deep Delve → Hell Layers, and Tower Base → Heaven Layers — so that descending and ascending read as two halves of one war. None of that restructuring exists. Marked partial before, which flattered it. |
 | 24 | Forge overhaul | **done** | The Reforge grid became a workbench: Temper, Recast, Augment, Inscribe, Awaken, Ascend, Salvage. `src/game/forge.ts` + `tools/forge.ts` in `npm test`. Inscribe *rolls* the grant from the pool rather than letting you pick it — a deterministic choice would collapse every character onto the strongest grant. See `docs/forge.md`. |
 | 25 | Named item crafting | **done** | Multi-item recipes: `NamedSource.craft` takes an item list consumed from the stash, cheapest first, never equipped gear. The Seal Unbroken needs the Warden's own drop + 3 legendary shields + materials — §24's core example, literally. |
 | 26 | Reforging | done | Extended by the Forge overhaul into the full workbench; `reforgeItem` and its smoke section untouched. |
@@ -150,3 +150,11 @@ so a new one fails the gate and so does fixing a pinned one without updating the
 `nameless` drops `slam`/`volley`/`windmill` entering Interest, then `charge`/`corruption`
 entering Displeasure. No telegraph, wind-up or cross-arena violations anywhere. All 21
 generated Proving specs are clean on every rule. Scheduled work, not folklore.
+
+**§21, §22 and §23 are one decision, not three tickets.** The tower, the rift/war framing
+and the planets-as-layers question are all Chunk 11 and all describe the same world
+structure — descending toward Hell and ascending toward Heaven as two halves of one war.
+The spec itself says "the exact world structure is still TBD". This is the one remaining
+area where the owner has to decide the shape before anyone can usefully build, and it is
+deliberately unassigned for that reason. §22 alone is nearly free (the lore is written;
+the mode blurbs just don't carry it) and could ship ahead of the rest.
