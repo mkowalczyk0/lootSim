@@ -83,7 +83,7 @@ const SLOT_GLYPH: Record<EquipSlot, string> = {
  */
 /** One row of the Comms Relay screen. Out of a room it's the top three; in one, the rest. */
 type PartyRow =
-  | { readonly kind: "name" | "host" | "join" | "code" | "depth" | "leave" }
+  | { readonly kind: "name" | "host" | "join" | "code" | "plan" | "leave" }
   | { readonly kind: "member"; readonly index: number };
 
 type StyleRow =
@@ -123,7 +123,7 @@ function tabHelp(tab: Tab, s: Settings): string {
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
-    case "Party": return `${sel} select · ${e} do it · ${adj} change the depth · then everyone walks into the Party Portal`;
+    case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
     case "Hero": return `${sel} / ${adj} pick a slot · ${e} unequip`;
@@ -469,11 +469,6 @@ export class TownUI {
       const i = PLANETS.indexOf(this.starMapPlanet);
       this.starMapPlanet = PLANETS[clamp(i + dir, 0, PLANETS.length - 1)]!;
       this.cursor = 0;
-      return true;
-    }
-    if (this.tab === "Party") {
-      if (!this.party.isHost) return false;
-      this.party.setDepth(this.party.depth + dir);
       return true;
     }
     if (this.tab === "Craft") {
@@ -1145,7 +1140,7 @@ export class TownUI {
     if (!this.party.inRoom) {
       return [{ kind: "name" }, { kind: "host" }, { kind: "join" }];
     }
-    const rows: PartyRow[] = [{ kind: "code" }, { kind: "depth" }];
+    const rows: PartyRow[] = [{ kind: "code" }, { kind: "plan" }];
     for (let i = 0; i < this.party.size; i++) rows.push({ kind: "member", index: i });
     rows.push({ kind: "leave" });
     return rows;
@@ -1174,11 +1169,11 @@ export class TownUI {
           () => this.notify(`The code is ${this.party.code}.`),
         );
         break;
-      case "depth":
+      case "plan":
         this.notify(
           this.party.isHost
-            ? "Use left and right to pick the depth."
-            : "The host picks the depth.",
+            ? "Back out to the ship, walk into any portal and confirm it — that picks the party's run."
+            : "The host picks the run by walking into a portal. You'll see it here.",
           "#9aa4b2",
         );
         break;
@@ -1284,23 +1279,31 @@ export class TownUI {
               </div>
             </div>`);
           break;
-        case "depth": {
-          const config = delveConfig(p.depth, this.state.challengerTier, p.size);
+        case "plan": {
+          const plan = p.plan;
+          if (!plan) {
+            rows.push(`
+              <div class="row ${on}" data-index="${i}">
+                <div class="row-main"><span class="name">No portal picked yet</span></div>
+                <div class="row-side warn">${p.isHost
+                  ? "walk into the Delve, a rift or the Reliquary Portal and confirm it"
+                  : "the host picks by walking into a portal"}</div>
+              </div>`);
+            break;
+          }
+          const config = { ...plan.config, players: p.size };
           const profile = profileFor(config.depth, config);
+          const title = config.planet
+            ? `${config.planet.spec.name} T${config.planet.tier}`
+            : config.mode.isRift ? `${config.mode.name} tier ${config.tier}` : `Delve depth ${config.depth}`;
           rows.push(`
             <div class="row ${on}" data-index="${i}">
               <div class="row-main">
-                <span class="depth">${String(p.depth).padStart(2, "0")}</span>
-                <span class="name">${escapeHtml(profile.name)}</span>
+                <span class="name">${escapeHtml(title)}</span>
+                <span class="muted">${escapeHtml(profile.name)}</span>
                 ${profile.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
               </div>
-              <div class="row-side">
-                ${p.isHost
-                  ? `<span class="chip" data-action="left" data-index="${i}">◀</span>
-                     req. lv ${profile.recommendedLevel}
-                     <span class="chip" data-action="right" data-index="${i}">▶</span>`
-                  : `req. lv ${profile.recommendedLevel} · the host picks`}
-              </div>
+              <div class="row-side">req. lv ${profile.recommendedLevel} · everyone stands in that portal</div>
             </div>`);
           break;
         }
@@ -1343,9 +1346,10 @@ export class TownUI {
         <h3>Multiplayer</h3>
         <p class="${p.net.status === "error" ? "danger" : "muted"}">${escapeHtml(status)}</p>
         <p>One of you opens a room and reads out the four letters. Everybody else types
-        them in. Then you all walk into the <b>Party Portal</b> on the ship — the run
-        starts when the last person steps in, and not before. Standing at this terminal
-        doesn't count; back out to the ship first.</p>
+        them in. Then the <b>host walks into any portal</b> — the Delve, a rift, a sector
+        from the Reliquary Gate — and confirms it; that portal becomes the party's. Everyone
+        walks into it, and the run starts when the last person steps in, not before.
+        Standing at this terminal doesn't count; back out to the ship first.</p>
         <h3>What a party does to a floor</h3>
         <p>Monsters get tougher and there are more of them the more of you there are.
         They do not hit meaningfully harder — you still can't dodge for each other.</p>

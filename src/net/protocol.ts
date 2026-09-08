@@ -107,10 +107,11 @@ export type PartyMessage =
   | { k: "hello"; hero: HeroWire }
   /** Where you are on the ship, and whether you're standing in the party portal. */
   | { k: "hub"; x: number; y: number; facing: number; ready: boolean }
-  /** Host only: what the party is about to dive into, for everyone else's lobby.
-   *  `running` says a floor is under way — somebody who joins mid-run waits on the ship
-   *  for the next run rather than being dropped into the next floor (UAT §1 A2). */
-  | { k: "plan"; depth: number; players: number; running: boolean }
+  /** Host only: what the party is about to dive into, for everyone else's lobby. `run`
+   *  is the floor the host picked by walking into a portal and `station` is which portal
+   *  (UAT §1 D1) — absent until they have. `running` says a floor is under way, so
+   *  somebody who joins mid-run waits on the ship for the next run (UAT §1 A2). */
+  | { k: "plan"; players: number; running: boolean; run?: RunConfigWire; station?: string }
   /** Host only: everyone into the portal, here is the floor. */
   | { k: "start"; seed: number; config: RunConfigWire; heroes: HeroWire[] }
   /** Client → host, every tick. `seq` numbers the tick so the host can say which one it

@@ -51,14 +51,48 @@ let viewH = 0;
 
 const town = new TownUI(
   townRoot, state,
-  (config) => enterDungeon(config),
+  (config) => launchOrPlan(config),
   (planet, tier) => {
-    // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into.
+    // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into. In a
+    // room, the host picking a sector makes that portal the party's (UAT §1 D1).
     hub.setExpedition(planet.id, tier);
+    if (party.inRoom && party.isHost) {
+      party.setPlan(planetConfig(planet, tier, 1, state.challengerTier), "expedition");
+      flash(`${planet.name} T${tier} it is — everyone into the Reliquary Portal.`);
+    }
     enterHub();
   },
   party,
 );
+
+/**
+ * A run screen's confirm. Solo, it dives. In a room it's the host choosing the party's
+ * run (UAT §1 D1): the portal they walked into becomes the ready spot, and the floor
+ * starts when the last person is standing in it. Clients never get here — the run
+ * stations are closed to them in `handleHubInteraction`.
+ */
+function launchOrPlan(config: RunConfig): void {
+  if (!party.inRoom) {
+    enterDungeon(config);
+    return;
+  }
+  if (!party.isHost) {
+    flash("The host picks the portal — walk into the one they chose.");
+    enterHub();
+    return;
+  }
+  const station = config.mode.id === "abyss" || config.mode.id === "hoard" ? config.mode.id : "dive";
+  party.setPlan(config, station);
+  enterHub();
+  flash(`${describeRun(config)} it is — everyone into the ${station === "dive" ? "Delve" : config.mode.name} portal.`);
+}
+
+/** One line naming a run, for the party's flashes and lobby. */
+function describeRun(config: RunConfig): string {
+  if (config.planet) return `${config.planet.spec.name} T${config.planet.tier}`;
+  if (config.mode.isRift) return `${config.mode.name} tier ${config.tier}`;
+  return `Delve depth ${config.depth}`;
+}
 
 // --- the party ------------------------------------------------------------
 // Everything co-op reaches the rest of the game through these four callbacks. Nothing
@@ -174,12 +208,22 @@ function returnToTown(): void {
 function handleHubInteraction(): void {
   const station = hub.nearStation();
   if (!station) return;
-  // While a party room is open, every other portal has to wait — walking into the
-  // Delve (or a rift, the Reliquary Gate, a sector portal or the forge) would launch a solo run out
-  // from under the room and strand whoever joined. The Party Portal and the screens
-  // that don't start a run (Comms Relay, the Quartermaster) stay open.
-  if (party.inRoom && station.kind !== "party" && station.kind !== "comms" && station.kind !== "quartermaster") {
-    flash("You're in a party — walk into the Party Portal to dive together.");
+  // In a room, the run portals are the host's to choose from (UAT §1 D1): the host
+  // walks into one and confirms, and that portal becomes where everybody readies up. A
+  // client pressing confirm at one is told so; the stations that don't start a run (the
+  // Comms Relay, the Quartermaster, the Forge) stay open to everybody.
+  const startsARun = station.kind !== "comms" && station.kind !== "quartermaster" && station.kind !== "forge";
+  if (party.inRoom && startsARun && !party.isHost) {
+    flash(party.plan
+      ? `The host picked ${describeRun(party.plan.config)} — stand in that portal to ready up.`
+      : "The host picks the portal. Wait for them to choose one.");
+    return;
+  }
+  if (party.inRoom && station.kind === "expedition") {
+    // The sector portal in a room is the party's ready spot, never a solo launch.
+    flash(party.plan?.config.planet
+      ? `This is the party's portal — everyone stand in it to begin.`
+      : "Pick a sector at the Reliquary Gate first.");
     return;
   }
   switch (station.kind) {
@@ -190,10 +234,6 @@ function handleHubInteraction(): void {
     case "forge": enterTown("Craft"); break;
     case "quartermaster": enterTown("Stash"); break;
     case "comms": enterTown("Party"); break;
-    // The party portal isn't opened by pressing anything — standing in it is the ready
-    // signal, and the host's run starts when the last person is inside. Pressing confirm
-    // on it just opens the room screen, which is where you'd look anyway.
-    case "party": enterTown("Party"); break;
     case "expedition": {
       const expedition = hub.expedition;
       const planet = expedition ? PLANETS_BY_ID[expedition.planetId] : undefined;
@@ -458,6 +498,15 @@ function handleRunDecisions(d: Dungeon): void {
       d.bankLoot();
       state.save();
       if (d.isParty) {
+        if (config.mode.isRift && config.lastFloor) {
+          // The rift's boss is down: the run is over for everybody, banked in full, and
+          // each player's own save opens its next tier (UAT §1 D1 — rifts in co-op).
+          party.endRun("extract");
+          const tier = state.riftTiers[config.mode.id];
+          returnToTown();
+          flash(`${config.mode.name} tier ${config.tier} closed. Tier ${tier} is open.`);
+          return;
+        }
         party.endRun("descend");
         party.descend(config);
         return;

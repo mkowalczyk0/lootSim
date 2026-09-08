@@ -23,12 +23,13 @@ const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const STATION_COLORS: Record<HubStationKind, string> = {
   dive: "#7dd3fc", abyss: "#ff1493", hoard: "#fbbf24", expedition: "#4ade80",
   starmap: "#a855f7", forge: "#fb923c", quartermaster: "#38bdf8",
-  comms: "#22d3ee", party: "#22d3ee",
+  comms: "#22d3ee",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
  *  Everything else is a relic already painted into the deck image. */
-const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "party"]);
+const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition"]);
+const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
  *  The dungeon sizes the same sprite by its manifest `worldScale` instead. */
@@ -55,6 +56,10 @@ export function renderHub(
 
   const deckLoaded = drawDeck(ctx);
   for (const s of hub.stations) drawStation(ctx, s, time, s === near, deckLoaded);
+  // The party's portal (UAT §1 D1): whichever one the host picked gets a wide pulsing
+  // ring, so "everyone walk into it" has an obvious "it".
+  const target = hub.partyStation;
+  if (target) drawPartyRing(ctx, target, time, hub.inPartyPortal);
 
   // Everyone else in the room is walking around their own copy of this deck; their
   // positions arrive over the relay a dozen times a second and are drawn here.
@@ -76,6 +81,35 @@ export function renderHub(
     ctx.fillText(`[E] ${near.label}`, viewW / 2, viewH - 36);
     ctx.restore();
   }
+  if (hub.partyOpen) {
+    // What the room is waiting on, in one line: the host picking, or everybody walking.
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.font = `bold 11px ${MONO}`;
+    ctx.fillStyle = PARTY_COLOR;
+    const ready = hub.mates.filter((m) => m.ready).length + (hub.inPartyPortal ? 1 : 0);
+    const text = !target
+      ? hub.partyHost
+        ? "PARTY — walk into a portal and confirm it to pick the party's run"
+        : "PARTY — waiting for the host to pick a portal"
+      : `PARTY — ${target.label}: ${ready}/${hub.mates.length + 1} in the portal`;
+    ctx.fillText(text, viewW / 2, 26);
+    ctx.restore();
+  }
+}
+
+/** The chosen portal's halo: cyan, breathing, and a shade brighter once you're in it. */
+function drawPartyRing(ctx: CanvasRenderingContext2D, s: HubStation, time: number, inIt: boolean): void {
+  ctx.save();
+  ctx.globalAlpha = (inIt ? 0.75 : 0.45) + Math.sin(time * 3) * 0.15;
+  ctx.strokeStyle = PARTY_COLOR;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([6, 5]);
+  ctx.lineDashOffset = -time * 20;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, s.radius + 16, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** Another player on the ship: their character, their name, and a tick once they've

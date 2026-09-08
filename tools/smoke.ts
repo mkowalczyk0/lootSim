@@ -10,7 +10,7 @@
 import { Input, type Action, type AvatarInput } from "../src/core/input";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, inTelegraph } from "../src/game/dungeon";
-import { Hub, HUB_HEIGHT, HUB_WIDTH } from "../src/game/hub";
+import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
 import { Player, xpForLevel } from "../src/game/player";
@@ -1604,6 +1604,27 @@ console.log("\n=== the ship hub ===");
   check("choosing an expedition spawns its portal", hub.stations.some((s) => s.kind === "expedition"));
   hub.clearExpedition();
   check("walking into it clears it back out", !hub.stations.some((s) => s.kind === "expedition"));
+
+  // The party's ready spot is whichever portal the host picked (UAT §1 D1) — there is
+  // no separate party portal any more.
+  check("no party portal on the deck", !hub.stations.some((s) => (s.kind as string) === "party"));
+  hub.partyOpen = true;
+  check("nobody is ready before the host has picked", !hub.inPartyPortal && hub.partyStation === null);
+  hub.partyTarget = "abyss";
+  const abyss = hub.stations.find((s) => s.kind === "abyss")!;
+  hub.x = abyss.x + abyss.radius;
+  hub.y = abyss.y;
+  check("standing in the picked portal is being ready", hub.inPartyPortal && hub.partyStation === abyss);
+  hub.x = abyss.x + abyss.radius + HUB_PLAYER_RADIUS + 40;
+  check("…standing next to it isn't", !hub.inPartyPortal);
+  const dive = hub.stations.find((s) => s.kind === "dive")!;
+  hub.x = dive.x;
+  hub.y = dive.y;
+  check("the wrong portal doesn't count", !hub.inPartyPortal);
+  hub.partyTarget = "dive";
+  check("…until the host picks it", hub.inPartyPortal);
+  hub.partyOpen = false;
+  hub.partyTarget = null;
 }
 
 console.log("\n=== death loses unbanked loot ===");
@@ -2493,7 +2514,7 @@ console.log("\n=== multiplayer ===");
     const others = [wire(hostState, "p1"), wire(geared(14, 8807, 16, "magician"), "p2")];
     client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: others });
     check("a client ignores a start it isn't part of", client.starts.length === 0 && !client.party.running);
-    client.net.onMessage("p1", { k: "plan", depth: 2, players: 3, running: true });
+    client.net.onMessage("p1", { k: "plan", players: 3, running: true });
     check("…and is told to wait for the next run", client.notices.some((n) => /next run/.test(n)) && client.party.hostRunning);
     client.net.onMessage("p1", { k: "end", how: "descend", early: false });
     check("a floor it wasn't on ending is none of its business", client.ends.length === 0 && !client.party.running);
@@ -2508,6 +2529,60 @@ console.log("\n=== multiplayer ===");
     client.net.onClosed("The host left.");
     check("the host leaving ends the floor as an early extraction",
       client.ends[1]?.how === "hostLeft" && client.ends[1]?.early === true && !client.party.running);
+
+    // D1: the host picks the party's run by walking into a portal — any portal. The plan
+    // crosses the wire as a config, that portal is everybody's ready spot, and the run
+    // that starts is the one the host picked, sized to the party.
+    const picker = rig(geared(14, 8815, 16, "swordsman"), "p1", true);
+    picker.net.peers = [{ id: "p2", name: "Cousin" }];
+    picker.net.onChange();
+    picker.net.onMessage("p2", { k: "hello", hero: wire(geared(14, 8816, 16, "magician"), "p2") });
+    const hostHub = new Hub();
+    picker.party.syncHub(hostHub, DT);
+    check("a room with no plan has no ready spot", hostHub.partyOpen && hostHub.partyHost && hostHub.partyTarget === null);
+    picker.sent.length = 0;
+    picker.party.setPlan(riftConfig("abyss", 2, 1, 0), "abyss");
+    const planMsg = picker.sent.find((s) => s.msg.k === "plan")?.msg as Extract<PartyMessage, { k: "plan" }> | undefined;
+    check("picking a rift broadcasts it as the plan", planMsg?.run?.mode === "abyss" && planMsg.run.tier === 2 && planMsg.station === "abyss");
+    const watcher = rig(geared(14, 8816, 16, "magician"), "p2", false);
+    watcher.net.peers = [{ id: "p1", name: "Host" }];
+    watcher.net.onChange();
+    watcher.net.onMessage("p1", planMsg!);
+    check("a client learns the plan", watcher.party.plan?.config.mode.id === "abyss" && watcher.party.plan?.config.tier === 2
+      && watcher.party.plan?.station === "abyss");
+    const mateHub = new Hub();
+    watcher.party.syncHub(mateHub, DT);
+    check("…and its ready spot is that portal", mateHub.partyTarget === "abyss" && !mateHub.partyHost);
+    // Everybody walks into the Abyssal Rift.
+    const abyss = hostHub.stations.find((s) => s.kind === "abyss")!;
+    hostHub.x = abyss.x;
+    hostHub.y = abyss.y;
+    picker.party.syncHub(hostHub, DT);
+    check("the host alone in the portal starts nothing", picker.starts.length === 0);
+    picker.net.onMessage("p2", { k: "hub", x: abyss.x, y: abyss.y, facing: 0, ready: true });
+    picker.party.syncHub(hostHub, DT);
+    check("the last one in starts the run the host picked", picker.starts.length === 1);
+    const started = picker.sent.filter((s) => s.msg.k === "start").map((s) => s.msg as Extract<PartyMessage, { k: "start" }>);
+    check("…as that rift, sized to the party",
+      started[0]?.config.mode === "abyss" && started[0].config.tier === 2 && started[0].config.players === 2,
+      JSON.stringify(started[0]?.config));
+    // A planet plan grows the expedition portal on everybody's deck; another plan takes it away.
+    picker.party.endRun("extract");
+    picker.party.setPlan(planetConfig(PLANETS[0]!, 1, 1, 0), "expedition");
+    picker.party.syncHub(hostHub, DT);
+    check("a planet plan puts the Reliquary Portal on the host's deck",
+      hostHub.expedition?.planetId === PLANETS[0]!.id && hostHub.partyTarget === "expedition");
+    const planetPlan = picker.sent.filter((s) => s.msg.k === "plan").pop()!.msg as Extract<PartyMessage, { k: "plan" }>;
+    watcher.net.onMessage("p1", planetPlan);
+    watcher.party.syncHub(mateHub, DT);
+    check("…and on the client's", mateHub.expedition?.planetId === PLANETS[0]!.id && mateHub.stations.some((s) => s.kind === "expedition"));
+    picker.party.setPlan(delveConfig(5, 0), "dive");
+    picker.party.syncHub(hostHub, DT);
+    check("switching to the Delve takes the sector portal away again", hostHub.expedition === null && hostHub.partyTarget === "dive");
+    // Leaving the room clears the plan and the deck.
+    watcher.party.leave();
+    watcher.party.syncHub(mateHub, DT);
+    check("leaving the room clears the plan", watcher.party.plan === null && mateHub.partyTarget === null && !mateHub.partyOpen);
   }
 
   // 8. Procedural generation is deterministic across the wire (UAT §1 C6): a client

@@ -13,9 +13,9 @@
 import type { AvatarInput } from "../core/input";
 import { cleanPlayerName } from "../data/settings";
 import { nextFloorConfig } from "../data/planets";
-import { delveConfig, type RunConfig } from "../data/modes";
+import type { RunConfig } from "../data/modes";
 import type { Dungeon, HeroSetup, RunEvent } from "../game/dungeon";
-import type { Hub } from "../game/hub";
+import type { Hub, HubStationKind } from "../game/hub";
 import type { GameState } from "../game/state";
 import { playerFromJSON, playerToJSON } from "../game/state";
 import { normalizeAppearance, type Appearance } from "../data/cosmetics";
@@ -44,6 +44,12 @@ export interface PartyMember {
 }
 
 export type RunEnd = "extract" | "descend" | "wipe";
+
+/** What the host has picked for the party, and which portal on the deck it is. */
+export interface PartyPlan {
+  readonly config: RunConfig;
+  readonly station: HubStationKind;
+}
 /** Why a floor ended for *this* browser: the wire's three, plus the host vanishing. */
 export type RunEndReason = RunEnd | "hostLeft";
 
@@ -51,8 +57,12 @@ export class Party {
   readonly net = new NetClient();
   /** Everyone else in the room. You are never in here. */
   members: PartyMember[] = [];
-  /** The delve depth the host has picked for the party. */
-  depth = 1;
+  /**
+   * The run the host has picked by walking into a portal and confirming it (UAT §1 D1):
+   * a delve depth, a rift tier or a planet expedition. Null until they have. Its portal
+   * is the ready spot for everybody.
+   */
+  plan: PartyPlan | null = null;
   /** True between a `start` and the `end` that follows it. */
   running = false;
 
@@ -136,6 +146,7 @@ export class Party {
     this.running = false;
     this.hostRunning = false;
     this.runRoster = [];
+    this.plan = null;
     this.dungeon = null;
     this.members = [];
     this.inputs.clear();
@@ -143,16 +154,21 @@ export class Party {
     this.net.leave();
   }
 
-  setDepth(depth: number): void {
-    this.depth = Math.max(1, Math.min(depth, this.state.maxUnlockedDepth));
+  /** Host only. The host walked into a portal and confirmed a run: that's the party's. */
+  setPlan(config: RunConfig, station: HubStationKind): void {
+    if (!this.isHost) return;
+    this.plan = { config, station };
     this.broadcastPlan();
     this.onChange();
   }
 
-  /** Host only: the depth and whether a floor is under way, for one lobby or every lobby. */
+  /** Host only: the plan and whether a floor is under way, for one lobby or every lobby. */
   private broadcastPlan(to?: string): void {
     if (!this.isHost || !this.inRoom) return;
-    this.send({ k: "plan", depth: this.depth, players: this.size, running: this.running }, to);
+    this.send({
+      k: "plan", players: this.size, running: this.running,
+      ...(this.plan ? { run: configToWire(this.plan.config), station: this.plan.station } : {}),
+    }, to);
   }
 
   /** Announce this character — sent on arrival and again whenever gear may have changed. */
@@ -181,7 +197,22 @@ export class Party {
     hub.partyOpen = this.inRoom;
     if (!this.inRoom) {
       hub.mates = [];
+      hub.partyHost = false;
+      hub.partyTarget = null;
       return;
+    }
+    hub.partyHost = this.isHost;
+    hub.partyTarget = this.plan?.station ?? null;
+    // A planet run dives from the expedition portal, which only exists once the Reliquary
+    // Gate has spawned it — so while the party's plan is a planet, everybody's deck grows
+    // that portal, and it goes again when the plan changes to something else.
+    const planet = this.plan?.config.planet;
+    if (planet) {
+      if (hub.expedition?.planetId !== planet.spec.id || hub.expedition.tier !== planet.tier) {
+        hub.setExpedition(planet.spec.id, planet.tier);
+      }
+    } else if (hub.expedition) {
+      hub.clearExpedition();
     }
 
     hub.mates = this.members.map((m) => ({
@@ -200,12 +231,13 @@ export class Party {
       this.send({ k: "hub", x: Math.round(hub.x), y: Math.round(hub.y), facing: Number(hub.facing.toFixed(2)), ready: hub.inPartyPortal });
     }
 
-    if (!this.isHost || this.running) return;
-    // Everybody in, and there has to be a somebody: a room of one dives through the
-    // ordinary Delve portal, and walking over this one by accident shouldn't start a run.
+    if (!this.isHost || this.running || !this.plan) return;
+    // Everybody in, and there has to be a somebody: a room of one is just a person
+    // standing next to a portal, and walking over it by accident shouldn't start a run.
     if (!hub.inPartyPortal || this.members.length === 0) return;
     if (!this.members.every((m) => m.ready && m.hero)) return;
-    this.startFloor(delveConfig(this.depth, this.state.challengerTier, this.size));
+    // The party comes with the run: the roster could have changed since the host picked.
+    this.startFloor({ ...this.plan.config, players: this.size });
   }
 
   // --- starting and ending a floor -----------------------------------------
@@ -376,7 +408,9 @@ export class Party {
       }
       case "plan": {
         if (this.isHost) return;
-        this.depth = msg.depth;
+        this.plan = msg.run
+          ? { config: configFromWire(msg.run), station: (msg.station ?? "dive") as HubStationKind }
+          : null;
         const running = msg.running ?? false;
         if (running && !this.hostRunning && !this.running) {
           this.onNotice("The party is mid-dive — you'll go with them on their next run.", "#fbbf24");
@@ -446,6 +480,7 @@ export class Party {
     this.running = false;
     this.hostRunning = false;
     this.runRoster = [];
+    this.plan = null;
     this.onChange();
     this.onNotice(reason, "#ef4444");
     // The host's browser *is* the floor, so the floor is gone with it. That's nobody's
