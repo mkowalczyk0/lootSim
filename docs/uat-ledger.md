@@ -24,8 +24,8 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 4 — UI | stash, item images, hero screen | partial |
 | 5 — Universal progression | universal skill tree | done |
 | 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | in flight |
-| 7 — Named item architecture | modular definitions, images, drop tables, previews | in flight |
-| 8 — Crafting | forge overhaul, reforging, currency, recipes | partial |
+| 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
+| 8 — Crafting | forge overhaul, reforging, currency, recipes | in flight |
 | 9 — Relics | relic system, ~20 relics, equip, acquisition | open |
 | 10 — Raids | raid framework, 4–20 players, weekly scheduling, named loot | open (blocked) |
 | 11 — World / tower / delve | tower climbing, heaven/hell split, lore integration | open |
@@ -48,21 +48,21 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 12 | Hero / character UI | partial | Pipeline art in the Hero and Style portraits landed. Open: equipment slots arranged around the character with real per-item images. Depends on §28. |
 | 13 | Endgame class completion | **assigned** | Opus 5, `feat/class-completion`. Per-`Player` completion state, gold border. |
 | 14 | Final boss / delve concept | **assigned** | Same. Steer: tie it into the Delve rather than a separate system, per the spec. |
-| 15 | Raid bosses (4–20p) | open | Blocked on §28 named items — the whole point is boss-exclusive named drops. |
-| 16 | Raid drop rarity | open | Blocked on §15. |
+| 15 | Raid bosses (4–20p) | open | **Unblocked** — §28 landed, and boss-exclusive named drops now work (5 encounters already have one). The raid framework itself is untouched. |
+| 16 | Raid drop rarity | open | Blocked on §15. `NamedSource` already scales drop chance with `danger`, which is the hook §16 asks for. |
 | 17 | Daily & weekly dungeons | partial | Daily shipped as **The Vigil** (`data/daily.ts`, `daily-dungeon.md`). Weekly **assigned** to Sonnet 5, `feature/weekly-dungeon`. |
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
 | 19 | Relics & artifacts | open | Nothing built. (Grep hits for "relic" are the *Reliquary Portal*, an unrelated rename.) Next major unclaimed item. |
-| 20 | Endgame drop previews | open | Nothing built. Cheap once §28 lands, since previews read the named-item table. |
+| 20 | Endgame drop previews | partial | Seeded by §28: the Records "Named items" list shows each item's source, and `namedForSource()` is the pure read a real preview UI would use. The per-activity "here is what this can drop" screen is still open. |
 | 21 | Titan rush / tower | open | Lore is written (`game_story_worldbuilding.md`), mechanics aren't. |
 | 22 | Rifts / war concept | open | |
 | 23 | Planets / materials layers | partial | Planets, materials and the star map all exist; the §23 restructuring doesn't. |
-| 24 | Forge overhaul | partial | `data/crafting.ts` is 58 lines — category + rarity + essence. The §24 late-game system isn't there. |
-| 25 | Named item crafting | open | Blocked on §28. |
+| 24 | Forge overhaul | **assigned** | Fable 5.1, `feat/forge-overhaul`. Today `data/crafting.ts` is 58 lines; Chunk 8 wants rerolling, skill-slot work, recipes, currency. |
+| 25 | Named item crafting | **assigned** | Unblocked by §28; part of the Chunk 8 assignment. One craft-only mythic already ships as a proof. |
 | 26 | Reforging | done | `feature/reforging` merged; Reforge is a real grid screen in the Craft station. |
-| 27 | Crafting currency | open | Spec says explicitly: do not overcomplicate initially. |
-| 28 | Data-driven named items | **assigned** | Fable 5.1, `feat/named-items`. The keystone — §15/§16/§20/§25 all wait on it. |
-| 29 | Named item requirements | **assigned** | Same. Basic mechanics first; do not solve every behaviour before the pipeline is proven. |
+| 27 | Crafting currency | **assigned** | Part of Chunk 8. Spec says explicitly: do not overcomplicate initially. |
+| 28 | Data-driven named items | done | Merged 8c21eae. `src/data/named.ts` + `tools/named.ts` (238 checks). A def forges an ordinary `Item`: stats bake at drop, behaviour is looked up by id and folded through the class-tree build. 9 items shipped, art on the documented fallback until a PNG pass. See `docs/named-items.md`. |
+| 29 | Named item requirements | done | Basic + skill-effect + passive tiers. Cross-class keystone theft (an item flipping another class's rule) deliberately deferred to v2 — it would bypass the anti-overlap audit. |
 
 ## Standing rules for anyone picking up an item here
 
@@ -100,3 +100,20 @@ without anything checking the far end. Wants an owner call plus a measurement ha
 It passes, but there's almost no headroom, and this is the exact check that silently
 inverted once before. Any class, weapon or tree change can flip it. Worth widening the
 sample or raising the required margin deliberately rather than discovering it again.
+
+**The build-grant fix moved the campaign, measurably.** `runBuildGrants` used to discard
+the combat event payload: grants fired for every hero in co-op, and `to: "target"`
+resolved to whatever stood nearest the caster rather than what was actually hit, so a hit
+landing beyond 220 units (a bow shot, a staff bolt) could never be punished. Fixed in
+2d04d45. Measured on identical seeds, master before vs after:
+
+| | before | after |
+| --- | --- | --- |
+| sharp campaign | 10.3 | **11.8** |
+| reckless campaign | 9.1 | 9.4 |
+| skill margin | 1.2 | **2.4** |
+
+Worth recording because it cuts two ways. It is a real buff to skilled play, which sits
+awkwardly against §7 ("players become overpowered too early") — but it doubles the gap
+between reading telegraphs and ignoring them, which is the promise the whole difficulty
+design rests on, and it relieves the thin-margin finding above. Net: kept.
