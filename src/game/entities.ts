@@ -2,6 +2,7 @@ import type { BossAbilityId, BossSpec, TelegraphShape } from "../data/bosses";
 import type { DamagePacket } from "../combat/damage";
 import type { Element, Resists } from "../data/elements";
 import type { EnemyArchetype } from "../data/enemies";
+import type { MonsterAffix } from "../data/monster-affixes";
 import type { Rarity } from "../data/rarity";
 import type { StatusContainer } from "../combat/status";
 import type { Item } from "./item";
@@ -89,6 +90,9 @@ export interface Enemy extends Body {
   damage: number;
   speed: number;
   attackTimer: number;
+  /** Seconds between attacks before the depth `aggression` factor — `archetype`'s value
+   *  unless a Frenzied-style affix has shortened it. */
+  attackCooldown: number;
   /** Telegraph before a hit lands, so attacks are dodgeable rather than unfair. */
   windup: number;
   state: EnemyState;
@@ -117,6 +121,17 @@ export interface Enemy extends Body {
   boss: BossState | null;
   /** True for anything a boss summoned, so adds can be cleaned up and counted. */
   summoned: boolean;
+  /** Modular traits riding on this monster (UAT §3) — empty for most. */
+  affixes: MonsterAffix[];
+  /** Runtime bookkeeping for the affixes: periodic-behaviour timers, the regen ward
+   *  pool, and a guard so a Splitting spawn can't split again forever. */
+  affixState: {
+    timers: Record<string, number>;
+    ward: number;
+    noSplit: boolean;
+  };
+  /** Multiplies incoming damage — an Armored affix drops this below 1. Default 1. */
+  damageTakenMult: number;
 }
 
 /**

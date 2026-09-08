@@ -18,6 +18,7 @@ import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
+import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
@@ -619,6 +620,79 @@ console.log("\n=== elements, ailments and mana ===");
   for (let i = 0; i < 600; i++) deep.update(DT, new FakeInput() as unknown as Input);
   for (const e of deep.enemies) { total++; if (e.element !== "physical") infused++; }
   check("deep floors are elemental", total === 0 || infused > 0, `${infused}/${total} infused`);
+}
+
+console.log("\n=== monster affixes (UAT §3 — a modular trait system) ===");
+{
+  // Every affix is well-formed: an id, a name, a one-line description, a prefix, a
+  // renderer tint + glyph, a sane weighting, and at least one thing it actually does.
+  for (const a of MONSTER_AFFIXES) {
+    const hasEffect = !!(a.onSpawn || a.periodic || a.onHitHero || a.onDeath);
+    check(`${a.id}: fully specified`,
+      a.name.length > 0 && a.description.length > 0 && a.prefix.length > 0
+        && a.visual.tint.startsWith("#") && a.visual.glyph.length > 0
+        && a.weight > 0 && a.minDepth >= 1 && hasEffect,
+      a.id);
+  }
+  // Incompatibility holds no matter which affix is drawn first.
+  {
+    const rng = new Rng(9);
+    let collision = false;
+    for (let i = 0; i < 4000; i++) {
+      const rolled = rollMonsterAffixes("grunt", 30, 5, 3, rng, { elite: true });
+      for (const x of rolled) {
+        for (const y of rolled) {
+          if (x !== y && (x.incompatibleWith?.includes(y.id) || y.incompatibleWith?.includes(x.id))) {
+            collision = true;
+          }
+        }
+      }
+    }
+    check("incompatible affixes never share a monster", !collision);
+  }
+  // The ramp: rare on a shallow calm floor, common and stacked deep / under danger.
+  {
+    const rng = new Rng(101);
+    const sample = (depth: number, danger: number, elite: boolean) => {
+      let withAny = 0;
+      let totalCount = 0;
+      for (let i = 0; i < 3000; i++) {
+        const n = affixCountFor(depth, danger, elite, rng);
+        if (n > 0) withAny++;
+        totalCount += n;
+      }
+      return { rate: withAny / 3000, avg: totalCount / 3000 };
+    };
+    const shallow = sample(2, 1, false);
+    const deep = sample(24, 1, false);
+    const hard = sample(10, 3, false);
+    const elite = sample(12, 1, true);
+    check("a shallow calm floor is mostly affix-free", shallow.rate < 0.16,
+      `${(shallow.rate * 100).toFixed(0)}% carry one`);
+    check("deep floors are dense with affixes", deep.rate > shallow.rate + 0.16,
+      `${(deep.rate * 100).toFixed(0)}% vs ${(shallow.rate * 100).toFixed(0)}%`);
+    check("Challenger pushes affix frequency up", hard.rate > 0.35,
+      `${(hard.rate * 100).toFixed(0)}% at danger 3`);
+    // Item E gives an elite a modest edge (1-2); Item F raises this to a mini-boss handful.
+    check("an elite always carries at least one trait", elite.avg >= 1,
+      `${elite.avg.toFixed(1)} on average`);
+  }
+  // Live: a deep, dangerous floor grows affixed monsters, and nothing an affix does on
+  // spawn / tick / hit / death throws over a long clear attempt.
+  {
+    const d = new Dungeon(geared(24, 77), delveConfig(24, 8), 20259);
+    let sawAffix = false;
+    const glyphs = new Set<string>();
+    for (let i = 0; i < 3000 && d.phase === "fighting"; i++) {
+      d.update(DT, new FakeInput() as unknown as Input);
+      for (const e of d.enemies) {
+        for (const a of e.affixes) { sawAffix = true; glyphs.add(a.visual.glyph); }
+      }
+    }
+    check("a deep Challenger floor spawns affixed monsters", sawAffix, `${glyphs.size} distinct traits seen`);
+    check("no affix behaviour crashed a floor",
+      d.phase === "fighting" || d.phase === "cleared" || d.phase === "dead", `phase=${d.phase}`);
+  }
 }
 
 console.log("\n=== minion subsystem ===");

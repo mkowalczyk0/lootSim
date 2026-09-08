@@ -602,6 +602,31 @@ export class WorldRenderer {
       ctx.restore();
     }
 
+    // Affix markers (UAT §3): a dashed ring in the lead affix's tint, and each affix's
+    // glyph orbiting the body so the "oh shit, it has THAT one" read happens at a glance.
+    if (e.affixes.length > 0 && !e.boss) {
+      const ringR = e.radius * 1.95;
+      ctx.save();
+      ctx.globalAlpha = 0.4 + Math.sin(time * 3) * 0.12;
+      ctx.strokeStyle = e.affixes[0]!.visual.tint;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.arc(x, y - e.radius * 0.4, ringR, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      e.affixes.forEach((af, i) => {
+        const ang = time * 1.5 + (i / e.affixes.length) * TAU;
+        ctx.fillStyle = af.visual.tint;
+        ctx.fillText(af.visual.glyph, x + Math.cos(ang) * ringR, y - e.radius * 0.4 + Math.sin(ang) * ringR);
+      });
+      ctx.restore();
+    }
+
     // A boss winding something up glows in its own element — the same colour as the
     // shape it is about to paint on the floor, so the two read as one warning.
     const casting = e.boss ? e.boss.castTimer > 0 : false;

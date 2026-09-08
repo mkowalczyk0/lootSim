@@ -339,6 +339,11 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         element, resists: {} as Enemy["resists"],
         sc: new StatusContainer(1_000_000 + id!),
         knockResist: 1, boss: null, summoned: false,
+        // Affix mechanics are host-authoritative — the client mirrors the resulting
+        // HP/damage numbers and never runs a behaviour itself, so these stay inert.
+        attackCooldown: archetype.attackCooldown,
+        affixes: [], affixState: { timers: {}, ward: 0, noSplit: false },
+        damageTakenMult: 1,
       };
       d.enemies.push(e);
     }

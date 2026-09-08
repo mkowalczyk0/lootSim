@@ -12,6 +12,9 @@ import {
 } from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
 import {
+  affixCountFor, affixPrefix, foldAffixSpawn, rollMonsterAffixes,
+} from "../data/monster-affixes";
+import {
   BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
 } from "../data/weapons";
 import { weaponAbilityFor } from "../data/weapon-abilities";
@@ -362,6 +365,13 @@ export class Dungeon implements CombatHost, RuleHost {
    * rest of the sim (spawns, boss telegraphs, loot) stays byte-identical.
    */
   readonly defenseRng: Rng;
+  /**
+   * A third deterministic stream, for monster-affix rolls (UAT §3) and the behaviours
+   * they fire. Same reasoning as `defenseRng`: a floor with no affixed monsters never
+   * draws from it, so bolting the affix system on keeps spawns, telegraphs and loot on
+   * the main stream byte-identical and every calibrated test still lines up.
+   */
+  readonly affixRng: Rng;
   /** The typed combat event bus the `src/combat` executor and resource rules ride on.
    *  Wired to `fireTriggers` so item triggers still see hits and kills. */
   readonly bus = new EventBus();
@@ -408,6 +418,7 @@ export class Dungeon implements CombatHost, RuleHost {
     this.profile = profileFor(this.config.depth, this.config);
     this.rng = new Rng(seed);
     this.defenseRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
+    this.affixRng = new Rng((seed ^ 0x85ebca6b) >>> 0);
 
     // Every floor is generated: layout, hazards and decoration all come from here. A
     // planet expedition brings its own biome, a bigger room graph, and resource nodes
@@ -626,12 +637,28 @@ export class Dungeon implements CombatHost, RuleHost {
     archetype: EnemyArchetype,
     x: number,
     y: number,
-    opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number } = {},
+    opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number; noAffixes?: boolean } = {},
   ): Enemy {
     const elite = opts.elite ?? null;
     const eliteMult = elite ? 1 + rarityIndex(elite) * 0.55 : 1;
+
+    // Modular monster affixes (UAT §3). Boss bodies, boss-summoned chaff and the split
+    // spawn of a Splitting monster never roll them; everything else on a wave can.
+    const affixes = opts.noAffixes || opts.summoned || archetype.kind === "boss"
+      ? []
+      : rollMonsterAffixes(
+          archetype.kind,
+          this.profile.depth,
+          this.config.danger,
+          affixCountFor(this.profile.depth, this.config.danger, elite !== null, this.affixRng),
+          this.affixRng,
+          { elite: elite !== null },
+        );
+    const aff = foldAffixSpawn(affixes);
+
     const element = this.rollElement(archetype.element, elite !== null);
-    const health = this.profile.enemyHealth * archetype.health * eliteMult * (opts.healthMult ?? 1);
+    const health =
+      this.profile.enemyHealth * archetype.health * eliteMult * (opts.healthMult ?? 1) * aff.healthMult;
 
     // Everything resists its own element hard, so a single-element build eventually
     // hits a wall and has to diversify. Physical is deliberately exempt: it's the
@@ -639,7 +666,7 @@ export class Dungeon implements CombatHost, RuleHost {
     // simply cannot fight.
     const resists = zeroResists();
     for (const e of Object.keys(resists) as Element[]) {
-      resists[e] = archetype.resist + (elite ? rarityIndex(elite) * 8 : 0);
+      resists[e] = archetype.resist + (elite ? rarityIndex(elite) * 8 : 0) + aff.resist;
     }
     if (element !== "physical") resists[element] += 55 + this.profile.depth * 1.5;
 
@@ -647,16 +674,20 @@ export class Dungeon implements CombatHost, RuleHost {
     // A planet renames its ordinary archetypes so the roster reads as this planet's
     // own, even though it's the same five kinds fighting the same way underneath.
     const baseName = this.config.planet?.spec.enemyNames[archetype.kind] ?? archetype.name;
+    const attackCooldown = archetype.attackCooldown * aff.attackRateMult;
     return {
       id: this.nextEnemyId++,
       x, y, px: x, py: y,
-      radius: archetype.radius * (elite ? 1.18 : 1),
+      radius: (archetype.radius + aff.radius) * (elite ? 1.18 : 1),
       archetype,
-      name: `${prefix}${elite ? `${cap(elite)} ` : ""}${baseName}`,
+      name: `${affixPrefix(affixes)}${prefix}${elite ? `${cap(elite)} ` : ""}${baseName}`,
       health, maxHealth: health,
-      damage: this.profile.enemyDamage * archetype.damage * (elite ? 1 + rarityIndex(elite) * 0.12 : 1),
-      speed: this.profile.enemySpeed * archetype.speed,
-      attackTimer: this.rng.range(0, archetype.attackCooldown * this.profile.aggression),
+      damage:
+        this.profile.enemyDamage * archetype.damage
+        * (elite ? 1 + rarityIndex(elite) * 0.12 : 1) * aff.damageMult,
+      speed: this.profile.enemySpeed * archetype.speed * aff.speedMult,
+      attackTimer: this.rng.range(0, attackCooldown * this.profile.aggression),
+      attackCooldown,
       windup: 0,
       state: "spawning",
       spawnTimer: 0.45,
@@ -673,6 +704,9 @@ export class Dungeon implements CombatHost, RuleHost {
       knockResist: 1,
       boss: null,
       summoned: opts.summoned ?? false,
+      affixes,
+      affixState: { timers: {}, ward: 0, noSplit: opts.noAffixes === true },
+      damageTakenMult: aff.damageTakenMult,
     };
   }
 
@@ -2002,9 +2036,20 @@ export class Dungeon implements CombatHost, RuleHost {
     } = {},
   ): number {
     if (e.health <= 0) return 0;
-    const amplified = amount * e.sc.incomingDamageMultiplier();
-    const mitigated = opts.raw ? amount : mitigateWithResists(amplified, element, e.resists);
-    const dealt = Math.max(1, Math.round(mitigated));
+    // An Armored affix (`damageTakenMult` < 1) is a flat cut on top of resists — the
+    // spec's "damage resistance" affix, kept off the resist channel so physical is not
+    // exempt from it the way it is from elemental resist.
+    const amplified = amount * e.sc.incomingDamageMultiplier() * e.damageTakenMult;
+    const mitigated = opts.raw
+      ? amount * e.damageTakenMult
+      : mitigateWithResists(amplified, element, e.resists);
+    let dealt = Math.max(1, Math.round(mitigated));
+    // A Warded affix's regenerating shield is eaten before health.
+    if (e.affixState.ward > 0) {
+      const absorbed = Math.min(e.affixState.ward, dealt);
+      e.affixState.ward -= absorbed;
+      dealt -= absorbed;
+    }
     e.health -= dealt;
     e.hitFlash = 0.12;
 
@@ -2093,6 +2138,7 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     this.fireTriggers(source, "onKill", e.x, e.y);
     rulesOnKill(this, source, e);
+    if (e.affixes.length > 0) this.affixOnDeath(e, source);
     source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
 
@@ -2268,6 +2314,9 @@ export class Dungeon implements CombatHost, RuleHost {
         continue;
       }
 
+      // Periodic affix behaviours — blink, ward regen, a summoner's timer, a heal aura.
+      if (e.affixes.length > 0) this.tickAffixes(e, dt);
+
       // Everything chases whoever is nearest to it, which is all the "aggro" a horde
       // shooter needs: bodies flow to the nearest player and the party gets split up
       // exactly as much as it deserves to be.
@@ -2343,7 +2392,7 @@ export class Dungeon implements CombatHost, RuleHost {
       e.attackTimer -= dt;
       if (!bossBusy && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
         e.windup = (e.archetype.ranged ? 0.35 : 0.28) * this.profile.telegraph;
-        e.attackTimer = e.archetype.attackCooldown * this.profile.aggression;
+        e.attackTimer = e.attackCooldown * this.profile.aggression;
       }
     }
     this.separateEnemies();
@@ -2380,11 +2429,176 @@ export class Dungeon implements CombatHost, RuleHost {
     if (e.archetype.ranged) {
       const angle = Math.atan2(a.y - e.y, a.x - e.x);
       this.spawnEnemyBolt(e.x, e.y, angle, 210, e.damage, e.element, AILMENT_CHANCE);
+      if (e.affixes.length > 0) this.affixOnHitHero(e, target);
       return;
     }
     if (dist(e.x, e.y, a.x, a.y) <= e.archetype.attackRange + e.radius * 0.5) {
       this.hurtPlayer(target, e.damage, e.element, AILMENT_CHANCE);
+      if (e.affixes.length > 0) this.affixOnHitHero(e, target);
     }
+  }
+
+  // --- monster affixes (UAT §3) ------------------------------------------
+  // The data lives in `data/monster-affixes.ts`; these three hooks are the only place
+  // an affix's behaviour tag turns into something happening. A new tag is one `case`.
+
+  /** Periodic affix behaviour — runs once per frame for an active, affixed monster. */
+  private tickAffixes(e: Enemy, dt: number): void {
+    for (const affix of e.affixes) {
+      const p = affix.periodic;
+      if (!p) continue;
+      const left = (e.affixState.timers[affix.id] ?? this.affixRng.range(0, p.every)) - dt;
+      if (left > 0) { e.affixState.timers[affix.id] = left; continue; }
+      e.affixState.timers[affix.id] = p.every;
+      switch (p.kind) {
+        case "regenWard": {
+          const cap = e.maxHealth * 0.18 * (e.elite ? 1.6 : 1);
+          e.affixState.ward = Math.min(cap, e.affixState.ward + cap);
+          break;
+        }
+        case "blink": {
+          const hero = this.nearestHero(e.x, e.y).avatar;
+          const gap = dist(e.x, e.y, hero.x, hero.y);
+          if (gap < e.radius + hero.radius + 40) break;
+          const reach = Math.min(gap - (e.radius + hero.radius + 20), 240);
+          const ang = Math.atan2(hero.y - e.y, hero.x - e.x);
+          const to = resolveCircle(
+            this.level,
+            clamp(e.x + Math.cos(ang) * reach, 40, this.width - 40),
+            clamp(e.y + Math.sin(ang) * reach, 40, this.height - 40),
+            e.radius,
+          );
+          e.x = to.x; e.y = to.y;
+          this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
+          break;
+        }
+        case "healAura": {
+          for (const other of this.enemies) {
+            if (other === e || other.boss || other.health >= other.maxHealth) continue;
+            if (dist(e.x, e.y, other.x, other.y) > 150) continue;
+            other.health = Math.min(other.maxHealth, other.health + other.maxHealth * 0.04);
+          }
+          break;
+        }
+        case "summon": {
+          const alive = this.enemies.length;
+          if (alive >= this.profile.maxAlive + 4) break;
+          const kind: EnemyKind = "swarmer";
+          if (ARCHETYPES[kind].minDepth > this.profile.depth) break;
+          const ang = this.affixRng.angle();
+          const spot = resolveCircle(
+            this.level,
+            clamp(e.x + Math.cos(ang) * 44, 40, this.width - 40),
+            clamp(e.y + Math.sin(ang) * 44, 40, this.height - 40),
+            ARCHETYPES[kind].radius,
+          );
+          this.enemies.push(this.makeEnemy(ARCHETYPES[kind], spot.x, spot.y, { summoned: true, healthMult: 0.7 }));
+          break;
+        }
+      }
+    }
+  }
+
+  /** Fires when an affixed monster's attack connects with a hero. */
+  private affixOnHitHero(e: Enemy, hero: Hero): void {
+    for (const affix of e.affixes) {
+      switch (affix.onHitHero) {
+        case "leech":
+          e.health = Math.min(e.maxHealth, e.health + e.damage * 0.6);
+          break;
+        case "caustic": {
+          const kind = STATUS_FOR_ELEMENT[e.element === "physical" ? "poison" : e.element];
+          if (kind) {
+            hero.sc.apply(kind, {
+              hitDamage: Math.max(1, Math.round(e.damage)), potency: 1.6,
+              sourceActorId: -1, chance: 1, roll: () => this.affixRng.next(),
+            });
+          }
+          break;
+        }
+        case "enfeeble":
+          hero.sc.apply("weakened", {
+            hitDamage: 0, sourceActorId: -1, chance: 1, roll: () => this.affixRng.next(),
+          });
+          break;
+        case "sap":
+          hero.player.drainMana(hero.player.maxMana * 0.14);
+          break;
+        case "arc": {
+          const base = Math.atan2(hero.avatar.y - e.y, hero.avatar.x - e.x);
+          for (const off of [-0.5, 0.5]) {
+            this.spawnEnemyBolt(e.x, e.y, base + off, 240, e.damage * 0.5, "lightning", AILMENT_CHANCE);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /** Fires as an affixed monster dies — slotted next to `rulesOnKill`, `e` still valid. */
+  private affixOnDeath(e: Enemy, source: Hero): void {
+    for (const affix of e.affixes) {
+      switch (affix.onDeath) {
+        case "detonate":
+          this.affixBurst(e.x, e.y, 74, e.damage * 1.8, e.element === "physical" ? "fire" : e.element);
+          this.events.push({ kind: "shake", amount: 8 });
+          break;
+        case "miasma":
+          this.ground.push({
+            x: e.x, y: e.y, px: e.x, py: e.y, radius: 60,
+            element: "poison", damage: Math.max(2, e.damage * 0.35),
+            remaining: 6, tickTimer: 0.5, hitsPlayer: true, hitsEnemies: false,
+            color: ELEMENT_COLORS.poison,
+          });
+          break;
+        case "volley":
+          for (let i = 0; i < 8; i++) {
+            this.spawnEnemyBolt(e.x, e.y, (i / 8) * Math.PI * 2, 200, e.damage * 0.7, e.element, AILMENT_CHANCE);
+          }
+          break;
+        case "revitalise":
+          for (const other of this.enemies) {
+            if (other === e || other.boss || other.health <= 0) continue;
+            if (dist(e.x, e.y, other.x, other.y) > 165) continue;
+            other.health = Math.min(other.maxHealth, other.health + other.maxHealth * 0.25);
+          }
+          break;
+        case "split": {
+          if (e.affixState.noSplit || e.summoned) break;
+          for (let i = 0; i < 2; i++) {
+            const ang = this.affixRng.angle();
+            const spot = resolveCircle(
+              this.level,
+              clamp(e.x + Math.cos(ang) * 26, 40, this.width - 40),
+              clamp(e.y + Math.sin(ang) * 26, 40, this.height - 40),
+              e.archetype.radius * 0.7,
+            );
+            const spawn = this.makeEnemy(e.archetype, spot.x, spot.y, { healthMult: 0.34, noAffixes: true });
+            spawn.radius = e.archetype.radius * 0.7;
+            spawn.damage *= 0.6;
+            spawn.state = "active";
+            spawn.spawnTimer = 0;
+            this.enemies.push(spawn);
+          }
+          break;
+        }
+      }
+    }
+    // Feed elite kills into the same "worth several kills" bonus the legacy economy had —
+    // handled in killEnemy already; nothing extra needed here.
+    void source;
+  }
+
+  /** A one-shot damaging ring — a Volatile monster's death, kept off the projectile path. */
+  private affixBurst(x: number, y: number, radius: number, damage: number, element: Element): void {
+    for (const hero of this.heroes) {
+      if (!hero.alive) continue;
+      if (dist(hero.avatar.x, hero.avatar.y, x, y) <= radius + hero.avatar.radius) {
+        // Ailment left off on purpose: it would roll the main rng and shift the stream.
+        this.hurtPlayer(hero, damage, element, 0);
+      }
+    }
+    this.events.push({ kind: "death", x, y, elite: null });
   }
 
   /** A hostile projectile. Bosses and turrets both come through here. */
