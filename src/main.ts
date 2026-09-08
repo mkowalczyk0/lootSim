@@ -4,6 +4,7 @@ import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
 import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
+import { dailyUnlocked } from "./data/daily";
 import { RARITY_COLORS } from "./data/rarity";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
 import { Hub } from "./game/hub";
@@ -72,6 +73,13 @@ const town = new TownUI(
  * stations are closed to them in `handleHubInteraction`.
  */
 function launchOrPlan(config: RunConfig): void {
+  // The Vigil is a solo watch in v1 (UAT §17): the once-a-day bookkeeping is per account
+  // and the party wire doesn't carry a daily plan. Solo it's just another dive.
+  if (config.daily && party.inRoom) {
+    flash("The Vigil is kept alone for now — leave the room to enter it.");
+    enterHub();
+    return;
+  }
   if (!party.inRoom) {
     enterDungeon(config);
     return;
@@ -234,6 +242,7 @@ function handleHubInteraction(): void {
     case "forge": enterTown("Craft"); break;
     case "quartermaster": enterTown("Stash"); break;
     case "comms": enterTown("Party"); break;
+    case "vigil": enterTown("Vigil"); break;
     case "expedition": {
       const expedition = hub.expedition;
       const planet = expedition ? PLANETS_BY_ID[expedition.planetId] : undefined;
@@ -592,6 +601,8 @@ function update(dt: number): void {
 
   if (scene === "hub") {
     hub.update(dt, input);
+    // The Vigil's portal is on the deck once the delve has gone deep enough (UAT §17).
+    hub.vigilOpen = dailyUnlocked(state.stats.deepestDepth);
     // Tells the room where you're standing, draws everybody else on the deck, and —
     // if you're hosting — starts the run once the last person is in the portal.
     party.syncHub(hub, dt);

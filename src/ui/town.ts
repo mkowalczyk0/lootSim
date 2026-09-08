@@ -21,6 +21,9 @@ import {
   MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
+import {
+  DAILY_MODIFIERS, DAILY_NAME, DAILY_UNLOCK_DEPTH, dailyConfig, dailyPlan, dailyUnlocked, dayNumber, msUntilReset,
+} from "../data/daily";
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
@@ -71,13 +74,13 @@ const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
-const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party"] as const;
+const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party", "Vigil"] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
 const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
-  Party: "COMMS RELAY",
+  Party: "COMMS RELAY", Vigil: "THE VIGIL",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -111,6 +114,14 @@ const STYLE_ROWS: readonly StyleRow[] = [
 
 /** A bound key's live label, for anywhere in the town screen that names one — never a
  *  hardcoded letter, since every one of these is rebindable now. */
+/** "5h 12m", for the Vigil's reset countdown. */
+function formatCountdown(ms: number): string {
+  const minutes = Math.max(0, Math.ceil(ms / 60_000));
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+
 function k(settings: Settings, action: RebindableAction): string {
   return keyLabel(settings.keybinds[action] ?? DEFAULT_KEYBINDS[action]);
 }
@@ -132,6 +143,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
+    case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Craft": return forgeMode === "reforge"
       ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to crafting`
       : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
@@ -154,7 +166,8 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"
 // "planet" is rift-shaped internally (fixed floors, a boss, tier scaling) but it isn't
 // a selectable rift flavor — it's the mechanical shell every planet expedition borrows.
 // The Rifts screen only ever shows the two the player actually picks between.
-const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet");
+// The planet shell and the daily Vigil are rift-*shaped* but have their own screens.
+const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet" && m !== "vigil");
 
 /**
  * The town hub: dive selection, rift tiers, chest gambling, stash, equipment, skills
@@ -463,6 +476,7 @@ export class TownUI {
       case "Dive": return this.state.maxUnlockedDepth;
       case "Rifts": return this.state.riftTiers[this.riftMode];
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
+      case "Vigil": return 1;
       case "Craft": return this.forgeMode === "reforge"
         ? this.reforgeCandidates().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
@@ -785,6 +799,21 @@ export class TownUI {
         const tier = this.cursor + 1;
         this.state.player.fullHeal();
         this.onDive(riftConfig(this.riftMode, tier, 1, this.state.challengerTier));
+        break;
+      }
+      case "Vigil": {
+        if (!this.requireClass()) break;
+        const day = dayNumber();
+        if (!dailyUnlocked(this.state.stats.deepestDepth)) {
+          this.notify(`Reach depth ${DAILY_UNLOCK_DEPTH} in the delve first.`, "#ef4444");
+          break;
+        }
+        if (this.state.daily.clearedDay === day) {
+          this.notify(`Closed. The next Vigil opens in ${formatCountdown(msUntilReset())}.`, "#9aa4b2");
+          break;
+        }
+        this.state.player.fullHeal();
+        this.onDive(dailyConfig(day, this.state.challengerTier));
         break;
       }
       case "StarMap": {
@@ -1235,6 +1264,7 @@ export class TownUI {
       case "Party": return this.renderParty();
       case "Rifts": return this.renderRifts();
       case "StarMap": return this.renderStarMap();
+      case "Vigil": return this.renderVigil();
       case "Craft": return this.renderCraft();
       case "Chests": return this.renderChests();
       case "Stash": return this.renderStash();
@@ -1768,6 +1798,65 @@ export class TownUI {
   }
 
   /** The current Challenger dial, shown wherever a run gets configured. Set in Settings. */
+  /**
+   * The Vigil (UAT §17): today's floor, laid out before you enter — depth, the two
+   * modifiers, the key it pays, and the countdown to the reset. One row, because there
+   * is one decision: keep the Vigil, or don't.
+   */
+  private renderVigil(): string {
+    const day = dayNumber();
+    const plan = dailyPlan(day);
+    const config = dailyConfig(day, this.state.challengerTier);
+    const profile = profileFor(config.depth, config);
+    const unlocked = dailyUnlocked(this.state.stats.deepestDepth);
+    const cleared = this.state.daily.clearedDay === day;
+    const under = this.state.player.level < profile.recommendedLevel;
+    const mode = MODES.vigil;
+    const countdown = formatCountdown(msUntilReset());
+
+    const row = `
+      <div class="row on" data-index="0">
+        <div class="row-main">
+          <span class="depth">${String(config.depth).padStart(2, "0")}</span>
+          <span class="name">${cleared ? "Closed for today" : unlocked ? "Keep the Vigil" : "Sealed"}</span>
+          ${cleared ? '<span class="badge">DONE</span>' : ""}
+        </div>
+        <div class="row-side ${cleared || !unlocked ? "warn" : under ? "warn" : ""}">
+          ${cleared
+            ? `next Vigil in ${countdown}`
+            : unlocked
+              ? `req. lv ${profile.recommendedLevel} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
+              : `reach depth ${DAILY_UNLOCK_DEPTH} in the delve`}
+        </div>
+      </div>`;
+
+    const twists = plan.modifiers.map((id) => {
+      const m = DAILY_MODIFIERS[id];
+      return `<tr><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.blurb)}</td></tr>`;
+    }).join("");
+
+    return `<div class="list">${row}</div>
+      <aside class="side">
+        <h3 style="color:${mode.color}">${escapeHtml(DAILY_NAME)}</h3>
+        <p>${escapeHtml(mode.blurb)}</p>
+        <p class="muted">Today's floor is the same for everyone, everywhere — same layout, same
+        twists, same key. It resets at midnight UTC, in <b>${countdown}</b>.</p>
+        <h3>Today's twists</h3>
+        <table class="cmp">${twists}</table>
+        <h3>Today's key</h3>
+        <p>Closing the floor drops one <b>${escapeHtml(plan.keyTier)}</b> key in the clear
+        cache, on top of the ordinary loot. Once a day. Die or bail out and you can try
+        again; leaving early forfeits the floor like anywhere else.</p>
+        <table class="cmp">
+          <tr><td>Depth</td><td>${config.depth} · ${escapeHtml(profile.name)}</td></tr>
+          <tr><td>Danger</td><td>×${config.danger.toFixed(2)}</td></tr>
+          <tr><td>XP</td><td>×${mode.xpMult.toFixed(1)}</td></tr>
+        </table>
+        <p>Vigils kept: <b>${this.state.stats.vigilsCleared}</b></p>
+        ${this.challengerNote()}
+      </aside>`;
+  }
+
   private challengerNote(): string {
     const tier = this.state.challengerTier;
     if (tier <= 0) return `<p class="muted">Challenger off — crank it up from Settings.</p>`;

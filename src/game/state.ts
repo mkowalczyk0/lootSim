@@ -41,6 +41,8 @@ export interface RunStats {
   deaths: number;
   /** Rifts finished, per mode. The number people actually brag about. */
   riftsCleared: Record<RunModeId, number>;
+  /** Daily Vigils closed (UAT §17). */
+  vigilsCleared: number;
   bossesKilled: number;
   /** Vanity bookkeeping. Nobody needs it; everybody looks at it. */
   gemsEarned: number;
@@ -59,6 +61,7 @@ function freshStats(): RunStats {
     runsCompleted: 0,
     deaths: 0,
     riftsCleared: Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>,
+    vigilsCleared: 0,
     bossesKilled: 0,
     gemsEarned: 0,
     capsulesOpened: 0,
@@ -124,6 +127,9 @@ export class GameState {
   riftTiers: Record<RunModeId, number> = freshTiers();
   /** Highest tier opened per planet. Clearing a planet's first tier opens the next planet. */
   planetProgress: Record<string, number> = freshPlanetProgress();
+  /** The Vigil (UAT §17): the UTC day number it was last closed on, 0 for never. The
+   *  portal stays shut for the rest of that day — one key a day is the whole design. */
+  daily: { clearedDay: number } = { clearedDay: 0 };
   /** One per element, spent at the forge. Dropped and mined on planets, nowhere else. */
   materials: MaterialBag = emptyMaterials();
   /**
@@ -482,6 +488,13 @@ export class GameState {
   recordDepth(depth: number, config?: RunConfig): void {
     if (depth > this.stats.deepestDepth) this.stats.deepestDepth = depth;
     if (depth > this.player.deepestDepth) this.player.deepestDepth = depth;
+    // The Vigil is closed for the day. Only a credited bank gets here, so a death or a
+    // bail-out leaves it open to try again.
+    if (config?.daily) {
+      this.daily.clearedDay = config.daily.day;
+      this.stats.vigilsCleared++;
+      return;
+    }
     // A planet is rift-shaped (`mode.isRift` is true for it too) but each one keeps its
     // own tier ladder, so it's tracked by planet id rather than the shared rift Records.
     if (config?.planet) {
@@ -514,6 +527,7 @@ export class GameState {
       maxUnlockedDepth: this.maxUnlockedDepth,
       riftTiers: this.riftTiers,
       planetProgress: this.planetProgress,
+      daily: this.daily,
       materials: this.materials,
       challengerTier: this.challengerTier,
       stats: this.stats,
@@ -566,6 +580,9 @@ export class GameState {
       // ladder and an empty materials bag is exactly what a brand new save gets too.
       state.planetProgress = { ...freshPlanetProgress(), ...(d.planetProgress as Record<string, number> | undefined) };
       state.materials = { ...emptyMaterials(), ...(d.materials as Partial<MaterialBag> | undefined) };
+      // Version 16 added the daily Vigil; an older save has simply never closed one.
+      const daily = d.daily as { clearedDay?: unknown } | undefined;
+      state.daily = { clearedDay: Math.max(0, Math.floor(Number(daily?.clearedDay ?? 0)) || 0) };
       state.setChallengerTier(Number(d.challengerTier ?? 0));
       state.inventory = ((d.inventory as Item[]) ?? []).map(normalizeItem);
 

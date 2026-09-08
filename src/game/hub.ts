@@ -18,7 +18,7 @@ import type { Appearance } from "../data/cosmetics";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms";
+  | "comms" | "vigil";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -68,6 +68,9 @@ const FIXED_STATIONS: readonly HubStation[] = [
 /** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
  *  floor left of the central seal. */
 const EXPEDITION_SPOT = { x: 270, y: 250 };
+/** Where the Vigil's portal opens once it's unlocked — the open flagstone bottom-left,
+ *  a short walk from the spawn, since it's meant to be the first thing you do each day. */
+const VIGIL_SPOT = { x: 150, y: 390 };
 /** How far past a portal's own radius still counts as standing in it for the party
  *  ready check — generous, since four people have to fit. */
 const READY_PAD = 12;
@@ -78,6 +81,8 @@ export class Hub {
   facing = -Math.PI / 2;
   /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
+  /** The daily Vigil is unlocked (UAT §17), which is what puts its portal on the deck. */
+  vigilOpen = false;
   /** True while a party room is open — the deck shows the room's state. */
   partyOpen = false;
   /** Whether this browser is the room's host, i.e. the one who picks the portal. */
@@ -98,6 +103,9 @@ export class Hub {
         kind: "expedition", label: "Reliquary Portal",
         x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
       });
+    }
+    if (this.vigilOpen) {
+      stations.push({ kind: "vigil", label: "The Vigil", x: VIGIL_SPOT.x, y: VIGIL_SPOT.y, radius: 22 });
     }
     return stations;
   }
