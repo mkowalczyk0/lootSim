@@ -119,6 +119,9 @@ function start(state: GameState, who: AccountInfo): void {
       enterHub();
     },
     party,
+    // Settings → Log out: the server clears the cookie, then the page comes back up at
+    // the login screen with nothing of this account left in memory.
+    () => { void account.logout().finally(() => window.location.reload()); },
   );
 
   /**

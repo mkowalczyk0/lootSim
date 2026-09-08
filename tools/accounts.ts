@@ -85,6 +85,10 @@ export function openAccounts(opts: AccountsOptions): Accounts {
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
   const secret = sessionSecret(db);
+  // A well-formed hash of nothing in particular, so a login attempt against a name that
+  // doesn't exist still pays the full scrypt cost — otherwise the *time* a wrong guess
+  // takes would say which names are real even though the answer never does.
+  const decoyHash = hashPassword(randomBytes(12).toString("base64url"));
 
   const findByName = db.prepare("SELECT id, username, password FROM accounts WHERE username = ? COLLATE NOCASE");
   const findById = db.prepare("SELECT id, username, password FROM accounts WHERE id = ?");
@@ -179,9 +183,10 @@ export function openAccounts(opts: AccountsOptions): Accounts {
           const username = typeof body.username === "string" ? body.username.trim() : "";
           const password = typeof body.password === "string" ? body.password : "";
           const account = findByName.get(username) as AccountRow | undefined;
-          // One answer for a wrong password and an unknown name, so the login box can't
-          // be used to list who plays here.
-          if (!account || !verifyPassword(password, account.password)) {
+          // One answer — and one cost — for a wrong password and an unknown name, so the
+          // login box can't be used to list who plays here, by body or by stopwatch.
+          const matches = verifyPassword(password, account?.password ?? decoyHash);
+          if (!account || !matches) {
             return json(res, 401, { error: "bad_credentials", message: "That name and password don't go together." });
           }
           log(`${account.username} logged in`);
