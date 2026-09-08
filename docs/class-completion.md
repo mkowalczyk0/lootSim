@@ -155,7 +155,12 @@ construction here rather than by authoring discipline:
 On top of that, `PROVING_CORE` (`ringOut`, `beam`, `meteor`, `starLance`) is added from the
 **second** phase onward whatever kit the class borrowed. Phase one is left template-pure on
 purpose: the fight opens reading as your class, and what the Abyss kept arrives as the room
-closes in. The tuning note explains why this exists at all.
+closes in.
+
+And every phase's *pressure* is floored at the reference encounter's phase at the same
+index — never a longer gap between casts, never fewer adds on entry. The borrowed body
+decides what it does; the bottom of the Delve decides how relentlessly. The tuning note
+explains why both of these exist at all.
 
 ---
 
@@ -177,8 +182,16 @@ kiting player is never in range of a cleave, a quake or a windmill. Same stat li
 of the pressure. `PROVING_CORE` is the fix — `ringOut` is the anti-kite ability by design
 (the mirror of a quake: *get in*) and `beam` crosses the room.
 
-Both were found by playing the encounter, not by reading it. Neither would have been caught
-by a win-rate threshold.
+**3. Health was never the difference; density was.** With both of the above fixed, a
+level-60 character still won its Warden-kit Proving 6/6 while the ordinary Nameless floor
+killed it 4 times in 6 — twice the fight length, less than half the danger. The Nameless
+opens at haste 0.95 with two adds already walking; the Warden opens at 1.0 with none. So
+every phase's haste and adds are now floored at the reference's, which fixes the pressure
+without touching a single ability, leaving each class's Proving still reading as its own
+kit.
+
+All three were found by playing the encounter, not by reading it. None of them would have
+been caught by a win-rate threshold.
 
 ---
 
@@ -212,8 +225,11 @@ sprite and stopped there.
   and the encounters spread across all five templates.
 - Every generated spec obeys every boss rule: telegraphed, a wind-up on every ability, a
   cross-arena answer in every phase, strictly additive phases, never slowing down.
-- Every Proving is harder than the depth-30 floor it replaces — asserted per class,
-  because the failure mode it guards was per class.
+- Every Proving is *structurally* harder than the depth-30 floor it replaces — more
+  health, more damage, more phases, and no gentler phase by phase in either the gap
+  between casts or the adds walking in. Asserted per class, because the failure mode it
+  guards against was per class. "Structurally" is doing real work in that sentence; see
+  the honest limit below.
 - The five hand-authored encounters are audited too, against a **pinned** list of their
   existing violations (`choir|additive`, `herald|additive`, `nameless|additive`). Pinned
   rather than fixed: re-tuning shipped content is not this feature's business. A *new*
@@ -237,6 +253,27 @@ sprite and stopped there.
 - A completed class has an identical sheet to an unfinished one.
 - It survives a save round-trip, and a pre-v18 blob (built by stripping the field, not by
   relabelling the version) loads with every class unfinished.
+
+### The honest limit of "the hardest thing in the game"
+
+What is verified: the Proving is structurally harder than the ordinary depth-30 floor on
+every axis the specs can express, and behaviourally it is the longer fight with more phase
+changes (58s against 26s, 2.3 phase changes against 1.3).
+
+What is **not** true, and shouldn't be claimed: that it kills a well-geared character more
+often. Measured on a level-60 legendary-geared Swordsman, its Proving is cleared 6/6 while
+the ordinary Nameless floor kills the same character 4 times in 6. The mechanism is
+elemental and it is the system working as designed: a Proving's damage is *the class's own
+element*, and for a physical class that means damage everybody's armour already mitigates,
+while the Nameless deals **void** — which a character resists only if its gear happened to
+roll void resist. So the ordinary floor's lethality against any given character is partly an
+accident of that character's resist spread.
+
+Three tuning passes went into this and each fixed a genuine measured defect (see above).
+The remaining levers would both make things worse: dropping the class's own element throws
+away the thing the fiction is built on, and pushing damage past the reference's 1.12x heads
+straight for the one-shot that `CLAUDE.md` calls a wall rather than a fight. So it is left
+here, stated rather than papered over, as a tuning question for the owner.
 
 ### An open finding, not fixed here
 

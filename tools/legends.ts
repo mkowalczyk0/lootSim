@@ -230,8 +230,19 @@ console.log("\n=== the boss rules hold for all 21 Provings ===");
     return spec.health <= reference.health || spec.damage <= reference.damage
       || spec.phases.length <= reference.phases.length - 1;
   });
-  check("every Proving is harder than the depth-30 floor it replaces", soft.length === 0,
+  check("every Proving is structurally harder than the depth-30 floor it replaces", soft.length === 0,
     soft.join(", "));
+
+  // Not just the stat line: the *pressure* is floored at the reference encounter's too,
+  // phase by phase. This is what stopped a Warden-kit Proving being a longer but far
+  // safer fight than the ordinary Nameless floor — health was never the difference, the
+  // gap between casts and the adds already walking were.
+  const limp = CLASS_IDS.filter((id) => legendBossSpec(id).phases.some((p, i) => {
+    const ref = reference.phases[Math.min(i, reference.phases.length - 1)]!;
+    return p.haste > ref.haste || p.addsOnEnter < ref.addsOnEnter;
+  }));
+  check("…and no gentler phase by phase than that floor's, in casts or in adds",
+    limp.length === 0, limp.join(", "));
 
   // The union-and-append construction is what makes the additive rule true by
   // construction rather than by authoring discipline — assert that directly, since it is

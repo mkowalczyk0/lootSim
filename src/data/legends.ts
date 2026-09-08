@@ -138,6 +138,12 @@ export const PROVING_SELF_RESIST = 150;
  * class, and what the Abyss kept arrives as the room closes in.
  */
 export const PROVING_CORE: readonly BossAbilityId[] = ["ringOut", "beam", "meteor", "starLance"];
+/**
+ * The tightest the gap between casts is ever allowed to get. `BOSS_ACTION_GAP` times this
+ * is that gap, and a rotation short enough to overlap its own wind-ups would break the
+ * one rule the whole encounter rests on: if a hit landed, it was readable.
+ */
+export const PROVING_HASTE_FLOOR = 0.42;
 /** Health fraction the appended final phase begins at. */
 export const PROVING_LAST_PHASE_AT = 0.15;
 /** Name of that phase. What it has left is the part of you it kept. */
@@ -284,22 +290,41 @@ export function provingPhases(template: BossSpec): readonly BossPhase[] {
     for (const id of phase.abilities) seen.add(id);
     // Phase one is the template's alone; from the second, the Abyss brings its own.
     if (i > 0) for (const id of PROVING_CORE) seen.add(id);
-    return { ...phase, abilities: [...seen] };
+    // The borrowed body decides *what* it does; the bottom of the Delve decides how
+    // relentlessly. Every phase is at least as dense as the reference encounter's phase
+    // at the same index — never slower between casts, never fewer adds on entry.
+    //
+    // This is the third thing that had to be measured rather than reasoned about. With
+    // the stat line and the anti-kite core both fixed, a level-60 character still won its
+    // Warden-kit Proving 6/6 while the ordinary Nameless floor killed it 4 times in 6 —
+    // twice as long a fight, and less than half as dangerous. Health was never the
+    // difference; the Nameless opens at haste 0.95 with two adds already walking, and the
+    // Warden opens at 1.0 with none. Flooring the pressure fixes that without touching a
+    // single ability, so a class's Proving still *reads* as its own kit.
+    const ref = REFERENCE.phases[Math.min(i, REFERENCE.phases.length - 1)]!;
+    return {
+      ...phase,
+      abilities: [...seen],
+      haste: Math.min(phase.haste, ref.haste),
+      addsOnEnter: Math.max(phase.addsOnEnter, ref.addsOnEnter),
+    };
   });
 
   const last = phases[phases.length - 1]!;
+  const refLast = REFERENCE.phases[REFERENCE.phases.length - 1]!;
   const finale = new Set(seen);
   finale.add("enrage");
   phases.push({
     at: PROVING_LAST_PHASE_AT,
     name: PROVING_LAST_PHASE_NAME,
     abilities: [...finale],
-    // Floored rather than multiplied without limit: `BOSS_ACTION_GAP` times this is the
-    // gap between casts, and a gap short enough to overlap its own wind-ups would break
-    // the promise that a landed hit was readable.
-    haste: Math.max(0.42, last.haste * 0.85),
+    // Tighter than the phase before it, never slower than the reference encounter's own
+    // last phase, and floored so it can't outrun its own wind-ups — `BOSS_ACTION_GAP`
+    // times this is the gap between casts, and a gap short enough to overlap the
+    // telegraphs would break the promise that a landed hit was readable.
+    haste: Math.max(PROVING_HASTE_FLOOR, Math.min(last.haste * 0.85, refLast.haste)),
     speed: last.speed * 1.05,
-    addsOnEnter: last.addsOnEnter + 3,
+    addsOnEnter: Math.max(last.addsOnEnter + 3, refLast.addsOnEnter + 1),
   });
   return phases;
 }
