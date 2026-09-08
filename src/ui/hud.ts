@@ -3,6 +3,7 @@ import { clamp, formatNumber } from "../core/math";
 import { CHEST_TIERS } from "../data/chests";
 import { ELEMENT_COLORS } from "../data/elements";
 import { MATERIAL_NAMES } from "../data/materials";
+import { EARLY_EXTRACT_KEEP } from "../data/modes";
 import { RARITY_COLORS } from "../data/rarity";
 import { DEFAULT_KEYBINDS, keyLabel, type RebindableAction, type Settings } from "../data/settings";
 import { getStatusSpec } from "../combat/status";
@@ -38,7 +39,9 @@ export class Hud {
 
     if (d.phase !== "dead" && d.localHero.downed) this.drawDownedPrompt(ctx, w, h);
     if (d.phase !== "dead") this.drawPortalPrompt(ctx, d, w, h);
-    if (d.phase !== "dead" && !d.canDescend && !d.atPortal) this.drawResourcePrompt(ctx, d, w, h);
+    if (d.phase !== "dead" && !d.canDescend && !d.atPortal && !d.atCompletionPortal) {
+      this.drawResourcePrompt(ctx, d, w, h);
+    }
     if (d.phase === "dead") this.drawDeathPrompt(ctx, d, w, h);
     if (paused && d.phase !== "dead") this.drawPause(ctx, w, h, d);
 
@@ -377,17 +380,41 @@ export class Hud {
     ctx.fillText(d.level.label.toUpperCase(), cx, 38);
 
     // Which run you're in, if it isn't the plain delve.
+    let y = 54;
     if (d.profile.tag) {
       ctx.font = `bold 11px ${MONO}`;
       ctx.fillStyle = d.config.mode.color;
-      ctx.fillText(d.profile.tag.toUpperCase(), cx, 54);
-    } else if (d.phase === "fighting" && !d.profile.isBoss) {
-      ctx.fillStyle = "#9aa4b2";
-      ctx.fillText(
-        `Wave ${Math.min(d.wave, d.profile.waves)} / ${d.profile.waves}   •   ${d.enemiesRemaining} left`,
-        cx, 56,
-      );
+      ctx.fillText(d.profile.tag.toUpperCase(), cx, y);
+      y += 18;
     }
+
+    // The objective (UAT §5). The floor ends when this reads full, not when you reach
+    // an exit, so it's the most important number on the screen after your own health.
+    if (d.phase === "cleared") {
+      ctx.font = `bold 12px ${MONO}`;
+      ctx.fillStyle = "#7dd3fc";
+      ctx.fillText("FLOOR CLEARED — completion portal open", cx, y);
+      return;
+    }
+    if (d.profile.isBoss) {
+      if (!d.profile.tag) {
+        ctx.font = `11px ${MONO}`;
+        ctx.fillStyle = "#9aa4b2";
+        ctx.fillText("Kill it. That's the floor.", cx, 56);
+      }
+      return;
+    }
+    ctx.font = `bold 12px ${MONO}`;
+    ctx.fillStyle = "#e2e8f0";
+    const kills = `Monsters ${Math.min(d.killsSoFar, d.killsRequired)}/${d.killsRequired}`;
+    const elites = d.elitesRequired > 0
+      ? `  ·  Elites ${Math.min(d.elitesKilled, d.elitesRequired)}/${d.elitesRequired}`
+      : "";
+    ctx.fillText(kills + elites, cx, y);
+    y += 16;
+    ctx.font = `10px ${MONO}`;
+    ctx.fillStyle = "#6b7480";
+    ctx.fillText(`WAVE ${Math.min(d.wave, d.profile.waves)} / ${d.profile.waves}`, cx, y);
   }
 
   private drawLoot(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
@@ -474,66 +501,97 @@ export class Hud {
     ctx.fillText(`Pays out ${MATERIAL_NAMES[planet.element]}`, w / 2, by + 28);
   }
 
+  /**
+   * The floor has two exits (UAT §6) and this panel is where the difference has to be
+   * unmistakable: the **completion portal** takes you on with everything intact, and
+   * the **entrance portal** is an escape hatch that charges a hefty toll for using it
+   * before the floor is finished. The penalty is always spelled out before it happens.
+   */
   private drawPortalPrompt(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, h: number): void {
     const cleared = d.canDescend;
-    const atPortal = d.atPortal;
-    if (!cleared && !atPortal) return;
+    const atExit = d.atCompletionPortal;
+    const atEntrance = d.atPortal;
+    if (!cleared && !atEntrance) return;
 
-    const bw = 470;
-    const bh = atPortal ? 108 : 74;
+    const lines: { text: string; color: string }[] = [];
+    let title = "PORTAL";
+    let titleColor = "#4ade80";
+    const confirmKey = k(d.settings, "confirm");
+    const cancelKey = k(d.settings, "cancel");
+
+    if (d.role === "client") {
+      title = cleared ? "FLOOR CLEARED" : "PORTAL";
+      titleColor = cleared ? "#7dd3fc" : "#4ade80";
+      lines.push({ text: "The host calls it — descend or extract is their shout", color: "#9aa4b2" });
+    } else if (atExit) {
+      title = "COMPLETION PORTAL";
+      titleColor = "#7dd3fc";
+      if (d.isParty && d.partyAtCompletionPortal < d.heroes.length) {
+        lines.push({
+          text: `Waiting for the party — ${d.partyAtCompletionPortal}/${d.heroes.length} in the portal`,
+          color: "#fbbf24",
+        });
+      } else {
+        // In a rift the portal moves you along the run rather than one floor deeper,
+        // and the last one banks the whole thing — the prompt has to say which.
+        const rift = d.config.mode.isRift;
+        lines.push({
+          text: !rift
+            ? `[${confirmKey}] Descend to depth ${d.profile.depth + 1}`
+            : d.config.lastFloor
+              ? `[${confirmKey}] Close the rift — banks everything`
+              : `[${confirmKey}] Push on to floor ${d.config.floor + 1} of ${d.config.mode.floors}`,
+          color: "#e8eef7",
+        });
+      }
+      lines.push({ text: `[${cancelKey}] Extract and bank your loot`, color: "#4ade80" });
+    } else if (cleared && atEntrance) {
+      // The floor's done — this exit banks fine, it just doesn't go deeper.
+      title = "THE WAY YOU CAME IN";
+      titleColor = "#9aa4b2";
+      lines.push({ text: `[${cancelKey}] Extract and bank your loot`, color: "#4ade80" });
+      lines.push({ text: "The new portal is the one that takes you deeper", color: "#6b7480" });
+    } else if (atEntrance) {
+      // Still fighting. This is the penalty exit and it says so.
+      title = "EARLY EXIT";
+      titleColor = "#f87171";
+      const items = d.loot.items.length;
+      lines.push({
+        text: items > 0
+          ? `Leaving abandons all ${items} unbanked item${items === 1 ? "" : "s"}`
+          : "Leaving abandons every item you pick up on the way",
+        color: "#f87171",
+      });
+      lines.push({
+        text: `You keep ${Math.round(EARLY_EXTRACT_KEEP * 100)}% of your coins and gems, and all your XP`,
+        color: "#9aa4b2",
+      });
+      lines.push({ text: `[${cancelKey}] twice — bail out anyway`, color: "#fbbf24" });
+    } else {
+      // Cleared, standing nowhere near either portal.
+      title = "FLOOR CLEARED";
+      titleColor = "#7dd3fc";
+      lines.push({ text: "A new portal opened somewhere on the floor — find it", color: "#9aa4b2" });
+    }
+
+    const bw = 500;
+    const bh = 40 + lines.length * 24;
     const bx = (w - bw) / 2;
     const by = h - bh - 108;
 
     panel(ctx, bx, by, bw, bh);
     ctx.textAlign = "center";
     ctx.font = `bold 16px ${MONO}`;
-    ctx.fillStyle = cleared ? "#7dd3fc" : "#4ade80";
-    ctx.fillText(cleared ? "FLOOR CLEARED" : "PORTAL", w / 2, by + 14);
+    ctx.fillStyle = titleColor;
+    ctx.fillText(title, w / 2, by + 14);
 
     ctx.font = `12px ${MONO}`;
-    if (!atPortal) {
-      ctx.fillStyle = "#9aa4b2";
-      ctx.fillText("Step into the portal to descend or extract", w / 2, by + 44);
-      return;
-    }
-
-    // In a rift the portal moves you along the run rather than one floor deeper, and
-    // the last one banks the whole thing — the prompt has to say which.
-    const rift = d.config.mode.isRift;
     let y = by + 44;
-    if (d.role === "client") {
-      ctx.fillStyle = "#9aa4b2";
-      ctx.fillText("The host calls it — descend or extract is their shout", w / 2, y);
-      return;
-    }
-    if (cleared && d.isParty && d.partyAtPortal < d.heroes.length) {
-      ctx.fillStyle = "#fbbf24";
-      ctx.fillText(`Waiting for the party — ${d.partyAtPortal}/${d.heroes.length} in the portal`, w / 2, y);
-      y += 24;
-      ctx.fillStyle = "#4ade80";
-      ctx.fillText(`[${k(d.settings, "cancel")}] Extract now and bank everything`, w / 2, y);
-      return;
-    }
-    if (cleared) {
-      ctx.fillStyle = "#e8eef7";
-      const confirmKey = k(d.settings, "confirm");
-      const label = !rift
-        ? `[${confirmKey}] Descend to depth ${d.profile.depth + 1}`
-        : d.config.lastFloor
-          ? `[${confirmKey}] Close the rift — banks everything`
-          : `[${confirmKey}] Push on to floor ${d.config.floor + 1} of ${d.config.mode.floors}`;
-      ctx.fillText(label, w / 2, y);
-      y += 24;
-    } else {
-      ctx.fillStyle = "#6b7480";
-      ctx.fillText(
-        d.profile.isBoss ? "Kill it, then the portal opens" : "Clear every wave to unlock the descent",
-        w / 2, y,
-      );
+    for (const line of lines) {
+      ctx.fillStyle = line.color;
+      ctx.fillText(line.text, w / 2, y);
       y += 24;
     }
-    ctx.fillStyle = "#4ade80";
-    ctx.fillText(`[${k(d.settings, "cancel")}] Extract and bank your loot`, w / 2, y);
   }
 
   private drawPause(ctx: CanvasRenderingContext2D, w: number, h: number, d: Dungeon): void {

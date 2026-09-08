@@ -148,6 +148,18 @@ export interface RunConfig {
   readonly planet?: { readonly spec: PlanetSpec; readonly tier: number };
 }
 
+/**
+ * The fraction of unbanked coins and gems that survives an early extraction — leaving
+ * through the entrance portal with the floor's kill quota unmet (UAT §6). Items, keys
+ * and materials don't survive it at all, and XP is never touched.
+ *
+ * Deliberately brutal. The whole point of the two-portal floor is that you cannot dip
+ * out of a dangerous floor still holding the valuable loot, so the choice at the exit
+ * has to read as "risk finishing, or lose the drops" rather than "cash out at a small
+ * discount".
+ */
+export const EARLY_EXTRACT_KEEP = 0.15;
+
 export function delveConfig(depth: number, challengerTier = 0, players = 1): RunConfig {
   const d = Math.max(1, Math.floor(depth));
   return {

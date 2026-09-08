@@ -334,11 +334,17 @@ export class WorldRenderer {
   }
 
   private drawPortal(ctx: CanvasRenderingContext2D, d: Dungeon): void {
-    // Bright once the floor is cleared, dim but visibly active while fighting —
-    // it's always a usable exit, so it must never look sealed.
-    const open = d.canDescend;
+    // The entrance portal: an exit for the whole floor, so it must never look sealed —
+    // but it never descends either, so it stays the dim amber "way back" even after a
+    // clear. Amber rather than blue is the tell that leaving through it costs you
+    // something while the floor is unfinished (UAT §6).
+    const done = d.canDescend;
     const { x, y } = d.portal;
-    drawPortalGlyph(ctx, x, y, d.elapsed, open ? "#7dd3fc" : "#4a7f9a", open ? 1 : 0.22);
+    drawPortalGlyph(ctx, x, y, d.elapsed, done ? "#6b7480" : "#c08a3e", done ? 0.3 : 0.34);
+
+    // The completion portal, once the quota is met: the bright one, the way onward.
+    const cp = d.completionPortal;
+    if (cp) drawPortalGlyph(ctx, cp.x, cp.y, d.elapsed, "#7dd3fc", 1);
   }
 
   private drawPickups(ctx: CanvasRenderingContext2D, d: Dungeon, alpha: number): void {

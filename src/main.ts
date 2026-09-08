@@ -38,6 +38,13 @@ const party = new Party(state);
 
 let scene: Scene = "hub";
 let dungeon: Dungeon | null = null;
+/**
+ * Bailing out early costs you every item you're carrying (UAT §6), so it takes two
+ * presses: the first arms it and says what it will cost, the second does it. Timestamp
+ * rather than a flag so walking away and coming back doesn't leave it armed.
+ */
+let earlyExtractArmedAt = 0;
+const EARLY_EXTRACT_ARM_WINDOW = 5000;
 let paused = false;
 let viewW = 0;
 let viewH = 0;
@@ -76,7 +83,13 @@ party.onEnd = (how) => {
   }
   const coins = d.loot.coins;
   const items = d.loot.items.length;
-  d.bankLoot();
+  // An extraction with the floor's quota still unmet is an early one, and it pays the
+  // penalty (UAT §6). The phase is host-authoritative and already in every client's
+  // last snapshot, so nobody needed a new run-end reason on the wire to know which
+  // kind of extraction this was.
+  const early = how === "extract" && d.phase !== "cleared";
+  if (early) d.earlyExtractLoot();
+  else d.bankLoot();
   state.save();
   if (how === "descend") {
     // Banked, and the host's next floor is already on its way — hold the current one on
@@ -85,7 +98,12 @@ party.onEnd = (how) => {
     return;
   }
   returnToTown();
-  flash(`Extracted with ${formatNumber(coins)} coins and ${items} items.`);
+  flash(
+    early
+      ? `Bailed out early — ${items} item${items === 1 ? "" : "s"} left on the floor, `
+        + `most of the coin with them.`
+      : `Extracted with ${formatNumber(coins)} coins and ${items} items.`,
+  );
 };
 
 /** Cosmetic options only ever change in town, so the dungeon picks them up on entry. */
@@ -119,6 +137,7 @@ function enterDungeon(
     : new Dungeon(state, config);
   scene = "dive";
   paused = false;
+  earlyExtractArmedAt = 0;
   town.hide();
   lootBanner.clear();
   fx.clear();
@@ -382,22 +401,45 @@ function consumeEvents(d: Dungeon): void {
 /**
  * Portal choices and the death screen are handled here, outside the simulation.
  *
+ * There are two portals on a floor (UAT §6). The **entrance** portal is where you came
+ * in; it never descends, and leaving through it before the floor's kill quota is met
+ * forfeits every unbanked item. The **completion** portal appears somewhere else on the
+ * floor the instant the quota is met, and it is the way onward: descend, or extract with
+ * everything intact.
+ *
  * The delve descends one floor at a time forever. A rift walks its fixed sequence and
  * ends when its boss is dead — at which point the whole run banks and the next tier
- * opens. Extracting works identically in both: you keep what you carried and the rift
- * stays where it was.
+ * opens.
  */
+/** Leaving with the floor finished: everything banks, nothing is forfeit. Extracting is
+ *  the safe call, so in a party the host can make it alone and everybody's loot banks
+ *  wherever they happen to be standing. */
+function cleanExtract(d: Dungeon): void {
+  const coins = d.loot.coins;
+  const items = d.loot.items.length;
+  const gems = d.loot.gems;
+  if (d.isParty) party.endRun("extract");
+  d.bankLoot();
+  state.save();
+  returnToTown();
+  flash(
+    `Extracted with ${formatNumber(coins)} coins, ${items} items`
+    + `${gems > 0 ? ` and ${formatNumber(gems)} gems` : ""}.`,
+  );
+}
+
 function handleRunDecisions(d: Dungeon): void {
-  // In a party only the host decides. A client at the portal is told to wait, which is
+  // In a party only the host decides. A client at a portal is told to wait, which is
   // the honest answer: there is one simulation and it is not theirs.
   if (d.role === "client") return;
 
-  if (d.atPortal) {
-    if (d.canDescend && input.wasPressed("confirm")) {
+  // --- after the clear: the completion portal ------------------------------
+  if (d.atCompletionPortal) {
+    if (input.wasPressed("confirm")) {
       const config = d.config;
       // Nobody gets dragged down a floor while they're still picking up the last room.
-      if (d.isParty && d.partyAtPortal < d.heroes.length) {
-        flash(`Waiting for the party — ${d.partyAtPortal}/${d.heroes.length} at the portal.`);
+      if (d.isParty && d.partyAtCompletionPortal < d.heroes.length) {
+        flash(`Waiting for the party — ${d.partyAtCompletionPortal}/${d.heroes.length} in the portal.`);
         return;
       }
       d.bankLoot();
@@ -419,22 +461,57 @@ function handleRunDecisions(d: Dungeon): void {
       return;
     }
     if (input.wasPressed("cancel")) {
-      const coins = d.loot.coins;
-      const items = d.loot.items.length;
-      const gems = d.loot.gems;
-      // Extracting is the safe call, so the host can make it alone — everybody's loot
-      // banks, wherever they happen to be standing.
-      if (d.isParty) party.endRun("extract");
-      d.bankLoot();
-      state.save();
-      returnToTown();
-      flash(
-        `Extracted with ${formatNumber(coins)} coins, ${items} items`
-        + `${gems > 0 ? ` and ${formatNumber(gems)} gems` : ""}.`,
-      );
+      cleanExtract(d);
       return;
     }
   }
+
+  // --- the entrance portal -------------------------------------------------
+  if (d.atPortal) {
+    // The floor is done: walking back to where you came in is a perfectly good way to
+    // bank it. It just can't take you deeper — that's the completion portal's job.
+    if (d.canDescend) {
+      if (input.wasPressed("cancel")) {
+        cleanExtract(d);
+        return;
+      }
+      if (input.wasPressed("confirm")) {
+        flash("This is the way you came in. The new portal takes you deeper.");
+        return;
+      }
+    } else if (input.wasPressed("cancel")) {
+      // Still fighting: this is the penalty exit, and it asks twice.
+      const now = performance.now();
+      if (now - earlyExtractArmedAt > EARLY_EXTRACT_ARM_WINDOW) {
+        earlyExtractArmedAt = now;
+        const items = d.loot.items.length;
+        flash(
+          items > 0
+            ? `Leaving now abandons ${items} item${items === 1 ? "" : "s"} and most of your coin. `
+              + `Press again to bail out.`
+            : "Leaving now costs you most of your coin. Press again to bail out.",
+          "#f87171",
+        );
+        return;
+      }
+      earlyExtractArmedAt = 0;
+      if (d.isParty) party.endRun("extract");
+      const kept = d.earlyExtractLoot();
+      state.save();
+      returnToTown();
+      flash(
+        `Bailed out with ${formatNumber(kept.coins)} coins`
+        + `${kept.gems > 0 ? ` and ${formatNumber(kept.gems)} gems` : ""}. `
+        + `${kept.itemsLost} item${kept.itemsLost === 1 ? "" : "s"} stayed on the floor.`,
+        "#f87171",
+      );
+      return;
+    }
+  } else {
+    // Walked away from the exit — the confirmation shouldn't still be sitting armed.
+    earlyExtractArmedAt = 0;
+  }
+
   if (d.phase === "dead" && input.wasPressed("confirm")) {
     // Loot is deliberately not banked — dying costs you the whole dive.
     if (d.isParty) party.endRun("wipe");
@@ -506,9 +583,13 @@ function render(alpha: number): void {
 }
 
 /** Brief banner over the town, for extract confirmations. */
-function flash(text: string): void {
+/** A banner across the top. `color` overrides the usual accent — a warning about to
+ *  cost the player their loot shouldn't read in the same colour as good news. */
+function flash(text: string, color?: string): void {
   const el = document.querySelector<HTMLElement>("#flash")!;
   el.textContent = text;
+  el.style.color = color ?? "";
+  el.style.borderColor = color ?? "";
   el.classList.add("show");
   window.setTimeout(() => el.classList.remove("show"), 3400);
 }

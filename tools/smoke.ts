@@ -19,7 +19,7 @@ import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
 import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
-import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
@@ -1573,9 +1573,163 @@ console.log("\n=== extracting mid-fight ===");
   }
   check("portal is reachable mid-fight", d.atPortal, `phase=${d.phase} after ${t.toFixed(1)}s`);
   check("cannot descend without clearing", !d.canDescend);
+  check("the entrance portal is an early exit while the floor stands", d.canEarlyExtract);
+  check("no completion portal until the floor is done", d.completionPortal === null);
   const before = state.coins;
   d.bankLoot();
   check("extracting mid-fight banks what you carried", state.coins >= before);
+}
+
+console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
+{
+  // The quota is derived, not hand-set: every monster the director will spawn, plus a
+  // difficulty-scaled elite count that can never exceed what the floor can produce.
+  {
+    const plain = new Dungeon(geared(12, 31), delveConfig(12), 4001);
+    check("an ordinary floor asks for every monster on it",
+      plain.killsRequired === plain.profile.enemiesPerWave * plain.profile.waves,
+      `${plain.killsRequired} = ${plain.profile.enemiesPerWave} x ${plain.profile.waves}`);
+    check("a shallow floor asks for no elites",
+      new Dungeon(geared(3, 32), delveConfig(2), 4002).elitesRequired === 0);
+    const boss = new Dungeon(geared(10, 33), delveConfig(5), 4003);
+    check("a boss floor's quota is the boss",
+      boss.profile.isBoss && boss.killsRequired === 1 && boss.elitesRequired === 0,
+      `kills=${boss.killsRequired} elites=${boss.elitesRequired}`);
+    // Challenger asks for more elites, and never more than the floor can make.
+    const hard = new Dungeon(geared(20, 34), delveConfig(14, 10), 4004);
+    check("Challenger raises the elite requirement",
+      hard.elitesRequired >= 1, `${hard.elitesRequired} elites at tier 10`);
+  }
+
+  // A real clear: the quota fills, a completion portal appears somewhere else on the
+  // floor, and it is somewhere you can actually walk to.
+  {
+    const state = geared(26, 5150, 24);
+    const r = playFloor(state, delveConfig(12), 400, 6161, 0.85);
+    const d = r.d;
+    check("a floor clears by filling its kill quota", d.phase === "cleared",
+      `${d.killsSoFar}/${d.killsRequired} kills, phase=${d.phase}`);
+    check("the quota was actually met, not bypassed",
+      d.killsSoFar >= d.killsRequired && d.elitesKilled >= d.elitesRequired,
+      `${d.killsSoFar}/${d.killsRequired} kills, ${d.elitesKilled}/${d.elitesRequired} elites`);
+    const cp = d.completionPortal;
+    check("clearing spawns a completion portal", cp !== null);
+    if (cp) {
+      const gap = Math.hypot(cp.x - d.portal.x, cp.y - d.portal.y);
+      check("it stands somewhere new, not on the entrance", gap > 120, `${gap.toFixed(0)} units away`);
+      check("it is on open floor", !circleHitsWall(d.level, cp.x, cp.y, 14), `(${cp.x.toFixed(0)}, ${cp.y.toFixed(0)})`);
+      // Reachability: the same breadth-first field the monsters chase the player with.
+      // If it can route from the exit back to where the party spawned, a player can walk it.
+      const flow = new FlowField(d.level);
+      flow.update(d.level, cp.x, cp.y);
+      const routed = flow.direction(d.level, d.level.start.x, d.level.start.y) !== null
+        || Math.hypot(cp.x - d.level.start.x, cp.y - d.level.start.y) < 40;
+      check("the completion portal is walkable from the spawn", routed);
+      check("standing on the entrance no longer offers a descent",
+        !d.canEarlyExtract, `phase=${d.phase}`);
+    }
+  }
+
+  // The elite requirement has to be completable — the director forces the last of them
+  // out on the closing wave rather than leaving the objective stuck behind a bad roll.
+  {
+    let checked = 0;
+    let stuck = 0;
+    for (const seed of [7001, 7002, 7003, 7004, 7005, 7006]) {
+      const state = geared(30, seed, 26);
+      const r = playFloor(state, delveConfig(14, 8), 500, seed, 0.9);
+      if (r.d.elitesRequired === 0) continue;
+      checked++;
+      if (r.d.phase === "cleared" && r.d.elitesKilled < r.d.elitesRequired) stuck++;
+    }
+    check("an elite requirement is always completable", checked > 0 && stuck === 0,
+      `${checked} Challenger floors, ${stuck} cleared without the elites`);
+  }
+
+  // The penalty exit. Everything physical stays on the floor; a thin slice of the
+  // currency survives; XP was already granted and is never clawed back.
+  {
+    const state = geared(14, 8200, 10);
+    const d = new Dungeon(state, delveConfig(9), 8201);
+    const rng = new Rng(4);
+    d.loot.coins = 1000;
+    d.loot.gems = 200;
+    d.loot.keys.basic = 4;
+    d.loot.materials.fire = 30;
+    d.loot.xp = 555;
+    for (let i = 0; i < 3; i++) {
+      d.loot.items.push(rollItem({ rarity: "epic", type: "sword", ilvl: 9, rng }));
+    }
+    const coinsBefore = state.coins;
+    const gemsBefore = state.gems;
+    const bagBefore = state.inventory.length;
+    const keysBefore = state.keys.basic;
+    const fireBefore = state.materials.fire;
+    const xpBefore = state.player.xp;
+    const kept = d.earlyExtractLoot();
+
+    check("bailing early forfeits every unbanked item",
+      state.inventory.length === bagBefore && kept.itemsLost === 3,
+      `bag ${bagBefore} -> ${state.inventory.length}, ${kept.itemsLost} lost`);
+    check("bailing early forfeits keys and materials",
+      state.keys.basic === keysBefore && state.materials.fire === fireBefore);
+    check("bailing early keeps only a slice of the coins",
+      state.coins === coinsBefore + Math.floor(1000 * EARLY_EXTRACT_KEEP),
+      `+${state.coins - coinsBefore} of 1000`);
+    check("bailing early keeps only a slice of the gems",
+      state.gems === gemsBefore + Math.floor(200 * EARLY_EXTRACT_KEEP),
+      `+${state.gems - gemsBefore} of 200`);
+    check("bailing early never touches the XP you earned", state.player.xp === xpBefore);
+    check("the penalty is a real penalty, not a rounding error",
+      EARLY_EXTRACT_KEEP <= 0.25, `keeps ${(EARLY_EXTRACT_KEEP * 100).toFixed(0)}%`);
+  }
+
+  // Bailing out forfeits the floor's *progression* too, which is also what stops a
+  // player unlocking a depth by diving to it and walking straight back out.
+  {
+    const fresh = new GameState(4242);
+    const unlockedBefore = fresh.maxUnlockedDepth;
+    const recordBefore = fresh.stats.deepestDepth;
+    const runsBefore = fresh.stats.runsCompleted;
+    const bail = new Dungeon(fresh, delveConfig(fresh.maxUnlockedDepth), 8400);
+    bail.loot.coins = 500;
+    bail.earlyExtractLoot();
+    check("bailing early unlocks no new depth", fresh.maxUnlockedDepth === unlockedBefore,
+      `${unlockedBefore} -> ${fresh.maxUnlockedDepth}`);
+    check("bailing early sets no depth record", fresh.stats.deepestDepth === recordBefore,
+      `${recordBefore} -> ${fresh.stats.deepestDepth}`);
+    check("bailing early doesn't count as a run completed",
+      fresh.stats.runsCompleted === runsBefore);
+    check("bailing early still banks the coins it let you keep", fresh.coins > 0, `${fresh.coins}c`);
+
+    // Clearing the same floor properly does credit it.
+    const clean = new GameState(4243);
+    const before = clean.maxUnlockedDepth;
+    const done = new Dungeon(clean, delveConfig(before), 8401);
+    done.bankLoot();
+    check("clearing a floor unlocks the next depth", clean.maxUnlockedDepth > before,
+      `${before} -> ${clean.maxUnlockedDepth}`);
+  }
+
+  // …and the contrast: a clean extract off a cleared floor keeps the lot.
+  {
+    const state = geared(26, 8300, 24);
+    const r = playFloor(state, delveConfig(11), 400, 8301, 0.9);
+    if (r.d.phase === "cleared") {
+      const rng = new Rng(5);
+      r.d.loot.items.push(rollItem({ rarity: "legendary", type: "armor", ilvl: 11, rng }));
+      const bagBefore = state.inventory.length;
+      const coinsBefore = state.coins;
+      const carried = r.d.loot.coins;
+      r.d.bankLoot();
+      check("extracting a cleared floor keeps every item",
+        state.inventory.length > bagBefore, `bag ${bagBefore} -> ${state.inventory.length}`);
+      check("extracting a cleared floor keeps every coin",
+        state.coins === coinsBefore + carried, `+${state.coins - coinsBefore} of ${carried}`);
+    } else {
+      check("extracting a cleared floor keeps every item", false, `floor ended ${r.d.phase}`);
+    }
+  }
 }
 
 console.log("\n=== generated floors ===");
@@ -1908,6 +2062,29 @@ console.log("\n=== multiplayer ===");
     `${client.localHero.player.health} vs ${host.heroes[1]!.player.health.toFixed(0)}`);
   check("a client can bank what the host says it earned",
     client.localHero.loot.coins === host.heroes[1]!.loot.coins);
+
+  // The floor objective is the host's to count (UAT §5) — a client mirrors the two
+  // numbers and derives the two requirements from the config it already had, so its
+  // HUD reads the same objective without the wire carrying it.
+  check("a client reads the clear objective off the host",
+    client.killsSoFar === host.killsSoFar && client.elitesKilled === host.elitesKilled,
+    `${client.killsSoFar}/${client.killsRequired} vs ${host.killsSoFar}/${host.killsRequired}`);
+  check("both ends derive the same requirement without sending it",
+    client.killsRequired === host.killsRequired && client.elitesRequired === host.elitesRequired,
+    `${client.killsRequired}/${client.elitesRequired} vs ${host.killsRequired}/${host.elitesRequired}`);
+  {
+    // And once the host opens the completion portal, the client learns where it is —
+    // otherwise a client could never walk to the exit.
+    host.completionPortal = { x: 321, y: 654 };
+    const cleared = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    applySnapshot(client, cleared);
+    check("a completion portal crosses the wire",
+      client.completionPortal?.x === 321 && client.completionPortal?.y === 654,
+      JSON.stringify(client.completionPortal));
+    host.completionPortal = null;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("and goes away again with it", client.completionPortal === null);
+  }
   console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
     + ` with ${busiest.monsters} monsters on screen`
     + ` — ${((busiest.bytes * 20) / 1024).toFixed(0)}kB/s per player at ${20} snapshots a second`);

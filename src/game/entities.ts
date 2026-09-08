@@ -130,6 +130,9 @@ export interface Enemy extends Body {
   boss: BossState | null;
   /** True for anything a boss summoned, so adds can be cleaned up and counted. */
   summoned: boolean;
+  /** True only for a wave-director spawn, which is what the floor-clear quota counts
+   *  (UAT §5) — never a summon, a Splitting monster's shards, or a boss add. */
+  fromWave: boolean;
   /** Modular traits riding on this monster (UAT §3) — empty for most. */
   affixes: MonsterAffix[];
   /** Runtime bookkeeping for the affixes: periodic-behaviour timers, the regen ward

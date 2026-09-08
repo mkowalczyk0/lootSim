@@ -22,7 +22,7 @@ import type { TriggerKind, TriggerSpec } from "../data/items";
 import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
 import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
-import { delveConfig, type RunConfig } from "../data/modes";
+import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
 import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
@@ -387,6 +387,15 @@ export class Dungeon implements CombatHost, RuleHost {
    *  (UAT §4) and the counts feed the floor-clear objective (UAT §5). */
   private elitesSpawned = 0;
   elitesKilled = 0;
+  /** The floor-clear quota (UAT §5): kill this many wave-director monsters, and
+   *  `elitesRequired` elites, and the floor is done. Boss floors: the boss is the quota.
+   *  Both are deterministic from the profile, so a co-op client computes the same pair. */
+  killsRequired: number;
+  killsSoFar = 0;
+  elitesRequired: number;
+  /** Spawned at a fresh spot the instant the quota is met — the primary exit after a
+   *  clear. `null` until then; the entrance `portal` stays put as the early-exit. */
+  completionPortal: { x: number; y: number } | null = null;
   /** Enemies still owed by the current wave. */
   private queued = 0;
   private waveGap = 0.6;
@@ -420,6 +429,20 @@ export class Dungeon implements CombatHost, RuleHost {
     this.state = state;
     this.config = typeof depth === "number" ? delveConfig(depth) : depth;
     this.profile = profileFor(this.config.depth, this.config);
+    // The floor-clear quota (UAT §5). A boss floor is its boss; everything else is
+    // "every monster the director will spawn" plus a difficulty-scaled elite count,
+    // clamped to what the floor can actually produce so it can never be unclearable.
+    if (this.profile.isBoss) {
+      this.killsRequired = 1;
+      this.elitesRequired = 0;
+    } else {
+      this.killsRequired = Math.max(1, this.profile.enemiesPerWave * this.profile.waves);
+      this.elitesRequired = clamp(
+        this.config.danger >= 1.6 ? 1 + Math.floor(this.config.danger - 1.6) : this.profile.depth >= 8 ? 1 : 0,
+        0,
+        this.eliteCapForFloor(),
+      );
+    }
     this.rng = new Rng(seed);
     this.defenseRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
     this.affixRng = new Rng((seed ^ 0x85ebca6b) >>> 0);
@@ -586,10 +609,17 @@ export class Dungeon implements CombatHost, RuleHost {
     // floor's budget is spent. Later waves are likelier to carry the elite, so it lands
     // as an escalation rather than in the opening trickle.
     let elite: Rarity | null = null;
-    if (this.elitesSpawned < this.eliteCapForFloor()) {
+    // The floor owes `elitesRequired` elites for its clear objective (UAT §5). Normally
+    // they come off the same capped roll as before; if the last wave is running out of
+    // bodies with elites still owed, the next spawns are forced to carry them so the
+    // objective is always completable.
+    const eliteDebt = this.elitesRequired - this.elitesSpawned;
+    const forceElite = eliteDebt > 0 && this.wave >= this.profile.waves && this.queued <= eliteDebt;
+    if (forceElite || this.elitesSpawned < this.eliteCapForFloor()) {
       const waveProgress = this.wave / Math.max(1, this.profile.waves);
       const chance = clamp(0.03 + waveProgress * 0.05 + (this.config.danger - 1) * 0.02, 0, 0.4);
-      if (this.rng.chance(chance)) {
+      const rolled = this.rng.chance(chance);
+      if (forceElite || rolled) {
         const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
         elite = RARITIES[this.rng.int(1, maxTier)]!;
         this.elitesSpawned++;
@@ -597,7 +627,7 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     // The discount is for chaff only — an elite in the swarm is still the real threat.
     this.enemies.push(
-      this.makeEnemy(archetype, at.x, at.y, { elite, healthMult: elite ? 1 : WAVE_HEALTH_MULT }),
+      this.makeEnemy(archetype, at.x, at.y, { elite, fromWave: true, healthMult: elite ? 1 : WAVE_HEALTH_MULT }),
     );
   }
 
@@ -672,7 +702,13 @@ export class Dungeon implements CombatHost, RuleHost {
     archetype: EnemyArchetype,
     x: number,
     y: number,
-    opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number; noAffixes?: boolean } = {},
+    opts: {
+      elite?: Rarity | null; summoned?: boolean; healthMult?: number;
+      noAffixes?: boolean;
+      /** Counts toward the floor-clear quota (UAT §5) — set only for wave-director
+       *  spawns, never a summon, a split or a boss add. */
+      fromWave?: boolean;
+    } = {},
   ): Enemy {
     const elite = opts.elite ?? null;
     // A mini-boss, not a fat mob (UAT §4). The health lasts through a rotation of the
@@ -753,6 +789,7 @@ export class Dungeon implements CombatHost, RuleHost {
       knockResist: elite ? 0.35 : 1,
       boss: null,
       summoned: opts.summoned ?? false,
+      fromWave: opts.fromWave ?? false,
       affixes,
       affixState: { timers: {}, ward: 0, noSplit: opts.noAffixes === true },
       damageTakenMult: aff.damageTakenMult,
@@ -765,23 +802,32 @@ export class Dungeon implements CombatHost, RuleHost {
    * §2) in isolation. Not part of normal gameplay — the wave director never calls this.
    */
   spawnArchetypeAt(kind: EnemyKind, x: number, y: number, opts?: { noAffixes?: boolean }): Enemy {
-    const e = this.makeEnemy(ARCHETYPES[kind], x, y, { noAffixes: opts?.noAffixes ?? true });
+    const e = this.makeEnemy(ARCHETYPES[kind], x, y, {
+      noAffixes: opts?.noAffixes ?? true,
+      fromWave: true,
+    });
     e.state = "active";
     e.spawnTimer = 0;
     this.enemies.push(e);
+    // On a sealed floor the staged monsters *are* the clear objective, so each one
+    // placed raises the quota by one and killing them all still ends the floor.
+    this.killsRequired++;
     return e;
   }
 
   /**
-   * A test seam (headless smoke only): stop the wave director. No further waves are
-   * queued, and the floor is treated as its last, so it clears the moment the enemies
-   * currently alive are dead. Pairs with `spawnArchetypeAt` to stage a controlled
-   * encounter — see the Item D archetype walk in `tools/smoke.ts`.
+   * A test seam (headless smoke only): stop the wave director and hand the floor's
+   * clear objective over to whatever `spawnArchetypeAt` places next. No further waves
+   * are queued, and the floor is treated as its last, so it clears the moment the
+   * staged encounter is dead. See the Item D archetype walk in `tools/smoke.ts`.
    */
   sealWaves(): void {
     this.queued = 0;
     this.wave = this.profile.waves;
     this.spawnTimer = Number.POSITIVE_INFINITY;
+    this.killsRequired = 0;
+    this.killsSoFar = 0;
+    this.elitesRequired = 0;
   }
 
   /** Deep floors infuse their monsters with the local element; elites roll their own. */
@@ -902,8 +948,11 @@ export class Dungeon implements CombatHost, RuleHost {
     // Potions live on the save in a solo dive, exactly as they always did.
     if (this.role === "solo") this.state.potions = this.localHero.potions;
 
-    if (this.phase === "fighting" && this.enemiesRemaining === 0 && this.wave >= this.profile.waves) {
+    if (this.phase === "fighting" && this.floorQuotaMet()) {
       this.phase = "cleared";
+      // The clear spawns a fresh portal at a new spot — that's the way on from here.
+      // The entrance portal stays where it is, now purely an early-exit.
+      this.completionPortal = this.pickCompletionSpot();
       // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
       for (const hero of this.heroes) {
         if (hero.downed) this.reviveHero(hero);
@@ -911,6 +960,41 @@ export class Dungeon implements CombatHost, RuleHost {
       this.dropClearCache();
       this.events.push({ kind: "cleared" });
     }
+  }
+
+  /**
+   * The floor's win condition (UAT §5): the kill quota met and the elite quota met.
+   * Summoner chaff and Splitting shards left alive don't hold the floor hostage — only
+   * the director's own roster counts (see `killsSoFar` in `killEnemy`).
+   */
+  floorQuotaMet(): boolean {
+    return this.killsSoFar >= this.killsRequired
+      && this.elitesKilled >= this.elitesRequired
+      && this.wave >= this.profile.waves;
+  }
+
+  /** A fresh spot for the completion portal: on open floor, well clear of the entrance
+   *  portal and not on top of the party. Drawn from the side stream so it never shifts
+   *  the spawn/loot sequence. */
+  private pickCompletionSpot(): { x: number; y: number } {
+    const a = this.localHero.avatar;
+    const hazards = this.level.traps.map((t) => ({ x: t.x, y: t.y, d: t.radius + 20 }));
+    return (
+      randomOpenPoint(this.level, this.affixRng, {
+        clearance: 1,
+        away: [
+          { x: this.portal.x, y: this.portal.y, d: 280 },
+          { x: a.x, y: a.y, d: 150 },
+          ...hazards,
+        ],
+        tries: 50,
+      }) ??
+      randomOpenPoint(this.level, this.affixRng, {
+        away: [{ x: this.portal.x, y: this.portal.y, d: 120 }],
+        tries: 30,
+      }) ??
+      this.portal
+    );
   }
 
   /**
@@ -994,10 +1078,18 @@ export class Dungeon implements CombatHost, RuleHost {
     return (alive.length > 0 ? this.rng.pick(alive) : this.localHero).avatar;
   }
 
-  /** How many of the party are standing in the portal. The HUD counts them out loud. */
+  /** How many of the party are standing in the entrance portal. */
   get partyAtPortal(): number {
     return this.heroes.filter(
       (h) => dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
+  }
+
+  /** How many of the party are standing in the completion portal — descending needs
+   *  everybody, and the HUD counts them out loud. */
+  get partyAtCompletionPortal(): number {
+    const p = this.completionPortal;
+    if (!p) return 0;
+    return this.heroes.filter((h) => dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
   }
 
   private updateSpawning(dt: number): void {
@@ -2209,6 +2301,11 @@ export class Dungeon implements CombatHost, RuleHost {
     if (!e.boss) this.addCorpse(e.x, e.y);
 
     source.loot.kills++;
+    // Floor-clear quota (UAT §5). Only the wave director's own roster counts, so a
+    // summoner's chaff or a Splitting monster's shards can neither pad the objective
+    // nor hold it open; a boss floor is satisfied outright by its boss.
+    if (e.boss) this.killsSoFar = this.killsRequired;
+    else if (e.fromWave) this.killsSoFar++;
     if (source.local) this.state.stats.enemiesKilled++;
     // Kill / death events for granted effects and gear triggers. The killing blow's own
     // contribution to the meter is credited by `creditResourcesForHit` at the hit that
@@ -2327,7 +2424,9 @@ export class Dungeon implements CombatHost, RuleHost {
    * and it's still lost if you die on the way to the exit.
    */
   private dropClearCache(): void {
-    const { x, y } = this.portal;
+    // Around the completion portal, not the entrance — the cache is the reward for
+    // finishing, so it lands where finishing sends you.
+    const { x, y } = this.completionPortal ?? this.portal;
     const quantity = this.profile.quantity;
     // The last floor of a rift pays for the whole rift, which is what makes bailing
     // out of one at floor three hurt.
@@ -3178,12 +3277,25 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   /**
-   * The portal is live for the whole floor, not just after a clear. Being able to run
-   * for the exit mid-wave is what makes the "lose everything on death" rule fair: a
-   * bad dive costs you the rest of the floor, not the entire run.
+   * The entrance portal is live for the whole floor, not just after a clear. Being able
+   * to run for the exit mid-wave is what makes the "lose everything on death" rule
+   * fair: a bad dive costs you the rest of the floor, not the entire run. Since UAT §6
+   * it is *only* an exit — it charges a hefty toll before the clear (see
+   * `earlyExtractLoot`) and it never descends.
    */
   get atPortal(): boolean {
     return this.phase !== "dead" && dist(this.avatar.x, this.avatar.y, this.portal.x, this.portal.y) < 34;
+  }
+
+  /** Standing in the completion portal, which only exists once the quota is met. */
+  get atCompletionPortal(): boolean {
+    const p = this.completionPortal;
+    return p !== null && this.phase !== "dead" && dist(this.avatar.x, this.avatar.y, p.x, p.y) < 34;
+  }
+
+  /** Bailing out through the entrance before the floor is done — the penalty exit. */
+  get canEarlyExtract(): boolean {
+    return this.phase === "fighting" && this.atPortal;
   }
 
   /** Descending is the reward for clearing; you can't skip a floor by running past it. */
@@ -3210,6 +3322,15 @@ export class Dungeon implements CombatHost, RuleHost {
    * save, and the host's copy of a friend's character is never written anywhere.
    */
   bankLoot(): void {
+    this.bank(true);
+  }
+
+  /** `credit` is whether the floor counts as *done* — the depth record, the next
+   *  unlocked delve depth and the rift/planet tier all hang off it. An early
+   *  extraction banks its scraps without it (UAT §6: leaving early forfeits the
+   *  floor's progression as well as its loot), which is also what stops a player
+   *  unlocking depth 30 by diving to 29 and immediately walking back out. */
+  private bank(credit: boolean): void {
     this.state.potions = this.localHero.potions;
     this.state.addCoins(this.loot.coins);
     this.state.addGems(this.loot.gems);
@@ -3218,13 +3339,39 @@ export class Dungeon implements CombatHost, RuleHost {
       if (this.loot.materials[e] > 0) this.state.addMaterials(e, this.loot.materials[e]);
     }
     this.state.addToInventory(this.loot.items);
-    this.state.recordDepth(this.profile.depth, this.config);
-    this.state.stats.runsCompleted++;
+    if (credit) {
+      this.state.recordDepth(this.profile.depth, this.config);
+      this.state.stats.runsCompleted++;
+    }
     this.loot.coins = 0;
     this.loot.gems = 0;
     this.loot.items = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
+  }
+
+  /**
+   * The penalty exit (UAT §6): out through the entrance portal with the floor's quota
+   * unmet. Nothing physical leaves with you — every unbanked item, key and unit of
+   * material is forfeit — and only a thin slice of the coins and gems survives. XP is
+   * untouched, since it was granted as it was earned and death doesn't take it either.
+   *
+   * The floor's *progression* is forfeit with it — no depth record, no newly unlocked
+   * delve depth, no rift tier — because none of that was earned.
+   *
+   * The point is that you can never dip out of a dangerous floor still holding the
+   * valuable loot: the decision has to be "risk finishing, or lose the drops".
+   */
+  earlyExtractLoot(): { coins: number; gems: number; itemsLost: number } {
+    const itemsLost = this.loot.items.length;
+    this.loot.items = [];
+    this.loot.keys = emptyKeys();
+    this.loot.materials = emptyMaterials();
+    this.loot.coins = Math.floor(this.loot.coins * EARLY_EXTRACT_KEEP);
+    this.loot.gems = Math.floor(this.loot.gems * EARLY_EXTRACT_KEEP);
+    const kept = { coins: this.loot.coins, gems: this.loot.gems, itemsLost };
+    this.bank(false);
+    return kept;
   }
 
   drainEvents(): RunEvent[] {
