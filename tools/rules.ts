@@ -22,7 +22,7 @@ import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
 import { ARCHETYPES } from "../src/data/enemies";
 import { REACTIVE_EVENTS } from "../src/game/abilities";
-import type { EffectStep } from "../src/combat/index";
+import type { Ability, CastInput, EffectStep } from "../src/combat/index";
 import { ALL_CLASSES, CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
 import type { ClassId } from "../src/data/classes";
 
@@ -36,6 +36,18 @@ function spawn(d: Dungeon, x: number, y: number): Enemy {
   e.spawnTimer = 0;
   d.enemies.push(e);
   return e;
+}
+
+/**
+ * `castInputFor` is private; a headless test reaches it so a staged cast is aimed exactly
+ * the way a real keypress aims one — `targeting: "currentTarget"` needs the
+ * `currentTargetId` this computes, and hand-rolling it would be testing the wrong thing.
+ */
+function castInput(d: Dungeon, hero: Hero, ability?: Ability): CastInput {
+  const fn = (d as unknown as {
+    castInputFor(h: Hero, a?: Ability): CastInput;
+  }).castInputFor;
+  return fn.call(d, hero, ability);
 }
 
 /** Stage a ground zone the hero owns, the way a cast skill would. */
@@ -543,6 +555,53 @@ function walkSteps(steps: readonly EffectStep[], visit: (s: EffectStep) => void)
     d.update(0.5);
   }
   check("a follow-up window nobody presses expires and is dropped", !hero.rt.followUpOpen(lance.id, d));
+}
+
+// --- ultimate-meter generation rules are reachable (Cluster 5b) ---------
+//
+// A `requireTags` generation rule is matched against the tags of the **ability**, so a
+// rule can be perfectly valid data and still be unfeedable — because the event it keys
+// on is never produced by anything carrying that tag. Two of the roster's meters were
+// exactly that, and neither `npm run roster` nor the arena could see it: the shapes are
+// legal, the tag is real, and the class just charges its ultimate off one rule instead
+// of two. These two cast the ability and watch the bar move.
+
+section("ultimate-meter generation rules are feedable (Cluster 5b)");
+{
+  // `on: "statusApplied" [mark]`. This was `on: "hitDealt"`, and the only mark-tagged
+  // ability the Assassin has that deals damage is the ultimate — so the rule could only
+  // ever be fed by the very thing it pays for, which THE ULTIMATE RULE refuses.
+  const d = dungeonWith("assassin", ["Shadow"]);
+  const hero = d.localHero;
+  const meter = hero.resources.ultimateMeter()!;
+  const mark = hero.player.unlockedAbilities.find((a) => a.id === "assassin.mark_for_death");
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  meter.value = 0;
+  if (!mark) {
+    check("Mark for Death is unlocked", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, mark, castInput(d, hero, mark));
+    check("taking a contract out charges the Contract meter", meter.value > 0, `${meter.value}`);
+  }
+}
+{
+  // `on: "skillUse" [support]`. This was `on: "statusApplied"`, which asked for the
+  // intersection of two disjoint sets: that event fires only for a hostile status on an
+  // enemy, and every support-tagged thing the Bard does buffs an ally.
+  const d = dungeonWith("bard", ["Maestro"]);
+  const hero = d.localHero;
+  const meter = hero.resources.ultimateMeter()!;
+  const song = hero.player.unlockedAbilities.find(
+    (a) => !a.isUltimate && a.tags.includes("support"),
+  );
+  meter.value = 0;
+  if (!song) {
+    check("the Bard has a support-tagged song", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, song, castInput(d, hero, song));
+    // 5 from the untagged `skillUse` rule, plus 2 for the song being `support`.
+    check(`playing ${song.id} charges Performance at the song rate`, meter.value >= 7, `${meter.value}`);
+  }
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);

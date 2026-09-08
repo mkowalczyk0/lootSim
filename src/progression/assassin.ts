@@ -41,7 +41,14 @@ export const ASSASSIN_ULTIMATE_METER: ResourceSpec = {
   ui: "meter",
   isUltimateMeter: true,
   generation: [
-    { on: "hitDealt", amount: 3, requireTags: ["mark"] },
+    // Taking the contract out, not collecting on it. This was `on: "hitDealt"`, which
+    // never fired once in 1320 events: `requireTags` matches the *ability's* tags, and
+    // the only `mark`-tagged ability the Assassin has that deals damage at all is the
+    // ultimate itself — which THE ULTIMATE RULE refuses, so the rule could only ever
+    // have been fed by the thing it was meant to pay for. Mark for Death and Expose
+    // Weakness apply hostile statuses to an enemy, which is exactly what
+    // `statusApplied` is broadcast for.
+    { on: "statusApplied", amount: 3, requireTags: ["mark"] },
     { on: "ailmentInflicted", amount: 2, requireTags: ["poison"] },
   ],
 };

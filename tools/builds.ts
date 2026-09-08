@@ -493,6 +493,34 @@ function silentRules(classId: ClassId, tr: MeterTrace): string[] {
   return out;
 }
 
+/**
+ * Why a `requireTags` rule matched nothing — and the distinction matters enormously,
+ * because the two readings want opposite responses.
+ *
+ * A rule can go unmatched because **no ability in the class carries the tag at all** (a
+ * data bug: the rule is dead and the class runs on its backup rule alone), or because
+ * **the abilities that carry it are not the three this build equipped** (an artifact of
+ * `equipForBuild`, which ranks on damage output and so never picks up a pure-utility
+ * barrier or terrain skill).
+ *
+ * The first draft of this report could not tell those apart and printed "tags never
+ * matched" for both, which is how four classes were written up as dead data when only
+ * two of them were. It also names the ultimate specifically: a rule whose only tagged
+ * ability is the class ultimate can never be fed, because THE ULTIMATE RULE refuses the
+ * one thing that would feed it.
+ */
+function tagVerdict(classId: ClassId, rule: ResourceGenRule): string {
+  const want = rule.requireTags;
+  if (!want) return "tags never matched";
+  const carriers = (CLASS_BY_ID[classId]?.abilities ?? []).filter((a) => hasAnyTag(a.tags, want));
+  if (carriers.length === 0) return `NO ABILITY CARRIES [${want.join("/")}] — dead rule`;
+  const usable = carriers.filter((a) => !a.isUltimate);
+  if (usable.length === 0) {
+    return `only the ultimate carries [${want.join("/")}] — unfeedable under THE ULTIMATE RULE`;
+  }
+  return `not in this loadout — [${want.join("/")}] is on ${usable.map((a) => a.id.split(".")[1]).join(", ")}`;
+}
+
 function playFloor(build: Build, floorSeed: number, tr: MeterTrace | null = null): Sample {
   const state = geared(build);
   equipForBuild(state, build);
@@ -895,7 +923,7 @@ if (genFor.length > 0) {
       const why = silent.has(label)
         ? `NO "${rule.on}" EVENT — the simulation never broadcasts it`
         : refusedTags > 0 && got === 0
-          ? `tags never matched (${refusedTags} events, saw ${[...(tr.seenTags.get(label) ?? [])].join(", ")})`
+          ? `${tagVerdict(classId, rule)} (${refusedTags} events, saw ${[...(tr.seenTags.get(label) ?? [])].join(", ")})`
           : refusedUlt > 0 && got === 0
             ? `every match was ultimate-sourced (${refusedUlt}) — THE ULTIMATE RULE`
             : refusedTags > 0

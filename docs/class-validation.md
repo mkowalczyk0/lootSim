@@ -23,8 +23,17 @@ Measurement tools:
   fills its ultimate meter (or every class, under `BUILDS_GEN=1`) it prints each generation
   rule's offered points per floor, and why a rule offered none — a `requireTags` gate that
   never matched, with the tag sets it actually saw; THE ULTIMATE RULE refusing the credit;
-  or an `on:` event the simulation never broadcasts. That is the instrument Cluster 5b
-  needed, and it overturned 5b's first guess.
+  or an `on:` event the simulation never broadcasts, and — since Cluster 8 — whether a
+  `requireTags` rule went unmatched because no ability carries the tag, because only the
+  ultimate does, or merely because this build did not equip the ability that does. That is
+  the instrument Cluster 5b needed, and it overturned 5b's first guess twice.
+
+⚠ **The smoke campaign baseline moved, and not from this work.** It was 13.8 / 9.4 for most
+of this document and is **11.0 / 10.0** from the `master` merge that brought in UAT §2
+(six monster roles), §4 (elites as a mini-boss tier) and §5/§6 (the kill quota and two
+portals). Verified by measuring the merged tree with the Cluster 8 changes stashed: the
+depths were already 11.0 / 10.0 before them. Any table in this document quoting 13.8 / 9.4
+predates that merge.
 - `npm run roster` — data-shape + unlock-threshold + anti-overlap gates.
 - `npm run rules` — the keystone/hybrid/Mythic rule engine does something observable.
 - `npm run smoke` — whole floors; the bot plays **Swordsman**, so changes to any other
@@ -429,7 +438,7 @@ term at 6 — earning the meter by committing to a charge is the rule that says 
 about the class, and it should become the dominant term rather than a rounding error next
 to walking.
 
-### 5b. Eight of twenty-one classes never fill their meter on a real floor — **MEASURED**
+### 5b. Eight of twenty-one classes never fill their meter on a real floor — **Cause A APPLIED, Cause B still proposed**
 
 **duelist, trickster, reaper, stormcaller, paladin, bard, assassin, warden** — none of them
 reached a full meter in any of twelve floors each. Three of those (reaper, assassin,
@@ -452,35 +461,82 @@ offered**, before the pool clips at max — a rule offering zero is the finding.
 The guess was wrong. It is not one systemic cause, it is **two, and they need opposite
 fixes**:
 
-**Cause A — the tag gate can never match. Four classes' flavour rule is dead data.**
+**Cause A — four rules match nothing. ⚠ The first diagnosis of this was wrong, and it
+was wrong in the direction that would have caused damage.**
 
-| class | rule | matches | what the events actually carried |
+That draft said: *"No ability in any of those four classes carries the tag its own meter
+asks for"*, and proposed tagging the abilities. **That claim is false.** `barrier` is on
+three Paladin abilities, `mark` on three Assassin ones, `terrain` on two Warden ones, and
+`support` on nine of the Bard's ten. Adding tags would have been a real balance change
+made to fix a bug that wasn't there.
+
+What the four cases actually are, once the report can tell them apart, is **two real data
+bugs and two harness artifacts**:
+
+| class | rule | matches | actual cause |
 |---|---|--:|---|
-| paladin | `on skillUse 2 [barrier]` | **0 / 207** | `ranged/holy/mark`, `charge/movement/support/holy`, `zone/heal/support/holy` |
-| bard | `on statusApplied 2 [support]` | **0 / 112** | `crowdControl/aura/arcane`, `(untagged)` |
-| assassin | `on hitDealt 3 [mark]` | **0 / 1540** | `melee/stealth/execute`, `melee/bleed/stealth`, `ranged/projectile/poison` |
-| warden | `on skillUse 6 [terrain]` | **0 / 223** | `ranged/projectile/nature/crowdControl`, `nature/area/crowdControl`, `zone/nature/heal/support` |
+| bard | `on statusApplied 2 [support]` | 0 / 90 | **data bug** — disjoint sets |
+| assassin | `on hitDealt 3 [mark]` | 0 / 1320 | **data bug** — only the ultimate could feed it |
+| paladin | `on skillUse 2 [barrier]` | 0 / 162 | not a bug — `[barrier]` is on `guardians_oath`, `shield_of_faith`, and the harness equips neither |
+| warden | `on skillUse 6 [terrain]` | 0 / 171 | not a bug — `[terrain]` is on `living_wall`, which the harness does not equip |
 
-No ability in any of those four classes carries the tag its own meter asks for. The Bard
-case is the instructive one: `STATUS_INSPIRED` *is* tagged `support`, but a `statusApplied`
-event carries the tags of the **ability** that applied the status, not the status's own —
-so a rule keyed on a status category can never fire. These are data bugs with a data fix
-(tag the abilities, or key the rule on a tag they already carry), and every one of them
-means the class is running on its *backup* generation rule alone.
+**The Bard's rule asked for the intersection of two disjoint sets.** `statusApplied` is
+broadcast at exactly one place (`runtime.ts`, the `status` effect step) and only when
+`victim.faction !== caster.faction` — a *hostile* status placed on an enemy, which the
+comment there says outright. Every `support`-tagged thing the Bard does buffs an ally. No
+amount of tagging could ever have made that fire.
+
+**The Assassin's rule could only be fed by the thing it pays for.** `requireTags` matches
+the *ability's* tags, and of its three `mark`-tagged abilities, Mark for Death and Expose
+Weakness deal no damage at all — so the only one that ever produces a `hitDealt` is
+`contract_fulfilled`, the ultimate, which THE ULTIMATE RULE refuses by design. The rule was
+unfeedable in principle, not merely unfed.
+
+**Applied, data only.** One field each, both re-keyed onto the event the class's own
+abilities actually produce — and for the Assassin, onto the exact `on`/`requireTags` pair
+the author already uses successfully elsewhere in the same file (the Saboteur path's
+"Inside Job" node feeds the Shadow pool with `{ on: "statusApplied", requireTags: ["mark"] }`):
+
+| class | before | after | measured |
+|---|---|---|--:|
+| bard | `on: "statusApplied"` | `on: "skillUse"` | 0 → **0.10 bars/floor** |
+| assassin | `on: "hitDealt"` | `on: "statusApplied"` | 0 → **3 pts per Mark** ‡ |
+
+‡ still 0 in the harness, because `equipForBuild` does not equip a mark either — so this
+one is proven by a `npm run rules` check that casts Mark for Death and watches the Contract
+meter move, rather than by the fingerprint table.
+
+**Paladin and Warden get no change.** Their rules are correct data describing the class's
+identity ("Conviction is earned by shielding", "the Grove is earned by claiming ground");
+they read as dead only because the harness's skill picker ranks on damage output and so
+never equips a pure-utility barrier or terrain skill. Changing a number to satisfy a
+measurement artifact is exactly the mistake Cluster 6a had to revert, so the fix belongs in
+the harness (Cluster 7), not in the data.
+
+**The tool now cannot make this mistake again.** The generation ledger distinguishes the
+three readings by checking the class's own ability list, and prints which it is:
+
+```
+paladin  on skillUse 2 [barrier]   0 pts  —  not in this loadout — [barrier] is on guardians_oath, shield_of_faith
+assassin on statusApplied 3 [mark] 0 pts  —  not in this loadout — [mark] is on mark_for_death, expose_weakness
+```
+
+…versus `NO ABILITY CARRIES [x] — dead rule` and `only the ultimate carries [x] —
+unfeedable under THE ULTIMATE RULE` for the two readings that are genuine bugs.
 
 **Cause B — the rule fires exactly as designed and the amount is far too small.**
 Per floor, in bars:
 
 | class | working rule | offered | second rule | total |
 |---|---|--:|---|--:|
-| warden | `skillUse 4 [nature]` | 0.74 | `[terrain]` dead | **0.74** |
+| warden | `skillUse 4 [nature]` | 0.73 | `[terrain]` not equipped | **0.73** |
 | stormcaller | `hitDealt 1.2 [lightning]` | 0.51 | `ailmentInflicted 2` 0.15 | **0.66** |
 | reaper | `kill 8 [execute]` | 0.38 | `hitDealt 2 [execute]` 0.10 | **0.48** |
-| bard | `skillUse 5` | 0.44 | `[support]` dead | **0.44** |
-| duelist | `dodge 8` | 0.25 | `block 10` 0.14 | **0.39** |
+| bard | `skillUse 5` | 0.42 | `skillUse 2 [support]` 0.10 † | **0.52** |
+| duelist | `dodge 8` | 0.27 | `block 10` 0.18 | **0.45** |
 | trickster | `skillUse 6 [illusion]` | 0.26 | `dodge 6` 0.10 | **0.36** |
-| paladin | `damagePrevented 40 ×maxHealthFraction` | 0.21 | `[barrier]` dead | **0.21** |
-| assassin | `ailmentInflicted 2 [poison]` | 0.17 | `[mark]` dead | **0.17** |
+| paladin | `damagePrevented 40 ×maxHealthFraction` | 0.21 | `[barrier]` not equipped | **0.21** |
+| assassin | `ailmentInflicted 2 [poison]` | 0.10 | `[mark]` not equipped | **0.10** |
 
 Every one of the eight lands between **0.17 and 0.74 bars per floor** — i.e. all of them
 are short by a factor of 1.4× to 6×, and none of them is short by 50×. That is a
@@ -496,8 +552,18 @@ times, unless the amounts go to roughly `dodge 22 / block 26`. That is the propo
 alternative (raising evasion/blockChance until the procs are common) would rewrite the
 class's whole defensive profile to fix its meter, which is the wrong lever.
 
-**Proposed, per class, data only** — scale each working rule so a floor's worth of play
-fills roughly one bar and a long floor fills two, and fix the four dead tags. Not applied.
+⚠ **Hold the Duelist amounts until the harness can play one.** Cluster 8 found that none
+of the Duelist's three builds equips `riposte`, which is where all three of its reactives
+live — so "3 dodges and 1 block per floor" is measured off a bot that never presses the
+class's defining skill. A build that actually ripostes takes hits on purpose, and the
+dodge/block rate the amounts should be sized against is not the rate measured here.
+
+† Cause A applied. The rest of this table is **still proposed and not applied**: scale
+each working rule so a floor's worth of play fills roughly one bar and a long floor fills
+two. It should be re-measured before it is sized, for two reasons that both moved the
+baseline after these numbers were taken — Cause A added generation to two of the eight, and
+Cluster 8 made four of these classes clear a floor 5–8 seconds faster, which shortens the
+window the amounts are being sized against.
 
 Cluster 1's shaman fix should be re-opened in the same pass: it was declared "now in band"
 on an arena reading of 41.8 s, and real play is 8 s.
@@ -585,7 +651,16 @@ the measurement does establish beyond doubt is that the Duelist has no passive f
 stand on when played imperfectly, which is a real problem for a class a new player might
 pick.
 
-**Proposed** — a Cluster-2-style pass in two parts, neither applied:
+⚠ **Cluster 8 sharpened that caveat into a blocker.** It is not only that the *bot* cannot
+bait a swing — the Duelist's three builds never equip `riposte` at all, so all three of its
+reactive counters are absent from the loadout the harness scored, on top of two of them
+having been dead code until Cluster 8. The 143–206 dps band is therefore a floor beneath a
+floor, and **this proposal should not be applied until the harness equips the class's
+counter** (Cluster 7, cause 3). Buffing a Duelist to hit 400–500 dps while its counters are
+un-equipped and untested would overshoot by an unknown margin.
+
+**Proposed** — a Cluster-2-style pass in two parts, neither applied, and now gated on the
+harness fix above:
 1. the meter fix from 5b (`dodge 8 → 22`, `block 10 → 26`), so the ultimate exists at all;
 2. a damage-floor pass on the base block and the three lowest-scaling abilities, sized to
    move it from 169 to roughly the 400–500 band the other bottom-quartile melee classes
@@ -631,12 +706,28 @@ Two distinct causes, and they need separating before anything is changed:
    status duration or a targeting shape may be a real difference the seven behaviour axes
    miss. `npm run rules` proves a rule fires; it does not prove a player would feel it.
 
-Splitting those two is the work. It is also the natural home for the old Cluster 4
+3. **The harness does not equip the ability the build is about.** Found while applying
+   Cluster 8, and it is now the largest of the three. `equipForBuild` ranks candidate
+   skills by damage output, with one guarantee bolted on (at least one direct-damage
+   ability). Nothing makes it equip the skill a build's *identity* runs through, so:
+   the Duelist never equips `riposte` — all three of its reactives — and is scored as the
+   roster's weakest class by a bot that never counters; the Paladin never equips a
+   `barrier` skill and its meter rule reads as dead (see 5b); the Warden never equips
+   `living_wall`, likewise. This is a measurement bug that has already produced one wrong
+   diagnosis in this document and nearly produced a second, and it should be fixed before
+   any more numbers are read off the table.
+
+   The fix is not simply "equip the identity skill": that would move every fingerprint in
+   the ledger at once and invalidate the comparisons this document is built on. It wants a
+   **second loadout per build** — the damage-ranked one for continuity, plus an
+   identity-weighted one — reported side by side.
+
+Splitting those three is the work. It is also the natural home for the old Cluster 4
 (detectable-impact sweep), which asked the same question from the other end.
 
 ---
 
-## Cluster 8 — `followUp` and `reactive` never fire — **BUG, not a balance number**
+## Cluster 8 — `followUp` and `reactive` never fire — **APPLIED**
 
 This started as "investigate `necromancer.mythic.soul_legion`, which makes the class 5.3×
 worse than its own hybrids". The Mythic turned out to be a symptom of something much
@@ -692,22 +783,94 @@ Cluster 6c is about: the **Duelist owns three of the twelve dead `reactive` step
 than any other class, which is one concrete reason the roster's most reactive kit measures
 as its weakest.
 
-**Not fixed here, and deliberately not.** The fix is engine logic in `src/combat/runtime.ts`
-plus a `notify` call site in `src/game/dungeon.ts` — outside the data-only tuning remit,
-and it carries a real design question that is the owner's to answer, not mine:
+**Fixed.** The design question the first draft of this entry escalated turned out to be
+answerable from the schema rather than from taste. `src/combat/ability.ts` documents the
+field itself:
 
-> Should a `followUp` fire **automatically when its window elapses**, or on the player's
-> **next cast or attack inside the window** (a combo opportunity)? The field name and the
-> `window` both suggest the second, and the two read completely differently in the hand —
-> Swordsman's Blade Dance finisher and Monk's Infinite Motion are combo prompts; Bard's
-> "fourth movement" and Corsair's ghost-crew second volley read as automatic.
+```ts
+/** Effects available for a short window after the cast, on a second press. */
+followUp?: { window: number; effects: readonly EffectStep[] };
+```
 
-Recommended shape once that is decided: `tick` fires a `followUp` on expiry (or
-`castAbility`/the attack path calls `notify("cast")`-style for the combo reading), and
-`dungeon.ts` calls `rt.notify(...)` from the events it already broadcasts to the resource
-layer — the `reactive` events named in the data are `hitTaken`, `dodge`, `block` and
-`kill`, all of which the dungeon already emits. **`tools/rules.ts` should gain an assertion
-per dead declaration** so this class of "authored but never executed" cannot recur.
+"On a second press." That is a combo, not an expiry timer, and re-reading all ten
+declarations against it, every one lands: Broadside's ghost crew "fire a second volley",
+Infinite Motion "lets the Monk keep comboing on landing", the Symphony adds "a fourth
+movement", Blade Dance's moving attacks "open a finisher", and the Lancer dashes out and
+comes back. So no owner call was needed after all — only a closer read of the data.
+
+**`reactive`.** `AbilityRuntime.notify` had no callers, and the fix is one subscription
+seam rather than calls sprinkled through the dungeon: `runReactiveWindows`, sitting next to
+the `runBuildGrants` that was already wiring build grants to the same bus. The bus already
+carried `hit`, `criticalHit`, `kill`, `enemyDeath`, `skillUse` and `ultimateUse` with the
+hero in `actorId`; `damageTaken` and `dodge` — between them 21 of the 30 authored reactives
+— reached only the resource layer, so they now emit on the bus too. Events are filtered to
+the hero they name, so one player's dodge cannot fire another player's counter, and
+`enemyDeath` is about the dier so it goes to everybody.
+
+**`followUp`.** A press inside the window spends it. It beats the cooldown gate — the
+ability is *meant* to be cooling down then — and pays no cost, because the first press
+already paid; an ultimate's follow-up spends the window rather than a second full meter.
+Targeting is re-resolved, since a second press is a press and a 3–6 s window is long enough
+for the first cast's target list to have gone stale, but the original `DamageSource` is
+kept verbatim so THE ULTIMATE RULE's `fromUltimate` stamp cannot be laundered off an
+ultimate by comboing out of it.
+
+**Deliberately excluded**, because a bug fix should not smuggle in a balance change: a
+follow-up broadcasts no `skillUse`/`ultimateUse` and re-fires no on-cast rule hooks. Either
+would credit a combo as a second cast, changing every ultimate meter's fill rate and
+doubling every "when you cast" keystone for free. The visible consequence is that Lancer's
+`ult/m` fell 51.6 → 45.6 on Breakthrough, which matters not at all while Cluster 5a has
+that meter at 25.7 bars per floor.
+
+### Measured effect
+
+Four builds moved, and **every one of them is a class that owns a `reactive`** — which is
+the result a working retaliation should produce, and is a good deal more convincing than
+the fix passing its own unit test:
+
+| build | secs | dps | dmg taken/s | what it owns |
+|---|--:|--:|--:|---|
+| trickster / Loaded Contract | 40 → 34 | 350 → **448** (+28%) | 16 → 14 | `reactive damageTaken`, window 12 |
+| trickster / False Assassin | 36 → 30 | 377 → **478** (+27%) | **21 → 10** | as above |
+| monk / Counter Body | 39 → 31 | 354 → **430** (+21%) | 17 → 12 | the counter path |
+| warden / World Tree | 42 → 37 | 497 → **591** (+19%) | 16 → 13 | Nature's Reprisal |
+| trickster / Impossible Movement | 37 → 35 | 369 → **403** (+9%) | 21 → 17 | `reactive damageTaken` |
+| lancer / Breakthrough | 27 → 32 | 1165 → 1164 | 12 → 14 | the one native `Ability.followUp` |
+
+Damage dealt up and damage taken down together, on exactly the six builds whose kit is
+about answering a hit. Every other fingerprint in the table is byte-identical.
+
+**The Duelist did not move, and that is the finding.** Its three builds equip `disarm`,
+`opening_cut` and `lunging_jab` — never `riposte`, which is where all three of its
+reactives live. `equipForBuild` ranks candidate skills by damage output, so the class whose
+entire identity is the counter is measured by a bot that never presses the counter. Cluster
+6c's "143–206 dps" is therefore a floor under a floor, and the real defect is in the
+harness's loadout picker, not the Duelist's numbers. That is now the largest open item in
+Cluster 7 rather than a Duelist balance question.
+
+### Guarded
+
+Six new checks in `npm run rules`, because nothing in the suite noticed 34 dead
+declarations: the data was valid, the shapes passed `npm run roster`, and the abilities
+simply did a fraction of what they said.
+
+- every authored `reactive` event is one the bus actually delivers (11 reactives, all reachable)
+- Riposte answers a hit for **187 damage** where it previously did nothing at all
+- another hero's hit does **not** fire this hero's counter
+- a follow-up window is armed by the first press, spent by the second, refused on the third
+- a window nobody presses expires and is dropped
+
+### Still broken, and out of scope here
+
+`Dungeon.moveActor` accepts `MoveRequest.leaveAnchor` and silently drops it. So
+`lancer.meteor_lance`'s follow-up — `{ move teleport, leaveAnchor: false }`, i.e. "come back
+to where you dashed from" — now runs, but teleports 120 units along the current facing
+instead of returning to the anchor. That is a separate unimplemented `MoveRequest` field,
+not a deferred-effect bug, and `temporalAnchor` targeting may want the same storage.
+
+`summonDeath` is still broadcast nowhere, so the two grants keyed on it remain dead; it
+joins `corpseCreated`, `enterCombat` and `leaveCombat` as event types declared in both
+`ResourceEventType` and `triggers.ts` and emitted by nothing.
 
 ---
 
@@ -717,9 +880,21 @@ per dead declaration** so this class of "authored but never executed" cannot rec
   per-rule ledger in `tools/builds.ts` (auto-printed for any never-filling class,
   `BUILDS_GEN=1` for all 21) split Cluster 5b into a four-class tag bug and an eight-class
   amount problem, and ruled out the systemic cause the first draft guessed at. See 5b.
-- **Fix `followUp` / `reactive`** (Cluster 8) — the largest open item, and the only one
-  that needs an engine change rather than a number. Blocked on the owner's call between
-  automatic-on-expiry and next-input-inside-the-window.
+- ~~**Fix `followUp` / `reactive`**~~ (Cluster 8) — **DONE.** No owner call was needed in
+  the end: `Ability.followUp`'s own doc comment says "on a second press", which settles the
+  semantics the first draft escalated. Six assertions in `npm run rules` now guard it.
+- **The harness's loadout picker is the largest open item** (Cluster 7, cause 3). It ranks
+  skills by damage, so three classes are measured without the ability their identity runs
+  through — including the Duelist, scored last on damage by a bot that never presses its
+  counter. Everything still open in 5b Cause B and 6c is downstream of this, so it should
+  go first.
+- **Two `MoveRequest` fields the host ignores** — `leaveAnchor` is accepted and dropped by
+  `Dungeon.moveActor`, so a "dash out and come back" follow-up dashes again instead of
+  returning. `temporalAnchor` targeting probably wants the same stored position.
+- **Four event types are declared and never broadcast** — `summonDeath`, `corpseCreated`,
+  `enterCombat`, `leaveCombat`, in both `ResourceEventType` and `triggers.ts`. Two authored
+  grants key on `summonDeath` and are dead because of it. The Cluster 8 assertion covers
+  `reactive` steps only; grants are not yet checked the same way.
 - **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** Folded into Cluster 7
   above; `npm run rules` now
   proves ~40 of the wired rules do something; extend it to assert every hybrid/keystone/
