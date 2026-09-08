@@ -4,8 +4,9 @@
  * The class defines the verbs (`combat/`). This is the grammar: tree nodes that alter
  * behaviour, a mutation framework that rewrites an ability in place instead of cloning
  * it, cross-path hybrids that add a rule, and three-path Mythic Archetypes that add an
- * identity. All pure data over an `allocated` string list; nothing here is wired into
- * `game/` yet — see docs/progression-architecture.md.
+ * identity. All pure data over an `allocated` string list — `Player.build` in
+ * `game/player.ts` calls `resolveClassBuild` directly, so this is the live tree, not a
+ * preview of one. See docs/progression-architecture.md.
  *
  * The layers:
  *   mutations — SkillMutation + applyMutations: the in-place ability rewrite

@@ -67,10 +67,11 @@ runtime.
   resolves deterministically.
 - **In-game Codex.** `src/ui/town.ts` has a read-only **Codex** tab (in the
   Quartermaster's `[I]`/`[O]` cycle) that renders the matrix and a per-class drill-down
-  (overview / 10 skills / hybrids + archetype) straight from `src/progression`. It is
-  deliberately not wired to `state.player`: the live dungeon still runs the shipped
-  `data/classes` + `data/tree` for the 15 legacy classes. The Codex is the design made
-  visible ahead of the combat cutover.
+  (overview / 10 skills / hybrids + archetype) straight from `src/progression`. The
+  combat cutover landed since this was written: `Player.build` calls
+  `resolveClassBuild(rt, this.allocated)` directly (`game/player.ts`), so the Codex is no
+  longer a preview of a design ahead of the live game — it's describing the same tree
+  the Path/Tree tabs let you allocate into. `src/data/tree.ts` no longer exists.
 
 ## The mutation op vocabulary → spec §3.11 hooks
 
@@ -127,11 +128,11 @@ mutated skill starts being seen by tag-targeted nodes downstream).
 
 Per `classes_refactor.md` rule 12 — surface the conflict rather than compromise:
 
-1. **Not wired into `game/`.** `Player.allocated` still drives the shipped
-   `src/data/tree.ts` for all 15 live classes. Swapping the live tree to v2 is a
-   `SAVE_VERSION` bump + a "your tree was reset, N points refunded" surface (audit
-   Phase 5.2) and belongs with the dungeon's ability-execution migration (Phase 2.2),
-   not this phase. `resolveBuild` / `applyBuild` are the seam that migration will call.
+1. ~~Not wired into `game/`.~~ **Done.** `Player.allocated` now drives `resolveClassBuild`
+   (`game/player.ts`) for all 21 classes; `src/data/tree.ts` was deleted as part of the
+   cutover. The `SAVE_VERSION` bump and "your build was reset, N points refunded"
+   migration this item anticipated already happened (save v14). `resolveBuild` /
+   `applyBuild` are the live seam, not a future one.
 2. **Rules are named, not interpreted.** `NodeEffect { kind: "rule" }` and the archetype
    rule flips land in `ResolvedBuild.rules` as a `Set<string>`; the executor/resource
    runtime that reads them (e.g. "Living Projectile: at max Momentum the charge is
@@ -140,10 +141,10 @@ Per `classes_refactor.md` rule 12 — surface the conflict rather than compromis
    tag/event; hooking them onto the combat event bus at cast time is (1).
 4. ~~Six pilot classes, not the roster.~~ **Done — Phase 8 above.** All 21 canonical
    classes are built as data (`ALL_CLASSES`), audited by `tools/roster.ts`.
-5. **The live Path/Tree tabs still render the shipped v1 tree.** The read-only Codex tab
-   surfaces the v2 design (matrix, paths, hybrids, archetypes) but does not let you
-   *allocate* a v2 node — an editable v2 tree view with the live "you unlocked
-   Breakthrough" moment is part of the combat cutover (1), since allocation has to feed
-   a simulation that reads it.
+5. ~~The live Path/Tree tabs still render the shipped v1 tree.~~ **Done.** The Path/Tree
+   tabs allocate directly into the v2 tree (`canAllocateV2`/`pruneAllocationV2` against
+   `Player.allocated`), including the live hybrid/archetype-unlock moment. The Codex
+   tab's matrix/drill-down view is now redundant with what those tabs already show,
+   rather than a preview of something not yet live.
 6. **Ability schema unchanged.** `applyMutations` works against `Ability` exactly as
    `combat/ability.ts` defines it today — no new fields.
