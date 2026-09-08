@@ -17,13 +17,14 @@
  * the hub. Doubling the cell brings the floor onto the same pixel grid as the
  * hero, the props and the deck.
  *
- * The rock mask is built from the level's **raw wall rectangles** — the exact
- * footprint the old per-frame `drawWalls` pass painted — not the `blocked` nav
- * grid, which is inflated by a body radius so the player can't clip a corner. A
- * cell counts as rock when a wall rect *overlaps* it at all (a coverage test, not
- * a centre-point test): at a 32-unit cell a 16-thick interior wall would fall
- * between sample points and drop out of a centre test, so coverage is what keeps
- * the walls solid at this coarser pitch.
+ * The rock mask is sampled from the level's **`blocked` grid** — the same
+ * body-inflated collision volume the player is actually stopped by — at each
+ * 32-unit cell's centre. An earlier pass rasterised the raw wall rects instead,
+ * but at this coarser 32-unit pitch a raw-rect coverage test paints rock a good
+ * half-tile out past the true wall, over floor the player can still stand on, so
+ * you could walk visibly into a "wall". Sampling `blocked` keeps painted stone a
+ * subset of where collision already forbids you — at the cost of walls reading
+ * one body-radius thicker, which at this chunky pitch actually matches the deck.
  */
 
 import type { LoadedTileset } from "./atlas/index";
@@ -31,6 +32,8 @@ import type { Level } from "../game/level";
 
 /** World units a single sheet tile is stamped across — 2× the 16-texel source. */
 const STAMP = 32;
+/** The generator's own nav/collision grid pitch (`GRID` in `game/level.ts`). */
+const NAV = 16;
 
 /**
  * Paints the whole floor — stone and rock both — into `ctx` (expected to be a
@@ -45,27 +48,23 @@ export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: Lo
   if (SRC !== 16) return false;
 
   const T = STAMP;
-  const { width, height, walls } = level;
+  const { width, height, blocked, cols: navCols, rows: navRows } = level;
   const cols = Math.ceil(width / T);
   const rows = Math.ceil(height / T);
   const sheet = ts.canvas;
 
-  // Rasterise the raw wall rects (and the level border) to the coarse tile grid.
-  // Coverage test: a cell is rock if any wall rect intersects its 32-unit box, so
-  // a thin interior wall reads as a solid band rather than a dashed one.
+  // A coarse tile cell is rock when the player's collision grid forbids its
+  // centre. `blocked` is the raw walls inflated by a body radius, so painted
+  // stone can never claim a spot you're allowed to stand on. The border cells
+  // fall outside `blocked` and read as rock via the range check below.
   const rock = new Uint8Array(cols * rows);
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
-      const x0 = cx * T;
-      const y0 = cy * T;
-      const x1 = x0 + T;
-      const y1 = y0 + T;
-      let s = x0 < 3 || y0 < 3 || x1 > width - 3 || y1 > height - 3;
-      if (!s) {
-        for (const w of walls) {
-          if (x1 > w.x && x0 < w.x + w.w && y1 > w.y && y0 < w.y + w.h) { s = true; break; }
-        }
-      }
+      const nx = Math.floor((cx * T + T / 2) / NAV);
+      const ny = Math.floor((cy * T + T / 2) / NAV);
+      const s = nx < 0 || ny < 0 || nx >= navCols || ny >= navRows
+        ? 1
+        : blocked[ny * navCols + nx];
       rock[cy * cols + cx] = s ? 1 : 0;
     }
   }
