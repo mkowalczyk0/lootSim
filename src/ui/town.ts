@@ -125,8 +125,8 @@ function tabHelp(tab: Tab, s: Settings): string {
     case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
     case "Party": return `${sel} select · ${e} do it · ${adj} change the depth · then everyone walks into the Party Portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
-    case "Stash": return `${sel} select · ${adj} filter rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
-    case "Hero": return `${sel} select slot · ${e} unequip`;
+    case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
+    case "Hero": return `${sel} / ${adj} pick a slot · ${e} unequip`;
     case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
     case "Path": return `${sel} choose a class · ${e} commit to it`;
@@ -216,6 +216,13 @@ export class TownUI {
         this.render();
         return;
       }
+      const filterEl = target.closest<HTMLElement>("[data-filter]");
+      if (filterEl) {
+        this.rarityFilter = filterEl.dataset.filter as Rarity | "all";
+        this.cursor = 0;
+        this.render();
+        return;
+      }
       const actionEl = target.closest<HTMLElement>("[data-action]");
       if (actionEl) {
         const action = actionEl.dataset.action!;
@@ -289,7 +296,8 @@ export class TownUI {
   refresh(): void {
     // A room filling up or emptying changes how many rows this screen has underneath a
     // cursor that was pointing at one of them.
-    this.cursor = Math.max(0, Math.min(this.cursor, this.rowCount() - 1));
+    // Stash allows cursor -1 (the rarity-filter bar has focus); every other tab floors at 0.
+    this.cursor = Math.max(this.tab === "Stash" ? -1 : 0, Math.min(this.cursor, this.rowCount() - 1));
     if (!this.root.hidden) this.render();
   }
 
@@ -345,31 +353,46 @@ export class TownUI {
     }
 
     const count = this.rowCount();
-    // Chests is the one screen where up/down don't walk the row the cursor is on —
-    // they flip between categories (General, Weapon Specific, ...), because the chests
-    // themselves are a left/right carousel within whichever category is showing.
-    if (input.wasPressedOrRepeated("down") && count > 0) {
-      if (this.tab === "Chests") {
-        this.chestCategory = (this.chestCategory + 1) % CHEST_CATEGORIES.length;
-        this.cursor = 0;
-      } else {
-        this.cursor = (this.cursor + 1) % count;
+
+    // Stash and Hero are real 2-D grids: W/A/S/D walk them in both axes and A/D are
+    // spent on nothing but movement. Every other tab keeps the flat-list model —
+    // up/down walk the cursor, left/right adjust whatever that tab adjusts.
+    if (this.tab === "Stash" || this.tab === "Hero") {
+      const walk = (dx: number, dy: number) => {
+        const moved = this.tab === "Stash" ? this.navStash(dx, dy) : this.navHero(dx, dy);
+        if (moved) { this.resetArmed = false; dirty = true; }
+      };
+      if (input.wasPressedOrRepeated("up")) walk(0, -1);
+      if (input.wasPressedOrRepeated("down")) walk(0, 1);
+      if (input.wasPressedOrRepeated("left")) walk(-1, 0);
+      if (input.wasPressedOrRepeated("right")) walk(1, 0);
+    } else {
+      // Chests is the one screen where up/down don't walk the row the cursor is on —
+      // they flip between categories (General, Weapon Specific, ...), because the chests
+      // themselves are a left/right carousel within whichever category is showing.
+      if (input.wasPressedOrRepeated("down") && count > 0) {
+        if (this.tab === "Chests") {
+          this.chestCategory = (this.chestCategory + 1) % CHEST_CATEGORIES.length;
+          this.cursor = 0;
+        } else {
+          this.cursor = (this.cursor + 1) % count;
+        }
+        this.resetArmed = false;
+        dirty = true;
       }
-      this.resetArmed = false;
-      dirty = true;
-    }
-    if (input.wasPressedOrRepeated("up") && count > 0) {
-      if (this.tab === "Chests") {
-        this.chestCategory = (this.chestCategory - 1 + CHEST_CATEGORIES.length) % CHEST_CATEGORIES.length;
-        this.cursor = 0;
-      } else {
-        this.cursor = (this.cursor - 1 + count) % count;
+      if (input.wasPressedOrRepeated("up") && count > 0) {
+        if (this.tab === "Chests") {
+          this.chestCategory = (this.chestCategory - 1 + CHEST_CATEGORIES.length) % CHEST_CATEGORIES.length;
+          this.cursor = 0;
+        } else {
+          this.cursor = (this.cursor - 1 + count) % count;
+        }
+        this.resetArmed = false;
+        dirty = true;
       }
-      this.resetArmed = false;
-      dirty = true;
+      if (input.wasPressed("left")) dirty = this.adjust(-1) || dirty;
+      if (input.wasPressed("right")) dirty = this.adjust(1) || dirty;
     }
-    if (input.wasPressed("left")) dirty = this.adjust(-1) || dirty;
-    if (input.wasPressed("right")) dirty = this.adjust(1) || dirty;
     if (input.wasPressed("confirm")) { this.primary(); dirty = true; }
     if (input.wasPressed("cancel")) { this.secondary(); dirty = true; }
     if (input.wasPressed("special")) { this.tertiary(); dirty = true; }
@@ -481,13 +504,81 @@ export class TownUI {
       return false;
     }
     if (this.tab === "Stash") {
-      const options: (Rarity | "all")[] = ["all", ...RARITIES];
-      const i = options.indexOf(this.rarityFilter);
-      this.rarityFilter = options[clamp(i + dir, 0, options.length - 1)]!;
+      // The ◀ ▶ chips in the aside still adjust the rarity filter for the mouse; the
+      // keyboard reaches it by walking up onto the filter bar (see `navStash`).
+      this.cycleFilter(dir);
       this.cursor = 0;
       return true;
     }
     return false;
+  }
+
+  /** Steps the Stash rarity filter through `all → common → … → unspoken`, clamped. */
+  private cycleFilter(dir: number): boolean {
+    const options: (Rarity | "all")[] = ["all", ...RARITIES];
+    const i = options.indexOf(this.rarityFilter);
+    const next = options[clamp(i + dir, 0, options.length - 1)]!;
+    if (next === this.rarityFilter) return false;
+    this.rarityFilter = next;
+    return true;
+  }
+
+  /** How many columns the stash card grid is actually laid out in right now. The grid
+   *  is `auto-fill`, so this is read back off the DOM rather than assumed. */
+  private stashColumns(): number {
+    const grid = this.root.querySelector<HTMLElement>(".stash-grid");
+    if (grid) {
+      const n = getComputedStyle(grid).gridTemplateColumns
+        .split(/\s+/).filter((s) => s.endsWith("px") || s.endsWith("fr") || s.endsWith("%")).length;
+      if (n > 0) return n;
+    }
+    return 5;
+  }
+
+  /**
+   * 2-D movement across the Stash. `cursor < 0` means the rarity filter bar above the
+   * grid has focus — walk up onto it from the top row, A/D there cycle the filter, S
+   * drops back into the cards.
+   */
+  private navStash(dx: number, dy: number): boolean {
+    const n = this.filteredStash().length;
+    if (n === 0) { this.cursor = -1; return dx !== 0 && this.cycleFilter(dx); }
+    if (this.cursor < 0) {
+      if (dx !== 0) return this.cycleFilter(dx);
+      if (dy > 0) { this.cursor = 0; return true; }
+      return false;
+    }
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /** The Hero paper-doll's two real columns, top to bottom, as they're drawn — so W/S
+   *  walk a column and A/D jump between them, instead of the flat slot-index order. */
+  private static readonly DOLL_LAYOUT: readonly (readonly EquipSlot[])[] = [
+    ["weapon", "armor", "shield"],
+    ["gloves", "ring", "necklace"],
+  ];
+
+  /** 2-D movement across the Hero equipment slots, following the drawn column layout. */
+  private navHero(dx: number, dy: number): boolean {
+    const layout = TownUI.DOLL_LAYOUT;
+    const cur = EQUIP_SLOTS[this.cursor] ?? "weapon";
+    let col = layout.findIndex((c) => c.includes(cur));
+    if (col < 0) col = 0;
+    let row = Math.max(0, layout[col]!.indexOf(cur));
+    if (dx !== 0) col = clamp(col + dx, 0, layout.length - 1);
+    if (dy !== 0) row = row + dy;
+    row = clamp(row, 0, layout[col]!.length - 1);
+    const next = EQUIP_SLOTS.indexOf(layout[col]![row]!);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
   }
 
   /** Cycles the ability in a slot through everything unlocked, plus empty. */
@@ -1548,12 +1639,23 @@ export class TownUI {
 
   private renderStash(): string {
     const items = this.filteredStash();
-    const filterChips = `<h3>Filter: <b>${this.rarityFilter}</b>
-        <span class="chip" data-action="left">◀</span>
-        <span class="chip" data-action="right">▶</span></h3>`;
+    // A sticky bar of rarity pills across the top of the grid. `cursor < 0` = it has
+    // keyboard focus (walked up onto from the first card row); a click on a pill jumps
+    // straight to that rarity.
+    const onBar = this.cursor < 0;
+    const rarities: (Rarity | "all")[] = ["all", ...RARITIES];
+    const filterBar = `
+      <div class="stash-filter ${onBar ? "on" : ""}">
+        ${rarities.map((r) => `<span class="sf-pill ${r === this.rarityFilter ? "sel" : ""}"
+              data-filter="${r}"
+              style="--r:${r === "all" ? "var(--accent)" : RARITY_COLORS[r]}">${r}</span>`).join("")}
+      </div>`;
+
     if (items.length === 0) {
-      return `<div class="stash-grid empty">Nothing here. Filter: <b>${this.rarityFilter}</b> (A / D)</div>
-        <aside class="side">${filterChips}<p class="muted">Kill things. Open chests.</p></aside>`;
+      return `<div class="stash-grid">${filterBar}
+          <div class="stash-none">Nothing matches. Widen the filter — ◀ ▶ on the bar above.</div>
+        </div>
+        <aside class="side"><p class="muted">Kill things. Open chests.</p></aside>`;
     }
 
     const cls = this.state.heroClass;
@@ -1583,11 +1685,14 @@ export class TownUI {
         </div>`;
     }).join("");
 
-    const sel = items[this.cursor];
-    return `<div class="stash-grid">${cards}</div>
+    const sel = onBar ? undefined : items[this.cursor];
+    return `<div class="stash-grid">${filterBar}${cards}</div>
       <aside class="side">
-        ${filterChips}
-        ${sel ? this.renderCompare(sel) : ""}
+        ${sel
+          ? this.renderCompare(sel)
+          : `<p class="muted">${onBar
+              ? "Filtering by rarity. Press down to step back into the cards."
+              : "Pick a piece to compare it against what you're wearing."}</p>`}
         <p>
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · sell selected</span>
           <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} · sell all junk</span>
