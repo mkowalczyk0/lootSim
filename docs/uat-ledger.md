@@ -76,3 +76,27 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 - Report to the PM by SendMessage and let the PM merge. Flag balance and scope calls
   before building on them, not after.
 - Nobody here has a browser. Say plainly when a DOM/UI change is unverified by eye.
+
+## Open findings for the owner
+
+Things the audit turned up that are nobody's assigned ticket and need a design call.
+
+**The endgame sits far beyond the measured frontier.** Measured on master 2026-09-08:
+a sharp bot (dodges 55%) averages **deepest depth 10.3** over 20 dives, best single seed
+16; the reckless bot averages 9.1. The Delve's authored world ends at depth 30 —
+`biomeFor` caps at its last biome, `bossFor` at its last encounter, and that encounter is
+titled "You should not have come this far." So the first real endgame goal (§13/§14, the
+Proving) sits at roughly three times anything the harness has ever reached.
+
+That is not necessarily wrong — the smoke campaign plays 20 dives on a *fresh* character
+and measures the early curve, not an account with a filled tree, universal allocation,
+crafted gear and rift-farmed drops. The actual problem is that **nothing in the repo
+measures account-level reach at all.** We don't know if depth 30 is a stretch goal or an
+impossibility, and §7 ("players become overpowered too early") pushed the curve steeper
+without anything checking the far end. Wants an owner call plus a measurement harness.
+
+**The sharp-vs-reckless margin is thin.** The comparison assertion added after the Sept
+2026 inversion requires `sharp >= reckless + 1`; the live margin is **1.2** (10.3 vs 9.1).
+It passes, but there's almost no headroom, and this is the exact check that silently
+inverted once before. Any class, weapon or tree change can flip it. Worth widening the
+sample or raising the required margin deliberately rather than discovering it again.
