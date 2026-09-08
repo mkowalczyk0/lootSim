@@ -1094,6 +1094,11 @@ export class Dungeon implements CombatHost, RuleHost {
       e.spawnTimer = Math.max(0, e.spawnTimer - dt);
       e.hitFlash = Math.max(0, e.hitFlash - dt);
     }
+    for (const m of this.minions) {
+      m.windup = Math.max(0, m.windup - dt);
+      m.hitFlash = Math.max(0, m.hitFlash - dt);
+    }
+    for (const c of this.corpsePile) c.remaining = Math.max(0, c.remaining - dt);
     for (const t of this.telegraphs) t.remaining = Math.max(0, t.remaining - dt);
     for (const g of this.ground) g.remaining = Math.max(0, g.remaining - dt);
     for (const hero of this.heroes) {

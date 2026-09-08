@@ -17,8 +17,10 @@
 /** WebSocket path the relay listens on, alongside the dev server on the same port. */
 export const NET_PATH = "/party";
 
-/** Bumped if the shape below changes in a way an older client would misread. */
-export const PROTOCOL_VERSION = 1;
+/** Bumped if the shape below changes in a way an older client would misread.
+ *  2: UAT §1 — input sequencing and acks, hero statuses / departed flag, minions,
+ *  corpses and affixes in the snapshot, `end.early`, `plan.running`. */
+export const PROTOCOL_VERSION = 2;
 
 /** Four players is where the difficulty scaling and the screen both stop being sane. */
 export const MAX_PARTY = 4;
@@ -108,7 +110,7 @@ export type PartyMessage =
   /** Host only: what the party is about to dive into, for everyone else's lobby.
    *  `running` says a floor is under way — somebody who joins mid-run waits on the ship
    *  for the next run rather than being dropped into the next floor (UAT §1 A2). */
-  | { k: "plan"; depth: number; players: number; running?: boolean }
+  | { k: "plan"; depth: number; players: number; running: boolean }
   /** Host only: everyone into the portal, here is the floor. */
   | { k: "start"; seed: number; config: RunConfigWire; heroes: HeroWire[] }
   /** Client → host, every tick. `seq` numbers the tick so the host can say which one it
@@ -124,7 +126,7 @@ export type PartyMessage =
   /** Host → all: the floor is over. `descend` is always followed by a fresh `start`.
    *  `early` is the host's word that an extraction was the penalty kind (UAT §6) — a
    *  client banks or forfeits on this flag, never on what its last snapshot implied. */
-  | { k: "end"; how: "extract" | "descend" | "wipe"; early?: boolean };
+  | { k: "end"; how: "extract" | "descend" | "wipe"; early: boolean };
 
 // --- snapshot --------------------------------------------------------------
 //
@@ -143,23 +145,19 @@ export interface HeroSnap {
   readonly wd: number;
   /** Ultimate meter, 0..1. */
   readonly ch: number;
-  /** Ultimate id, or "" for none. */
-  readonly ul: string;
-  readonly ut: number;
   readonly sw: number;
   readonly sa: number;
   readonly dt: number;
   readonly iv: number;
   readonly hf: number;
-  readonly bt: number;
   /** Dash cooldown and current velocity — what a client needs to replay its own
    *  unacknowledged inputs from this exact state (UAT §1 B2). */
-  readonly dc?: number;
-  readonly vx?: number;
-  readonly vy?: number;
+  readonly dc: number;
+  readonly vx: number;
+  readonly vy: number;
   /** Sequence number of the last `in` packet the host consumed for this hero. Only
    *  meaningful to the browser that sent it; 0 for the host's own hero. */
-  readonly ack?: number;
+  readonly ack: number;
   /** Status bitmask in `STATUSES` order — what's on this hero (UAT §1 B3). */
   readonly st?: number;
   /** Skill cooldowns, four of them. */
@@ -199,8 +197,16 @@ export interface Snapshot {
   readonly cp?: [number, number];
   readonly h: HeroSnap[];
   /** [id, kindIndex, x, y, facing, radius, hp, maxHp, eliteIndex, state, spawnTimer,
-   *   windup, hitFlash, elementIndex, isBoss, statusBits] */
+   *   windup, hitFlash, elementIndex, isBoss, statusBits, affixCount, ...affixIndexes]
+   *  The affix tail indexes `MONSTER_AFFIXES` so a client draws the ring and glyphs and
+   *  names the monster the way the host does (UAT §1 C2). */
   readonly e: number[][];
+  /** Summoned combatants (UAT §1 C1): [id, owner, x, y, radius, facing, hp, maxHp,
+   *   windup, hitFlash, elementIndex]. A Necromancer's army was invisible to everyone
+   *  but the host without this. */
+  readonly m: number[][];
+  /** Corpses on the floor: [x, y, remaining]. Drawn, and the Necromancer's fuel gauge. */
+  readonly c: number[][];
   /** [x, y, radius, elementIndex, friendly, vx, vy] — velocity so a client can fly a
    *  bolt on between snapshots rather than stepping it three ticks at a time. */
   readonly p: number[][];

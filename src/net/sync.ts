@@ -18,6 +18,7 @@ import type { AvatarInput, Action } from "../core/input";
 import { TAU } from "../core/math";
 import { BOSSES, BOSS_ABILITIES, bossFor, type BossAbilityId } from "../data/bosses";
 import { ARCHETYPES, type EnemyKind } from "../data/enemies";
+import { MONSTER_AFFIXES, affixPrefix } from "../data/monster-affixes";
 import { CHEST_TIERS } from "../data/chests";
 import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type StatusKind } from "../data/elements";
 import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "../data/modes";
@@ -25,7 +26,7 @@ import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
-import type { Enemy } from "../game/entities";
+import type { Enemy, Minion } from "../game/entities";
 import {
   NET_ACTIONS, SNAPSHOT_HZ, actionBit,
   type HeroSnap, type PartyMessage, type RunConfigWire, type Snapshot, type NetAction,
@@ -229,6 +230,11 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       : {}),
     h: d.heroes.map(encodeHero),
     e: d.enemies.map(encodeEnemy),
+    m: d.minions.map((m) => [
+      m.id, m.owner, Math.round(m.x), Math.round(m.y), Math.round(m.radius), r2(m.facing),
+      Math.round(m.health), Math.round(m.maxHealth), r2(m.windup), r2(m.hitFlash), ELEMENTS.indexOf(m.element),
+    ]),
+    c: d.corpsePile.map((c) => [Math.round(c.x), Math.round(c.y), r2(c.remaining)]),
     p: d.projectiles.map((p) => [
       Math.round(p.x), Math.round(p.y), p.radius, ELEMENTS.indexOf(p.element), p.friendly ? 1 : 0,
       Math.round(p.vx), Math.round(p.vy),
@@ -291,13 +297,8 @@ function encodeHero(hero: Hero): HeroSnap {
     x: r2(a.x), y: r2(a.y), f: r2(a.facing),
     hp: Math.round(p.health), mp: Math.round(p.mana), wd: Math.round(hero.ward),
     ch: r2(hero.specialCharge),
-    // `ul` / `ut` / `bt` are dead fields kept for wire compatibility — the ability
-    // cutover made ultimates instant casts and buffs into statuses, and the whole
-    // snapshot protocol is being replaced (see docs/combat-cutover-plan.md C3).
-    ul: "",
-    ut: 0,
     sw: r2(a.swingTimer), sa: r2(a.swingAngle),
-    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash), bt: 0,
+    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash),
     dc: r2(a.dashCooldown), vx: r2(a.vx), vy: r2(a.vy),
     ack: hero.input instanceof NetInput ? hero.input.lastSeq : 0,
     ...(st !== 0 ? { st } : {}),
@@ -327,6 +328,8 @@ function encodeEnemy(e: Enemy): number[] {
     ELEMENTS.indexOf(e.element),
     e.boss ? 1 : 0,
     statusBits,
+    e.affixes.length,
+    ...e.affixes.map((a) => MONSTER_AFFIXES.indexOf(a)),
   ];
 }
 
@@ -355,6 +358,7 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
   }
 
   applyEnemies(d, s, planetNames);
+  applyMinions(d, s);
   applySimpleBodies(d, s);
 
   for (let i = 0; i < d.level.traps.length; i++) {
@@ -435,7 +439,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
 
   for (const wire of s.e) {
     const [id, kindIndex, x, y, facing, radius, hp, maxHp, elite, state,
-      spawnTimer, windup, hitFlash, elementIndex, isBoss, statusBits] = wire as number[];
+      spawnTimer, windup, hitFlash, elementIndex, isBoss, statusBits, affixCount] = wire as number[];
     seen.add(id!);
     const kind = ENEMY_KINDS[kindIndex!] ?? "grunt";
     const archetype = ARCHETYPES[kind];
@@ -444,12 +448,17 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
 
     let e = byId.get(id!);
     if (!e) {
+      // Affixes are fixed at spawn, so they're rebuilt once, here — and only for drawing
+      // and naming: the behaviours they describe run on the host alone.
+      const affixes = wire.slice(17, 17 + (affixCount ?? 0))
+        .map((i) => MONSTER_AFFIXES[i]!)
+        .filter((a) => a !== undefined);
       e = {
         id: id!, x: x!, y: y!, px: x!, py: y!, radius: radius!,
         archetype,
         name: isBoss && s.b
           ? s.b.nm
-          : enemyDisplayName(archetype.name, element, eliteRarity, planetNames?.[kind]),
+          : affixPrefix(affixes) + enemyDisplayName(archetype.name, element, eliteRarity, planetNames?.[kind]),
         health: hp!, maxHealth: maxHp!, damage: 0, speed: 0,
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
@@ -463,7 +472,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         // `fromWave` likewise: the quota is counted on the host and arrives as a number.
         attackCooldown: archetype.attackCooldown,
         eliteCast: 0,
-        affixes: [], affixState: { timers: {}, ward: 0, noSplit: false },
+        affixes, affixState: { timers: {}, ward: 0, noSplit: false },
         damageTakenMult: 1,
       };
       d.enemies.push(e);
@@ -505,8 +514,55 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
   d.boss = d.enemies.find((e) => e.boss) ?? null;
 }
 
-/** Projectiles, drops, telegraphs, ground and totems: rebuilt outright every snapshot. */
+/**
+ * Summons, matched by id like monsters so they slide rather than jump. Everything a
+ * minion *does* — pathing, attacks, its status effects — happens on the host; the client
+ * body carries only what `drawMinions` reads.
+ */
+function applyMinions(d: Dungeon, s: Snapshot): void {
+  const seen = new Set<number>();
+  const byId = new Map<number, Minion>();
+  for (const m of d.minions) byId.set(m.id, m);
+  for (const [id, owner, x, y, radius, facing, hp, maxHp, windup, hitFlash, elementIndex] of s.m) {
+    seen.add(id!);
+    const element = ELEMENTS[elementIndex!] ?? "physical";
+    let m = byId.get(id!);
+    if (!m) {
+      m = {
+        id: id!, owner: owner!, unit: "summon",
+        x: x!, y: y!, px: x!, py: y!, radius: radius!,
+        health: hp!, maxHealth: maxHp!, damage: 0, attackCooldown: 1, attackTimer: 0, attackRange: 0,
+        windup: windup!, speed: 0, element, facing: facing!, hitFlash: hitFlash!, knockX: 0, knockY: 0,
+        remaining: Infinity, behavior: "follow", commandTargetId: null, guardX: x!, guardY: y!,
+        sc: new StatusContainer(2_000_000 + id!), stuckTimer: 0, dodgeDir: 1,
+      };
+      d.minions.push(m);
+      d.netLerp.set(m, { x: x!, y: y!, t: 0 });
+    } else {
+      d.netLerp.set(m, { x: x!, y: y!, t: LERP_SPAN });
+    }
+    m.facing = facing!;
+    m.health = hp!;
+    m.maxHealth = maxHp!;
+    m.radius = radius!;
+    m.windup = windup!;
+    m.hitFlash = hitFlash!;
+    m.element = element;
+  }
+  for (let i = d.minions.length - 1; i >= 0; i--) {
+    if (seen.has(d.minions[i]!.id)) continue;
+    d.netLerp.delete(d.minions[i]!);
+    d.minions.splice(i, 1);
+  }
+}
+
+/** Projectiles, drops, telegraphs, ground, totems and corpses: rebuilt outright every snapshot. */
 function applySimpleBodies(d: Dungeon, s: Snapshot): void {
+  d.corpsePile.length = 0;
+  s.c.forEach(([x, y, remaining], i) => {
+    d.corpsePile.push({ id: i + 1, x: x!, y: y!, remaining: remaining ?? 1 });
+  });
+
   d.projectiles.length = 0;
   for (const [x, y, radius, elementIndex, friendly, vx, vy] of s.p) {
     const element = ELEMENTS[elementIndex!] ?? "physical";

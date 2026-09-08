@@ -328,8 +328,11 @@ export class Party {
       const slot = this.slots.get(member.id);
       if (slot === undefined) continue;
       // Most events are for everybody; a few belong to one person, and somebody else's
-      // level-up has no business taking over your screen.
-      const mine = this.fxBuffer.filter((ev) => !("owner" in ev) || ev.owner === slot);
+      // level-up has no business taking over your screen. A remote player's *own*
+      // level-up isn't forwarded either — their browser raises it from the XP it's
+      // handed below, and forwarding this copy too fired the fireworks twice (UAT §1 C3).
+      const mine = this.fxBuffer.filter((ev) =>
+        !("owner" in ev) || (ev.owner === slot && ev.kind !== "levelUp"));
       if (mine.length > 0) this.send({ k: "fx", e: mine as unknown[] }, member.id);
 
       // Items and XP go as their own messages rather than being sampled out of a

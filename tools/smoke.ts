@@ -19,7 +19,7 @@ import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
-import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
+import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
@@ -2495,7 +2495,7 @@ console.log("\n=== multiplayer ===");
     check("a client ignores a start it isn't part of", client.starts.length === 0 && !client.party.running);
     client.net.onMessage("p1", { k: "plan", depth: 2, players: 3, running: true });
     check("…and is told to wait for the next run", client.notices.some((n) => /next run/.test(n)) && client.party.hostRunning);
-    client.net.onMessage("p1", { k: "end", how: "descend" });
+    client.net.onMessage("p1", { k: "end", how: "descend", early: false });
     check("a floor it wasn't on ending is none of its business", client.ends.length === 0 && !client.party.running);
     client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: [...others, wire(clientState, "p3")] });
     check("a start that includes it is adopted, with itself as the local hero",
@@ -2620,6 +2620,46 @@ console.log("\n=== multiplayer ===");
     h.heroes[1]!.sc.list.length = 0;
     applySnapshot(c, snap(h));
     check("…and clear with it", c.heroes[1]!.sc.list.length === 0);
+
+    // C1: a summoner's army and the corpses it's raised from cross the wire.
+    h.minions.push({
+      id: 41, owner: 0, unit: "skeleton", x: 300, y: 300, px: 300, py: 300, radius: 7,
+      health: 30, maxHealth: 40, damage: 5, attackCooldown: 1, attackTimer: 0, attackRange: 20,
+      windup: 0.3, speed: 100, element: "void", facing: 1, hitFlash: 0, knockX: 0, knockY: 0,
+      remaining: 20, behavior: "follow", commandTargetId: null, guardX: 300, guardY: 300,
+      sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1,
+    });
+    h.corpsePile.push({ id: 1, x: 220, y: 240, remaining: 6 });
+    applySnapshot(c, snap(h));
+    const pet = c.minions.find((m) => m.id === 41);
+    check("a summon crosses the wire", pet !== undefined && pet.owner === 0 && pet.x === 300 && pet.element === "void"
+      && pet.health === 30 && pet.maxHealth === 40 && Math.abs(pet.windup - 0.3) < 0.01);
+    check("a corpse crosses the wire", c.corpsePile.length === 1 && c.corpsePile[0]!.x === 220 && c.corpsePile[0]!.remaining === 6);
+    h.minions[h.minions.length - 1]!.x = 330;
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    check("a summon slides like everything else", pet!.x > 301 && pet!.x < 329 && pet!.windup < 0.3 - DT * 0.5,
+      `${pet!.x.toFixed(1)}, windup ${pet!.windup.toFixed(3)}`);
+    h.minions.pop();
+    h.corpsePile.length = 0;
+    applySnapshot(c, snap(h));
+    check("…and leaves with the host's", c.minions.every((m) => m.id !== 41) && c.corpsePile.length === 0);
+
+    // C2: affixes travel too, so a client draws the ring and glyphs and reads the same
+    // name the host does, not a bare "Grunt".
+    const marked = h.enemies.find((e) => !e.boss)!;
+    marked.affixes = [MONSTER_AFFIXES[0]!, MONSTER_AFFIXES[3]!];
+    const fresh = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 555, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    applySnapshot(fresh, snap(h));
+    const seenMarked = fresh.enemies.find((e) => e.id === marked.id)!;
+    check("a monster's affixes cross the wire",
+      seenMarked.affixes.map((a) => a.id).join() === marked.affixes.map((a) => a.id).join(),
+      seenMarked.affixes.map((a) => a.id).join());
+    check("…and the client names it the way the host does",
+      seenMarked.name.startsWith(affixPrefix(marked.affixes)), seenMarked.name);
   }
 
   // 10. A client's own character is reconciled, not tugged (UAT §1 B2). Host and client
