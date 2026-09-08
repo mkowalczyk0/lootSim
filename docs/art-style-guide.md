@@ -683,10 +683,17 @@ hand-arted 16px stone.
 - **Pitch and mask.** A 16-texel sheet tile is stamped across a **32-unit** cell — a
   clean 2× nearest-neighbour blow-up that puts the floor on the same on-screen pixel
   grid as the deck, the hero and the props (1:1 stamping read finer and "zoomed out"
-  next to everything on it). The rock mask samples the level's **`blocked`** grid at
-  each cell centre — the body-inflated collision volume — so painted stone is always a
-  subset of where the player is already stopped; a raw-wall-rect coverage test at this
-  pitch painted stone over walkable floor. Behind the stamp is the biome tint (not flat
+  next to everything on it). **The level is authored on that same 32-unit lattice**
+  (`TILE` in `game/level.ts`: every wall's edges on multiples of 32, one tile thick,
+  rooms and doorways in whole tiles), so a tile cell is either wholly wall or wholly
+  floor and the rock mask is simply "is this cell's centre inside a wall rect". Painted
+  stone is then *exactly* the collision volume — the hero's 9-unit radius is the only
+  gap between sprite and face. Two earlier masks were both wrong: raw-rect coverage of
+  off-lattice 16-unit walls painted stone half a tile past the real face, and sampling
+  the body-inflated `blocked` grid painted a whole extra tile on one side of every wall
+  (a tile centre sits eight units off the nav cell it falls in). Both read as "I can
+  walk through walls"; the smoke test now asserts the lattice and the paint/collision
+  agreement on every floor it generates. Behind the stamp is the biome tint (not flat
   black) under a faint vignette, so a room reads as low-lit, not as a solid block someone
   carved a path through.
 - **Palette** still comes from §2 / §2.4 — ash + bone + `ink` seams for the Delve's

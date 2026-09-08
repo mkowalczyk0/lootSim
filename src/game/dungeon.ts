@@ -801,9 +801,12 @@ export class Dungeon implements CombatHost, RuleHost {
    * return it, bypassing the wave director. Used to walk each archetype behaviour (UAT
    * §2) in isolation. Not part of normal gameplay — the wave director never calls this.
    */
-  spawnArchetypeAt(kind: EnemyKind, x: number, y: number, opts?: { noAffixes?: boolean }): Enemy {
+  spawnArchetypeAt(
+    kind: EnemyKind, x: number, y: number, opts?: { noAffixes?: boolean; elite?: Rarity | null },
+  ): Enemy {
     const e = this.makeEnemy(ARCHETYPES[kind], x, y, {
       noAffixes: opts?.noAffixes ?? true,
+      elite: opts?.elite ?? null,
       fromWave: true,
     });
     e.state = "active";

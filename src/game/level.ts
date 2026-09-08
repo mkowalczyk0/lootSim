@@ -114,19 +114,60 @@ export interface Level {
 const GRID = 16;
 /** Half-width of the widest body that must fit through a gap. */
 const BODY_PAD = 14;
-/** Walls stay this far inside a room so its edges are always a walkable ring. */
-const MARGIN = 54;
+/**
+ * The tile lattice. The renderer paints a floor with 16-texel corner-Wang tiles
+ * stamped across 32 world units (`STAMP` in `render/tilemap.ts`), so **every wall
+ * is authored on that pitch**: edges on multiples of `TILE`, thickness a whole tile,
+ * rooms and doorways whole tiles wide. A tile cell is then either entirely wall or
+ * entirely floor, which is what makes the painted rock *exactly* the collision
+ * volume — the stamper can neither paint stone over ground you can stand on nor
+ * leave out a wall it can't fit. Before this, 16-unit walls at arbitrary offsets
+ * were painted up to thirty units past their real face and the hero (radius 9)
+ * stood visibly inside the rock: "I can walk through walls." The smoke test asserts
+ * the lattice on every floor it generates.
+ */
+export const TILE = 32;
+/** Rooms are sized in double tiles so a doorway centred on a room lands on the lattice. */
+const ROOM_UNIT = TILE * 2;
+/** Walls stay this far inside a room's slot: the perimeter wall plus a two-tile walkable ring. */
+const MARGIN = TILE * 3;
 /** No walls within this radius of the spawn point or the portal. */
-const CLEAR_RADIUS = 78;
+const CLEAR_RADIUS = 90;
 /** World-unit gap between adjacent room slots — the corridor's length. */
-const ROOM_GAP = 76;
+const ROOM_GAP = TILE * 3;
 /** Doorway and corridor width. Comfortably wider than anything that has to fit through. */
-const DOOR = 100;
-const WALL_T = 16;
+const DOOR = TILE * 4;
+const WALL_T = TILE;
+/**
+ * Room footprint: `ROOM_BASE` plus `ROOM_GROWTH` per depth, capped at `ROOM_GROWTH_CAP`
+ * over the base, snapped to `ROOM_UNIT`. The whole floor was scaled up by roughly a
+ * fifth in Sept 2026 — rooms, doorways and corridors together — after the owner called
+ * every floor "super claustrophobic". Room *count* (`gridDims`) didn't change; each
+ * room simply has more air in it, and the doorways are wide enough that a corridor
+ * no longer reads as a slot you squeeze through. The interior layouts scale with the
+ * room, so a pillar hall has the same pillars further apart, not more pillars.
+ */
+const ROOM_BASE = 448;
+const ROOM_GROWTH = 6;
+const ROOM_GROWTH_CAP = 192;
+const TUTORIAL_ROOM = 448;
 /** A room's interior only gets the subdividing layouts (chambers/gauntlet/ring) once
  *  it's big enough for their internal doorway math to make sense; smaller rooms fall
  *  back to open/pillars/rubble, which have no such minimum. */
-const SAFE_SUBDIV_MIN = 500;
+const SAFE_SUBDIV_MIN = 512;
+
+/** Largest lattice coordinate not past `v` — for a wall's origin. */
+function snapDown(v: number, unit = TILE): number {
+  return Math.floor(v / unit) * unit;
+}
+/** Nearest lattice coordinate. */
+function snapNear(v: number, unit = TILE): number {
+  return Math.round(v / unit) * unit;
+}
+/** A wall's extent: the nearest whole number of tiles, never less than one. */
+function snapSize(v: number): number {
+  return Math.max(TILE, snapNear(v));
+}
 
 export interface LevelOptions {
   /**
@@ -165,8 +206,12 @@ function generateBossFloor(d: number, biome: BiomeStyle, seed: number, rng: Rng)
   // tuned against this arena shape, and quietly shrinking them relative to the room
   // would make "every phase needs an ability that reaches across the arena" stop
   // being true.
-  const width = 1360 + Math.min(520, d * 13);
-  const height = Math.round(width * 0.72);
+  // Deliberately *not* scaled with the rooms when the floors grew in Sept 2026: the
+  // arena is already one big open room, every ability radius in data/bosses.ts is
+  // tuned against this shape, and the smoke test's geared, attentive bot started
+  // losing the depth-5 fight at even a tenth more running per phase.
+  const width = snapNear(1360 + Math.min(520, d * 13));
+  const height = snapNear(width * 0.72);
   const start = { x: width / 2, y: height - 100 };
   const portal = { x: width / 2, y: 90 };
   const layout = rng.pick(BOSS_LAYOUTS);
@@ -174,6 +219,10 @@ function generateBossFloor(d: number, biome: BiomeStyle, seed: number, rng: Rng)
   let walls = buildWalls(layout, width, height, rng)
     .filter((w) => !nearPoint(w, start.x, start.y, CLEAR_RADIUS))
     .filter((w) => !nearPoint(w, portal.x, portal.y, CLEAR_RADIUS));
+  // The arena's own perimeter, one tile thick, so the painted rock edge is where you
+  // actually stop — pushed after the clearance filter, which would otherwise strip the
+  // stretch behind the spawn point.
+  walls.push(...borderWalls(width, height));
 
   let grid = buildGrid(walls, width, height);
   if (!isConnected(grid, width, height, start, portal)) {
@@ -223,21 +272,25 @@ function generateDungeon(
   const tutorial = d === 1 && !opts.big;
   const { cols, rows } = tutorial ? { cols: 2, rows: 1 } : gridDims(d, opts.big === true);
 
-  const roomSize = tutorial ? 340 : 360 + Math.min(170, d * 5);
-  const roomH = Math.round(roomSize * 0.82);
-  const outerMargin = 44;
+  // Rooms are whole double-tiles so their centres — where the doorways sit — land on
+  // the lattice too. A room's perimeter wall lies *inside* its slot, so the slots
+  // tile the level edge to edge with no margin: the outermost walls are the border.
+  const roomSize = tutorial ? TUTORIAL_ROOM : snapNear(ROOM_BASE + Math.min(ROOM_GROWTH_CAP, d * ROOM_GROWTH), ROOM_UNIT);
+  const roomH = snapNear(roomSize * 0.82, ROOM_UNIT);
+  const slotX = (col: number) => col * (roomSize + ROOM_GAP);
+  const slotY = (row: number) => row * (roomH + ROOM_GAP);
 
   const graph = buildRoomGraph(cols, rows, rng);
   const slots = new Map<string, RoomSlot>();
   for (const key of graph.visited) {
     const [col, row] = parseKey(key);
-    const x0 = outerMargin + col * (roomSize + ROOM_GAP);
-    const y0 = outerMargin + row * (roomH + ROOM_GAP);
+    const x0 = slotX(col);
+    const y0 = slotY(row);
     slots.set(key, { col, row, x0, y0, w: roomSize, h: roomH, cx: x0 + roomSize / 2, cy: y0 + roomH / 2 });
   }
 
-  const width = outerMargin * 2 + cols * roomSize + (cols - 1) * ROOM_GAP;
-  const height = outerMargin * 2 + rows * roomH + (rows - 1) * ROOM_GAP;
+  const width = cols * roomSize + (cols - 1) * ROOM_GAP;
+  const height = rows * roomH + (rows - 1) * ROOM_GAP;
 
   const startSlot = slots.get(graph.startKey)!;
   const endSlot = slots.get(graph.endKey)!;
@@ -262,7 +315,7 @@ function generateDungeon(
       if (!slot) {
         // Never reached by the walk: sealed off as solid rock rather than an
         // unexplained gap in the floor.
-        walls.push({ x: outerMargin + col * (roomSize + ROOM_GAP), y: outerMargin + row * (roomH + ROOM_GAP), w: roomSize, h: roomH });
+        walls.push({ x: slotX(col), y: slotY(row), w: roomSize, h: roomH });
         continue;
       }
 
@@ -271,9 +324,9 @@ function generateDungeon(
       const left = neighborConnected(graph, col, row, -1, 0);
       const right = neighborConnected(graph, col, row, 1, 0);
       walls.push(...roomSide("h", slot.y0, slot.x0, slot.x0 + slot.w, slot.cx, up));
-      walls.push(...roomSide("h", slot.y0 + slot.h, slot.x0, slot.x0 + slot.w, slot.cx, down));
+      walls.push(...roomSide("h", slot.y0 + slot.h - WALL_T, slot.x0, slot.x0 + slot.w, slot.cx, down));
       walls.push(...roomSide("v", slot.x0, slot.y0, slot.y0 + slot.h, slot.cy, left));
-      walls.push(...roomSide("v", slot.x0 + slot.w, slot.y0, slot.y0 + slot.h, slot.cy, right));
+      walls.push(...roomSide("v", slot.x0 + slot.w - WALL_T, slot.y0, slot.y0 + slot.h, slot.cy, right));
 
       if (tutorial) { roomLayouts.push("open"); continue; }
       // A room now and then is left empty on purpose — a breather, and one fewer
@@ -288,22 +341,40 @@ function generateDungeon(
     }
   }
 
-  // Corridors: a straight hallway through the gap between every pair of connected
-  // rooms, the same width as the doorways it lines up with on both ends.
-  for (const e of graph.edges) {
-    const [ak, bk] = e.split("|") as [string, string];
-    const a = slots.get(ak)!;
-    const b = slots.get(bk)!;
-    if (a.row === b.row) {
-      const left = a.col < b.col ? a : b;
-      const gx = left.x0 + left.w;
-      const midY = left.cy;
-      pushLane(walls, gx, left.y0, ROOM_GAP, left.h, midY, true);
-    } else {
-      const top = a.row < b.row ? a : b;
-      const gy = top.y0 + top.h;
-      const midX = top.cx;
-      pushLane(walls, top.x0, gy, top.w, ROOM_GAP, midX, false);
+  // The gaps between slots. Between two connected rooms: a straight corridor, the same
+  // width as the doorways it lines up with on both ends. Everywhere else — between
+  // rooms the walk didn't join, beside a sealed slot, and the square where four gaps
+  // meet — solid rock, so nothing outside a room is ever painted as floor you can't
+  // reach.
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col + 1 < cols; col++) {
+      const a = slots.get(slotKey(col, row));
+      const b = slots.get(slotKey(col + 1, row));
+      const gx = slotX(col) + roomSize;
+      const gy = slotY(row);
+      if (a && b && graph.edges.has(edgeKey(slotKey(col, row), slotKey(col + 1, row)))) {
+        pushLane(walls, gx, gy, ROOM_GAP, roomH, a.cy, true);
+      } else {
+        walls.push({ x: gx, y: gy, w: ROOM_GAP, h: roomH });
+      }
+    }
+  }
+  for (let row = 0; row + 1 < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const a = slots.get(slotKey(col, row));
+      const b = slots.get(slotKey(col, row + 1));
+      const gx = slotX(col);
+      const gy = slotY(row) + roomH;
+      if (a && b && graph.edges.has(edgeKey(slotKey(col, row), slotKey(col, row + 1)))) {
+        pushLane(walls, gx, gy, roomSize, ROOM_GAP, a.cx, false);
+      } else {
+        walls.push({ x: gx, y: gy, w: roomSize, h: ROOM_GAP });
+      }
+    }
+  }
+  for (let row = 0; row + 1 < rows; row++) {
+    for (let col = 0; col + 1 < cols; col++) {
+      walls.push({ x: slotX(col) + roomSize, y: slotY(row) + roomH, w: ROOM_GAP, h: ROOM_GAP });
     }
   }
 
@@ -507,6 +578,16 @@ function translateWalls(walls: readonly Wall[], dx: number, dy: number): Wall[] 
   return walls.map((w) => ({ x: w.x + dx, y: w.y + dy, w: w.w, h: w.h }));
 }
 
+/** A one-tile perimeter just inside a `width`×`height` field. */
+function borderWalls(width: number, height: number): Wall[] {
+  return [
+    { x: 0, y: 0, w: width, h: WALL_T },
+    { x: 0, y: height - WALL_T, w: width, h: WALL_T },
+    { x: 0, y: 0, w: WALL_T, h: height },
+    { x: width - WALL_T, y: 0, w: WALL_T, h: height },
+  ];
+}
+
 // --- layouts (room interiors, and the whole arena on a boss floor) --------
 
 function buildWalls(kind: LayoutKind, w: number, h: number, rng: Rng): Wall[] {
@@ -520,76 +601,91 @@ function buildWalls(kind: LayoutKind, w: number, h: number, rng: Rng): Wall[] {
   }
 }
 
+// Every layout below places its walls on the tile lattice: origins snapped down,
+// extents to whole tiles, partitions one tile thick. The rng draws are the same ones
+// as before — only where the result lands is quantised.
+
 function layoutOpen(w: number, h: number, rng: Rng): Wall[] {
-  return scatter(w, h, rng, rng.int(1, 3), 54, 104, 130);
+  return scatter(w, h, rng, rng.int(1, 3), 54, 104);
 }
 
+/**
+ * A grid of square pillars on a four-tile pitch — a two-tile pillar and a two-tile
+ * aisle — centred in the room. The rng still picks a count, but the room decides how
+ * many actually fit: a pillar hall in a small room has fewer pillars, never pillars
+ * jammed together.
+ */
 function layoutPillars(w: number, h: number, rng: Rng): Wall[] {
-  const cols = rng.int(3, 5);
-  const rows = rng.int(2, 3);
-  const out: Wall[] = [];
+  const pitch = TILE * 4;
   const spanX = w - MARGIN * 2;
   const spanY = h - MARGIN * 2;
+  const cols = Math.min(rng.int(3, 5), Math.max(1, Math.floor((spanX + TILE * 2) / pitch)));
+  const rows = Math.min(rng.int(2, 3), Math.max(1, Math.floor((spanY + TILE * 2) / pitch)));
+  const x0 = MARGIN + snapDown((spanX - (cols * pitch - TILE * 2)) / 2);
+  const y0 = MARGIN + snapDown((spanY - (rows * pitch - TILE * 2)) / 2);
+  const out: Wall[] = [];
   for (let cx = 0; cx < cols; cx++) {
     for (let cy = 0; cy < rows; cy++) {
-      const size = rng.range(40, 62);
-      const px = MARGIN + spanX * ((cx + 1) / (cols + 1)) + rng.range(-14, 14);
-      const py = MARGIN + spanY * ((cy + 1) / (rows + 1)) + rng.range(-14, 14);
-      out.push({ x: px - size / 2, y: py - size / 2, w: size, h: size });
+      const size = snapSize(rng.range(40, 62));
+      // Jitter is still drawn so the stream is unchanged, but a lattice pillar has
+      // nowhere to wobble to inside its aisle.
+      rng.range(-14, 14);
+      rng.range(-14, 14);
+      out.push({ x: x0 + cx * pitch, y: y0 + cy * pitch, w: size, h: size });
     }
   }
   return out;
 }
 
 function layoutChambers(w: number, h: number, rng: Rng): Wall[] {
-  const t = 16;
-  const gap = 100;
+  const t = WALL_T;
+  const gap = DOOR;
   const out: Wall[] = [];
   for (const fx of [0.34, 0.66]) {
-    const x = w * fx - t / 2;
-    const gapAt = rng.range(MARGIN + gap, h - MARGIN - gap * 2);
+    const x = snapDown(w * fx);
+    const gapAt = snapDown(rng.range(MARGIN + gap, h - MARGIN - gap * 2));
     out.push(...runV(x, MARGIN, h - MARGIN, t, gapAt, gap));
   }
-  const y = h * rng.range(0.42, 0.58) - t / 2;
-  const gapAt = rng.range(MARGIN + gap, w - MARGIN - gap * 2);
+  const y = snapDown(h * rng.range(0.42, 0.58));
+  const gapAt = snapDown(rng.range(MARGIN + gap, w - MARGIN - gap * 2));
   out.push(...runH(y, MARGIN, w - MARGIN, t, gapAt, gap));
   return out;
 }
 
 function layoutGauntlet(w: number, h: number, rng: Rng): Wall[] {
   const rowCount = rng.int(3, 4);
-  const t = 16;
-  const gap = 96;
+  const t = WALL_T;
+  const gap = DOOR;
   const out: Wall[] = [];
   for (let i = 0; i < rowCount; i++) {
-    const y = MARGIN + (h - MARGIN * 2) * ((i + 1) / (rowCount + 1)) - t / 2;
+    const y = snapDown(MARGIN + (h - MARGIN * 2) * ((i + 1) / (rowCount + 1)));
     // Alternating gaps force a serpentine path instead of a straight sprint.
     const left = i % 2 === 0;
-    const gapAt = left ? MARGIN + rng.range(0, 60) : w - MARGIN - gap - rng.range(0, 60);
+    const gapAt = snapDown(left ? MARGIN + rng.range(0, 60) : w - MARGIN - gap - rng.range(0, 60));
     out.push(...runH(y, MARGIN, w - MARGIN, t, gapAt, gap));
   }
   return out;
 }
 
 function layoutRubble(w: number, h: number, rng: Rng): Wall[] {
-  return scatter(w, h, rng, rng.int(9, 15), 26, 50, 62);
+  return scatter(w, h, rng, rng.int(9, 15), 26, 50);
 }
 
 function layoutRing(w: number, h: number, rng: Rng): Wall[] {
-  const t = 16;
-  const gap = 96;
-  const x0 = w * 0.22;
-  const x1 = w * 0.78;
-  const y0 = h * 0.24;
-  const y1 = h * 0.76;
+  const t = WALL_T;
+  const gap = DOOR;
+  const x0 = snapDown(w * 0.22);
+  const x1 = snapDown(w * 0.78);
+  const y0 = snapDown(h * 0.24);
+  const y1 = snapDown(h * 0.76);
   const out: Wall[] = [
-    ...runH(y0 - t / 2, x0, x1, t, (x0 + x1) / 2 - gap / 2, gap),
-    ...runH(y1 - t / 2, x0, x1, t, (x0 + x1) / 2 - gap / 2, gap),
-    ...runV(x0 - t / 2, y0, y1, t, (y0 + y1) / 2 - gap / 2, gap),
-    ...runV(x1 - t / 2, y0, y1, t, (y0 + y1) / 2 - gap / 2, gap),
+    ...runH(y0, x0, x1 + t, t, snapDown((x0 + x1) / 2 - gap / 2), gap),
+    ...runH(y1, x0, x1 + t, t, snapDown((x0 + x1) / 2 - gap / 2), gap),
+    ...runV(x0, y0, y1 + t, t, snapDown((y0 + y1) / 2 - gap / 2), gap),
+    ...runV(x1, y0, y1 + t, t, snapDown((y0 + y1) / 2 - gap / 2), gap),
   ];
-  const size = rng.range(52, 76);
-  out.push({ x: w / 2 - size / 2, y: h / 2 - size / 2, w: size, h: size });
+  const size = snapSize(rng.range(52, 76));
+  out.push({ x: snapDown(w / 2 - size / 2), y: snapDown(h / 2 - size / 2), w: size, h: size });
   return out;
 }
 
@@ -612,21 +708,26 @@ function runV(x: number, y0: number, y1: number, t: number, gapAt: number, gap: 
   return out;
 }
 
-/** Rejection-sampled loose blocks that never crowd each other into a solid mass. */
+/**
+ * Rejection-sampled loose blocks that never crowd each other into a solid mass: two
+ * blocks keep at least a two-tile aisle between them on one axis, which is the
+ * narrowest gap the navigation grid still reads as walkable (`BODY_PAD` either side
+ * of a 16-unit cell centre).
+ */
 function scatter(
   w: number, h: number, rng: Rng,
-  count: number, minSize: number, maxSize: number, separation: number,
+  count: number, minSize: number, maxSize: number,
 ): Wall[] {
+  const aisle = TILE * 2;
   const out: Wall[] = [];
   for (let i = 0; i < count; i++) {
     for (let tries = 0; tries < 24; tries++) {
-      const bw = rng.range(minSize, maxSize);
-      const bh = rng.range(minSize, maxSize);
-      const x = rng.range(MARGIN, w - MARGIN - bw);
-      const y = rng.range(MARGIN, h - MARGIN - bh);
-      const cx = x + bw / 2;
-      const cy = y + bh / 2;
-      const clash = out.some((o) => Math.hypot(o.x + o.w / 2 - cx, o.y + o.h / 2 - cy) < separation);
+      const bw = snapSize(rng.range(minSize, maxSize));
+      const bh = snapSize(rng.range(minSize, maxSize));
+      const x = snapDown(rng.range(MARGIN, Math.max(MARGIN, w - MARGIN - bw)));
+      const y = snapDown(rng.range(MARGIN, Math.max(MARGIN, h - MARGIN - bh)));
+      const clash = out.some((o) =>
+        x < o.x + o.w + aisle && x + bw + aisle > o.x && y < o.y + o.h + aisle && y + bh + aisle > o.y);
       if (clash) continue;
       out.push({ x, y, w: bw, h: bh });
       break;
@@ -930,18 +1031,30 @@ const DRESSING: Record<string, readonly PropKind[]> = {
   "The Black Archive": ["pillar", "pillar", "handstone", "urn", "wargrave"],
 };
 
-/** A point just outside a random wall face, for torches and other wall dressing. */
+/**
+ * A point just outside a random wall face, for torches and other wall dressing — or
+ * null when that face is buried against another wall (the rock between rooms is
+ * several rects deep), so a statue never stands inside solid stone.
+ */
 function wallSidePoint(level: Level, rng: Rng): { x: number; y: number } | null {
   if (level.walls.length === 0) return null;
   const w = rng.pick(level.walls);
   const side = rng.int(0, 3);
   const off = 13;
+  let p: { x: number; y: number };
   switch (side) {
-    case 0: return { x: rng.range(w.x, w.x + w.w), y: w.y - off };
-    case 1: return { x: rng.range(w.x, w.x + w.w), y: w.y + w.h + off };
-    case 2: return { x: w.x - off, y: rng.range(w.y, w.y + w.h) };
-    default: return { x: w.x + w.w + off, y: rng.range(w.y, w.y + w.h) };
+    case 0: p = { x: rng.range(w.x, w.x + w.w), y: w.y - off }; break;
+    case 1: p = { x: rng.range(w.x, w.x + w.w), y: w.y + w.h + off }; break;
+    case 2: p = { x: w.x - off, y: rng.range(w.y, w.y + w.h) }; break;
+    default: p = { x: w.x + w.w + off, y: rng.range(w.y, w.y + w.h) };
   }
+  return insideWall(level, p.x, p.y) ? null : p;
+}
+
+/** True if the point lies inside a wall rect (or off the level) — the painted rock. */
+function insideWall(level: Level, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= level.width || y >= level.height) return true;
+  return level.walls.some((w) => x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h);
 }
 
 /**

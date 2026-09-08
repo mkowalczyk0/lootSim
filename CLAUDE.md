@@ -60,7 +60,11 @@ rest of `game/`. It also decodes every committed floor tileset (`tools/png.ts`, 
 dependency-free PNG reader), runs it through the same grade the renderer applies
 (`render/grade.ts`) and fails if floor and wall stop being separable, if either is
 brighter than the Citadel deck, or if a tile is busier than the deck — see
-`docs/art-style-guide.md` §17.7. Two seams exist purely for it — `Dungeon.spawnArchetypeAt`
+`docs/art-style-guide.md` §17.7. On every floor it generates it also asserts that each
+wall sits on the 32-unit tile lattice and that the painted rock is exactly the
+collision volume (a tile the renderer paints as floor is standable at its centre, one
+it paints as rock pushes the hero out), which is what keeps "I can walk through walls"
+from coming back. Two seams exist purely for it — `Dungeon.spawnArchetypeAt`
 and `Dungeon.sealWaves` — which stage a controlled encounter so each monster behaviour can
 be walked in isolation; the wave director never calls either.
 
@@ -479,6 +483,17 @@ The generator's one hard promise is unchanged: **the portal is always walkable f
 spawn** — connected by construction, and it flood-fills to check and carves a corridor
 as a last-resort fallback if a layout ever manages to seal itself off anyway. The smoke
 test verifies this over hundreds of floors; don't add a layout without running it.
+
+**Every wall is authored on the 32-unit tile lattice** (`TILE` in `level.ts`): edges on
+multiples of 32, one tile thick, rooms sized in double tiles so a centred doorway lands
+on the grid, and every gap between rooms that isn't a corridor filled with rock. The
+floor is painted with 16-texel tiles stamped across 32 units, so this is what makes
+the drawn rock *be* the collision volume rather than an approximation of it — a new
+layout must snap through `snapDown`/`snapSize` like the existing six, and the smoke
+test fails any wall that doesn't. Floors were also grown by roughly a fifth in Sept
+2026 (rooms 448–640, doorways 128, corridors 96) after the owner called them
+claustrophobic; the size knobs are the constants at the top of `level.ts`, and any
+change to them moves the rng-shared spawn sequence, so run the smoke test.
 
 Walls block movement, projectiles and line of sight. Monsters that can see you charge; ones
 that can't follow a breadth-first flow field rebuilt around the player four times a second
