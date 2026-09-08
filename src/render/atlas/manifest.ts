@@ -133,16 +133,24 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // `worldScale` is only the floor size. `feet` mirrors the sibling type icon's, since a
   // dropped named item sits on the ground the same way its ordinary counterpart does.
   //
-  // Three sample icons only (docs/item-art-inventory.md) — the owner has not signed off
-  // on the rest, so the other 8 named items stay on the fallback deliberately.
+  // All 11 named items are authored — the owner signed off on the three samples
+  // ("looks right — author the rest") and this is the rest, at the same fidelity.
   "named.proof-of-the-whole": { id: "named.proof-of-the-whole", w: 26, h: 38, worldScale: 0.50, feet: 0.12 },
   "named.the-first-seal":     { id: "named.the-first-seal",     w: 40, h: 39, worldScale: 0.48, feet: 0.12 },
   "named.threshold-brand":    { id: "named.threshold-brand",    w: 44, h: 42, worldScale: 0.41, feet: 0.10 },
+  "named.the-seal-unbroken":  { id: "named.the-seal-unbroken",  w: 44, h: 45, worldScale: 0.48, feet: 0.12 },
+  "named.gravebound-mantle":  { id: "named.gravebound-mantle",  w: 26, h: 34, worldScale: 0.72, feet: 0.12 },
+  "named.choristers-idol":    { id: "named.choristers-idol",    w: 29, h: 41, worldScale: 0.55, feet: 0.10 },
+  "named.gluttons-grasp":     { id: "named.gluttons-grasp",     w: 21, h: 34, worldScale: 0.66, feet: 0.12 },
+  "named.the-early-word":     { id: "named.the-early-word",     w: 8,  h: 46, worldScale: 0.33, feet: 0.10 },
+  "named.a-name-withheld":    { id: "named.a-name-withheld",    w: 20, h: 23, worldScale: 0.55, feet: 0.15 },
+  "named.limbos-lantern":     { id: "named.limbos-lantern",     w: 18, h: 30, worldScale: 0.50, feet: 0.12 },
+  "named.keepers-ledger":     { id: "named.keepers-ledger",     w: 20, h: 26, worldScale: 0.55, feet: 0.15 },
 
   // --- relics and artifacts (UAT §19) --- one row per `RelicDef.art`, by convention
   // `relic.<def id>`, PNG under `src/render/atlas/relics/`. Same fallback contract as
   // named items: `relicArt` draws the gem glyph tinted by tier until a row lands here.
-  // (No rows yet.)
+  // (No rows yet — the largest half of this pass, paced across its own batches.)
 };
 
 /**

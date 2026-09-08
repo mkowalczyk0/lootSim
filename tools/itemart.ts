@@ -161,7 +161,7 @@ console.log("\n=== authoring art changes the picture everywhere at once ===");
     wrong.length === 0, wrong.map((d) => d.id).join(", "));
   // How many of those art ids actually have a manifest row (and so a real PNG) today —
   // worth stating rather than implying, the same reason the line existed when the answer
-  // was zero. See docs/item-art-inventory.md: three samples only, pending owner sign-off.
+  // was zero, then three. See docs/item-art-inventory.md and feat/item-art for the rest.
   const authored = declared.filter((d) => d.art! in ATLAS);
   console.log(`       · ${declared.length} named items declare art; ${authored.length} `
     + `(${authored.map((d) => d.id).join(", ")}) have a PNG, the rest are on the `
