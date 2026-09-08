@@ -15,7 +15,10 @@
 
 import { CHESTS, type ChestTier } from "../data/chests";
 import { atlasCanvas, loadAtlas } from "./atlas";
-import { ATLAS, ATLAS_WEAPONS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import {
+  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
+  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES,
+} from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
@@ -144,6 +147,124 @@ export function spriteFeet(name: SpriteName): number | null {
   return id ? ATLAS[id]?.feet ?? null : null;
 }
 
+// --- pipeline cosmetic layers -----------------------------------------------
+
+function hexToRgb(hex: string): readonly [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** `COSMETIC_MARK_1/2/3` pre-parsed, in `Cosmetic.colors[0..2]` order. */
+const COSMETIC_MARKERS: readonly (readonly [number, number, number])[] =
+  [COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3].map(hexToRgb);
+
+const cosmeticRecolorCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Recolours a marker-quantized `ATLAS_COSMETICS` PNG toward a cosmetic's actual
+ * `colors` — the pipeline equivalent of `cosmeticPalette` for a procedural grid. Any
+ * pixel that isn't one of the three reserved markers (the `ink` outline, chiefly) is
+ * left exactly as authored, exactly like an unrecognised grid key in `stamp`.
+ */
+function recoloredCosmetic(
+  png: HTMLCanvasElement, key: string, colors: readonly string[],
+): HTMLCanvasElement {
+  const cacheKey = `${key}|${colors.join(",")}`;
+  const hit = cosmeticRecolorCache.get(cacheKey);
+  if (hit) return hit;
+
+  const { canvas, ctx } = blank(png.width, png.height);
+  ctx.drawImage(png, 0, 0);
+  const targets = colors.slice(0, 3).map(hexToRgb);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    for (let m = 0; m < COSMETIC_MARKERS.length; m++) {
+      const marker = COSMETIC_MARKERS[m]!;
+      if (data[i] === marker[0] && data[i + 1] === marker[1] && data[i + 2] === marker[2]) {
+        const t = targets[m];
+        if (t) { data[i] = t[0]; data[i + 1] = t[1]; data[i + 2] = t[2]; }
+        break;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  if (cosmeticRecolorCache.size > 256) cosmeticRecolorCache.clear();
+  cosmeticRecolorCache.set(cacheKey, canvas);
+  return canvas;
+}
+
+/** A worn cosmetic resolved to its migrated pipeline layer, ready to stamp. */
+interface ResolvedLayer {
+  readonly cosmetic: Cosmetic;
+  readonly dx: number;
+  readonly dy: number;
+  readonly png: HTMLCanvasElement;
+}
+
+/**
+ * Resolves one equipped slot against `ATLAS_COSMETICS`.
+ * - `undefined` — nothing worn in this slot (never blocks the pipeline path).
+ * - `null` — something is worn but isn't migrated yet (blocks the pipeline path; the
+ *   caller falls all the way back to the procedural composite, same as today).
+ * - a `ResolvedLayer` — worn, migrated, ready to stamp.
+ */
+function resolvePipelineLayer(id: string | null): ResolvedLayer | null | undefined {
+  if (!id) return undefined;
+  const c = COSMETICS_BY_ID[id];
+  if (!c?.art) return null;
+  const meta = ATLAS_COSMETICS[c.art];
+  const png = meta ? atlasCanvas(meta.id) : null;
+  if (!meta || !png) return null;
+  return { cosmetic: c, dx: meta.dx, dy: meta.dy, png };
+}
+
+/**
+ * Composes the pipeline hero (`hero.legend-base`) with every equipped hat/ears/face/back
+ * cosmetic that has migrated `ATLAS_COSMETICS` art, or returns null if the base itself
+ * isn't loaded or if *any* worn cosmetic in those four slots hasn't migrated yet — an
+ * all-or-nothing rule that matches the pre-migration behaviour (any unmigrated cosmetic
+ * layer falls the whole character back to the procedural stack) so a half-migrated
+ * wardrobe never mixes two art styles on one character.
+ *
+ * Layer order mirrors the procedural stack: back item behind everything (the hero's own
+ * silhouette is narrower than `HERO_STAGE_W`, so wings/a cape/a tail peek out at the
+ * sides exactly as the procedural `CHAR_W` margin lets them), then the hero body itself,
+ * then face, ears and hat on top. The hero body already carries its own baked hair, so
+ * hair is not a separate layer here — see the note below.
+ *
+ * Hair colour/style customisation does not yet reach the pipeline hero: it's baked into
+ * `hero.legend-base` as a single fixed look, not a separate recolourable layer. Giving it
+ * one would mean redrawing that (already-shipped, style-guide-referenced) base without
+ * its baked-in hair — a real scope question left for the owner rather than guessed at
+ * here; see the migration report for detail.
+ */
+function composePipelineHero(appearance: Appearance): HTMLCanvasElement | null {
+  const heroId = SPRITE_OVERRIDES.hero;
+  const basePng = heroId ? atlasCanvas(heroId) : null;
+  if (!basePng) return null;
+
+  const back = resolvePipelineLayer(appearance.back);
+  const face = resolvePipelineLayer(appearance.face);
+  const ears = resolvePipelineLayer(appearance.ears);
+  const hat = resolvePipelineLayer(appearance.hat);
+  if (back === null || face === null || ears === null || hat === null) return null;
+
+  const { canvas, ctx } = blank(HERO_STAGE_W, HERO_STAGE_H);
+  if (back) {
+    const recolored = recoloredCosmetic(back.png, `cosmetic:${appearance.back}`, back.cosmetic.colors);
+    ctx.drawImage(recolored, back.dx, back.dy);
+  }
+  ctx.drawImage(basePng, HERO_STAGE_DX, HERO_STAGE_DY);
+  for (const layer of [face, ears, hat]) {
+    if (!layer) continue;
+    const recolored = recoloredCosmetic(layer.png, `cosmetic:${layer.cosmetic.id}`, layer.cosmetic.colors);
+    ctx.drawImage(recolored, layer.dx, layer.dy);
+  }
+  return canvas;
+}
+
 // --- characters -----------------------------------------------------------
 
 function worn(id: string | null): Cosmetic | null {
@@ -204,24 +325,38 @@ export interface HeroSprite {
 /** The procedural composed character's draw params (matches `drawSprite`'s old defaults). */
 const PROC_HERO: Omit<HeroSprite, "canvas"> = { scale: 1.2, feet: 0.22 };
 
+const pipelineHeroCache = new Map<string, HTMLCanvasElement | null>();
+
 /**
  * The player's body, composed and cached. An appearance only changes in town, so this
  * misses once per wardrobe edit and never during a dive.
  *
- * The pipeline base (`hero.legend-base`) stands in whenever the player isn't wearing a
- * composited cosmetic layer (hat / ears / face / back). Those layers are still procedural
- * until their own art pass, so a decorated character falls back to the old stacked look —
- * consistent with itself, just not yet the new art.
+ * The pipeline base (`hero.legend-base`) draws whenever every hat/ears/face/back cosmetic
+ * currently worn (any, none, or all four) has migrated `ATLAS_COSMETICS` art — including
+ * the plain case, which is just `composePipelineHero` with nothing worn. The moment one
+ * worn slot isn't migrated yet, the whole character falls back to the old procedural
+ * stack, consistent with itself rather than mixing two art styles on one body.
  */
 export function heroSprite(appearance: Appearance): HeroSprite {
-  const plain = !appearance.hat && !appearance.ears && !appearance.face && !appearance.back;
-  if (plain) {
+  const key = appearanceKey(appearance);
+  let pipeline: HTMLCanvasElement | null;
+  if (pipelineHeroCache.has(key)) {
+    pipeline = pipelineHeroCache.get(key)!;
+  } else {
+    pipeline = composePipelineHero(appearance);
+    if (pipelineHeroCache.size > 64) pipelineHeroCache.clear();
+    pipelineHeroCache.set(key, pipeline);
+  }
+  if (pipeline) {
     const id = SPRITE_OVERRIDES.hero;
-    const png = id ? atlasCanvas(id) : null;
-    if (png) {
-      const meta = id ? ATLAS[id] : undefined;
-      return { canvas: png, scale: meta?.worldScale ?? PROC_HERO.scale, feet: meta?.feet ?? PROC_HERO.feet };
-    }
+    const meta = id ? ATLAS[id] : undefined;
+    // `feet` is a fraction of the sprite's own canvas height; the stage canvas is taller
+    // than the bare hero PNG (headroom for a hat, side margin for wings), so the same
+    // absolute below-feet sliver is a smaller fraction of it. `worldScale` is unaffected
+    // — it's world units per authored pixel, so padding the canvas costs nothing (see
+    // `HERO_STAGE_*` in the manifest).
+    const feet = meta ? (meta.feet * meta.h) / HERO_STAGE_H : PROC_HERO.feet;
+    return { canvas: pipeline, scale: meta?.worldScale ?? PROC_HERO.scale, feet };
   }
   return { canvas: heroComposite(appearance), ...PROC_HERO };
 }
@@ -369,8 +504,15 @@ export function cosmeticPreview(id: string): HTMLCanvasElement {
 
   const c = COSMETICS_BY_ID[id];
   let made: HTMLCanvasElement;
+  const migrated = c?.art ? ATLAS_COSMETICS[c.art] : undefined;
+  const migratedPng = migrated ? atlasCanvas(migrated.id) : null;
   if (!c) {
     made = blank(1, 1).canvas;
+  } else if (migrated && migratedPng) {
+    // The Style tab and any other wardrobe list read this — a migrated cosmetic previews
+    // as its real pipeline art (recoloured toward this cosmetic's own colours), not the
+    // procedural grid, even while other cosmetics in the same slot are still procedural.
+    made = recoloredCosmetic(migratedPng, `cosmetic:${id}`, c.colors);
   } else if (c.art && COSMETIC_ART[c.art]) {
     const art = COSMETIC_ART[c.art]!;
     made = bake(art.grid, cosmeticPalette(c));

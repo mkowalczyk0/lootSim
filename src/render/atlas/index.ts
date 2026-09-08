@@ -6,7 +6,7 @@
  * and serves them straight in dev, so nothing here changes between the two.
  */
 
-import { ATLAS, ATLAS_WEAPONS, SCENES, TILESETS } from "./manifest";
+import { ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, SCENES, TILESETS } from "./manifest";
 
 const pngUrls = import.meta.glob("./**/*.png", {
   eager: true,
@@ -84,6 +84,7 @@ function loadImage(id: string, w: number, h: number): Promise<HTMLCanvasElement>
 export async function loadAtlas(): Promise<void> {
   const sprites = [
     ...Object.values(ATLAS), ...Object.values(ATLAS_WEAPONS), ...Object.values(SCENES),
+    ...Object.values(ATLAS_COSMETICS),
   ];
   await Promise.all([
     ...sprites.map(async (spr) => {
