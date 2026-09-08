@@ -168,6 +168,87 @@ monk/shaman edits can't move it — the check confirms nothing shared shifted).
 
 ---
 
+## Cluster 3 — summon damage does not ride the summoner's curve — **PROPOSED, not applied**
+
+### The imbalance
+
+`Dungeon.spawnMinion` (`src/game/dungeon.ts`) sets every minion's per-hit damage as
+
+```
+power = max(1, owner.player.attackDamage * inherit)     // inherit 0.2 … 0.7 per ability
+```
+
+`attackDamage` is `this.damage * weapon.damage * affinityMult * shapeBonus`, where
+`shapeBonus = 1 + meleeDamage` (or `+ projectileDamage` for a bolt). A summoner —
+necromancer, engineer, the ranger/warden/trickster/corsair pets — is a **caster**: their
+weapon is a talisman/staff with a low `weapon.damage`, they carry no affinity to a melee
+or bolt weapon, and their gear/tree budget goes into `power` (the `stats.power` stat) and
+`mods.skillDamage`. None of those three terms is in `attackDamage`. They are all in
+`spellDamage = (damage*0.85 + power*2.4) * (1 + skillDamage)`, which the minion never
+reads.
+
+So as a summoner gears up, their own skills scale on the full `spellDamage` curve while
+their minions scale only on the slow-growing `this.damage` term inside `attackDamage`.
+That is the mechanism behind the measured **necromancer L50/L3 ≈ 3.0×** (vs a 5–7× norm
+for the roster) and the necromancer sitting 2nd-lowest on L50 ST despite minions being
+~70% of its intended damage. Engineer has the same wiring; its constructs read low now
+that the Stage-11 loop cut removed the thing that was papering over it (395 arena ST).
+
+This also silently defeats the minion keystones and Mythics that are still inert (B-4,
+folded here): tuning `ghost_crew` / `the_foundry` / `soul_legion` against a minion whose
+damage floor is wrong would just bake the error in.
+
+### Why the proposed change fixes it
+
+Make minion power read the **same power curve the summoner's own skills ride**, with the
+blend coefficients as data in `src/data/minions.ts` (not magic numbers in the sim):
+
+```ts
+// src/data/minions.ts — new
+/** How a minion's per-hit damage is built from its owner's offence. A minion is a
+ *  little spell the class keeps casting, so it rides the caster's power curve, not just
+ *  the weapon in their hands. attack + spell are blended; `inheritPower` on the ability
+ *  then scales the whole thing per-summon. */
+export const MINION_POWER_BLEND = { attack: 0.35, spell: 0.45 } as const;
+```
+
+```ts
+// src/game/dungeon.ts spawnMinion — formula shape only; coefficients are data
+const base = owner.player.attackDamage * MINION_POWER_BLEND.attack
+           + owner.player.spellDamage  * MINION_POWER_BLEND.spell;
+const power = Math.max(1, base * inherit);
+```
+
+Then re-tune the per-ability `inheritPower` values **down** so the L18 arena ST for
+necromancer / engineer lands where it should (necro is a mid-pack pet-DPS class, engineer
+a low-ST zone-control class), and re-measure the L3↔L50 ratio — target 5–7×, matching the
+rest of the roster. The blend keeps a melee-weapon summoner (a geared ranger with a bow,
+say) still getting value from `attackDamage`, so pets aren't yanked entirely onto spell
+power.
+
+### Open decision (needs your call before applying)
+
+1. **Blend `attack + spell`** as above — principled, one formula, one data constant,
+   re-tune ~10 `inheritPower` numbers. *(recommended)*
+2. **Keep the `attackDamage`-only formula, add a per-class curve multiplier** in
+   `minions.ts` — smaller blast radius, but it does not actually put minions on the
+   caster's curve, it just steepens a wrong one.
+3. **Bump per-class `inheritPower` only** — fixes the L18 absolute number, leaves the
+   3.0× ratio broken. Explicitly rejected by the plan; listed for completeness.
+
+### Verification (once applied)
+
+- New `scratchpad/curve.ts` (L3 geared vs L50 geared, all 21) — necromancer & engineer
+  L50/L3 ratio into the 5–7× band; no other class's ratio moved (formula only touches
+  minion damage).
+- `npm run arena` — necromancer ST into mid-pack, engineer ST up modestly, AoE identities
+  intact; no non-summoner ST/AoE column moves.
+- `npm test` green; smoke **13.8 / 9.4 byte-identical** (Swordsman has no minions).
+- Then wire the B-4 minion keystones (`docs/rule-coverage.md`) and add `npm run rules`
+  assertions, tuned against the corrected floor.
+
+---
+
 ## Backlog (evidence gathered, proposals pending)
 
 - **Cluster 2 — Corsair.** Bottom-quartile ST (458) *and* AoE (455 / 76 per-tgt) with a
@@ -177,16 +258,6 @@ monk/shaman edits can't move it — the check confirms nothing shared shifted).
   B-4 Corsair keystones are wired (they are currently inert — `ghost_crew`, `harpooner`,
   and the crew/plunder hybrids — so the class is being measured with part of its kit
   switched off).
-- **Cluster 3 — Necromancer vs Engineer summon scaling.** Two ends of one lever.
-  `scratchpad/curve.ts` (L3 vs L50): necromancer L50/L3 ratio **3.0×** vs the 5–7× norm,
-  and 2nd-lowest L50 ST — minions inherit a fixed fraction of owner `attack`
-  (`inheritPower ≈ 0.5`) and don't ride the gear curve. Engineer's constructs+zones
-  previously *looped* (cut Stage 11) and now read low (395 ST). Fix: make minion damage
-  scale with owner `attack`/gear consistently and set per-class inherit fractions from
-  the measured curves — `src/data/minions.ts` (`MINION_DEFAULT_INHERIT`, the `power`
-  formula in `spawnMinion`) + each summoner's `summon` effect steps. **Fold the B-4
-  construct/summon keystones into this cluster** — wire each summoner's keystones in the
-  same pass that fixes its scaling, so they are tuned once against final numbers.
 - **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** `npm run rules` now
   proves ~40 of the wired rules do something; extend it to assert every hybrid/keystone/
   archetype changes a number or an effect list the harness can see. Feeds `npm run
