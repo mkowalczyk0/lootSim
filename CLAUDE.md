@@ -21,12 +21,14 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
-                  # currently check+vocab+prog+classes+roster+rules+universal+deadpaths+smoke
+                  # currently check+vocab+prog+classes+roster+rules+universal+legends+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
 npm run roster    # full class-roster + anti-overlap audit (tools/roster.ts)
 npm run universal # sanity + balance checks on the Universal Skill Tree (tools/universal.ts)
+npm run legends   # the Proving (class completion) + the only structural audit of the
+                  # boss rules in the repo (tools/legends.ts) — part of npm test
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
@@ -146,6 +148,51 @@ the UTC day number, so it's the literal same floor for everyone who plays it tha
 Clearing it (a credited bank, not a death or bail-out) marks the day closed on
 `GameState.daily.clearedDay`; retries are free until then. Solo only for now. See
 `src/data/daily.ts` and `docs/daily-dungeon.md`.
+
+### The Proving: the bottom of the Delve, and finishing a class
+
+`src/data/legends.ts` (UAT §13/§14). A class can be **completed**: take it to depth 30,
+beat the thing waiting there, and that class wears a **gold border** for good.
+
+Worldbuilding did most of this design — a class is a **Legend**, a character starts as a
+*partial* manifestation of it and spends the game recovering the rest, and the endgame
+encounter proves that recovery finished ("LEGEND MASTERY" / "CLASS COMPLETION"). What you
+fight is the part you never recovered, kept and assembled by the Abyss: **The Unfinished
+&lt;Class&gt;**. No mythological figures are named, deliberately — the doc names two and
+keeps Merlin out of the roster on purpose.
+
+- **Depth 30 is the bottom because that is where the authored world already ends** —
+  `biomeFor` caps at its last biome from depth 26, `bossFor` at its last encounter from
+  depth 25, and that encounter is titled "You should not have come this far." **The ladder
+  is not capped**: descending 30 → 31 works exactly as before. Don't "finish" this by
+  giving the Delve a terminus — three passages of this document promise no upper bound and
+  `UNIVERSAL_POINT_CAP` is justified by it.
+- **The gate is a banked clear, per class.** Depth 30 is the ordinary Nameless floor until
+  that class has cleared it and banked it (`Player.deepestDepth >= DELVE_BOTTOM`). Dying
+  or bailing out never qualifies you, because `recordDepth` is only reached from
+  `bank(true)`. No new unlock state exists — and none should be added.
+- **Scoped to the Delve positively** (`config.mode.id !== "delve"` → refuse), not by ruling
+  out the modes that exist today: every other mode reaches depth 30 by some route and a new
+  one can arrive with any flags. `tools/legends.ts` walks all of `RUN_MODES` to pin it.
+- **Solo only in v1**, the same call the Vigil made, so completion credit can't be
+  duplicated or desynced. In a party depth 30 stays the ordinary floor.
+- **The encounter is borrowed and reskinned** per the `planetBossSpec` precedent, then its
+  phases are rebuilt strictly cumulative with a final phase *appended* — the "phases add
+  rather than replace" rule made structural instead of trusted. Its stat line is measured
+  against the **deepest authored encounter**, never the borrowed template: scaling off the
+  template made six classes' final exam easier than the floor it replaces.
+- **The border is powerless.** `Player.legendComplete` is read by the UI and by nothing in
+  the simulation, asserted the same way `data/cosmetics.ts` is.
+
+`npm run legends` is also **the only structural audit of the boss rules in this repo** —
+it checks all 21 generated specs against the rules in the boss section below, and audits
+the five hand-authored encounters against a *pinned* list of their existing violations
+(three of them drop abilities between phases). Pinned, not fixed: a new violation fails,
+and so does silently fixing a pinned one. See `docs/class-completion.md`.
+
+**Depth 30 is far beyond the measured frontier** — the campaign bots reach roughly a third
+of it, and at level 60 most sampled classes can't beat depth 30 in *either* flavour. That's
+a progression-curve and class-balance finding, not something to tune this encounter around.
 
 ### Planets: the star map, and where materials come from
 
@@ -629,7 +676,7 @@ src/
   data/     rarities, item tables + affix pool, chest tiers, enemy archetypes, depth
             curves, biomes, trap specs, elements + ailments, modifiers, weapon families,
             classes, run modes (delve/rifts/planet), planets, materials, crafting, the
-            challenger dial, boss encounters, cosmetics
+            challenger dial, boss encounters, the Proving (legends.ts), cosmetics
   game/     state, player, level generation + pathfinding, the dungeon run and the party
             of heroes in it, the ship hub (hub.ts), ailment bookkeeping (combat.ts), the
             rule engine (rules.ts — behaviour-tree-authored keystone/hybrid/archetype

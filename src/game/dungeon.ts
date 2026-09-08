@@ -24,6 +24,8 @@ import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
 import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
 import { dailyEffects } from "../data/daily";
+import type { ClassId } from "../data/classes";
+import { legendBossSpec, provingFloor } from "../data/legends";
 import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
@@ -453,6 +455,19 @@ export class Dungeon implements CombatHost, RuleHost {
   elapsed = 0;
 
   /**
+   * The class whose Proving this floor is, or null for every other floor in the game
+   * (UAT §13/§14 — `data/legends.ts`).
+   *
+   * Decided **once, here in the constructor**, and never re-derived. Both the boss that
+   * spawns and the completion credit that banks read this one field, so they cannot
+   * disagree — and re-deriving it at banking time would be wrong rather than merely
+   * redundant: `recordDepth` raises `Player.deepestDepth` to 30 as the first-ever clear
+   * of depth 30 banks, so a predicate evaluated after that would hand a class its gold
+   * border for the Nameless kill that had only just qualified it.
+   */
+  readonly proving: ClassId | null;
+
+  /**
    * `depth` may be a plain delve depth or a full rift configuration. `opts` is only
    * ever passed by the multiplayer layer — a solo dive stays a two-argument call and
    * behaves exactly as it always has, with a party of one.
@@ -465,6 +480,9 @@ export class Dungeon implements CombatHost, RuleHost {
     // The Vigil carries its own seed (UAT §17): the same UTC day is the same floor for
     // everybody. Anything handed an explicit seed — a co-op `start`, a test — still wins.
     const seed = options.seed ?? this.config.daily?.seed ?? ((Math.random() * 2 ** 32) >>> 0);
+    // Is this the bottom, and has the character playing earned the right to be measured
+    // there? Asked once, before a single monster exists.
+    this.proving = provingFloor(this.config, state.player.deepestDepth) ? state.activeClassId : null;
     this.profile = profileFor(this.config.depth, this.config);
     // The floor-clear quota (UAT §5). A boss floor is its boss; everything else is
     // "every monster the director will spawn" plus a difficulty-scaled elite count,
@@ -909,8 +927,12 @@ export class Dungeon implements CombatHost, RuleHost {
    */
   private spawnBoss(): void {
     // A planet's boss is borrowed wholesale from an existing encounter and reskinned —
-    // see `planetBossSpec` — rather than picked off the depth-bucketed ladder.
-    const spec = this.config.planet ? planetBossSpec(this.config.planet.spec) : bossFor(this.profile.depth);
+    // see `planetBossSpec` — rather than picked off the depth-bucketed ladder. The
+    // Proving at the bottom of the Delve borrows the same way (`legendBossSpec`), and
+    // takes precedence: on that one floor the encounter is the class, not the depth.
+    const spec = this.proving
+      ? legendBossSpec(this.proving)
+      : this.config.planet ? planetBossSpec(this.config.planet.spec) : bossFor(this.profile.depth);
     const archetype = ARCHETYPES.boss;
     const spot = this.openSpot(spec.radius, 260);
     const base = this.makeEnemy(archetype, spot.x, spot.y, {});
@@ -3617,6 +3639,10 @@ export class Dungeon implements CombatHost, RuleHost {
     if (credit) {
       this.state.recordDepth(this.profile.depth, this.config);
       this.state.stats.runsCompleted++;
+      // The Legend becomes Complete (UAT §13). Credited from the *banked* clear rather
+      // than from the boss dying, so it costs exactly what every other floor reward
+      // costs: dying on the way out loses it, the same as the loot.
+      if (this.proving) this.state.completeLegend(this.proving);
     }
     this.loot.coins = 0;
     this.loot.gems = 0;

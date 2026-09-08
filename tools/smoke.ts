@@ -29,9 +29,10 @@ import {
   type DailyModifierId,
 } from "../src/data/daily";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
+import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
-import { CLASS_BY_ID, buildProgressionTree } from "../src/progression/index";
+import { CLASS_BY_ID, UNIVERSAL_TREE, buildProgressionTree } from "../src/progression/index";
 import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
 import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
@@ -1868,6 +1869,306 @@ console.log("\n=== the vigil ===");
     check("a pre-Vigil save loads as never having kept one", old.daily.clearedDay === 0 && old.coins === st.coins);
   }
 }
+
+/**
+ * The Proving — endgame class completion at the bottom of the Delve (UAT §13/§14).
+ *
+ * `tools/legends.ts` owns the structural half: 21 legends, the boss rules, and which
+ * floors are and are not the Proving. What can only be measured by playing it lives here.
+ *
+ * The character below is deliberately not a campaign survivor. The campaign bots start
+ * naked and measure the *early* curve — nothing else in this file measures a kitted
+ * account, which is the only thing that can answer "is the hardest fight in the game
+ * beatable". So: level 60, class tree filled, universal pool spent, thirty Legendary
+ * chests worn, and gear rolled at the bottom of the Delve because that is where its
+ * record sits.
+ *
+ * Level 60 is not a guess. `tools/builds.ts` pairs depth 9 with level 18 and
+ * `tools/deadpaths.ts` treats a level-60 hero as fully grown, so depth 30 pairs with 60
+ * on this project's own arithmetic. It was also measured: a level-34 Elite-geared
+ * character cannot beat the **ordinary** depth-30 floor either (0/4, boss left above 94%),
+ * so testing the Proving against one would have measured the depth curve rather than the
+ * encounter.
+ *
+ * The class is the Swordsman for the same reason: it is the roster's declared no-gimmick
+ * baseline. Class power at depth 30 varies enormously at this level — sampled across
+ * eight classes, three of them cannot beat depth 30 at all, in *either* flavour — which is
+ * a progression finding rather than something this encounter should be tuned around.
+ */
+console.log("\n=== the Proving: the bottom of the Delve (UAT §13/§14) ===");
+{
+  /** Spends every point a character has — class tree first, then the account pool. */
+  const fillTrees = (state: GameState) => {
+    const p = state.player;
+    for (let pass = 0; pass < 40; pass++) {
+      let moved = false;
+      for (const node of p.tree) {
+        if (!p.allocated.includes(node.id) && p.allocate(node)) moved = true;
+      }
+      if (!moved) break;
+    }
+    for (let pass = 0; pass < 40; pass++) {
+      let moved = false;
+      for (const node of UNIVERSAL_TREE) {
+        const available = state.universalPoints - p.universalSpent;
+        if (available <= 0) break;
+        if (!p.universalAllocated.includes(node.id) && p.allocateUniversal(node, available)) moved = true;
+      }
+      if (!moved) break;
+    }
+  };
+
+  /**
+   * A character that has already cleared the bottom of the Delve and banked it — which
+   * is exactly the gate the Proving reads. `deepestDepth` is set *before* the chests are
+   * opened on purpose: chests roll item level off the active character's own record, so
+   * this is gear from the bottom rather than gear from the shallows.
+   */
+  const endgame = (classId: ClassId, seed: number, level = 60,
+                   tier: ChestTier = "Legendary", keys = 30): GameState => {
+    const state = new GameState(seed);
+    state.chooseClass(classId);
+    state.player.level = level;
+    state.player.deepestDepth = DELVE_BOTTOM;
+    state.stats.deepestDepth = DELVE_BOTTOM;
+    state.player.refresh();
+    state.player.autoSlotNewAbilities();
+    state.keys[tier] = keys;
+    state.openChests(tier, keys);
+    const cls = state.heroClass;
+    for (const item of [...state.inventory].sort((a, b) => itemScore(b, cls) - itemScore(a, cls))) {
+      const worn = state.player.equipment[item.slot];
+      if (!worn || itemScore(item, cls) > itemScore(worn, cls)) state.equipFromInventory(item.id);
+    }
+    if (!state.player.hasAffinity) {
+      state.player.equip(rollItem({
+        rarity: "legendary", type: cls.affinity[0]!, ilvl: level, rng: new Rng(seed ^ 0x51ed),
+      }));
+    }
+    fillTrees(state);
+    state.player.fullHeal();
+    state.potions = 9;
+    return state;
+  };
+
+  // The encounter is only fairly measured against a character that really is kitted, so
+  // print and assert what the helper actually produced rather than trusting it.
+  const sample = endgame("swordsman", 91_001);
+  const slots = Object.values(sample.player.equipment);
+  const worn = slots.filter(Boolean).length;
+  console.log(
+    `  the test character: lv ${sample.player.level} ${sample.heroClass.name}, ` +
+    `${worn}/${slots.length} slots, ${sample.player.allocated.length} class nodes, ` +
+    `${sample.player.universalSpent}/${sample.universalPoints} universal, ` +
+    `${sample.player.maxHealth.toFixed(0)} hp, hit ${sample.player.attackDamage.toFixed(0)}`);
+  check("the endgame test character is actually geared and built",
+    worn === slots.length && sample.player.allocated.length > 0
+      && sample.player.universalSpent > 0,
+    `${worn}/${slots.length} slots, ${sample.player.allocated.length} nodes, ` +
+    `${sample.player.universalSpent} universal`);
+
+  // The encounter is the class, not the depth.
+  {
+    const state = endgame("stormcaller", 91_002);
+    const run = new Dungeon(state, delveConfig(DELVE_BOTTOM), 6161);
+    check("the bottom of the Delve is that class's Proving", run.proving === "stormcaller");
+    const input = new FakeInput();
+    let t = 0;
+    while (t < 6 && !run.boss) {
+      input.beginTick();
+      run.update(DT, input as unknown as Input);
+      run.drainEvents();
+      t += DT;
+    }
+    check("…and it spawns the class's own unfinished Legend",
+      run.boss?.name === legendName("stormcaller"), run.boss?.name);
+    check("…wearing the class's element", run.boss?.element === CLASSES.stormcaller.element,
+      run.boss?.element);
+    check("…with a phase appended past the template's last",
+      (run.boss?.boss?.spec.phases.length ?? 0)
+        === BOSSES.find((b) => b.id === LEGENDS.stormcaller.template)!.phases.length + 1,
+      `${run.boss?.boss?.spec.phases.length} phases`);
+
+    const unqualified = endgame("stormcaller", 91_003);
+    unqualified.player.deepestDepth = DELVE_BOTTOM - 1;
+    check("a character that hasn't banked the bottom finds the ordinary floor",
+      new Dungeon(unqualified, delveConfig(DELVE_BOTTOM), 6161).proving === null);
+  }
+
+  /**
+   * Reading the floor against standing in it: the same character, the same seeds,
+   * compared **directly against each other** in one run rather than against two
+   * independent thresholds. A one-sided bound proves nothing about a design promise —
+   * the campaign comparison in this file silently inverted once while both sides stayed
+   * inside their own limits, and nobody noticed.
+   */
+  const seeds = [7_101, 7_202, 7_303, 7_404, 7_505, 7_606];
+  const sharp = seeds.map((seed) =>
+    playFloor(endgame("swordsman", 91_000 + seed), delveConfig(DELVE_BOTTOM), 600, seed, 0.85));
+  const reckless = seeds.map((seed) =>
+    playFloor(endgame("swordsman", 91_000 + seed), delveConfig(DELVE_BOTTOM), 600, seed, 0));
+  const avg = (rs: FloorResult[], f: (r: FloorResult) => number) =>
+    rs.reduce((a, r) => a + f(r), 0) / rs.length;
+  const won = (rs: FloorResult[]) => rs.filter((r) => r.d.phase === "cleared").length;
+
+  for (const [label, rs] of [["reads the floor", sharp], ["stands in it  ", reckless]] as const) {
+    console.log(
+      `  ${label}: ${won(rs)}/${rs.length} cleared, ${avg(rs, (r) => r.seconds).toFixed(0)}s, ` +
+      `${avg(rs, (r) => r.damageTaken).toFixed(0)} damage taken, ` +
+      `${avg(rs, (r) => r.mechanicsEaten).toFixed(1)}/${avg(rs, (r) => r.mechanicsResolved).toFixed(1)} eaten, ` +
+      `${avg(rs, (r) => r.potionsDrunk).toFixed(1)} potions, phases=${rs.map((r) => r.bossPhases).join("/")}`);
+  }
+
+  check("a plausible endgame character can beat their Proving",
+    won(sharp) > seeds.length / 2, `${won(sharp)}/${seeds.length} cleared`);
+
+  // At full endgame gearing, *both* bots kill it — the potion belt carries a careless
+  // player all the way to the end, which is the same thing the depth-5 raid-boss section
+  // in this file found and is why that one compares rates rather than corpses. So the
+  // skill difference is asserted twice, on the two axes where it is actually visible:
+  // here as rates, and below on a deliberately marginal character where the win itself
+  // flips. Measured: 4,204 damage and 1.5 potions against 11,391 and 5.3.
+  const rate = (rs: FloorResult[], f: (r: FloorResult) => number) =>
+    avg(rs, f) / Math.max(1, avg(rs, (r) => r.seconds));
+  check("standing in it costs far more health, second for second",
+    rate(reckless, (r) => r.damageTaken) > rate(sharp, (r) => r.damageTaken) * 1.5,
+    `${rate(reckless, (r) => r.damageTaken).toFixed(1)}/s vs ${rate(sharp, (r) => r.damageTaken).toFixed(1)}/s`);
+  check("…and empties the potion belt to pay for it",
+    rate(reckless, (r) => r.potionsDrunk) > rate(sharp, (r) => r.potionsDrunk) * 1.5,
+    `${avg(reckless, (r) => r.potionsDrunk).toFixed(1)} vs ${avg(sharp, (r) => r.potionsDrunk).toFixed(1)} potions`);
+
+  /**
+   * Not asserted as win-or-lose, and that is the point. `CLAUDE.md`'s difficulty section
+   * says boss floors are measured differently, "because a raid boss that one-shots a
+   * careless player is a wall rather than a fight" — so the promise is a diverging damage
+   * bill and an emptying belt, which is what the two checks above compare directly.
+   *
+   * Measured while deciding this, and recorded so nobody re-derives it: at level 60 with
+   * legendary gear both bots kill it 6/6, because nine potions carry a careless player to
+   * the end. Fifteen levels and a gear tier short, it is 4/6 against 0/6. Tempting to
+   * assert the second — but a gearing where standing in everything kills you outright is
+   * a wall, and a win-rate check at the margin is the coin-flip the depth-5 section of
+   * this file already warns about: four wins of five there flipped on every change that
+   * touched the shared rng.
+   */
+  check("it is a fight rather than a wall of health",
+    avg(sharp, (r) => r.seconds) > 30 && avg(sharp, (r) => r.bossPhases) >= 2,
+    `${avg(sharp, (r) => r.seconds).toFixed(0)}s, ${avg(sharp, (r) => r.bossPhases).toFixed(1)} phase changes`);
+
+  /**
+   * The Proving against the floor it replaces — the same character, the same seeds, the
+   * same skill. This is the assertion that would have caught the first version of the
+   * encounter, which scaled its stat line off whichever template the class borrowed and
+   * so came out *weaker* than the ordinary depth-30 boss for six of the twenty-one
+   * classes. A win-rate threshold could never have caught that; only the comparison does.
+   */
+  const ordinary = seeds.map((seed) => {
+    const state = endgame("swordsman", 91_000 + seed);
+    // One depth short of the gate: the same floor, the ordinary encounter on it.
+    state.player.deepestDepth = DELVE_BOTTOM - 1;
+    return playFloor(state, delveConfig(DELVE_BOTTOM), 600, seed, 0.85);
+  });
+  console.log(
+    `  the floor it replaces: ${won(ordinary)}/${ordinary.length} cleared, ` +
+    `${avg(ordinary, (r) => r.seconds).toFixed(0)}s, ` +
+    `${avg(ordinary, (r) => r.damageTaken).toFixed(0)} damage taken`);
+  check("the Proving is the longer fight of the two",
+    avg(sharp, (r) => r.seconds) > avg(ordinary, (r) => r.seconds),
+    `${avg(sharp, (r) => r.seconds).toFixed(0)}s vs ${avg(ordinary, (r) => r.seconds).toFixed(0)}s`);
+  check("…and asks for more phases of it",
+    avg(sharp, (r) => r.bossPhases) >= avg(ordinary, (r) => r.bossPhases) - 0.5,
+    `${avg(sharp, (r) => r.bossPhases).toFixed(1)} vs ${avg(ordinary, (r) => r.bossPhases).toFixed(1)} phase changes`);
+
+  // The whole point of the fight, measured on a fight that was actually played rather
+  // than on a bank call in isolation.
+  {
+    const cleared = sharp.find((r) => r.d.phase === "cleared");
+    const before = cleared ? cleared.d.state.player.legendComplete : true;
+    if (cleared) cleared.d.bankLoot();
+    check("a Proving won in play completes the Legend when it banks",
+      cleared !== undefined && !before && cleared.d.state.player.legendComplete,
+      cleared ? "banked a clear the bot actually won" : "no seed cleared");
+  }
+
+  // --- what the border costs, and what loses it ---------------------------
+  {
+    const banked = endgame("reaper", 91_010);
+    check("a Legend starts unfinished", !banked.player.legendComplete);
+    new Dungeon(banked, delveConfig(DELVE_BOTTOM), 6262).bankLoot();
+    check("banking the bottom completes that class's Legend", banked.player.legendComplete);
+    check("…and says so once, for the town to announce", banked.legendJustCompleted === "reaper");
+    banked.legendJustCompleted = null;
+    check("re-clearing it neither un-completes nor re-announces",
+      banked.completeLegend("reaper") === false && banked.player.legendComplete
+        && banked.legendJustCompleted === null);
+    check("it is that class's border, not the account's",
+      banked.legendsComplete === 1 && !banked.players.magician.legendComplete);
+  }
+  {
+    // Bailing out through the entrance portal forfeits the floor's progression along
+    // with its loot (UAT §6), so it cannot hand out a gold border either.
+    const bailed = endgame("reaper", 91_011);
+    const bail = new Dungeon(bailed, delveConfig(DELVE_BOTTOM), 6363);
+    bail.earlyExtractLoot();
+    check("bailing out of the Proving completes nothing",
+      bail.proving === "reaper" && !bailed.player.legendComplete);
+  }
+  {
+    // Dying banks nothing at all. Driven through a real death — a qualified but naked
+    // character standing still at the bottom — rather than asserted against a run that
+    // simply never banked, which would pass for the wrong reason. It also shows what the
+    // gate actually is: this character qualifies on record and is still killed by the
+    // floor, because the gate is where it has been, not how strong it is.
+    const died = new GameState(91_012);
+    died.chooseClass("reaper");
+    died.player.deepestDepth = DELVE_BOTTOM;
+    const fatal = new Dungeon(died, delveConfig(DELVE_BOTTOM), 6464);
+    const input = new FakeInput();
+    let t = 0;
+    while (t < 90 && fatal.phase === "fighting") {
+      input.beginTick();
+      fatal.update(DT, input as unknown as Input);
+      fatal.drainEvents();
+      t += DT;
+    }
+    check("dying at the bottom completes nothing",
+      fatal.proving === "reaper" && fatal.phase === "dead" && !died.player.legendComplete,
+      `phase ${fatal.phase} after ${t.toFixed(0)}s`);
+  }
+
+  // Prestige, not power. The border is read by the UI and by nothing else, so a
+  // completed class must have an identical character sheet to an unfinished one — the
+  // same promise `data/cosmetics.ts` makes, asserted the same way.
+  {
+    const plain = endgame("paladin", 91_020);
+    const crowned = endgame("paladin", 91_020);
+    crowned.completeLegend("paladin");
+    check("completing a Legend changes no number in the simulation",
+      JSON.stringify(plain.player.mods) === JSON.stringify(crowned.player.mods)
+        && plain.player.maxHealth === crowned.player.maxHealth
+        && plain.player.attackDamage === crowned.player.attackDamage);
+  }
+
+  // A border earned once is a border you still have tomorrow.
+  {
+    const state = endgame("bard", 91_030);
+    state.completeLegend("bard");
+    const reloaded = GameState.fromSaved(parseSaved(serializeSave(state.toJSON())));
+    check("a completed Legend survives a save round-trip",
+      reloaded.players.bard.legendComplete && !reloaded.players.lancer.legendComplete);
+
+    // A genuine pre-v17 blob: the field simply isn't there. Built by stripping it rather
+    // than by relabelling the version, which would leave the flag in the data and pass
+    // for no reason at all.
+    const blob = JSON.parse(JSON.stringify(state.toJSON())) as Record<string, unknown>;
+    const players = blob.players as Record<string, Record<string, unknown>>;
+    for (const id of CLASS_IDS) delete players[id]!.legendComplete;
+    const old = GameState.fromSaved({ version: 16, data: blob });
+    check("a pre-v17 save loads with every class unfinished",
+      CLASS_IDS.every((id) => !old.players[id].legendComplete));
+  }
+}
+
 
 console.log("\n=== accounts ===");
 await (async () => {

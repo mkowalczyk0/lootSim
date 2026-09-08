@@ -167,6 +167,13 @@ export class GameState {
    */
   treePointsRefunded = 0;
   /**
+   * Set the moment a class's Proving is banked, cleared by the town once it has said so
+   * (UAT §13). Transient and deliberately not persisted — exactly like
+   * `treePointsRefunded`, it exists to make the next trip back to the ship announce
+   * something. The permanent record is `Player.legendComplete`.
+   */
+  legendJustCompleted: ClassId | null = null;
+  /**
    * Cosmetic and control options. Never allowed to touch the simulation — see
    * `data/settings.ts`. Built through `normalizeSettings` rather than a plain spread of
    * `DEFAULT_SETTINGS` so a fresh character gets its own `keybinds` object instead of
@@ -570,6 +577,29 @@ export class GameState {
     if (next > this.riftTiers[config.mode.id]) this.riftTiers[config.mode.id] = next;
   }
 
+  /**
+   * The Legend is Complete (UAT §13) — called once, by `Dungeon`, when a class's Proving
+   * at the bottom of the Delve is *banked*. Returns whether this was the first time, so
+   * the caller can be loud about it exactly once.
+   *
+   * Idempotent on purpose. The Proving stays fightable forever, and re-clearing it must
+   * neither un-complete a class nor re-announce it. `Dungeon` decides *whether* a floor
+   * was the Proving (`legends.provingFloor`, evaluated once at floor construction); this
+   * only records the answer.
+   */
+  completeLegend(classId: ClassId): boolean {
+    const player = this.players[classId];
+    if (player.legendComplete) return false;
+    player.legendComplete = true;
+    this.legendJustCompleted = classId;
+    return true;
+  }
+
+  /** How many classes wear the gold border. Records reads this; nothing else does. */
+  get legendsComplete(): number {
+    return CLASS_IDS.filter((id) => this.players[id].legendComplete).length;
+  }
+
   // --- persistence -------------------------------------------------------
 
   toJSON(): object {
@@ -720,6 +750,11 @@ export function playerToJSON(p: Player) {
     // universal node left behind here would mean the host computing that player's damage
     // from a weaker character than the one sitting on their own screen.
     universalAllocated: p.universalAllocated,
+    // Class completion (UAT §13). It has to be here because this function *is* how a
+    // character sheet persists — and since the same blob is the co-op wire payload, an
+    // ally's completed Legend reaches the host too. Nothing on either side reads it in
+    // v1: the Proving is solo, and the flag grants nothing a simulation could act on.
+    legendComplete: p.legendComplete,
     equipment: p.equipment,
   };
 }
@@ -770,6 +805,8 @@ function applyPlayerJSON(
   p.universalAllocated = Array.isArray(raw.universalAllocated)
     ? (raw.universalAllocated as unknown[]).filter((id): id is string => typeof id === "string")
     : [];
+  // A save from before v17 has no Proving, so no class can have completed one.
+  p.legendComplete = raw.legendComplete === true;
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {
