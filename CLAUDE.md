@@ -157,6 +157,17 @@ than linear in depth, which is what makes the ladder eventually stop you. Cleari
 rift's boss opens the next tier; extracting early keeps your loot and opens nothing.
 That asymmetry is the whole tension of a rift — don't soften it.
 
+**A rift is a consequence of the war, not a game mode with a portal on it** (UAT §22).
+Every `RunMode` carries two lines: `blurb` is the mechanics, `lore` is why the place
+exists — a wound where Heaven and Hell met, an Avarice Rift the scavengers got to first,
+an Abyssal Rift that tore through Hell and kept going. The lore is lifted from
+`docs/game_story_worldbuilding.md` (read-only, the tiebreaker) in the game's deadpan
+register, never invented; `RIFT_LORE` is the one sentence said once about all of them. It
+reaches the player on the Dive / Rifts / Reliquary / Vigil / Convergence asides and under
+the deck's portal prompt (`stationLore` in `game/hub.ts`), and `npm run previews` checks
+each line names the war rather than restating the payout. Don't put lore in a third place
+with its own copy of the text — read `MODES[id].lore`.
+
 **The Vigil** (UAT §17 v1) is a daily one-floor mode, unlocked at `deepestDepth` 6: the
 seed, depth (band 6–14), two modifiers and the guaranteed key-tier reward all derive from
 the UTC day number, so it's the literal same floor for everyone who plays it that day.

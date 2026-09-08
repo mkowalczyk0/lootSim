@@ -15,6 +15,7 @@
 import type { Input } from "../core/input";
 import { clamp } from "../core/math";
 import type { Appearance } from "../data/cosmetics";
+import { MODES, type RunModeId } from "../data/modes";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
@@ -26,6 +27,23 @@ export interface HubStation {
   readonly x: number;
   readonly y: number;
   readonly radius: number;
+}
+
+/**
+ * Which run mode a station is the door to, so the deck can say what the place *is* (UAT
+ * §22) rather than only what it is called. The Reliquary Gate configures a sector run
+ * and so speaks for the same mode its portal does; the Forge, the Quartermaster and the
+ * Comms Relay are not doors to the war and say nothing.
+ */
+const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
+  dive: "delve", abyss: "abyss", hoard: "hoard", starmap: "planet", expedition: "planet",
+  vigil: "vigil", convergence: "convergence", forge: null, quartermaster: null, comms: null,
+};
+
+/** The one line of lore a station's prompt carries, or null for the non-portal stations. */
+export function stationLore(kind: HubStationKind): string | null {
+  const mode = STATION_MODE[kind];
+  return mode ? MODES[mode].lore : null;
 }
 
 /** Somebody else's ship, seen through the comms relay: where they are and whether

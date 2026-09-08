@@ -11,9 +11,10 @@
  */
 
 import type { Appearance } from "../data/cosmetics";
+import { DEFAULT_KEYBINDS, keyLabel, type Settings } from "../data/settings";
 import { drawPortalGlyph, drawSprite } from "./draw";
 import {
-  HUB_HEIGHT, HUB_WIDTH, type Hub, type HubMate, type HubStation, type HubStationKind,
+  HUB_HEIGHT, HUB_WIDTH, stationLore, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
 import { atlasCanvas } from "./atlas/index";
 import { heroSprite } from "./sprites";
@@ -39,8 +40,30 @@ function figureScale(canvas: HTMLCanvasElement): number {
   return Math.min(2.4, HUB_FIGURE_H / canvas.height);
 }
 
+/** Longest a lore line under the prompt may run, as a fraction of the viewport. */
+const LORE_WIDTH = 0.6;
+const LORE_LINE_H = 14;
+
+/** Greedy word wrap against the canvas's own measurement, so the line fits at any width. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 export function renderHub(
-  ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, viewW: number, viewH: number,
+  ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, settings: Settings,
+  viewW: number, viewH: number,
 ): void {
   const pad = 40;
   const scale = Math.max(0.3, Math.min((viewW - pad * 2) / HUB_WIDTH, (viewH - pad * 2) / HUB_HEIGHT));
@@ -74,11 +97,24 @@ export function renderHub(
   ctx.restore();
 
   if (near) {
+    // The prompt reads the live confirm binding, the same rule `combatHints` follows —
+    // it used to say "[E]" whatever the player had rebound it to.
+    const confirm = keyLabel(settings.keybinds.confirm ?? DEFAULT_KEYBINDS.confirm);
     ctx.save();
     ctx.textAlign = "center";
     ctx.font = `bold 16px ${MONO}`;
     ctx.fillStyle = "#e8eef7";
-    ctx.fillText(`[E] ${near.label}`, viewW / 2, viewH - 36);
+    ctx.fillText(`[${confirm}] ${near.label}`, viewW / 2, viewH - 36);
+    // What the place is, not just what it is called (UAT §22) — a portal's lore line,
+    // dim, above the prompt. The non-portal stations have none and draw nothing.
+    const lore = stationLore(near.kind);
+    if (lore) {
+      ctx.font = `11px ${MONO}`;
+      ctx.fillStyle = "rgba(232,238,247,0.62)";
+      const lines = wrapText(ctx, lore, viewW * LORE_WIDTH);
+      const top = viewH - 58 - (lines.length - 1) * LORE_LINE_H;
+      lines.forEach((l, i) => ctx.fillText(l, viewW / 2, top + i * LORE_LINE_H));
+    }
     ctx.restore();
   }
   if (hub.partyOpen) {

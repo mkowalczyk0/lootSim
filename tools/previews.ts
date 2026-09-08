@@ -24,13 +24,14 @@ import { CLASS_IDS, type ClassId } from "../src/data/classes";
 import { bossSpecForRun } from "../src/data/encounters";
 import { dailyConfig, dayNumber } from "../src/data/daily";
 import { DELVE_BOTTOM, legendBossSpec, legendName } from "../src/data/legends";
-import { MODES, RUN_MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import { MODES, RIFT_LORE, RUN_MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import {
   NAMED_ITEMS, bossDisplayName, namedDropChance, rollNamedDrops,
 } from "../src/data/named";
 import { PLANETS, planetConfig } from "../src/data/planets";
 import { previewForChest, previewForRun } from "../src/data/previews";
 import { Dungeon } from "../src/game/dungeon";
+import { Hub, stationLore, type HubStationKind } from "../src/game/hub";
 import { GameState } from "../src/game/state";
 import type { AvatarInput } from "../src/core/input";
 
@@ -328,6 +329,46 @@ console.log("\n=== the preview says something worth reading ===");
   check("a plain Delve floor admits it is the baseline",
     previewForRun(delveConfig(3)).other.some((o) => /baseline/.test(o)),
     previewForRun(delveConfig(3)).other.join(" · "));
+}
+
+// --- 6. the mode says what it is a consequence of (UAT §22) ----------------
+//
+// §22 asks that a Rift read as a consequence of the war rather than a disconnected
+// mechanic. The lore itself is prose and a test can't judge prose, but it can hold the
+// line that matters: every mode's `lore` names the war — its sides, its ground or the
+// order that fights it — instead of restating the payout; it is a different sentence
+// from the mechanical `blurb`; and, like every other on-screen string, it hardcodes no
+// key. The hub side: every portal on the deck carries a lore line and the three
+// stations that aren't doors to anywhere carry none.
+
+console.log("\n=== a mode says what it is a consequence of, not only what it pays ===");
+{
+  const WAR = /Heaven|Hell|Abyss|Purgatory|Keepers|Rift|Citadel|Reliquary/;
+  const KEYS = /\[[A-Z]\]|\bpress\b|\bclick\b/i;
+  const PAYOUT = /coins|keys|rarity|farm|loot|drops/i;
+  for (const id of RUN_MODES) {
+    const m = MODES[id];
+    check(`${m.name} has a lore line that names the war`, m.lore.length > 0 && WAR.test(m.lore), m.lore);
+    check(`…that isn't the payout line in a costume`, m.lore !== m.blurb && !PAYOUT.test(m.lore));
+    check(`…that fits the aside it is read in`, m.lore.length <= 280, `${m.lore.length} chars`);
+    check(`…and hardcodes no key or "press"/"click"`, !KEYS.test(m.lore) && !KEYS.test(m.blurb));
+  }
+  check("what a Rift is names both sides of the war", /Heaven/.test(RIFT_LORE) && /Hell/.test(RIFT_LORE) && /Keepers/.test(RIFT_LORE));
+
+  const hub = new Hub();
+  hub.vigilOpen = true;
+  hub.weeklyOpen = true;
+  hub.setExpedition(PLANETS[0]!.id, 1);
+  const kinds = new Set<HubStationKind>(hub.stations.map((s) => s.kind));
+  const doors: HubStationKind[] = ["dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence"];
+  const notDoors: HubStationKind[] = ["forge", "quartermaster", "comms"];
+  check("every station kind is on the deck under test", [...doors, ...notDoors].every((k) => kinds.has(k)),
+    [...kinds].join(", "));
+  check("every portal on the deck carries its mode's lore",
+    doors.every((k) => { const l = stationLore(k); return l !== null && Object.values(MODES).some((m) => m.lore === l); }));
+  check("the stations that aren't doors to the war say nothing", notDoors.every((k) => stationLore(k) === null));
+  check("the Reliquary Gate and the portal it opens speak for the same place",
+    stationLore("starmap") === MODES.planet.lore && stationLore("expedition") === MODES.planet.lore);
 }
 
 console.log(`\n${failures === 0 ? "ALL PREVIEW CHECKS PASSED" : `${failures} PREVIEW CHECK(S) FAILED`}\n`);
