@@ -234,6 +234,20 @@ and turns that same station into everyone's ready spot — the Comms Relay itsel
 longer picks a depth, it just opens and joins rooms. The Challenger dial still applies
 uniformly; in co-op it's the host's tier.
 
+### Accounts: the save lives on the server now
+
+The save moved off `localStorage` and onto whichever machine is serving the game, so
+progress survives across sessions and devices — `tools/accounts.ts` (SQLite via
+`node:sqlite`, scrypt-hashed passwords via `node:crypto`, both built in, so this cost the
+project no runtime dependencies) mounted on the same HTTP server as the party relay,
+in both `npm run host`'s dev server and the standalone relay. **Login is required, no
+guest mode** — a local/server split is exactly the "which save is real" bug class this
+removes. Username + password only: no email, no 2FA, no password reset. The server never
+looks inside a save — it stores and returns the exact string `GameState.save()` already
+produced for `localStorage`, so `SAVE_VERSION` and the co-op wire format (`playerToJSON`'s
+double duty as both the save format and the wire payload) are both untouched by any of
+this. See `docs/accounts.md` for the schema, the API, and the session/cookie design.
+
 ### Challenger: a difficulty dial the player owns
 
 `src/data/challenger.ts`. A multiplier the player sets themselves (Settings tab, off by
