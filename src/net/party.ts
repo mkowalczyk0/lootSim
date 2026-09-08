@@ -486,7 +486,7 @@ export class Party {
       }
       case "snap": {
         const d = this.dungeon;
-        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.planetNames(), this.inputLog);
+        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.rosterNames(), this.inputLog);
         return;
       }
       case "fx": {
@@ -520,9 +520,16 @@ export class Party {
     }
   }
 
-  /** A planet renames its whole roster, and a client has to rebuild those names too. */
-  private planetNames(): Record<string, string> | undefined {
-    return this.dungeon?.config.planet?.spec.enemyNames;
+  /**
+   * A place can rename its whole roster (a Reliquary sector, a Tower band), and a client
+   * has to rebuild those names too. Read off the level rather than only the config, so
+   * the client and the host are quoting the same table — the floor is deterministic, so
+   * both ends built the identical biome from the identical seed.
+   */
+  private rosterNames(): Record<string, string> | undefined {
+    const d = this.dungeon;
+    if (!d) return undefined;
+    return d.config.planet?.spec.enemyNames ?? d.level.biome.enemyNames;
   }
 
   private closed(reason: string): void {

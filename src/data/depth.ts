@@ -8,13 +8,14 @@
  */
 
 import { clamp } from "../core/math";
-import { biomeFor } from "./biomes";
+import { biomeFor, type BiomeStyle } from "./biomes";
 import { layerFor, type WorldLayer } from "./layers";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
 import { DAILY_MODIFIERS, dailyEffects } from "./daily";
 import type { Element } from "./elements";
 import { delveConfig, partyScale, type RunConfig } from "./modes";
 import { rewardCurve } from "./rewards";
+import { towerBiomeFor } from "./tower";
 import { WEEKLY_MODIFIERS, weeklyEffects } from "./weekly";
 
 export interface DepthProfile {
@@ -74,9 +75,8 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   const run = config ?? delveConfig(depth);
   const d = Math.max(1, Math.floor(depth));
   const isBoss = run.bossFloor;
-  // A planet expedition brings its own visual identity instead of the depth-bucketed
-  // biome — everything else about the curve below is unchanged either way.
-  const biome = run.planet?.spec.biome ?? biomeFor(d);
+  // What this floor is made of. One answer, shared with the generator — see `biomeForRun`.
+  const biome = biomeForRun(run.depth === d ? run : { ...run, depth: d });
   const mode = run.mode;
   const danger = run.danger;
   // The Vigil's modifiers (UAT §17): multipliers on the fields below, nothing more. On
@@ -184,6 +184,23 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   };
 }
 
+/**
+ * What a floor is made of.
+ *
+ * Three ways a run answers this and they take precedence over each other: a Reliquary
+ * sector brings its own `BiomeStyle` wholesale, the Tower is bucketed by *height* into
+ * the three bands of `data/tower.ts`, and everything else is the depth-bucketed `biomeFor`.
+ *
+ * It lives here as one function for the reason `data/encounters.ts` exists: the profile
+ * and `generateLevel` both need the answer, and a floor whose HUD colour came from one
+ * table while its walls came from another would be a bug nobody would think to look for.
+ */
+export function biomeForRun(run: RunConfig): BiomeStyle {
+  if (run.planet) return run.planet.spec.biome;
+  if (run.tower) return towerBiomeFor(run.tower.height);
+  return biomeFor(run.depth);
+}
+
 /** "Htrae · T2 · Floor 2/3 · Nightmare V" — whichever of those actually apply. */
 function buildTag(run: RunConfig): string {
   const parts: string[] = [];
@@ -203,6 +220,13 @@ function buildTag(run: RunConfig): string {
 }
 
 function floorName(biomeName: string, d: number, run: RunConfig): string {
+  // The Tower counts in heights. They equal the depth today, so this reads the same
+  // either way — it is written on the height so it keeps reading right if that changes,
+  // and because what waits at the top of five Heaven floors is the law, not a warden.
+  if (run.tower) {
+    const h = run.tower.height;
+    return run.bossFloor ? `${biomeName} — Hall of Judgment` : `${biomeName} ${romanize(((h - 1) % 5) + 1)}`;
+  }
   if (run.bossFloor) return `${biomeName} — Warden's Hall`;
   if (run.mode.isRift) return `${biomeName} — Rift Fracture`;
   return `${biomeName} ${romanize(((d - 1) % 5) + 1)}`;

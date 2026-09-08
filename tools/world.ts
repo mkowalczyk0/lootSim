@@ -27,16 +27,20 @@
  * Headless, no browser. Run with `npm run world`.
  */
 
-import { biomeFor } from "../src/data/biomes";
+import { BIOMES as DELVE_BIOMES, biomeFor } from "../src/data/biomes";
 import {
   DOWN_LAYERS, LAYERS, RIFT_LAYERS, UP_LAYERS, layerAt, layerFor, type WorldLayer,
 } from "../src/data/layers";
-import { MODES, RUN_MODES, delveConfig, riftConfig } from "../src/data/modes";
+import { MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig } from "../src/data/modes";
 import { PLANETS, planetConfig, planetUnlocked } from "../src/data/planets";
 import { DELVE_BOTTOM } from "../src/data/legends";
 import { dailyConfig, dayNumber } from "../src/data/daily";
 import { weekNumber, weeklyConfig } from "../src/data/weekly";
-import { profileFor } from "../src/data/depth";
+import { biomeForRun, profileFor } from "../src/data/depth";
+import { provingFloor } from "../src/data/legends";
+import { TOWER_BIOMES, towerBiomeFor, towerBossSpec, towerConfig } from "../src/data/tower";
+import { bossSpecForRun } from "../src/data/encounters";
+import { BOSSES } from "../src/data/bosses";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -93,7 +97,9 @@ const thisWeek = weekNumber();
 for (const id of RUN_MODES) {
   const config = id === "delve"
     ? delveConfig(7)
-    : id === "vigil"
+    : id === "tower"
+      ? towerConfig(7)
+      : id === "vigil"
       ? dailyConfig(today)
       : id === "convergence"
         ? weeklyConfig(thisWeek, 1)
@@ -116,6 +122,12 @@ check("the Reliquary, the Vigil and the Convergence are all in the Threshold",
     .every((c) => layerFor(c) === RIFT_LAYERS.threshold));
 
 // The Delve is the one mode whose layer moves with the floor. That is the §23 point.
+check("the Tower is on the ascent, and climbs out of its first band",
+  layerFor(towerConfig(1)).axis === "up" && layerFor(towerConfig(1)) !== layerFor(towerConfig(9)),
+  `height 1 → ${layerFor(towerConfig(1)).name}, height 9 → ${layerFor(towerConfig(9)).name}`);
+check("the Tower is Heaven's ground the whole way up",
+  [1, 5, 6, 25, 26, 60].every((h) => layerFor(towerConfig(h)).realm === "heaven"));
+
 check("the Delve changes layer as it descends",
   new Set([1, 8, 20, 30].map((d) => layerFor(delveConfig(d)).id)).size === 4);
 check("the bottom of the Delve is the Abyss's ground, not Hell's",
@@ -126,10 +138,11 @@ check("the bottom of the Delve is the Abyss's ground, not Hell's",
 // function. A second answer here is exactly the drift §20 warns about.
 let profileAgrees = true;
 for (let d = 1; d <= FAR; d++) {
-  const config = delveConfig(d);
-  if (profileFor(d, config).layer !== layerFor(config)) profileAgrees = false;
+  for (const config of [delveConfig(d), towerConfig(d)]) {
+    if (profileFor(d, config).layer !== layerFor(config)) profileAgrees = false;
+  }
 }
-check(`the profile's layer is the function's answer, depths 1-${FAR}`, profileAgrees);
+check(`the profile's layer is the function's answer, both ladders, 1-${FAR}`, profileAgrees);
 
 // --- 3. the bands sit on boundaries the game already had -------------------
 
@@ -151,6 +164,89 @@ check("every descent band starts where the biome changes", edgesAlign, edgeDetai
 // its own by a later edit — it is inside the last one.
 check("the Proving's floor is inside the last descent band",
   layerAt("down", DELVE_BOTTOM) === DOWN_LAYERS[DOWN_LAYERS.length - 1]);
+
+// The ascent has to hold the same property, or the Tower's bands are decoration: the
+// band a height sits in and the place that height is made of must change on the same
+// step. `towerBiomeFor` is the ascent's `biomeFor`, so the check is the same check.
+let upEdgesAlign = true;
+const upEdgeDetail: string[] = [];
+for (const layer of UP_LAYERS) {
+  if (layer.from === 1) continue;
+  if (towerBiomeFor(layer.from) === towerBiomeFor(layer.from - 1)) {
+    upEdgesAlign = false;
+    upEdgeDetail.push(`${layer.name} starts at ${layer.from} mid-biome`);
+  }
+}
+check("every ascent band starts where the Tower's own biome changes", upEdgesAlign,
+  upEdgeDetail.join("; "));
+check("the ascent has one biome per band, and no more",
+  TOWER_BIOMES.length === UP_LAYERS.length,
+  `${TOWER_BIOMES.length} biomes, ${UP_LAYERS.length} bands`);
+check("a tower floor is made of the band it is standing in",
+  [1, 3, 5, 6, 14, 25, 26, 40].every((h) => biomeForRun(towerConfig(h)) === towerBiomeFor(h)));
+
+// Heaven is Order, and holy is deliberately outside `LOOT_ELEMENTS` — the Tower is the
+// place that gets it on purpose, which is exactly what `data/elements.ts` reserves it for.
+check("every Tower band is made of holy", TOWER_BIOMES.every((b) => b.element === "holy"));
+check("every Tower band renames the roster to the celestial orders",
+  TOWER_BIOMES.every((b) => Object.keys(b.enemyNames ?? {}).length >= 5));
+check("no two Tower bands share a name or a monster name",
+  new Set(TOWER_BIOMES.map((b) => b.name)).size === TOWER_BIOMES.length
+  && new Set(TOWER_BIOMES.flatMap((b) => Object.values(b.enemyNames ?? {}))).size
+     === TOWER_BIOMES.reduce((n, b) => n + Object.keys(b.enemyNames ?? {}).length, 0));
+
+// The Delve's own floors must not have picked up a roster rename on the way past.
+check("the Delve's biomes still call a monster what it is",
+  DELVE_BIOMES.every((b) => b.enemyNames === undefined));
+
+// --- the two ladders stay two ladders -------------------------------------
+
+console.log("\n=== the climb is the Delve's mirror, not the Delve ===");
+
+// UAT §21 asked for a second direction, not a second difficulty model (CLAUDE.md: one
+// curve). A tower floor and a delve floor at the same number must be the same fight.
+let sameCurve = true;
+for (let n = 1; n <= FAR; n++) {
+  const a = profileFor(n, delveConfig(n));
+  const b = profileFor(n, towerConfig(n));
+  if (a.enemyHealth !== b.enemyHealth || a.enemyDamage !== b.enemyDamage
+    || a.enemySpeed !== b.enemySpeed || a.aggression !== b.aggression
+    || a.telegraph !== b.telegraph || a.recommendedLevel !== b.recommendedLevel) sameCurve = false;
+}
+check(`height N fights exactly like depth N, 1-${FAR} — one curve, two directions`, sameCurve);
+check("a plain climb is ordinary danger, so §16 pays it nothing extra",
+  towerConfig(20).danger === 1 && profileFor(20, towerConfig(20)).itemPower === 0);
+
+// Every fifth floor, the same promise the Delve makes.
+check("every fifth height is an encounter and nothing else is",
+  [5, 10, 25, 30, 60].every((h) => towerConfig(h).bossFloor)
+  && [1, 4, 6, 24, 31].every((h) => !towerConfig(h).bossFloor));
+check("the climb has no top", [1, 30, 200].every((h) => !towerConfig(h).lastFloor));
+
+// The encounters are borrowed and reskinned, exactly as a sector's are — so they are
+// audited by the same boss rules `tools/legends.ts` already walks, by being those specs.
+const towerSpecs = [5, 10, 15, 20, 25, 30, 60].map((h) => towerBossSpec(h));
+check("every Tower encounter is a real encounter wearing Heaven's name",
+  towerSpecs.every((spec) => BOSSES.some((b) => b.phases === spec.phases && b.health === spec.health)));
+check("every Tower encounter is holy", towerSpecs.every((s) => s.element === "holy"));
+check("the Tower has five encounters, and the top one holds the Celestial Endgame",
+  new Set([5, 10, 15, 20, 25].map((h) => towerBossSpec(h).id)).size === 5
+  && towerBossSpec(25).id === towerBossSpec(60).id);
+check("no Tower encounter borrows a name from the thing it reskins",
+  towerSpecs.every((s) => !BOSSES.some((b) => b.name === s.name || b.title === s.title)));
+// The preview and the simulation must agree about what is up there — the §20 rule.
+check("the shared answer knows about the climb",
+  [5, 25, 40].every((h) => bossSpecForRun(towerConfig(h)).id === towerBossSpec(h).id));
+
+// The ruling that must not be simplified away later: a height is not a depth. A
+// height-30 climb is not anybody's final exam and never opens the bottom of the Delve.
+check("height 30 is not the Proving — the two records are not one record",
+  !provingFloor(towerConfig(DELVE_BOTTOM), 999)
+  && !provingFloor({ ...towerConfig(DELVE_BOTTOM), depth: DELVE_BOTTOM }, 999));
+
+// The Tower appears once the first Warden is behind you, and not before (ruling 4).
+check("the Tower opens at deepest depth 5, not sooner",
+  !modeUnlocked(MODES.tower, 4) && modeUnlocked(MODES.tower, 5));
 
 // --- 4. the prose says something the mode's own line doesn't ---------------
 

@@ -29,6 +29,7 @@ import {
   NAMED_ITEMS, bossDisplayName, namedDropChance, rollNamedDrops,
 } from "../src/data/named";
 import { PLANETS, planetConfig } from "../src/data/planets";
+import { towerConfig } from "../src/data/tower";
 import { previewForChest, previewForRun } from "../src/data/previews";
 import { Dungeon } from "../src/game/dungeon";
 import { Hub, stationLore, type HubStationKind } from "../src/game/hub";
@@ -120,9 +121,10 @@ for (const id of RUN_MODES) {
   // Built the way each mode really builds one, so a mode that grows its own config shape
   // shows up here rather than being quietly skipped.
   const config = id === "delve" ? delveConfig(10)
-    : id === "vigil" ? dailyConfig(dayNumber())
-      : id === "planet" ? planetConfig(PLANETS[0]!, 1, 1, 0)
-        : riftConfig(id, 1, MODES[id].floors);
+    : id === "tower" ? towerConfig(10)
+      : id === "vigil" ? dailyConfig(dayNumber())
+        : id === "planet" ? planetConfig(PLANETS[0]!, 1, 1, 0)
+          : riftConfig(id, 1, MODES[id].floors);
   const preview = previewForRun(config);
   check(`${MODES[id].name} has a title and says what else it pays`,
     preview.title.length > 0 && preview.other.length > 0,
