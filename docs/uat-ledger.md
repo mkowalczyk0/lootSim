@@ -11,6 +11,14 @@ a worktree, not yet merged).
 
 Last audited: 2026-09-08, PM session `lootsim-70`. §13/§14 rows updated by the session that built them, on landing.
 
+> **⚠ Every difficulty number below and elsewhere in this repo is currently PROVISIONAL.**
+> A defect in the wave director (`dungeon.ts:1288` — the next wave starts only when
+> `enemies.length === 0`, so one unreachable monster stalls a floor forever) was measured
+> stalling 25% of floors at depth 5 rising to 67% at depth 30. Every measurement anyone
+> has taken, including the sharp 11.8 / reckless 9.4 campaign figures and the boss-vs-trash
+> finding, has been reading some amount of that as difficulty. The fix and a re-baseline
+> are in progress; do not tune against any number here until that lands.
+
 ## Phase 12 chunk order
 
 The spec's own recommended order is the priority order, and we've been following it.
@@ -172,3 +180,31 @@ elemental lean (same rarity, same affix count, same power band) and not as extra
 or earlier grants, because those would tread on the Forge bench's `augment`/`inscribe` and
 its stated invariant that nothing an op produces is something a chest couldn't have
 dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
+
+**A single unreachable monster stalls a floor permanently.** `updateSpawning`
+(`src/game/dungeon.ts:1288`) starts the next wave only when `enemies.length === 0`; its own
+comment says "the next one starts once the floor is clear of stragglers", naming the
+failure mode without guarding it. So one monster the player cannot reach — a Gorehound
+600 units away, unroutable — holds the floor open forever at, in the observed case, 44/180
+kills.
+
+This is a **player-facing defect**, not only a measurement problem: a real person is left
+on a floor that can never complete, quota short, no completion portal, whose only exit is
+the entrance portal at `EARLY_EXTRACT_KEEP` 15%. The game confiscates 85% of a run and
+appears to do it deliberately.
+
+Measured at level 60 in Legendary gear, 12 seeds per depth: stall rate 25% at depth 5,
+33% at 10, 58% at 15, 50% at 20 and 25, 67% at 30, 42% at 35. It is **not** depth-specific
+— the per-floor probability simply rises with body count, which is exactly why it
+*masquerades* as a difficulty curve and why it contaminated every measurement taken today.
+
+Two things it calls into question beyond the numbers: the generator's flood-fill
+reachability validation, if the mechanism turns out to be spawn placement putting a monster
+behind rock; and `tools/smoke.ts`'s `unfinished` counter, which should have been screaming
+at these rates and was not.
+
+**`recommendedLevel` may be lying to players.** At exactly the level and gear the game
+advises, every floor from depth 18 down killed the character in 6–22 seconds having
+completed 0–3% of the objective. Held pending the straggler fix, since stalls may have
+contaminated this measurement too — but if it survives re-measurement, a number shown in
+the UI is actively misleading.
