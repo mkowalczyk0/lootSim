@@ -21,6 +21,9 @@
  *  3. the item's own art wins when it exists, so authoring a PNG really changes the
  *     picture everywhere at once
  *  4. §12's slots are all accounted for: every live slot, and every future one declared
+ *  5. every atlas sprite the DOM will ever ask `pixelImageFit` to fit into a real UI box
+ *     comes out inside that box — a width-only fit blew this once already (see
+ *     `fitScale`'s doc comment) and it's cheap to keep proving on every atlas addition
  *
  * Headless, no browser, no canvas. Run with `npm run itemart`.
  */
@@ -30,7 +33,8 @@ import { NAMED_ITEMS } from "../src/data/named";
 import { RARITIES, type Rarity } from "../src/data/rarity";
 import { WEAPON_FAMILIES } from "../src/data/weapons";
 import { RELICS, RELIC_SLOTS } from "../src/data/relics";
-import { ATLAS } from "../src/render/atlas/manifest";
+import { ATLAS, ATLAS_WEAPONS } from "../src/render/atlas/manifest";
+import { fitScale } from "../src/ui/pixelimage";
 import {
   ITEM_FALLBACK_SPRITE, RARITY_WASH, RELIC_FALLBACK_SPRITE, chooseItemArt, chooseRelicArt,
   type ArtAvailability, type ItemArtChoice,
@@ -220,6 +224,40 @@ console.log("\n=== a relic looks the same on the floor, in a slot and on the ban
   check("with nothing baked at all it still lands on the item fallback sprite",
     (chooseRelicArt(authored, NOTHING) as { sprite: string }).sprite === ITEM_FALLBACK_SPRITE);
   check("every shipped relic is on the fallback today — the art pass hasn't happened", RELICS.every((d) => !d.art));
+}
+
+// --- 5. every atlas sprite fits the box the DOM actually puts it in --------------
+
+console.log("\n=== pixelImageFit never has to ask the DOM to downscale a sprite that already fits ===");
+{
+  // The real target boxes `pixelImageFit` is called against today (grep `src/ui/*.ts`):
+  // 64 (stash card, paper-doll), 72 (chest icon, compare candidate row), 96 (compare
+  // panel header, roll-reel face), 120 (loot banner). A sprite whose native size already
+  // fits inside a box has to come out no bigger than the box — that's the property a
+  // width-only fit broke: `named.the-early-word` (8x46) and `weapon.bow` (14x61) both fit
+  // inside every one of these boxes natively, but scaling by width alone blew each past
+  // its box on the other axis, and the DOM's non-integer catch-up squash is what turned
+  // them into mangled slivers rather than smaller clean copies of themselves.
+  //
+  // A sprite that is natively bigger than a box on some axis (a spear world sprite is
+  // 118 wide) is excluded — no integer scale can shrink it below 1x, and that is a
+  // real "this box is too small for this sprite" fact this check isn't about.
+  const BOXES: readonly [number, number][] = [[64, 64], [72, 72], [96, 96], [120, 120]];
+  const sprites: { id: string; w: number; h: number }[] = [
+    ...Object.values(ATLAS).map((a) => ({ id: a.id, w: a.w, h: a.h })),
+    ...Object.values(ATLAS_WEAPONS).map((a) => ({ id: a.id, w: a.w, h: a.h })),
+  ];
+  const overflows: string[] = [];
+  for (const s of sprites) {
+    for (const [tw, th] of BOXES) {
+      if (s.w > tw || s.h > th) continue;
+      const scale = fitScale(s.w, s.h, tw, th);
+      const rw = s.w * scale, rh = s.h * scale;
+      if (rw > tw || rh > th) overflows.push(`${s.id} at ${tw}x${th}: ${s.w}x${s.h} -> x${scale} -> ${rw}x${rh}`);
+    }
+  }
+  check(`all ${sprites.length} atlas sprites fit every real box they fit natively (x${BOXES.length} boxes)`,
+    overflows.length === 0, overflows.join("; "));
 }
 
 console.log(`\n${failures === 0 ? "ALL ITEM-ART CHECKS PASSED" : `${failures} ITEM-ART CHECK(S) FAILED`}\n`);

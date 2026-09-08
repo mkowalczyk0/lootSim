@@ -107,7 +107,7 @@ export class LootBanner {
   show(item: Item): void {
     this.showCard({
       rarity: item.rarity, color: RARITY_COLORS[item.rarity], name: item.name, line: statLine(item),
-      art: pixelImageFit(itemArt(item), 120, itemArtKey("loot", item)),
+      art: pixelImageFit(itemArt(item), 120, 120, itemArtKey("loot", item)),
     });
   }
 
@@ -116,7 +116,7 @@ export class LootBanner {
     this.showCard({
       rarity: def.rarity, color: RELIC_TIER_INFO[def.tier].color, name: def.name,
       line: `${RELIC_TIER_INFO[def.tier].label} — ${def.description}`,
-      art: pixelImageFit(relicArt(def), 120, relicArtKey(def)),
+      art: pixelImageFit(relicArt(def), 120, 120, relicArtKey(def)),
     });
   }
 

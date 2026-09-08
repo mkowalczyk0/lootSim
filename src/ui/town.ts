@@ -2055,7 +2055,7 @@ export class TownUI {
       // The lock badge answers "could the *current* op run on this one?" — same quote the
       // side panel prices from, so the grid and the panel can never disagree.
       const quote = this.state.forgeQuote(it.id, this.forgeOp, 0);
-      const icon = pixelImageFit(itemArt(it), 64, itemArtKey("item", it));
+      const icon = pixelImageFit(itemArt(it), 64, 64, itemArtKey("item", it));
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(quote?.blocker ?? "")}">
@@ -2330,7 +2330,7 @@ export class TownUI {
 
     const cards = cat.tiers.map((tier, i) => {
       const info = CHESTS[tier];
-      const icon = pixelImageFit(chestIcon(tier), 72, tier);
+      const icon = pixelImageFit(chestIcon(tier), 72, 72, tier);
       return `
         <div class="chest-card row ${i === this.cursor ? "on" : ""}" data-index="${i}" style="--chest-color:${info.color}">
           <div class="chest-card-art"><img src="${icon}" alt=""></div>
@@ -2410,7 +2410,7 @@ export class TownUI {
         it.trigger ? '<span class="dot" style="background:#ff1493" title="triggered effect"></span>' : "",
       ].join("");
       const locked = !this.state.player.canEquip(it);
-      const icon = pixelImageFit(itemArt(it), 64, itemArtKey("item", it));
+      const icon = pixelImageFit(itemArt(it), 64, 64, itemArtKey("item", it));
       const named = it.named ? NAMED_BY_ID[it.named] : undefined;
       const tip = `${it.name} — ${rarityLabel(it.rarity)} ${it.type} · ilvl ${it.ilvl}\n`
         + (named ? `${named.flavor}\n` : "")
@@ -2483,7 +2483,7 @@ export class TownUI {
          ${escapeHtml(this.state.heroClass.name)} is only ${this.state.player.level}.</p>`
       : "";
 
-    const icon = pixelImageFit(itemArt(item), 96, itemArtKey("item", item));
+    const icon = pixelImageFit(itemArt(item), 96, 96, itemArtKey("item", item));
     const cmpHead = worn
       ? `<tr class="cmp-head"><td></td><td>this</td><td>vs equipped</td></tr>`
       : `<tr class="cmp-head"><td></td><td>this</td><td>gain</td></tr>`;
@@ -2530,7 +2530,7 @@ export class TownUI {
     const rows = MOD_KEYS.filter((key) => (mods[key] ?? 0) !== 0)
       .map((key) => `<tr><td>${escapeHtml(shortLabel(key))}</td><td>${fmtMod(key, mods[key] ?? 0)}</td></tr>`)
       .join("");
-    const icon = pixelImageFit(itemArt(item), 96, itemArtKey("item", item));
+    const icon = pixelImageFit(itemArt(item), 96, 96, itemArtKey("item", item));
     const weapon = item.family ? WEAPONS[item.family] : null;
     const affine = item.family ? this.state.heroClass.affinity.includes(item.family) : false;
     const weaponLine = this.renderNamedLore(item) + (weapon
@@ -2571,7 +2571,7 @@ export class TownUI {
     const it = p.equipment[slot];
     const affine = it?.family ? cls.affinity.includes(it.family) : false;
     const art = it
-      ? `<img src="${pixelImageFit(itemArt(it), 72, itemArtKey("item", it))}" alt="">`
+      ? `<img src="${pixelImageFit(itemArt(it), 72, 72, itemArtKey("item", it))}" alt="">`
       : `<span class="ds-empty">${SLOT_GLYPH[slot]}</span>`;
     const tip = it ? `${it.name} — ${rarityLabel(it.rarity)}\n${statLine(it)}` : `${slot} — empty`;
     return `
@@ -2618,7 +2618,7 @@ export class TownUI {
     const def = id ? RELIC_BY_ID[id] : undefined;
     const color = def ? RELIC_TIER_INFO[def.tier].color : "var(--line)";
     const art = def
-      ? `<img src="${pixelImageFit(relicArt(def), 72, relicArtKey(def))}" alt="">`
+      ? `<img src="${pixelImageFit(relicArt(def), 72, 72, relicArtKey(def))}" alt="">`
       : `<span class="ds-empty">✦</span>`;
     const tip = def ? `${def.name} — ${RELIC_TIER_INFO[def.tier].label}\n${def.description}` : "relic slot — empty";
     return `
@@ -2640,7 +2640,7 @@ export class TownUI {
     const info = RELIC_TIER_INFO[def.tier];
     return `
       <div class="cmp-hero" style="--r:${info.color}">
-        <div class="cmp-art"><img src="${pixelImageFit(relicArt(def), 96, relicArtKey(def))}" alt=""></div>
+        <div class="cmp-art"><img src="${pixelImageFit(relicArt(def), 96, 96, relicArtKey(def))}" alt=""></div>
         <div>
           <h3 style="color:${info.color};margin:0">${escapeHtml(def.name)}</h3>
           <p class="muted" style="margin:2px 0 0">${info.label}</p>
@@ -3079,7 +3079,7 @@ export class TownUI {
       const playing = this.state.classChosen && this.state.activeClassId === id;
       const untouched = pc.level === 1 && pc.xp === 0 && pc.allocated.length === 0
         && (Object.values(pc.equipment) as (Item | null)[]).every((it) => it === null);
-      const icon = pixelImageFit(weaponSprite(cls.affinity[0]!, null, null), 64, `path-${id}`);
+      const icon = pixelImageFit(weaponSprite(cls.affinity[0]!, null, null), 64, 64, `path-${id}`);
       // The gold border (UAT §13): this class beat its own Proving at the bottom of the
       // Delve, so its Legend is Complete. Read straight off the character sheet.
       const complete = pc.legendComplete;
