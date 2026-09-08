@@ -49,21 +49,26 @@ export const HUB_PLAYER_RADIUS = 9;
 /** How close counts as "at" a station — generous, since there's nothing to dodge here. */
 const INTERACT_RANGE = 34;
 
+// Positions are tuned against the Citadel deck art (render/atlas/scenes/hub.citadel-deck):
+// the Delve and the two rifts are portal pads on the open flagstone, the Abyssal Rift
+// sits in the deck's central archway, and the four relic stations tuck against the walls
+// clear of the deck's own rubble. See render/hub.ts for how each is drawn.
 const FIXED_STATIONS: readonly HubStation[] = [
-  { kind: "dive", label: "The Delve", x: 170, y: 100, radius: 24 },
-  { kind: "abyss", label: "Abyssal Rift", x: 320, y: 80, radius: 24 },
-  { kind: "hoard", label: "Hoard Rift", x: 470, y: 100, radius: 24 },
-  { kind: "starmap", label: "Reliquary Gate", x: 80, y: 280, radius: 20 },
-  { kind: "forge", label: "The Forge", x: 560, y: 280, radius: 20 },
-  { kind: "quartermaster", label: "Quartermaster", x: 320, y: 280, radius: 20 },
-  { kind: "comms", label: "Comms Relay", x: 80, y: 130, radius: 20 },
+  { kind: "dive", label: "The Delve", x: 120, y: 150, radius: 24 },
+  { kind: "abyss", label: "Abyssal Rift", x: 320, y: 62, radius: 24 },
+  { kind: "hoard", label: "Hoard Rift", x: 420, y: 150, radius: 24 },
+  { kind: "starmap", label: "Reliquary Gate", x: 587, y: 200, radius: 20 },
+  { kind: "forge", label: "The Forge", x: 580, y: 393, radius: 20 },
+  { kind: "quartermaster", label: "Quartermaster", x: 425, y: 283, radius: 20 },
+  { kind: "comms", label: "Comms Relay", x: 213, y: 200, radius: 20 },
 ];
 
-/** Where a chosen sector's portal stands once the Reliquary Gate has picked one. */
-const EXPEDITION_SPOT = { x: 320, y: 185 };
+/** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
+ *  floor left of the central seal. */
+const EXPEDITION_SPOT = { x: 270, y: 250 };
 /** Where the party portal opens once you're in a room. Near the spawn on purpose —
  *  "everyone walk into the portal" should be a two second walk, not a hike. */
-const PARTY_SPOT = { x: 170, y: 372 };
+const PARTY_SPOT = { x: 185, y: 388 };
 /** Standing this close to the party portal counts as being in it. */
 const PARTY_PORTAL_RADIUS = 30;
 

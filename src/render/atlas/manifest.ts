@@ -48,10 +48,15 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // character (30×26 grid at SPRITE_SCALE 1.2 ≈ 31 world units tall) while the player
   // isn't wearing a composited cosmetic layer (hat/ears/face/back) — those layers are
   // still procedural until their own art pass, so a decorated character keeps the old
-  // look for now. v2 redraw (Sept 2026): higher detail to sit alongside the redrawn
-  // bosses — the owner's call that the plain low-res hero "looked out of place in a
-  // boss fight". World footprint unchanged: 68px × 0.471 ≈ 32, same as the v1 sprite.
-  "hero.legend-base": { id: "hero.legend-base", w: 39, h: 68, worldScale: 0.471, feet: 0.04 },
+  // look for now.
+  //
+  // v3 redraw (Sept 2026): re-authored at the Citadel deck's pixel pitch — chunkier and
+  // stockier, low top-down, muted stone palette — so the hero reads as standing *in* the
+  // world, not pasted over it (the owner's "two PNGs on top of each other" note). Still
+  // the plain calm face. Footprint unchanged: 48 * 0.667 = 32, the same height as v1/v2,
+  // so no hitbox / telegraph / camera moves. The hub draws it larger through its own
+  // figure-height rule (render/hub.ts) — cosmetic and local to the hub scene.
+  "hero.legend-base": { id: "hero.legend-base", w: 28, h: 48, worldScale: 0.667, feet: 0.03 },
 
   // --- monsters (§10) --- worldScale ≈ predecessor grid height × SPRITE_SCALE (1.2),
   // then ~1.13× for legibility (the rot-scuttler precedent). Legacy grids: imp/ranger
@@ -150,8 +155,12 @@ export interface AtlasScene {
 }
 
 export const SCENES: Record<string, AtlasScene> = {
-  // §4 The Citadel of the Threshold — the hub deck. Drawn scaled to HUB_WIDTH×HUB_HEIGHT
-  // (640×460, same 1.39 aspect) under the stations. Replaces the old black void + grid.
+  // §4 The Citadel of the Threshold — the hub deck, drawn scaled to HUB_WIDTH x HUB_HEIGHT
+  // (640x460, same 1.39 aspect). The whole hall *and its stations* are baked into this
+  // one image: the Forge furnace, the Reliquary Gate doorway, the Comms shrine and the
+  // Quartermaster's rack are painted in as relics at the deck's own pixel pitch, so
+  // render/hub.ts composites nothing at runtime — it only adds the turning portal rings
+  // and the moving characters. Replaces the old black void + grid.
   "hub.citadel-deck": { id: "hub.citadel-deck", w: 384, h: 276 },
 };
 

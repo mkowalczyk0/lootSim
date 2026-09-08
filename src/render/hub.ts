@@ -1,8 +1,13 @@
 /**
- * Draws the ship. A small fixed space, so unlike the dungeon it never scrolls — the
- * whole hub is scaled to fit the viewport and drawn once. Portals borrow the exact
- * glyph a dungeon's own exit uses; the two terminal-shaped stations get a simple
- * console prop instead, in the same "procedural, not a sprite" spirit as a trap.
+ * Draws the Citadel of the Threshold — the hub deck. A small fixed space, so unlike the
+ * dungeon it never scrolls: the whole hall is scaled to fit the viewport and drawn once.
+ *
+ * The hall and its stations are **one baked image** (`hub.citadel-deck`, §4): the Forge
+ * furnace, the Reliquary Gate doorway, the Comms shrine and the Quartermaster's rack are
+ * painted into it as relics from dead civilisations, at the deck's own pixel pitch, so
+ * nothing is composited at runtime and nothing reads as pasted on. This module only adds
+ * what has to move: an animated summoning ring over each portal point, and the hero and
+ * co-op mates. A station is just an `{x, y, radius}` hotspot on that image.
  */
 
 import type { Appearance } from "../data/cosmetics";
@@ -21,7 +26,17 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   comms: "#22d3ee", party: "#22d3ee",
 };
 
+/** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
+ *  Everything else is a relic already painted into the deck image. */
 const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "party"]);
+
+/** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
+ *  The dungeon sizes the same sprite by its manifest `worldScale` instead. */
+const HUB_FIGURE_H = 74;
+
+function figureScale(canvas: HTMLCanvasElement): number {
+  return Math.min(2.4, HUB_FIGURE_H / canvas.height);
+}
 
 export function renderHub(
   ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, viewW: number, viewH: number,
@@ -38,8 +53,8 @@ export function renderHub(
   ctx.scale(scale, scale);
   ctx.imageSmoothingEnabled = false;
 
-  drawDeck(ctx);
-  for (const s of hub.stations) drawStation(ctx, s, time, s === near);
+  const deckLoaded = drawDeck(ctx);
+  for (const s of hub.stations) drawStation(ctx, s, time, s === near, deckLoaded);
 
   // Everyone else in the room is walking around their own copy of this deck; their
   // positions arrive over the relay a dozen times a second and are drawn here.
@@ -48,7 +63,9 @@ export function renderHub(
   }
 
   const body = heroSprite(appearance);
-  drawSprite(ctx, body.canvas, hub.x, hub.y, Math.cos(hub.facing) < 0, body.scale, body.feet);
+  const bscale = figureScale(body.canvas);
+  deckShadow(ctx, hub.x, hub.y, body.canvas.width * bscale * 0.5);
+  drawSprite(ctx, body.canvas, hub.x, hub.y, Math.cos(hub.facing) < 0, bscale, body.feet);
   ctx.restore();
 
   if (near) {
@@ -68,23 +85,25 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
     ctx.save();
     ctx.globalAlpha = 0.95;
     const mb = heroSprite(mate.appearance);
-    drawSprite(ctx, mb.canvas, mate.x, mate.y, Math.cos(mate.facing) < 0, mb.scale, mb.feet);
+    const ms = figureScale(mb.canvas);
+    deckShadow(ctx, mate.x, mate.y, mb.canvas.width * ms * 0.5);
+    drawSprite(ctx, mb.canvas, mate.x, mate.y, Math.cos(mate.facing) < 0, ms, mb.feet);
     ctx.restore();
   }
   ctx.save();
   ctx.textAlign = "center";
   ctx.font = `bold 9px ${MONO}`;
   ctx.fillStyle = mate.ready ? "#4ade80" : "#9aa4b2";
-  ctx.fillText(`${mate.ready ? "\u2713 " : ""}${mate.name.toUpperCase()}`, mate.x, mate.y - 26);
+  ctx.fillText(`${mate.ready ? "✓ " : ""}${mate.name.toUpperCase()}`, mate.x, mate.y - 26);
   ctx.restore();
 }
 
 /**
- * The Citadel of the Threshold — the hub floor (§4). A baked top-down backdrop stretched
- * to fill the fixed hub viewport, with the stations drawn on top of it. Falls back to a
- * plain ash fill until the atlas has loaded, so the first frame is never black.
+ * The Citadel deck (§4) — the whole hall with its stations, baked. Stretched to fill the
+ * fixed hub viewport. Returns whether the image was actually there; a plain ash fill
+ * stands in for the first frames, and the stations draw a marker until it loads.
  */
-function drawDeck(ctx: CanvasRenderingContext2D): void {
+function drawDeck(ctx: CanvasRenderingContext2D): boolean {
   const deck = atlasCanvas("hub.citadel-deck");
   if (deck) {
     ctx.imageSmoothingEnabled = false;
@@ -94,62 +113,118 @@ function drawDeck(ctx: CanvasRenderingContext2D): void {
     ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
   }
 
-  // A heavy dark frame so the deck reads as an enclosed hall, not an open plane.
-  ctx.strokeStyle = "rgba(0,0,0,0.6)";
-  ctx.lineWidth = 12;
-  ctx.strokeRect(3, 3, HUB_WIDTH - 6, HUB_HEIGHT - 6);
-  ctx.strokeStyle = "rgba(201,194,180,0.22)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(6, 6, HUB_WIDTH - 12, HUB_HEIGHT - 12);
+  // A thin dark vignette frame so the deck reads as an enclosed hall at any viewport size.
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.lineWidth = 8;
+  ctx.strokeRect(2, 2, HUB_WIDTH - 4, HUB_HEIGHT - 4);
+  return !!deck;
 }
 
-function drawStation(ctx: CanvasRenderingContext2D, s: HubStation, time: number, active: boolean): void {
+function drawStation(
+  ctx: CanvasRenderingContext2D, s: HubStation, time: number, active: boolean, deckLoaded: boolean,
+): void {
   const color = STATION_COLORS[s.kind];
+
   if (PORTAL_KINDS.has(s.kind)) {
-    drawPortalGlyph(ctx, s.x, s.y, time, color, 1);
-  } else {
+    drawPortalPad(ctx, s, color, time);
+  } else if (!deckLoaded) {
+    // The relic lives in the deck image; if that hasn't loaded, leave a marker so the
+    // station isn't just a floating word.
+    deckShadow(ctx, s.x, s.y, s.radius * 1.1);
     drawTerminal(ctx, s.x, s.y, color, time);
   }
 
   ctx.save();
   ctx.textAlign = "center";
   ctx.font = `bold 10px ${MONO}`;
-  ctx.fillStyle = active ? "#ffffff" : "#9aa4b2";
-  ctx.fillText(s.label.toUpperCase(), s.x, s.y + s.radius + 22);
+  ctx.fillStyle = active ? "#ffffff" : "rgba(232,238,247,0.82)";
+  ctx.shadowColor = "rgba(0,0,0,0.9)";
+  ctx.shadowBlur = 3;
+  ctx.fillText(s.label.toUpperCase(), s.x, s.y + s.radius + 15);
   if (active) {
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 0.55 + Math.sin(time * 6) * 0.3;
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, s.radius + 15, 0, Math.PI * 2);
+    ctx.ellipse(s.x, s.y, s.radius + 15, (s.radius + 15) * 0.42, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();
 }
 
-/** A terminal: a dark console with a lit, flickering screen. Used for the star map,
- *  the forge and the quartermaster — the "walk up and interact with a menu" stations. */
+/**
+ * A portal: a ring inscribed in the flagstone with the shared summoning glyph turning
+ * above it. Grounded in the floor on purpose — a portal you can walk into should read as
+ * part of the hall, not a decal floating over it.
+ */
+function drawPortalPad(
+  ctx: CanvasRenderingContext2D, s: HubStation, color: string, time: number,
+): void {
+  const r = s.radius + 6;
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(s.x, s.y, r, r * 0.42, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 0.38 + Math.sin(time * 2 + s.x) * 0.1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(s.x, s.y, r, r * 0.42, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  portalBloom(ctx, s.x, s.y, color, 0.28);
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.scale(0.62, 0.62);
+  drawPortalGlyph(ctx, 0, 0, time, color, 1);
+  ctx.restore();
+}
+
+/** Soft contact shadow so a person sits on the flagstone rather than over it. */
+function deckShadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number): void {
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, rx * 0.33, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A bloom of a portal's colour rising off the ring — the light before the glyph. */
+function portalBloom(
+  ctx: CanvasRenderingContext2D, x: number, y: number, color: string, strength: number,
+): void {
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, 36);
+  grad.addColorStop(0, color);
+  grad.addColorStop(1, color + "00");
+  ctx.save();
+  ctx.globalAlpha = strength;
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, 36, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Fallback marker for a relic station in the frames before the deck image loads. */
 function drawTerminal(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, time: number): void {
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.beginPath();
   ctx.ellipse(x, y + 20, 20, 7, 0, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.fillStyle = "#1c2029";
   ctx.fillRect(x - 15, y - 18, 30, 32);
   ctx.strokeStyle = "rgba(255,255,255,0.14)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 15, y - 18, 30, 32);
-
   ctx.globalAlpha = 0.55 + Math.sin(time * 3) * 0.25;
   ctx.fillStyle = color;
   ctx.fillRect(x - 11, y - 14, 22, 15);
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = "#0c0e14";
-  ctx.fillRect(x - 10, y + 5, 20, 3);
-  ctx.fillRect(x - 4, y + 8, 8, 9);
-  ctx.fillRect(x - 12, y + 17, 24, 4);
   ctx.restore();
 }
