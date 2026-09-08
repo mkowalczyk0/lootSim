@@ -23,7 +23,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 3 — Floor completion loop | clear condition, elite quota, completion portal, extraction penalty | done |
 | 4 — UI | stash, item images, hero screen | done (item PNG pass still outstanding) |
 | 5 — Universal progression | universal skill tree | done |
-| 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | class completion + previews done; weekly in flight |
+| 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | **done** |
 | 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
 | 8 — Crafting | forge overhaul, reforging, currency, recipes | **done** |
 | 9 — Relics | relic system, ~20 relics, equip, acquisition | in flight |
