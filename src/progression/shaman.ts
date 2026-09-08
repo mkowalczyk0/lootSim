@@ -40,8 +40,8 @@ export const SHAMAN_ULTIMATE_METER: ResourceSpec = {
   ui: "meter",
   isUltimateMeter: true,
   generation: [
-    { on: "ailmentInflicted", amount: 4 },
-    { on: "statusApplied", amount: 2 },
+    { on: "ailmentInflicted", amount: 10 },
+    { on: "statusApplied", amount: 5 },
   ],
 };
 

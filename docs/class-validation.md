@@ -89,7 +89,7 @@ harness artifact. Classified:
 
 ---
 
-## Cluster 1 — meter-fill outliers: monk (too fast) / shaman (too slow) — **PROPOSED, not applied**
+## Cluster 1 — meter-fill outliers: monk (too fast) / shaman (too slow) — **APPLIED** (commit pending)
 
 ### monk — Heavenly Fist fills in 1.2 s (arena), ≈ 25–90 s wanted
 
@@ -139,11 +139,32 @@ its `damageDealt` loop (0.3 → 0.03). A fast Damnation is not obviously wrong f
 caster whose fantasy is inevitability. **Hold** until the build-differentiation harness
 gives a single-target real-play number.
 
-### Verification for Cluster 1 (once applied)
+### Result (applied)
 
-- `npm run arena` — monk meter 8–30 s, shaman meter 40–70 s, no other class's meter moved.
-- `npm test` green; smoke campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman).
-- Record the before/after `meter s` deltas back in this section.
+Two data edits, nothing else:
+
+| file | field | before | after |
+|---|---|--:|--:|
+| `src/progression/monk.ts` `MONK_ULTIMATE_METER.generation` | `hitDealt` amount | 3 | **0.5** |
+| | `skillUse` amount | 4 | **3** |
+| `src/progression/shaman.ts` `SHAMAN_ULTIMATE_METER.generation` | `ailmentInflicted` amount | 4 | **10** |
+| | `statusApplied` amount | 2 | **5** |
+
+`npm run arena` `meter s` deltas:
+
+| class | before | after | band (arena, discounted 2–3×) |
+|---|--:|--:|---|
+| monk | **1.2 s** | **6.5 s** | ≈ 15–20 s real — bottom of the 20–90 s band, as intended for a no-stop rhythm loop |
+| shaman | **111.6 s** | **41.8 s** | comfortably inside; leans the meter into the spread-affliction identity |
+| warlock | 2.7 s | 2.7 s | held — unchanged, revisit with the build harness |
+
+No other class's `meter s` moved. Monk's arena AoE/burst columns dropped (3275→1863 AoE,
+2564→2112 burst3) as a *side effect* — the arena is no longer crediting monk with a
+near-constant free ultimate during the measurement window, so these numbers are now more
+representative, not a regression. Monk sustained ST is unchanged (758→765).
+
+`npm test` green. Smoke campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman, so
+monk/shaman edits can't move it — the check confirms nothing shared shifted).
 
 ---
 
