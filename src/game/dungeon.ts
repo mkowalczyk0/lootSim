@@ -293,10 +293,24 @@ export class Hero {
     this.avatar = avatar;
     this.sc = new StatusContainer(index);
     this.resources = setup.player.makeResources();
+    this.syncChargeRate();
   }
 
   get alive(): boolean {
     return !this.downed;
+  }
+
+  /**
+   * Points the ultimate meter's fill rate at this character's `ultimateRate` modifier.
+   *
+   * Called at construction so it's right from the first frame, and again every tick
+   * because `Player.mods` is live — a level-up mid-floor, or anything else that
+   * invalidates the cached mods, has to be reflected without rebuilding the pool.
+   * Cheap: one multiply and one assignment per hero per tick.
+   */
+  syncChargeRate(): void {
+    const meter = this.resources.ultimateMeter();
+    if (meter) meter.rateMultiplier = this.player.ultimateChargeMult;
   }
 }
 
@@ -1458,6 +1472,7 @@ export class Dungeon implements CombatHost, RuleHost {
     const burn = hero.sc.manaBurnPerSecond();
     if (burn > 0) hero.player.drainMana(burn * dt);
     hero.sc.tick(dt, { onDamage: (p) => this.dealDamage(hero.index, p) });
+    hero.syncChargeRate();
     hero.resources.tick(dt, {
       fireEffect: (id) => this.emitFx(id, hero.avatar.x, hero.avatar.y),
       spendHealth: (amount) => {
