@@ -42,14 +42,14 @@ home on the sheet. A relic has no such home, so `mods` comes back — and Hermes
 - the roster must use `mods`, `mutate`, `grantEffect` *and* `rule`, and its passives must
   key on at least six different events or tags — one mechanic in thirty coats fails.
 
-Today: 2 of 30 are stat sticks, both artifacts (Weight of the Fourth Circle, Step of the
+Today: 2 of 31 are stat sticks, both artifacts (Weight of the Fourth Circle, Step of the
 Pilgrim).
 
 ## Two tiers, kept distinct
 
 | | Artifact | Relic |
 |---|---|---|
-| count | 18 | 12 |
+| count | 19 | 12 |
 | presents as | divine | unspoken |
 | source | the Abyssal Rift, and **only** the Abyssal Rift | the Proving, the Nameless at depth 25+, the depth-30 Delve cache, Abyss tier 8+ |
 | power | "my build is better at what it does" | "this changes how my build works" |
