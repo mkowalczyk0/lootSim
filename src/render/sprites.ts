@@ -22,6 +22,7 @@ import {
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
+import { chooseItemArt, type ArtAvailability } from "./itemart";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
@@ -517,22 +518,85 @@ export function chestIcon(tier: ChestTier): HTMLCanvasElement {
  * cosmetic id is dropped rather than crashing the character sheet.
  */
 export function itemIcon(type: ItemType, rarity: Rarity, art: string | null = null): HTMLCanvasElement {
-  if (art) {
-    const png = ATLAS[art] ? atlasCanvas(art) : null;
-    if (png) return png;
-  }
-  if (isWeaponType(type)) return weaponSprite(type, null, rarity);
-  return tintedCanvas(sprite(type), `itemIcon:${type}`, RARITY_COLORS[rarity], 0.5);
+  return itemSpriteFor(type, rarity, art).canvas;
 }
+
+/** An item's picture and how big it is in the world. Both answers, from one decision. */
+export interface ItemSprite {
+  readonly canvas: HTMLCanvasElement;
+  /** Draw scale for the dungeon floor. The DOM surfaces fit to a box and ignore it. */
+  readonly worldScale: number;
+}
+
+/**
+ * What an item looks like — **the** answer, for every surface that draws one.
+ *
+ * The stash card, the chest reel, the loot banner, the Hero paper-doll and the thing lying
+ * on the dungeon floor all resolve through here, which is what makes UAT §11's critical
+ * requirement true by construction rather than by everyone remembering. It returns the
+ * world scale alongside the canvas because that is the only thing the floor needs and the
+ * DOM doesn't: splitting it into a second function would have re-created the two-sources
+ * problem in the exact shape it was just removed from.
+ *
+ * The resolution order, and every step is a fallback for the one before it:
+ *
+ *  1. the item's own authored art, if the manifest has a row *and* the PNG loaded
+ *  2. a weapon's real family sprite in its rarity's palette — a mythic axe glows before
+ *     anyone reads the word
+ *  3. the type's shared icon, washed toward the rarity colour, because a ring is a ring
+ *     and at 32px the rarity is the only thing worth telling apart
+ *  4. a capsule, washed the same way, if even the type has no sprite
+ *
+ * Nothing here can throw on missing art. An unauthored id, a PNG that failed to load, a
+ * type with no icon: each falls to the next line, the same way `normalizeAppearance` drops
+ * a cosmetic id that no longer exists rather than crashing the character screen.
+ */
+export function itemSpriteFor(type: ItemType, rarity: Rarity, art: string | null = null): ItemSprite {
+  // The *decision* is `chooseItemArt` in `render/itemart.ts`, which is pure so the §11
+  // property can be asserted from Node. This function only executes it.
+  const choice = chooseItemArt(type, rarity, art, ART_AVAILABLE);
+  switch (choice.kind) {
+    case "atlas": {
+      const png = atlasCanvas(choice.id);
+      // `hasAtlas` already said this was drawable; if it somehow isn't, fall to the type
+      // rather than returning nothing.
+      if (png) return { canvas: png, worldScale: ATLAS[choice.id]!.worldScale };
+      return itemSpriteFor(type, rarity, null);
+    }
+    case "weapon":
+      return {
+        canvas: weaponSprite(choice.family, null, choice.rarity),
+        worldScale: weaponWorldScale(choice.family) ?? 1,
+      };
+    case "icon": {
+      const name = choice.sprite as SpriteName;
+      return {
+        canvas: tintedCanvas(sprite(name), `itemIcon:${name}`, RARITY_COLORS[choice.rarity], choice.wash),
+        worldScale: spriteWorldScale(name) ?? 1.4,
+      };
+    }
+  }
+}
+
+/** What this build can actually draw, for `chooseItemArt` to fall back against. */
+const ART_AVAILABLE: ArtAvailability = {
+  hasAtlas: (id) => !!ATLAS[id] && !!atlasCanvas(id),
+  hasSprite: (name) => !!atlas && name in atlas,
+};
 
 /** The art id a named item asks for, or null — so call sites never touch the registry. */
 export function itemArtId(item: { named: string | null }): string | null {
   return item.named ? NAMED_BY_ID[item.named]?.art ?? null : null;
 }
 
-/** `itemIcon` for an actual item, art included. Prefer this wherever an `Item` is in hand. */
+/** `itemSpriteFor` for an actual item, art included — the call site everything should use. */
+export function itemSprite(item: { type: ItemType; rarity: Rarity; named: string | null }): ItemSprite {
+  return itemSpriteFor(item.type, item.rarity, itemArtId(item));
+}
+
+/** `itemSprite`'s canvas alone, for the DOM surfaces that fit it into a box. */
 export function itemArt(item: { type: ItemType; rarity: Rarity; named: string | null }): HTMLCanvasElement {
-  return itemIcon(item.type, item.rarity, itemArtId(item));
+  return itemSprite(item).canvas;
 }
 
 /** Cache key for `pixelImageFit` over `itemArt` — the same inputs, so the same image. */

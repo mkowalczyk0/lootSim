@@ -99,6 +99,29 @@ const SLOT_GLYPH: Record<EquipSlot, string> = {
 };
 
 /**
+ * Slots UAT §12 names as coming later, shown on the paper-doll as real but locked so the
+ * character sheet reads like a character sheet with room to grow rather than a short list
+ * that will one day get longer.
+ *
+ * Declared here rather than spelled out inline at the call site so that turning one of
+ * these on is deleting a row from this list and adding it to `EQUIP_SLOTS` — not editing
+ * a render function. The three relic slots in particular are being built on their own
+ * branch; when they arrive they should replace their rows here, and the layout question
+ * (a ring around the portrait versus the current flanking columns) is a deliberate
+ * coordination point rather than something to guess at.
+ *
+ * `glyph` matches the visual language of `SLOT_GLYPH` above: one flat, dim mark.
+ */
+const FUTURE_SLOTS: readonly { readonly label: string; readonly glyph: string }[] = [
+  { label: "helmet", glyph: "⌂" },
+  { label: "boots", glyph: "⊻" },
+  { label: "off-hand", glyph: "◇" },
+  { label: "relic", glyph: "✧" },
+  { label: "relic", glyph: "✧" },
+  { label: "relic", glyph: "✧" },
+];
+
+/**
  * The style screen, top to bottom: the four things everybody gets for free, then one
  * row per cosmetic slot. Free choices first on purpose — a brand new character with an
  * empty wardrobe still has a screen worth visiting.
@@ -2432,11 +2455,12 @@ export class TownUI {
   }
 
   /** A slot the layout shows but the game doesn't have yet (UAT §12). Inert — no data-index. */
-  private lockedSlot(label: string): string {
+  /** One §12 slot that doesn't exist yet: real furniture, visibly not yet fillable. */
+  private lockedSlot(label: string, glyph: string): string {
     return `
-      <div class="doll-slot locked" title="${label} — a future update">
-        <span class="ds-label">${label}</span>
-        <div class="ds-art"><span class="ds-empty">+</span></div>
+      <div class="doll-slot locked" title="${escapeHtml(label)} — a future update">
+        <span class="ds-label">${escapeHtml(label)}</span>
+        <div class="ds-art"><span class="ds-empty">${glyph}</span></div>
         <span class="ds-name muted">soon</span>
       </div>`;
   }
@@ -2469,12 +2493,7 @@ export class TownUI {
           ${this.dollSlot("necklace")}
         </div>
         <div class="doll-locked">
-          ${this.lockedSlot("helmet")}
-          ${this.lockedSlot("boots")}
-          ${this.lockedSlot("off-hand")}
-          ${this.lockedSlot("relic")}
-          ${this.lockedSlot("relic")}
-          ${this.lockedSlot("relic")}
+          ${FUTURE_SLOTS.map((f) => this.lockedSlot(f.label, f.glyph)).join("")}
         </div>
       </div>`;
 

@@ -308,6 +308,50 @@ off-hand** *(new)*, **two rings, amulet**, and **three Relic/Artifact slots** *(
 Boots and off-hand need world-visible treatment on the character sprite eventually; rings/
 amulet/relics are icon-only.
 
+**Built as of this pass:** the paper-doll (portrait centred, the six live slots flanking it,
+each drawing the real item icon) and the six future slots as visible, locked furniture, so
+the sheet reads like a character sheet with room to grow rather than a short list that will
+one day get longer. The future slots are declared in one list (`FUTURE_SLOTS` in
+`src/ui/town.ts`) — turning one on is moving a row out of that list and into `EQUIP_SLOTS`,
+not editing a render function. Whether the three relic slots want the current flanking
+columns or a genuine ring around the portrait is an open layout question, deliberately not
+guessed at here.
+
+### 9.2 One item, one picture (UAT §11's critical requirement)
+
+> *The stash item image should correspond to the actual item image displayed when opening
+> loot boxes/chests. The same item should visually appear to be the same item everywhere.*
+
+Six surfaces draw an item: the **stash card**, the **chest reel**, the **loot banner**, the
+**Hero paper-doll slot**, the **compare/equipped panels**, and the **thing lying on the
+dungeon floor**. All six resolve through one decision.
+
+- **`chooseItemArt` in `src/render/itemart.ts` is that decision**, and it is *pure* — no
+  canvas, no atlas — for the same reason `render/pixels.ts` is: so the property can be
+  asserted from Node. `render/sprites.ts` (`itemSprite`) executes it; nothing else may
+  re-derive it.
+- **The ladder, in order:** the item's own authored art (a manifest row whose PNG actually
+  loaded) → a weapon's real family sprite in its rarity's palette → the type's shared icon
+  washed toward the rarity colour → the capsule, washed the same way. Every step is a
+  fallback for the one above, and none can throw: an unauthored id, a PNG that failed to
+  load, or a type with no icon each fall to the next line, the way a removed cosmetic id is
+  dropped rather than crashing the character screen.
+- **`RARITY_WASH` is 0.5 and there is exactly one of it.** There used to be two: the dungeon
+  floor washed a non-weapon icon at 0.4 while the stash and the chest reel washed the same
+  item at 0.5, so a rare ring really was a different colour in your bag than on the ground.
+  Nothing failed — that is why it survived. 0.5 is the survivor because the spec names the
+  chest-opening image as the reference the stash must match, and both of those already used
+  it.
+
+**If you add a surface that draws an item, call `itemSprite`.** Don't reach for `ATLAS`, the
+weapon sprite or a rarity tint directly; that is precisely how the second implementation got
+there. `npm run itemart` fails if the wash constant ever forks again.
+
+**No item PNGs exist yet.** All 11 named items declare an `art` id and every one of them is
+currently on the type-icon fallback, which is the documented intended state until an art
+pass. Because the ladder is shared, authoring one PNG changes that item's picture on all six
+surfaces at once — which is the whole point of the arrangement.
+
 ---
 
 ## 10. Monsters
