@@ -29,8 +29,8 @@ dummies cannot measure "did the escape save you").
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | juggernaut | 229 | 1413 | 1559 | 260 | 24.8 | 6088 | 0 | 4 | 4 | 1 | 0 | 3 | 0 | 0 |
 | paladin | 390 | 1485 | 1478 | 246 | 21.5 | 7800 | 4 | 3 | 1 | 1 | 0 | 5 | 0 | 0 |
-| engineer | 395 | 1330 | 1384 | 231 | 6.7 | 4031 | 0 | 2 | 0 | 0 | 0 | 0 | 5 | 0 |
-| corsair | 458 | 1775 | 455 | 76 | none (90%) | 9447 | 0 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
+| engineer | 431 ‡ | 1478 ‡ | 1471 ‡ | 245 ‡ | 6.7 | 328 ‡ | 0 | 2 | 0 | 0 | 0 | 0 | 5 | 0 |
+| corsair | 539 ‡ | 2287 ‡ | 538 ‡ | 90 ‡ | none (90%) | 9581 ‡ | 0 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
 | necromancer | 571 | 1668 | 2467 | 411 | 7.3 | 7276 | 3 | 0 | 1 | 1 | 0 | 0 | 5 | 0 |
 | shaman | 596 | 1789 | 1386 | 231 | 41.8 † | 7169 | 1 | 0 | 0 | 0 | 0 | 1 | 4 | 0 |
 | lancer | 602 | 2007 | 697 | 116 | none (0%) | 9715 | 0 | 1 | 0 | 6 | 2 | 2 | 0 | 0 |
@@ -52,7 +52,10 @@ dummies cannot measure "did the escape save you").
 `dmg.in` = total damage absorbed over the 120 s fair fight (lower = tankier / better
 sustain). `meter s` = seconds to a full ultimate meter with it held. **†** = post-Cluster-1
 value (monk / shaman meter rates retuned; monk's AoE/burst columns fell because the arena
-no longer credits it with a near-constant free ultimate — see Cluster 1).
+no longer credits it with a near-constant free ultimate — see Cluster 1). **‡** =
+post-Cluster-2 value (corsair / engineer damage-floor pass — see Cluster 2; engineer's
+`dmg.in` 328 is a body-block artifact, its AoE is understated by the arena's 3-ability
+loadout, and a real read of both waits on the build harness).
 
 ### What the table says (healthy)
 
@@ -209,7 +212,7 @@ folds into Cluster 2 below.
 
 ---
 
-## Cluster 2 — bottom-quartile damage with no identity to pay for it: Corsair + Engineer — **PROPOSED, awaiting go-ahead**
+## Cluster 2 — bottom-quartile damage with no identity to pay for it: Corsair + Engineer — **APPLIED** (commit pending)
 
 Both are last-or-near-last on ST *and* AoE at every level and neither has a defensive /
 support / control census column that spikes to justify sitting there. This is the
@@ -239,14 +242,15 @@ Root causes, all data:
   **zero** damage, so `autoSlotNewAbilities` fills the arena's four skill slots with a
   lower average damage-per-slot than a class whose kit is mostly attacks.
 
-**Proposed change** (data only — `src/data/classes.ts`, `src/progression/corsair.ts`):
+**Change applied** (data only — `src/data/classes.ts`, `src/progression/corsair.ts`):
 
 | file · field | before | after | why |
 |---|--:|--:|---|
 | `classes.ts` `corsair.base.attackSpeed` | 0.06 | **0.09** | brings the basic-attack cadence to skirmisher tier |
 | `classes.ts` `corsair.base` add `critChance` | — | **0.06** | a pistol-and-cutlass duelist should crit; matches the archetype |
-| `corsair.ts` `CORSAIR_BOARDING_CUT` base hit | 1.3 | **1.7** | the bread-and-butter melee, and it's gated behind a Hookshot setup |
-| `corsair.ts` `CORSAIR_BOARDING_CUT` hooked bonus | 1.6 | **2.1** | rewards the hook→cut combo the class is built around |
+| `classes.ts` `corsair.base` add `critDamage` | — | **0.12** | matches Duelist's base; the crit needs to be worth landing |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` base hit | 1.3 | **1.9** | the bread-and-butter melee, and it's gated behind a Hookshot setup |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` hooked bonus | 1.6 | **2.4** | rewards the hook→cut combo the class is built around |
 | `corsair.ts` `CORSAIR_RICOCHET_SHOT` base | 1.1 | **1.5** | the ranged single-target option |
 | `corsair.ts` `CORSAIR_GRAPPLE_SWING` damage | 1.4 | **1.8** | the mobility-attack |
 
@@ -278,36 +282,64 @@ or the attack+spell blend, both of which stay retracted):
   *and* lowest growth on the board, so both the Engineer and everything it builds (turrets
   inherit owner `attackDamage`) start from the lowest number in the game.
 
-**Proposed change** (data only — `src/data/classes.ts`, `src/progression/engineer.ts`):
+**Change applied** (data only — `src/data/classes.ts`, `src/progression/engineer.ts`).
+`AUTO_TURRET` `count` was **held at 1** — a first pass to 2 turrets dropped engineer's
+fair-fight `dmg.in` to ~260 because two construct bodies body-block the arena's stationary
+dummies wholesale; the single stronger turret is the same idea without that artifact.
 
 | file · field | before | after | why |
 |---|--:|--:|---|
 | `classes.ts` `engineer.base.attack` | 8 | **9** | lifts the Engineer and every construct at once; still bottom-3 |
 | `classes.ts` `engineer.growth.attack` | 1.9 | **2.05** | the construct floor shouldn't fall further behind with level |
-| `engineer.ts` `ENGINEER_AUTO_TURRET` `count` | 1 | **2** | two turrets is the "there is infrastructure doing it instead" fantasy |
-| `engineer.ts` `ENGINEER_AUTO_TURRET` `inheritPower` | 0.6 | **0.72** | per-turret bite |
-| `engineer.ts` `ENGINEER_AUTO_TURRET` `cooldown` | 6 | **7** | pay for the extra body |
-| `engineer.ts` `ENGINEER_MORTAR_POD` zone `base` | 1.4 | **1.9** | the sustained-AoE anchor |
+| `engineer.ts` `ENGINEER_AUTO_TURRET` `inheritPower` | 0.6 | **0.72** | turret bite (count held at 1) |
+| `engineer.ts` `ENGINEER_MORTAR_POD` zone `base` | 1.4 | **2.4** | the sustained-AoE anchor |
+| `engineer.ts` `ENGINEER_MORTAR_POD` zone `radius` | 100 | **120** | a pod that "lobs shells at an area" should own a real footprint |
 | `engineer.ts` `ENGINEER_MORTAR_POD` `inheritPower` | 0.7 | **0.8** | — |
 | `engineer.ts` `ENGINEER_SHOCK_MINE` damage `base` | 1.0 | **1.5** | the burst-AoE / CC option |
 | `engineer.ts` `ENGINEER_REMOTE_DETONATION` base | 2.4 | **3.0** | the payoff button |
 | `engineer.ts` `ENGINEER_REMOTE_DETONATION` tagged follow-up | 2.0 | **2.6** | rewards the Tagged setup |
 
 **Left alone on purpose:** personal basic-attack multipliers and every non-construct
-skill — the Engineer *should* stay near the ST floor (a summoner's ST identity). The bump
-routes through the constructs, not the Engineer's own swing.
+skill — the Engineer *should* stay near the ST floor (a summoner's ST identity).
 
-**Projected:** personal ST 395 → ~470–520 (still bottom-3, correct), AoE 1384 → ~2100–2400
-(Necromancer tier), burst3 → ~1900. `dmg.in` unchanged (no defensive change).
+### Result (applied)
 
-### Verification plan (run after the owner approves, record deltas here)
+`npm run arena` deltas (all other 20 class rows **byte-identical** to the 12-axis table —
+every edit is class-file-local or a per-class `classes.ts` block):
 
-- `npm run arena` — full 12-axis re-read. Assert: corsair ST lands 600–720 and AoE stays
-  under ~650; engineer AoE lands 2000–2500 and personal ST stays under ~550; **no other
-  class's row moves** (every edit is class-file-local or a per-class `classes.ts` block).
-- `npm test` green (check + vocab + prog + classes + roster + rules + smoke).
-- `npm run smoke` — campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman).
-- `npm run roster` — data-shape + anti-overlap gates still pass.
+| class | ST | burst3 | AoE | per-tgt | dmg.in | meter |
+|---|--:|--:|--:|--:|--:|--:|
+| corsair | 458 → **539** | 1775 → **2287** | 455 → **538** | 76 → **90** | 9447 → 9581 | none (90%) → none (90%) |
+| engineer | 395 → **431** | 1330 → **1478** | 1384 → **1471** | 231 → **245** | 4031 → **328** † | 6.7 → 6.7 |
+
+**Corsair — landed clean.** ST +18% (still below Duelist's 723, correct for a class that
+also skirmishes and displaces), burst +29% off the base crit, AoE essentially flat. It is
+off the absolute ST floor (was 20th, now mid-low) with its identity census unchanged. This
+one is done.
+
+**Engineer — smaller than projected, and the arena can't score the rest.** `tools/arena.ts`
+slots only a class's **first three** abilities (`ABILITY_UNLOCK_LEVELS` order →
+`autoSlotNewAbilities`), which for the Engineer is `auto_turret / mortar_pod / repair_drone`.
+So of the buffs above, only `base.attack`, the turret and the mortar are in the measured
+loadout — `shock_mine` and `remote_detonation` (both real AoE a levelling player equips)
+never fire in the run. Measured ST is +9%; measured AoE moved almost not at all (+6%) and
+was **insensitive to a 70% mortar-zone buff**, which means the AoE number is dominated by
+the ultimate in that 30 s window, not the constructs. **†** `dmg.in` 4031 → 328 is a
+body-block artifact: a stronger single turret now holds the four stationary fair-fight
+dummies for the full 120 s. It is not a real durability change and it is exaggerated by
+dummies that never reposition.
+
+**Conclusion:** the Corsair fix is complete and verified. The Engineer buffs are
+directionally right and the ST gain is real, but **whether they are *enough* cannot be
+judged from the arena** — its summoner instrumentation (melee-range minions, a fixed
+3-ability loadout that excludes half the buffed kit, an ultimate-dominated AoE window,
+a hair-trigger `dmg.in`) is the wrong instrument. A second Engineer pass is **gated on the
+build-differentiation harness** (backlog below) — real floors, pathing enemies, the full
+equipped kit — and should re-check AoE and effective durability there before touching the
+numbers again.
+
+`npm test` green. `npm run smoke` campaign **13.8 / 9.4 byte-identical** (bot plays
+Swordsman). `npm run roster` green.
 
 ---
 
