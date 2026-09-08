@@ -11,11 +11,12 @@ import type { TrapKind } from "./traps";
 
 export type PropKind =
   | "torch" | "bones" | "mushroom" | "crystal" | "rock"
-  // Heavy Delve dressing — big grimdark set pieces laid on by `dressFloor` in
+  // Heavy realm dressing — big grimdark set pieces laid on by `dressFloor` in
   // level.ts (a separate pass from the biome `props` scatter, on its own rng).
-  // Atlas-only (render/atlas/props/prop.delve-*); any the renderer can't resolve
-  // are skipped, so they degrade cleanly.
-  | "brazier" | "statue" | "altar" | "sarcophagus" | "gibbet" | "skulls";
+  // Atlas-only (render/atlas/props/prop.<realm>-*); any the renderer can't
+  // resolve is skipped, so they degrade cleanly.
+  | "brazier" | "statue" | "altar" | "sarcophagus" | "gibbet" | "skulls"
+  | "handstone" | "urn" | "pillar" | "casket" | "wargrave";
 
 /** The shapes the level generator knows how to build. */
 export type LayoutKind = "open" | "pillars" | "chambers" | "gauntlet" | "rubble" | "ring";

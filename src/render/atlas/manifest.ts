@@ -101,6 +101,16 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "prop.delve-sarcophagus": { id: "prop.delve-sarcophagus", w: 90, h: 66, worldScale: 0.40, feet: 0.06 },
   "prop.delve-skulls":      { id: "prop.delve-skulls",      w: 80, h: 50, worldScale: 0.42, feet: 0.06 },
 
+  // --- Ashen Reliquary dressing (§8.2) --- the tomb-of-the-supernatural set:
+  // a fallen higher being's hand out of the ash, war graves, funerary urns,
+  // toppled winged pillars, chained reliquary caskets. Same wash treatment as
+  // the Delve set (drawProps → biome.wallSide), themed per sector.
+  "prop.reliquary-hand":     { id: "prop.reliquary-hand",     w: 90, h: 74, worldScale: 0.42, feet: 0.05 },
+  "prop.reliquary-urn":      { id: "prop.reliquary-urn",      w: 56, h: 52, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-pillar":   { id: "prop.reliquary-pillar",   w: 88, h: 45, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-casket":   { id: "prop.reliquary-casket",   w: 77, h: 45, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-wargrave": { id: "prop.reliquary-wargrave", w: 46, h: 86, worldScale: 0.42, feet: 0.03 },
+
   // --- item / drop icons (§12) --- drawn through pickupSprite at `worldScale` (fixed
   // 1.4 before). Legacy icon grids ~8–12 wide. In UI they flow through pixelImageFit,
   // which normalises by width, so worldScale here is only the in-world drop size.

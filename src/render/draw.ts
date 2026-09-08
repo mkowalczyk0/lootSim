@@ -74,6 +74,7 @@ const PROP_SPRITES: Record<PropKind, SpriteName> = {
   // The Delve set pieces have no procedural grid — they're atlas-only (see PROP_ATLAS).
   // These fallbacks only matter for the frame or two before the PNGs finish loading.
   brazier: "torch", statue: "rock", altar: "rock", sarcophagus: "rock", gibbet: "bones", skulls: "bones",
+  handstone: "rock", urn: "rock", pillar: "rock", casket: "rock", wargrave: "bones",
 };
 
 /**
@@ -89,6 +90,11 @@ const PROP_ATLAS: Partial<Record<PropKind, string>> = {
   sarcophagus: "prop.delve-sarcophagus",
   gibbet: "prop.delve-gibbet",
   skulls: "prop.delve-skulls",
+  handstone: "prop.reliquary-hand",
+  urn: "prop.reliquary-urn",
+  pillar: "prop.reliquary-pillar",
+  casket: "prop.reliquary-casket",
+  wargrave: "prop.reliquary-wargrave",
 };
 
 /** Non-weapon gear on the floor. Weapons draw as the actual weapon instead. */

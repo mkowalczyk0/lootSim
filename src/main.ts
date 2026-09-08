@@ -538,10 +538,16 @@ applySettings();
 preloadArt()
   .catch((err) => console.error(err))
   .finally(() => {
-    // Dev-only shortcut for art review: `?dive=8` (optionally `&seed=123`) drops
-    // straight onto a Delve floor at that depth instead of walking the hub.
-    const devDive = import.meta.env.DEV ? new URLSearchParams(location.search).get("dive") : null;
-    if (devDive) {
+    // Dev-only shortcut for art review: `?dive=8` drops straight onto a Delve floor
+    // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor, instead of
+    // walking the hub.
+    const params = import.meta.env.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
+    const devDive = params.get("dive");
+    const devPlanet = params.get("planet");
+    if (devPlanet && PLANETS_BY_ID[devPlanet]) {
+      const tier = Math.max(1, Number(params.get("tier")) || 1);
+      enterDungeon(planetConfig(PLANETS_BY_ID[devPlanet]!, tier, 1, state.challengerTier));
+    } else if (devDive) {
       enterDungeon(delveConfig(Math.max(1, Number(devDive) || 1), state.challengerTier));
     } else {
       enterHub();
