@@ -218,7 +218,7 @@ like a fallback.
 | `worldDrop` | any wave monster at ≥ `minDepth` dies; elites ×3 | same |
 | `clearCache` | a floor at ≥ `minDepth` is cleared, optionally only in one `RunModeId` | `Dungeon.dropClearCache` |
 | `chest` | a chest of that tier is opened, per pull | `GameState.openChests` |
-| `craft` | the player pays exactly `materials` + `coins` at the Forge's Named screen | `GameState.craftNamed` |
+| `craft` | the player pays exactly `materials` + `coins` (+ any `items` components from the stash, UAT §24 — see `docs/forge.md`) at the Forge's Named screen | `GameState.craftNamed` |
 
 Every listed source is an independent roll. `chance` is per event, then
 `namedDropChance` multiplies by `min(2.5, 1 + 0.35·log₂(danger))` — exactly base at

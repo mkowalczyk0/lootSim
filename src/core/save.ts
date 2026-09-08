@@ -93,8 +93,12 @@
  * loads with every class incomplete, which is the truth — the encounter did not exist
  * when it was written. A character that had already banked depth 30 finds its Proving
  * waiting at the bottom on the next dive rather than having to re-earn the trip down.
+ *
+ * Version 19 added the Forge workbench (UAT §24/§26/§27): one new account-wide field,
+ * `ash`, the crafting currency salvaged items return. An older save loads with none, which
+ * is what a new account has; nothing else about the shape moved.
  */
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

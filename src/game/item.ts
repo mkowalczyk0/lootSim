@@ -103,7 +103,7 @@ export interface RollOptions {
 }
 
 /** Sell/reforge-cost basis: rarity and item level plus what the affix list carries. */
-function computeValue(
+export function computeValue(
   rarity: Rarity, levelScale: number, modCount: number, grant: string | null, trigger: TriggerSpec | null,
   named = false,
 ): number {
@@ -117,7 +117,7 @@ function computeValue(
 }
 
 /** Item level adds up to +100% at ilvl 30, so a deep-run common still feels like a find. */
-function levelScaleFor(ilvl: number): number {
+export function levelScaleFor(ilvl: number): number {
   return 1 + (ilvl - 1) * 0.033;
 }
 
@@ -154,7 +154,7 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
 }
 
 /** The type's base stat block at this rarity, level and variance — shared by both forges. */
-function baseStats(type: ItemType, mult: number, levelScale: number, variance: number): Stats {
+export function baseStats(type: ItemType, mult: number, levelScale: number, variance: number): Stats {
   const base = TYPE_STATS[type];
   const stats = zeroStats();
   for (const k of STAT_KEYS) {
@@ -313,6 +313,19 @@ function rollGrant(type: ItemType, tier: number, rng: Rng): string | null {
 /** From legendary upward an item can do something on its own, without a key press. */
 function rollTrigger(tier: number, rng: Rng): TriggerSpec | null {
   if (!rng.chance(triggerChance(tier))) return null;
+  return makeTrigger(tier, rng);
+}
+
+/** Every pool affix by id, for the bench to find the roll an `ItemMod` came from. */
+export const MOD_ROLL_BY_ID: ReadonlyMap<string, ModRoll> = new Map(MOD_POOL.map((m) => [m.id, m]));
+
+/** Whether an item's type may carry a granted skill at all — weapons, rings, necklaces. */
+export function grantEligible(type: ItemType): boolean {
+  return isWeaponType(type) || type === "ring" || type === "necklace";
+}
+
+/** One rolled trigger for an item of this rarity tier — the drop's roll and the bench's Awaken share it. */
+export function makeTrigger(tier: number, rng: Rng): TriggerSpec {
   const shape = rng.pick(TRIGGER_SHAPES);
   const element: Element = rng.pick(LOOT_ELEMENTS);
   return {
@@ -328,7 +341,7 @@ function rollTrigger(tier: number, rng: Rng): TriggerSpec | null {
 }
 
 /** At most one prefix word and one suffix phrase, or names become unreadable. */
-function decorate(name: string, rolls: readonly ModRoll[]): string {
+export function decorate(name: string, rolls: readonly ModRoll[]): string {
   const prefix = rolls.find((r) => r.kind === "prefix");
   const suffix = rolls.find((r) => r.kind === "suffix");
   return [prefix?.label, name, suffix?.label].filter(Boolean).join(" ");
