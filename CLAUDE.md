@@ -140,6 +140,13 @@ than linear in depth, which is what makes the ladder eventually stop you. Cleari
 rift's boss opens the next tier; extracting early keeps your loot and opens nothing.
 That asymmetry is the whole tension of a rift — don't soften it.
 
+**The Vigil** (UAT §17 v1) is a daily one-floor mode, unlocked at `deepestDepth` 6: the
+seed, depth (band 6–14), two modifiers and the guaranteed key-tier reward all derive from
+the UTC day number, so it's the literal same floor for everyone who plays it that day.
+Clearing it (a credited bank, not a death or bail-out) marks the day closed on
+`GameState.daily.clearedDay`; retries are free until then. Solo only for now. See
+`src/data/daily.ts` and `docs/daily-dungeon.md`.
+
 ### Planets: the star map, and where materials come from
 
 `src/data/planets.ts`. A planet expedition is mechanically a third rift flavor —
