@@ -48,8 +48,10 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // character (30×26 grid at SPRITE_SCALE 1.2 ≈ 31 world units tall) while the player
   // isn't wearing a composited cosmetic layer (hat/ears/face/back) — those layers are
   // still procedural until their own art pass, so a decorated character keeps the old
-  // look for now. 50px × 0.64 ≈ 32, a hair taller for clarity per §1.3.
-  "hero.legend-base": { id: "hero.legend-base", w: 20, h: 50, worldScale: 0.64, feet: 0.04 },
+  // look for now. v2 redraw (Sept 2026): higher detail to sit alongside the redrawn
+  // bosses — the owner's call that the plain low-res hero "looked out of place in a
+  // boss fight". World footprint unchanged: 68px × 0.471 ≈ 32, same as the v1 sprite.
+  "hero.legend-base": { id: "hero.legend-base", w: 39, h: 68, worldScale: 0.471, feet: 0.04 },
 
   // --- monsters (§10) --- worldScale ≈ predecessor grid height × SPRITE_SCALE (1.2),
   // then ~1.13× for legibility (the rot-scuttler precedent). Legacy grids: imp/ranger
@@ -172,4 +174,17 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
   daggers:  { id: "weapon.daggers",  w: 44,  h: 11, worldScale: 0.47, gripX: 7,  gripY: 5 },
   staff:    { id: "weapon.staff",    w: 86,  h: 8,  worldScale: 0.33, gripX: 7,  gripY: 4 },
   talisman: { id: "weapon.talisman", w: 20,  h: 36, worldScale: 0.55, gripX: 10, gripY: 9 },
+
+  // The other eight families (data/weapons.ts). Same methodology — target world reach
+  // ≈ predecessor grid width × WEAPON_SCALE (1.5): hammer 26 · scythe 32 · rapier 36 ·
+  // whip 44 · bow held (~22) · claws 29 · chakram 18 · fists 14. bow/chakram scale by
+  // the axis that carries the shape (bow height, chakram width).
+  hammer:   { id: "weapon.hammer",   w: 71,  h: 25, worldScale: 0.37, gripX: 5,  gripY: 12 },
+  scythe:   { id: "weapon.scythe",   w: 73,  h: 38, worldScale: 0.44, gripX: 5,  gripY: 16 },
+  rapier:   { id: "weapon.rapier",   w: 78,  h: 14, worldScale: 0.46, gripX: 5,  gripY: 7 },
+  whip:     { id: "weapon.whip",     w: 124, h: 13, worldScale: 0.36, gripX: 4,  gripY: 6 },
+  bow:      { id: "weapon.bow",      w: 14,  h: 61, worldScale: 0.36, gripX: 8,  gripY: 30 },
+  claws:    { id: "weapon.claws",    w: 45,  h: 36, worldScale: 0.64, gripX: 7,  gripY: 28 },
+  chakram:  { id: "weapon.chakram",  w: 40,  h: 42, worldScale: 0.45, gripX: 19, gripY: 20 },
+  fists:    { id: "weapon.fists",    w: 33,  h: 38, worldScale: 0.42, gripX: 8,  gripY: 25 },
 };
