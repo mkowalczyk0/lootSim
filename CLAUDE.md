@@ -160,6 +160,25 @@ Clearing it (a credited bank, not a death or bail-out) marks the day closed on
 `GameState.daily.clearedDay`; retries are free until then. Solo only for now. See
 `src/data/daily.ts` and `docs/daily-dungeon.md`.
 
+**The Convergence** (UAT §17 v1) is the Vigil's harder sibling: a weekly, four-floor run
+ending in a boss, unlocked at `deepestDepth` 12. Same idiom, scaled up — the base seed,
+the depth band floors 1-3 draw from and escalate through (12–16), three modifiers and
+the guaranteed reward tier all derive from the UTC week number, and each floor mixes
+that base seed with its own floor index so all four are distinct. **The boss floor (4)
+deliberately does not continue that escalation**: it draws its own depth from a separate,
+much shallower band (9–11), because a `tools/smoke.ts` survivability pass (a real fight,
+not the reward-plumbing check) found that a raid boss at the same depth as an escalated
+trash floor is dramatically harder, not incrementally harder, and that this isn't
+specific to the Convergence — the delve's own depth-15 boss is close to unbeatable for
+the same characters that clear a depth-15 trash floor without much trouble. That gap is
+the same "far beyond the measured frontier" finding the Proving section below hit
+independently; the Convergence sidesteps inheriting it rather than trying to close it. It
+pays in the two chests the Quartermaster otherwise only sells outright (Adept's Trove,
+Collector's Hoard), guaranteed on the boss floor only. Clearing it (a credited bank on
+the boss floor, not a death or bail-out, and not an intermediate floor either) marks the
+week closed on `GameState.weekly.clearedWeek`; retries are free until then. Solo only for
+now. See `src/data/weekly.ts` and `docs/weekly-dungeon.md`.
+
 ### The Proving: the bottom of the Delve, and finishing a class
 
 `src/data/legends.ts` (UAT §13/§14). A class can be **completed**: take it to depth 30,

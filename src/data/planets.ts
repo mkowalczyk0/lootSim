@@ -29,6 +29,7 @@ import { challengerMultiplier } from "./challenger";
 import type { Element } from "./elements";
 import type { EnemyKind } from "./enemies";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "./modes";
+import { weeklyConfig } from "./weekly";
 
 export interface PlanetSpec {
   /** Frozen internal id — `GameState.planetProgress` is keyed by it. Do not change. */
@@ -245,6 +246,12 @@ export function nextFloorConfig(config: RunConfig): RunConfig {
       ...planetConfig(config.planet.spec, config.planet.tier, config.floor + 1, config.challengerTier),
       players,
     };
+  }
+  // The Convergence (UAT §17) rebuilds itself from the week rather than `riftConfig`,
+  // exactly why the planet branch above exists — a generic rebuild would lose the
+  // week's seed, modifiers and key tier the same way it would lose a planet's spec.
+  if (config.weekly) {
+    return { ...weeklyConfig(config.weekly.week, config.floor + 1, config.challengerTier), players };
   }
   if (!config.mode.isRift) return delveConfig(config.depth + 1, config.challengerTier, players);
   return { ...riftConfig(config.mode.id, config.tier, config.floor + 1, config.challengerTier), players };
