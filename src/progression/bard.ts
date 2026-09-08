@@ -42,7 +42,12 @@ export const BARD_ULTIMATE_METER: ResourceSpec = {
   isUltimateMeter: true,
   generation: [
     { on: "skillUse", amount: 5 },
-    { on: "statusApplied", amount: 2, requireTags: ["support"] },
+    // Playing a song, not landing a debuff. This was `on: "statusApplied"`, which asked
+    // for the intersection of two disjoint sets and so never fired once in 90 events:
+    // `statusApplied` is broadcast only for a *hostile* status placed on an enemy, and
+    // every `support`-tagged thing the Bard does buffs an ally. On `skillUse` it does
+    // what it always read as — a song charges the Performance faster than a hex does.
+    { on: "skillUse", amount: 2, requireTags: ["support"] },
   ],
 };
 

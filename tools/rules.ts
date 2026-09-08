@@ -21,7 +21,9 @@ import {
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
 import { ARCHETYPES } from "../src/data/enemies";
-import { CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
+import { REACTIVE_EVENTS } from "../src/game/abilities";
+import type { Ability, CastInput, EffectStep } from "../src/combat/index";
+import { ALL_CLASSES, CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
 import type { ClassId } from "../src/data/classes";
 
 /** `makeEnemy` is private; a headless test may reach it to stage a fixed encounter. */
@@ -34,6 +36,18 @@ function spawn(d: Dungeon, x: number, y: number): Enemy {
   e.spawnTimer = 0;
   d.enemies.push(e);
   return e;
+}
+
+/**
+ * `castInputFor` is private; a headless test reaches it so a staged cast is aimed exactly
+ * the way a real keypress aims one — `targeting: "currentTarget"` needs the
+ * `currentTargetId` this computes, and hand-rolling it would be testing the wrong thing.
+ */
+function castInput(d: Dungeon, hero: Hero, ability?: Ability): CastInput {
+  const fn = (d as unknown as {
+    castInputFor(h: Hero, a?: Ability): CastInput;
+  }).castInputFor;
+  return fn.call(d, hero, ability);
 }
 
 /** Stage a ground zone the hero owns, the way a cast skill would. */
@@ -422,6 +436,172 @@ section("construct / summon keystones (B-4)");
   e.health = 0;
   rulesOnKill(d, hero, e);
   check("Dread Admiral presses a slain enemy into the crew", d.minions.length > nBefore, `${d.minions.length} vs ${nBefore}`);
+}
+
+// --- deferred effects actually execute (Cluster 8) ---------------------
+//
+// `delay`, `reactive` and `followUp` are the three deferred kinds the executor knows.
+// `delay` always worked; the other two were authored across the roster — 34 declarations
+// between them — and executed *never*: `AbilityRuntime.notify` had no callers anywhere,
+// and a `followUp` window was discarded on expiry with nothing able to spend it. These
+// checks exist so that cannot come back quietly, because nothing else in the suite
+// noticed: the data was valid, the shapes passed `npm run roster`, and the abilities
+// simply did a fraction of what they said.
+
+section("deferred effects execute (Cluster 8)");
+
+/** Walk an effect tree, including the nested effects of the deferred kinds. */
+function walkSteps(steps: readonly EffectStep[], visit: (s: EffectStep) => void): void {
+  for (const s of steps) {
+    visit(s);
+    if (s.kind === "delay" || s.kind === "reactive" || s.kind === "followUp") walkSteps(s.effects, visit);
+    if (s.kind === "random") for (const c of s.choices) walkSteps(c.effects, visit);
+    if (s.kind === "projectile" && s.projectile.onExpire) walkSteps(s.projectile.onExpire, visit);
+    if ((s.kind === "consumeStatus" || s.kind === "consumeSummons") && s.then) walkSteps(s.then, visit);
+  }
+}
+
+{
+  // Every event a `reactive` keys on has to be one the simulation actually delivers to
+  // the runtime, or the window can never close and the effects are decoration.
+  const delivered = new Set<string>(REACTIVE_EVENTS);
+  const orphans = new Map<string, string[]>();
+  let reactives = 0;
+  for (const def of ALL_CLASSES) {
+    for (const ability of def.abilities) {
+      walkSteps(ability.effects, (s) => {
+        if (s.kind !== "reactive") return;
+        reactives++;
+        if (delivered.has(s.event)) return;
+        const list = orphans.get(s.event) ?? [];
+        list.push(ability.id);
+        orphans.set(s.event, list);
+      });
+    }
+  }
+  check(
+    `every authored reactive event is one the bus delivers (${reactives} reactives)`,
+    orphans.size === 0,
+    [...orphans].map(([e, ids]) => `${e} ← ${ids.join(", ")}`).join("; "),
+  );
+}
+
+{
+  // A `reactive` fires when its event arrives. Riposte is the clearest case in the
+  // roster: "Take a hit in the window and you answer it instantly."
+  const d = dungeonWith("duelist", ["Riposte"]);
+  const hero = d.localHero;
+  const riposte = hero.player.unlockedAbilities.find((a) => a.id === "duelist.riposte");
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  const before = e.health;
+
+  if (!riposte) {
+    check("Riposte is unlocked", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, riposte, { attackDamage: 100, aim: { x: e.x, y: e.y } });
+    check("casting Riposte opens a reactive window", hero.rt.pending.length > 0, `${hero.rt.pending.length}`);
+
+    d.bus.emit({ type: "damageTaken", actorId: hero.index, amount: 10, x: hero.avatar.x, y: hero.avatar.y });
+    check("taking a hit inside the window answers it", e.health < before, `${before} → ${e.health}`);
+    check("the answered window is spent, not left open", hero.rt.pending.length === 0, `${hero.rt.pending.length}`);
+
+    // …and it is the hero's *own* hit that answers. Another player's damage must not
+    // fire this hero's counter, or a party would riposte for each other.
+    const e2 = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+    hero.rt.castAbility(d, hero.index, riposte, { attackDamage: 100, aim: { x: e2.x, y: e2.y } });
+    const held = e2.health;
+    d.bus.emit({ type: "damageTaken", actorId: hero.index + 7, amount: 10 });
+    check("another hero's hit does not fire this one's counter", e2.health === held, `${held} → ${e2.health}`);
+  }
+}
+
+{
+  // A native `Ability.followUp` is documented as "effects available for a short window
+  // after the cast, on a second press" — so the first press arms it and the second
+  // spends it, cooldown notwithstanding.
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const lance = hero.player.unlockedAbilities.find((a) => a.followUp);
+  if (!lance) {
+    check("the Lancer has an ability with a follow-up window", false);
+  } else {
+    const e = spawn(d, hero.avatar.x + 120, hero.avatar.y);
+    const input = { attackDamage: 100, aim: { x: e.x, y: e.y } };
+    const first = hero.rt.castAbility(d, hero.index, lance, input);
+    check(`${lance.id} casts`, first.ok, first.failure ?? "");
+    check("the first press arms the follow-up window", hero.rt.followUpOpen(lance.id, d));
+    check("the ability is now on cooldown", !hero.rt.ready(lance));
+
+    const second = hero.rt.castAbility(d, hero.index, lance, input);
+    check("a second press inside the window is accepted despite the cooldown", second.ok, second.failure ?? "");
+    check("…and it ran the follow-up, not a fresh cast", second.fromFollowUp === true);
+    check("the window is spent by the press", !hero.rt.followUpOpen(lance.id, d));
+
+    const third = hero.rt.castAbility(d, hero.index, lance, input);
+    check("a third press is refused — the combo is over", !third.ok && third.failure === "on-cooldown", third.failure ?? "ok");
+  }
+}
+
+{
+  // A window nobody spends is dropped when it elapses, and dropping it must not leave
+  // the pending list growing for the rest of the floor.
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const lance = hero.player.unlockedAbilities.find((a) => a.followUp)!;
+  const e = spawn(d, hero.avatar.x + 120, hero.avatar.y);
+  hero.rt.castAbility(d, hero.index, lance, { attackDamage: 100, aim: { x: e.x, y: e.y } });
+  const window = lance.followUp!.window;
+  for (let t = 0; t < window + 1; t += 0.5) {
+    d.update(0.5);
+  }
+  check("a follow-up window nobody presses expires and is dropped", !hero.rt.followUpOpen(lance.id, d));
+}
+
+// --- ultimate-meter generation rules are reachable (Cluster 5b) ---------
+//
+// A `requireTags` generation rule is matched against the tags of the **ability**, so a
+// rule can be perfectly valid data and still be unfeedable — because the event it keys
+// on is never produced by anything carrying that tag. Two of the roster's meters were
+// exactly that, and neither `npm run roster` nor the arena could see it: the shapes are
+// legal, the tag is real, and the class just charges its ultimate off one rule instead
+// of two. These two cast the ability and watch the bar move.
+
+section("ultimate-meter generation rules are feedable (Cluster 5b)");
+{
+  // `on: "statusApplied" [mark]`. This was `on: "hitDealt"`, and the only mark-tagged
+  // ability the Assassin has that deals damage is the ultimate — so the rule could only
+  // ever be fed by the very thing it pays for, which THE ULTIMATE RULE refuses.
+  const d = dungeonWith("assassin", ["Shadow"]);
+  const hero = d.localHero;
+  const meter = hero.resources.ultimateMeter()!;
+  const mark = hero.player.unlockedAbilities.find((a) => a.id === "assassin.mark_for_death");
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  meter.value = 0;
+  if (!mark) {
+    check("Mark for Death is unlocked", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, mark, castInput(d, hero, mark));
+    check("taking a contract out charges the Contract meter", meter.value > 0, `${meter.value}`);
+  }
+}
+{
+  // `on: "skillUse" [support]`. This was `on: "statusApplied"`, which asked for the
+  // intersection of two disjoint sets: that event fires only for a hostile status on an
+  // enemy, and every support-tagged thing the Bard does buffs an ally.
+  const d = dungeonWith("bard", ["Maestro"]);
+  const hero = d.localHero;
+  const meter = hero.resources.ultimateMeter()!;
+  const song = hero.player.unlockedAbilities.find(
+    (a) => !a.isUltimate && a.tags.includes("support"),
+  );
+  meter.value = 0;
+  if (!song) {
+    check("the Bard has a support-tagged song", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, song, castInput(d, hero, song));
+    // 5 from the untagged `skillUse` rule, plus 2 for the song being `support`.
+    check(`playing ${song.id} charges Performance at the song rate`, meter.value >= 7, `${meter.value}`);
+  }
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);
