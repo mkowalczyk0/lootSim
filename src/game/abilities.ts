@@ -26,6 +26,7 @@ import {
   type AbilityRuntime,
   type Ability,
   type CastInput,
+  type CombatEvent,
   type CombatEventType,
   type CombatHost,
   type EffectContext,
@@ -80,19 +81,30 @@ const GRANT_ABILITY: Ability = {
   effects: [],
 };
 
+/** How far around the caster a granted effect reaches when the event names no target. */
+const GRANT_REACH = 220;
+
 /**
- * Everything a granted effect might want to land on: the enemies near the caster (for
- * `to: "allTargets" | "enemies"`), plus the point and facing so a zone lands sensibly.
+ * Everything a granted effect might want to land on. The event that fired it comes
+ * first: a `hit` names the thing that was hit and where, a `kill` names where the body
+ * fell, so `to: "target"` resolves to *that* enemy and a zone lands *there*. Anything the
+ * event doesn't say falls back to the caster — every hostile within reach, at the
+ * caster's own feet — which is all the pre-fix version ever did, and which left an
+ * on-hit grant unable to reach the enemy it was meant to punish if that enemy was more
+ * than `GRANT_REACH` away (a bow shot, a staff bolt, a thrown chakram).
  */
-function grantTargets(host: CombatHost, casterId: number, radius: number): TargetResult {
+function grantTargets(host: CombatHost, casterId: number, evt: CombatEvent | null): TargetResult {
   const caster = host.actor(casterId);
   const origin = caster ? { x: caster.x, y: caster.y } : { x: 0, y: 0 };
+  const point = evt && evt.x !== undefined && evt.y !== undefined ? { x: evt.x, y: evt.y } : origin;
   const actorIds: number[] = [];
+  const struck = evt?.targetId !== undefined ? host.actor(evt.targetId) : undefined;
+  if (struck && struck.alive && struck.faction === "enemy") actorIds.push(struck.id);
   for (const actor of host.actors()) {
-    if (!actor.alive || actor.faction !== "enemy") continue;
-    if (Math.hypot(actor.x - origin.x, actor.y - origin.y) <= radius) actorIds.push(actor.id);
+    if (!actor.alive || actor.faction !== "enemy" || actor.id === struck?.id) continue;
+    if (Math.hypot(actor.x - origin.x, actor.y - origin.y) <= GRANT_REACH) actorIds.push(actor.id);
   }
-  return { actorIds, point: origin };
+  return { actorIds, point };
 }
 
 /**
@@ -153,13 +165,14 @@ export function runBuildGrants(
 ): () => void {
   const unsubs: (() => void)[] = [];
 
-  const fireGrant = (grant: GrantedEffect) => {
+  const fireGrant = (grant: GrantedEffect, evt: CombatEvent | null) => {
     const caster = host.actor(casterId);
     if (!caster) return;
+    const targets = grantTargets(host, casterId, evt);
     const ctx: EffectContext = {
       ability: GRANT_ABILITY,
       casterId,
-      targets: grantTargets(host, casterId, 220),
+      targets,
       origin: { x: caster.x, y: caster.y },
       facing: facing(),
       input: castInput(),
@@ -168,13 +181,25 @@ export function runBuildGrants(
     for (const step of grant.effects) runEffect(host, ctx, step as EffectStep, rt);
   };
 
+  // Every event but `enemyDeath` is *about* the hero in `actorId` — the one who landed
+  // the hit, took the damage, dodged, cast, killed. A grant belongs to one hero, so it
+  // only fires for that hero's events: before this filter, every party member's on-kill
+  // grant went off on anyone's kill, and one player's dodge fired another's counter.
+  // `enemyDeath` is about the dier and stays broadcast, exactly like `runReactiveWindows`.
+  const mine = (evt: CombatEvent): boolean => evt.type === "enemyDeath" || evt.actorId === casterId;
+
   for (const grant of build.grants) {
     if (grant.on.event) {
-      unsubs.push(bus.on(grant.on.event as CombatEventType, () => fireGrant(grant)));
+      unsubs.push(bus.on(grant.on.event as CombatEventType, (evt) => {
+        if (mine(evt)) fireGrant(grant, evt);
+      }));
     } else if (grant.on.tag) {
       const opts = { requireTags: [grant.on.tag as SkillTag] };
-      unsubs.push(bus.on("skillUse", () => fireGrant(grant), opts));
-      unsubs.push(bus.on("ultimateUse", () => fireGrant(grant), opts));
+      const onCast = (evt: CombatEvent) => {
+        if (mine(evt)) fireGrant(grant, evt);
+      };
+      unsubs.push(bus.on("skillUse", onCast, opts));
+      unsubs.push(bus.on("ultimateUse", onCast, opts));
     }
   }
 

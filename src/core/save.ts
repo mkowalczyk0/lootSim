@@ -73,8 +73,20 @@
  * allocation empty — exactly what a brand new character gets — and the pool it can then
  * spend is whatever its record depth already earned, so an existing character opens the
  * new screen with points waiting rather than having to go and re-earn them.
+ *
+ * Version 16 added the daily Vigil (UAT §17): one `daily.clearedDay` field. An older save
+ * has simply never closed one.
+ *
+ * Version 17 added named items (UAT §28/§29): one new field per item, `named`, holding the
+ * id of the `data/named.ts` definition a copy was forged from, or null for ordinary gear.
+ * An item from an older save has no such field and loads as ordinary (`normalizeItem`
+ * fills `null`); a copy whose definition has since been retired keeps every stat and
+ * affix that was baked into it and merely stops being named — the same "drop the id,
+ * keep the thing" rule `normalizeAppearance` applies to a removed cosmetic. Because
+ * `equipment` already travels on the co-op snapshot via `playerToJSON`, the id crosses
+ * the wire for free and a client renders a remote hero's named gear by name and art.
  */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

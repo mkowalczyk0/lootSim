@@ -11,6 +11,7 @@ import {
 } from "../data/mods";
 import type { Rarity } from "../data/rarity";
 import { RARITY_MULTIPLIERS, RARITY_VALUE, rarityIndex } from "../data/rarity";
+import { NAMED_BY_ID, type NamedItemDef } from "../data/named";
 import { GRANTABLE_ABILITY_IDS } from "../progression/index";
 import { WEAPON_FAMILIES, type WeaponFamily } from "../data/weapons";
 
@@ -50,6 +51,13 @@ export interface Item {
   readonly grant: string | null;
   /** Something that goes off on its own. Legendary and up. */
   readonly trigger: TriggerSpec | null;
+  /**
+   * The `NamedItemDef` this was forged from (`data/named.ts`), or null for the ordinary
+   * kind. Stats and affixes are already baked in above; this id is what the build
+   * resolver reads to attach the definition's live behaviour, and what the UI reads for
+   * the name, the flavour text and the art. See docs/named-items.md.
+   */
+  readonly named: string | null;
   readonly value: number;
 }
 
@@ -97,13 +105,20 @@ export interface RollOptions {
 /** Sell/reforge-cost basis: rarity and item level plus what the affix list carries. */
 function computeValue(
   rarity: Rarity, levelScale: number, modCount: number, grant: string | null, trigger: TriggerSpec | null,
+  named = false,
 ): number {
   return Math.round(
     RARITY_VALUE[rarity] * levelScale
     * (1 + modCount * 0.09)
     * (grant ? 1.35 : 1)
-    * (trigger ? 1.5 : 1),
+    * (trigger ? 1.5 : 1)
+    * (named ? 1.6 : 1),
   );
+}
+
+/** Item level adds up to +100% at ilvl 30, so a deep-run common still feels like a find. */
+function levelScaleFor(ilvl: number): number {
+  return 1 + (ilvl - 1) * 0.033;
 }
 
 export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions): Item {
@@ -111,18 +126,11 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
   const baseName = rng.pick(names);
   const tier = rarityIndex(rarity);
   const mult = RARITY_MULTIPLIERS[rarity];
-  // Item level adds up to +100% at ilvl 30, so a deep-run common still feels like a find.
-  const levelScale = 1 + (ilvl - 1) * 0.033;
+  const levelScale = levelScaleFor(ilvl);
   // +/-15% variance so two copies of the same item are never identical.
   const variance = rng.range(0.85, 1.15);
 
-  const base = TYPE_STATS[type];
-  const stats = zeroStats();
-  for (const k of STAT_KEYS) {
-    const budget = base[k];
-    if (budget) stats[k] = Math.max(1, Math.round(budget * mult * levelScale * variance));
-  }
-
+  const stats = baseStats(type, mult, levelScale, variance);
   const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement);
   const grant = rollGrant(type, tier, rng);
   const trigger = rollTrigger(tier, rng);
@@ -140,8 +148,90 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
     mods: rolls.map((r) => r.mod),
     grant,
     trigger,
+    named: null,
     value,
   };
+}
+
+/** The type's base stat block at this rarity, level and variance — shared by both forges. */
+function baseStats(type: ItemType, mult: number, levelScale: number, variance: number): Stats {
+  const base = TYPE_STATS[type];
+  const stats = zeroStats();
+  for (const k of STAT_KEYS) {
+    const budget = base[k];
+    if (budget) stats[k] = Math.max(1, Math.round(budget * mult * levelScale * variance));
+  }
+  return stats;
+}
+
+// --- named items ------------------------------------------------------------
+
+/**
+ * Forges a copy of a named item (`data/named.ts`). The result is an ordinary `Item` in
+ * every way the rest of the game can see: the definition's base block and fixed affixes
+ * are baked into `stats` / `mods` the same way a drop's are, so `itemMods`, the compare
+ * table, the sell price and the wire need no special case. What makes it *this* item is
+ * `named`, which the build resolver and the UI read back against the registry.
+ *
+ * Numbers baked here are frozen into the copy. The definition's `effects`, `grant` and
+ * `trigger` are looked up live by id — a deliberate split, documented in
+ * docs/named-items.md, so a retune of behaviour reaches every copy and a retune of
+ * stats reaches only new ones.
+ */
+export function forgeNamedItem(def: NamedItemDef, ilvl: number, rng: Rng): Item {
+  const level = Math.max(1, Math.max(ilvl, def.minIlvl ?? 1));
+  const mult = RARITY_MULTIPLIERS[def.rarity];
+  const levelScale = levelScaleFor(level);
+  const variance = rng.range(0.92, 1.08);
+
+  const stats = baseStats(def.type, mult * (def.statScale ?? 1), levelScale, variance);
+  const mods = namedMods(def, level, rng);
+  const grant = def.grant ?? null;
+  const trigger = def.trigger ?? null;
+
+  return {
+    id: makeId(),
+    name: def.name,
+    rarity: def.rarity,
+    type: def.type,
+    slot: slotForType(def.type),
+    family: isWeaponType(def.type) ? def.type : null,
+    ilvl: level,
+    stats,
+    mods,
+    grant,
+    trigger,
+    named: def.id,
+    value: computeValue(def.rarity, levelScale, mods.length, grant, trigger, true),
+  };
+}
+
+/**
+ * A named item's affix list: its fixed rolls (ranges resolved, `"rarity"`-scaled ones
+ * grown like a pool affix would be), then any `randomMods` from the ordinary pool,
+ * skipping keys the fixed list already holds so a random roll never stacks onto an
+ * identity stat.
+ */
+function namedMods(def: NamedItemDef, ilvl: number, rng: Rng): ItemMod[] {
+  const tier = rarityIndex(def.rarity);
+  const levelScale = levelScaleFor(ilvl);
+  const out: ItemMod[] = [];
+  for (const spec of def.mods) {
+    const raw = Array.isArray(spec.value)
+      ? rng.range(spec.value[0], spec.value[1])
+      : (spec.value as number);
+    const grown = spec.scale === "rarity" ? raw * RARITY_MULTIPLIERS[def.rarity] * levelScale : raw;
+    out.push({ id: `named:${def.id}:${spec.key}`, key: spec.key, value: Math.round(grown * 1000) / 1000 });
+  }
+  const want = def.randomMods ?? 0;
+  if (want > 0) {
+    const taken = new Set(out.map((m) => m.key));
+    const extra = rollMods(def.type, def.rarity, tier, levelScale, rng)
+      .filter((r) => !taken.has(r.mod.key))
+      .slice(0, want);
+    for (const r of extra) out.push(r.mod);
+  }
+  return out;
 }
 
 /**
@@ -152,8 +242,20 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
  * `data/crafting.ts#reforgeCoinCost`; `GameState.reforgeItem` spends it.
  */
 export function reforgeAffixes(item: Item, rng: Rng): Item {
+  // A named item's affixes *are* its identity, so a reforge re-rolls the definition's
+  // own ranges (and its random extras) rather than replacing them from the pool — the
+  // same item, a different copy of it. The name never gains a prefix or suffix.
+  const def = item.named ? NAMED_BY_ID[item.named] : undefined;
+  if (def) {
+    const mods = namedMods(def, item.ilvl, rng);
+    return {
+      ...item,
+      mods,
+      value: computeValue(item.rarity, levelScaleFor(item.ilvl), mods.length, item.grant, item.trigger, true),
+    };
+  }
   const tier = rarityIndex(item.rarity);
-  const levelScale = 1 + (item.ilvl - 1) * 0.033;
+  const levelScale = levelScaleFor(item.ilvl);
   const rolls = rollMods(item.type, item.rarity, tier, levelScale, rng);
   const baseName = rng.pick(ITEM_NAMES[item.rarity][item.type]);
   return {
@@ -301,6 +403,9 @@ export function itemScore(item: Item, heroClass?: HeroClass): number {
   }
   if (item.grant) total += 140;
   if (item.trigger) total += item.trigger.power * 160;
+  // A named item's live behaviour isn't in its affix list; price each effect like a grant
+  // so the upgrade arrows and the junk filter don't mistake identity for a stat stick.
+  if (item.named) total += (NAMED_BY_ID[item.named]?.effects?.length ?? 0) * 140;
   if (heroClass && item.family) {
     total *= heroClass.affinity.includes(item.family) ? 1 + heroClass.affinityBonus : 0.72;
   }
@@ -322,6 +427,7 @@ export function statLine(item: Item): string {
   if (hidden > 0) parts.push(`+${hidden} more`);
   if (item.grant) parts.push("grants a skill");
   if (item.trigger) parts.push("triggered");
+  if (item.named) parts.push("named");
   return parts.join(", ");
 }
 

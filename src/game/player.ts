@@ -13,16 +13,17 @@ import { WEAPONS, type WeaponFamily, type WeaponSpec } from "../data/weapons";
 import type { Ability } from "../combat/ability";
 import { ResourceSet, type ResourceSpec } from "../combat/resources";
 import {
-  ABILITY_BY_ID, CLASS_BY_ID, applyBuild, installClass, patchResourceSpec, resolveClassBuild,
-  type ClassRuntime, type PilotClass, type ResolvedBuild,
+  ABILITY_BY_ID, CLASS_BY_ID, applyBuild, foldEffects, installClass, patchResourceSpec,
+  resolveClassBuild, type ClassRuntime, type PilotClass, type ResolvedBuild,
 } from "../progression/index";
 import {
-  canAllocateV2, progNodeById, pruneAllocationV2, spentPointsV2, type TreeNodeV2,
+  canAllocateV2, progNodeById, pruneAllocationV2, spentPointsV2, type NodeEffect, type TreeNodeV2,
 } from "../progression/nodes";
 import {
   UNIVERSAL_TREE, UNIVERSAL_TREE_ID, resolveUniversalBuild,
 } from "../progression/universal";
 import { itemMods, requiredLevel, zeroStats, type Item, type Stats } from "./item";
+import { NAMED_BY_ID } from "../data/named";
 
 /** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
 const LEVEL_UP_HEAL = 0.6;
@@ -162,12 +163,21 @@ export class Player {
   get build(): ResolvedBuild {
     if (this.cachedBuild) return this.cachedBuild;
     const rt = this.runtime;
-    this.cachedBuild = rt
+    const build = rt
       ? resolveClassBuild(rt, this.allocated)
       : {
           classId: this.classId, allocated: [], mods: zeroMods(), mutations: [], grants: [],
           resourcePatches: [], rules: new Set<string>(), hybrids: [], archetypes: [], pathPoints: [],
         };
+    // A worn named item is a tree node you wear (`data/named.ts`): its effects fold into
+    // the same build, after the tree, so `applyBuild`, `runBuildGrants` and the rule
+    // hooks see one list. Its *stats* are already in `item.mods` and never come this way.
+    for (const slot of EQUIP_SLOTS) {
+      const named = this.equipment[slot]?.named;
+      const def = named ? NAMED_BY_ID[named] : undefined;
+      if (def?.effects?.length) foldEffects(def.effects as readonly NodeEffect[], "gear", build);
+    }
+    this.cachedBuild = build;
     return this.cachedBuild;
   }
 

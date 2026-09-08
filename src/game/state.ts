@@ -18,6 +18,9 @@ import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
 import { isWeaponType, slotForType } from "../data/items";
 import { emptyMaterials, type MaterialBag } from "../data/materials";
+import {
+  NAMED_BY_ID, craftRecipeFor, isNamedId, rollNamedDrops, type NamedItemDef,
+} from "../data/named";
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
@@ -25,7 +28,7 @@ import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { universalPointsFor } from "../progression/universal";
 import {
-  primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
+  forgeNamedItem, primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
 } from "./item";
 import { Player, emptyEquipment } from "./player";
 
@@ -47,6 +50,8 @@ export interface RunStats {
   /** Vanity bookkeeping. Nobody needs it; everybody looks at it. */
   gemsEarned: number;
   capsulesOpened: number;
+  /** Copies of each named item ever forged for this account, by definition id (UAT §28). */
+  namedFound: Record<string, number>;
 }
 
 function freshStats(): RunStats {
@@ -65,6 +70,7 @@ function freshStats(): RunStats {
     bossesKilled: 0,
     gemsEarned: 0,
     capsulesOpened: 0,
+    namedFound: {},
   };
 }
 
@@ -341,6 +347,53 @@ export class GameState {
   }
 
   /**
+   * Forges one copy of a named item and books it in the records. The one place a copy is
+   * ever minted on this machine outside a dungeon, so `namedFound` stays honest.
+   */
+  forgeNamed(def: NamedItemDef, ilvl: number): Item {
+    const item = forgeNamedItem(def, ilvl, this.rng);
+    this.noteNamed(def.id);
+    this.stats.raritiesFound[item.rarity]++;
+    return item;
+  }
+
+  /** Records that a copy of `id` was minted. The dungeon calls this for the local hero's drops. */
+  noteNamed(id: string): void {
+    this.stats.namedFound[id] = (this.stats.namedFound[id] ?? 0) + 1;
+  }
+
+  /**
+   * Named crafting (UAT §25): a definition with a `craft` source is forged on demand for
+   * exactly the recipe it names. Unlike `craftItem` there is no rarity cap — the recipe
+   * *is* the gate, and a mythic that costs eighty Gilt Reliquaries is not a shopping list.
+   * Returns null when the id isn't craftable or the bill can't be paid; nothing is spent.
+   */
+  craftNamed(id: string): Item | null {
+    const def = NAMED_BY_ID[id];
+    const recipe = def ? craftRecipeFor(def) : null;
+    if (!def || !recipe) return null;
+    if (!this.canAffordNamed(id)) return null;
+    for (const [e, n] of Object.entries(recipe.materials) as [Element, number][]) {
+      if (n) this.materials[e] -= n;
+    }
+    if (recipe.coins > 0) this.spendCoins(recipe.coins);
+    const item = this.forgeNamed(def, Math.max(1, this.player.deepestDepth));
+    this.addToInventory([item]);
+    return item;
+  }
+
+  /** True when every material and coin a named recipe asks for is in hand. */
+  canAffordNamed(id: string): boolean {
+    const def = NAMED_BY_ID[id];
+    const recipe = def ? craftRecipeFor(def) : null;
+    if (!recipe) return false;
+    for (const [e, n] of Object.entries(recipe.materials) as [Element, number][]) {
+      if (n && this.materials[e] < n) return false;
+    }
+    return this.coins >= recipe.coins;
+  }
+
+  /**
    * Reforges an item in place — same rarity, type and base stats, a freshly rolled set
    * of affixes (`game/item.ts#reforgeAffixes`). Works on a stashed item or one the active
    * character has equipped, since a reforge is something you do to gear you're using, not
@@ -410,6 +463,9 @@ export class GameState {
       const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: info.favorElement });
       found.push(item);
       this.stats.raritiesFound[rarity]++;
+      // Named items (UAT §28) ride alongside the ordinary pull rather than replacing it, so
+      // a chest never pays out *less* for having a table. `data/named.ts` owns the odds.
+      for (const def of rollNamedDrops({ kind: "chest", tier }, this.rng)) found.push(this.forgeNamed(def, ilvl));
     }
     this.stats.chestsOpened[tier] += available;
     this.addToInventory(found);
@@ -777,6 +833,10 @@ function normalizeItem(raw: Item): Item {
     // `SkillId` that no longer exists, so it's dropped rather than kept as a dead grant.
     grant: typeof raw.grant === "string" && raw.grant.includes(".") ? raw.grant : null,
     trigger: raw.trigger ?? null,
+    // A named item whose definition has since been retired keeps every baked stat and
+    // affix and simply stops being named — the same "drop the id, keep the thing" rule a
+    // removed cosmetic gets. A pre-v17 item never had the field and is ordinary gear.
+    named: isNamedId(raw.named) ? raw.named : null,
   };
 }
 

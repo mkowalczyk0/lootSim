@@ -15,6 +15,7 @@
 
 import { CHESTS, type ChestTier } from "../data/chests";
 import { atlasCanvas, loadAtlas } from "./atlas";
+import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
   HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES,
@@ -509,10 +510,34 @@ export function chestIcon(tier: ChestTier): HTMLCanvasElement {
  * its rarity's palette (so a mythic axe already glows before anyone reads the word); the
  * five non-weapon slots share their existing atlas icon, tinted toward the rarity colour,
  * because a ring is a ring and the rarity is the only thing worth telling apart at 32px.
+ *
+ * `art` is a named item's own atlas id (`NamedItemDef.art`). When that sprite is in the
+ * manifest *and* its PNG loaded, it is the icon; otherwise the item quietly draws as its
+ * type — an unauthored or missing art id is never a broken screen, exactly as a removed
+ * cosmetic id is dropped rather than crashing the character sheet.
  */
-export function itemIcon(type: ItemType, rarity: Rarity): HTMLCanvasElement {
+export function itemIcon(type: ItemType, rarity: Rarity, art: string | null = null): HTMLCanvasElement {
+  if (art) {
+    const png = ATLAS[art] ? atlasCanvas(art) : null;
+    if (png) return png;
+  }
   if (isWeaponType(type)) return weaponSprite(type, null, rarity);
   return tintedCanvas(sprite(type), `itemIcon:${type}`, RARITY_COLORS[rarity], 0.5);
+}
+
+/** The art id a named item asks for, or null — so call sites never touch the registry. */
+export function itemArtId(item: { named: string | null }): string | null {
+  return item.named ? NAMED_BY_ID[item.named]?.art ?? null : null;
+}
+
+/** `itemIcon` for an actual item, art included. Prefer this wherever an `Item` is in hand. */
+export function itemArt(item: { type: ItemType; rarity: Rarity; named: string | null }): HTMLCanvasElement {
+  return itemIcon(item.type, item.rarity, itemArtId(item));
+}
+
+/** Cache key for `pixelImageFit` over `itemArt` — the same inputs, so the same image. */
+export function itemArtKey(prefix: string, item: { type: ItemType; rarity: Rarity; named: string | null }): string {
+  return `${prefix}:${item.type}:${item.rarity}:${itemArtId(item) ?? "-"}`;
 }
 
 // --- cosmetic previews ----------------------------------------------------
