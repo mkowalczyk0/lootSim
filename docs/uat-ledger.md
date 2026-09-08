@@ -27,8 +27,8 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
 | 8 — Crafting | forge overhaul, reforging, currency, recipes | **done** |
 | 9 — Relics | relic system, ~20 relics, equip, acquisition | **done** |
-| 10 — Raids | raid framework, 4–20 players, weekly scheduling, named loot | open (blocked) |
-| 11 — World / tower / delve | tower climbing, heaven/hell split, lore integration | open |
+| 10 — Raids | raid framework, 4–20 players, weekly scheduling, named loot | open — **owner call** |
+| 11 — World / tower / delve | tower climbing, heaven/hell split, lore integration | open — **owner call** (§22 lore in flight) |
 
 ## Section by section
 
@@ -49,7 +49,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 13 | Endgame class completion | **done** | `feat/class-completion`. The Proving: `src/data/legends.ts` + `tools/legends.ts` (wired into `npm test`). One new persisted field, `Player.legendComplete` (SAVE_VERSION 18); gold border on the Path cards, a side-panel state per class, Records rows, a one-time announcement. Powerless — asserted to leave the sheet byte-identical. Solo only in v1. See `docs/class-completion.md`. Now also pays a mythic exclusive, `proof-of-the-whole` (one generated source per class), added with §20. |
 | 14 | Final boss / delve concept | **done** | Tied into the Delve, at depth 30, with **no** new mode, station, portal, tab or wire field. Depth 30 because that is where the authored world already ends (`biomeFor` caps from 26, `bossFor` from 25). The ladder is deliberately **not** capped. Gate is a per-class *banked* clear of the bottom, so no new unlock state. 21 encounters borrowed-and-reskinned per the `planetBossSpec` precedent. |
 | 15 | Raid bosses (4–20p) | open | **Unblocked** — §28 landed, and boss-exclusive named drops now work (5 encounters already have one). The raid framework itself is untouched. |
-| 16 | Raid drop rarity | **done** | `feat/drop-tiers`. **Not blocked on §15** — §16 is the reward curve across the difficulty range that already exists, and every existing source of difficulty climbs it. `src/data/rewards.ts` states "harder pays better" once, keyed on `danger`: drop chance (the old `namedDropChance` formula, moved), drop count and item power (neither previously implemented), and special variants (an infused drop, via the `favorElement` knob crafting essences already use). Neutral at danger 1 so no existing balance moved; every axis capped. Rarity deliberately left where §9 capped it, and nothing here can lift the mythic wall. The Vigil's *and* the Convergence's own twists are divided back out — difficulty you chose pays, a rotating activity's weather doesn't, which the Vigil's own acceptance check caught. §20's preview reads the curve. See `docs/reward-curve.md`. |
+| 16 | Raid drop rarity | **done** | `src/data/rewards.ts` — `rewardCurve(danger)` is the one statement of "harder pays better", covering drop chance, drop count, item power and elemental variants. Rarity is deliberately **not** an axis (§9's caps stay, and a structural check fails if it ever grows one). Pays only for difficulty the player *chose*: a rift tier and the Challenger dial climb it, a rotating activity's imposed modifiers are divided out. |
 | 17 | Daily & weekly dungeons | **done** | Daily is **The Vigil** (`data/daily.ts`); weekly is **The Convergence** (`data/weekly.ts`) — four floors from the UTC week number, three modifiers, Capstone chests on the boss floor. Floor 4 draws a separate, shallower depth band (`WEEKLY_BOSS_DEPTH_MIN/MAX`) — a **labelled workaround** for the boss-vs-trash curve finding, with undo instructions in `docs/weekly-dungeon.md`. Solo v1. |
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
 | 19 | Relics & artifacts | **done** | `src/data/relics.ts` + `tools/relics.ts` (~330 checks). A relic is a tree node you wear — same `NodeEffect` vocabulary, no third effect language. 3 slots, **at most 1 relic-tier worn** (`MAX_RELICS_WORN`, an owner-overturnable constant), artifacts fill the rest. 12 relics / 18 artifacts, 2 stat sticks. Artifacts 100% Abyssal per §19; relics from the Proving (by element), the Nameless, the depth-30 cache and Abyss tier 8+. `raid`/`tower` source kinds reserved and refused as an item's only source. Shared table in `src/data/drops.ts`. See `docs/relics.md`. |
@@ -158,3 +158,17 @@ The spec itself says "the exact world structure is still TBD". This is the one r
 area where the owner has to decide the shape before anyone can usefully build, and it is
 deliberately unassigned for that reason. §22 alone is nearly free (the lore is written;
 the mode blurbs just don't carry it) and could ship ahead of the rest.
+
+**You level into your own loot.** Noticed while measuring §16's item-power axis, and
+pre-existing rather than caused by it: at ordinary difficulty a floor's own drops already
+need roughly one level more than the floor recommends bringing. `requiredLevel()` grants
+exactly one level of grace for this reason, so it looks deliberate — recording it as an
+observation rather than a defect, because §16's item-power axis now adds up to +3 `ilvl`
+at high danger and every point also raises the level that can wear the drop. If the grace
+was ever meant to be more generous, that interaction is where it will show first.
+
+**Variants stop at elements, deliberately.** §16's "special variants" is implemented as an
+elemental lean (same rarity, same affix count, same power band) and not as extra affixes
+or earlier grants, because those would tread on the Forge bench's `augment`/`inscribe` and
+its stated invariant that nothing an op produces is something a chest couldn't have
+dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
