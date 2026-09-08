@@ -1,4 +1,4 @@
-# Depths of the Unspoken
+# Ashes of Purgatory
 
 A top-down, keyboard-only ARPG loot grinder. Dive into a dungeon, kill everything that
 spawns, drag the loot back out, gamble it on chests, come back stronger, go deeper.

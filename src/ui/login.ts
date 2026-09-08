@@ -27,7 +27,7 @@ export function showLogin(root: HTMLElement, account: AccountClient): Promise<Ac
     function render(): void {
       root.innerHTML = `
         <div class="login-card">
-          <div class="login-brand">DEPTHS OF THE <span>UNSPOKEN</span></div>
+          <div class="login-brand">ASHES OF <span>PURGATORY</span></div>
           <p class="login-blurb">No guests below. Username and password only — no email,
           no recovery. Lose it and it's gone.</p>
           <div class="login-tabs">
