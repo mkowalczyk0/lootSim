@@ -52,13 +52,8 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 16 | Raid drop rarity | open | Blocked on §15. `NamedSource` already scales drop chance with `danger`, which is the hook §16 asks for. |
 | 17 | Daily & weekly dungeons | partial | Daily shipped as **The Vigil** (`data/daily.ts`, `daily-dungeon.md`). Weekly **assigned** to Sonnet 5, `feature/weekly-dungeon`. |
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
-<<<<<<< HEAD
 | 19 | Relics & artifacts | **assigned** | Fable 5.1, `feat/relics`. Reuses the named-item effect vocabulary rather than inventing a third one. Artifacts from the Abyssal Rift (as §19 specifies), relics from the Proving and bosses, since raids don't exist yet — with seams left for raid/tower sources. Fills the relic slots §12 anticipated. |
-| 20 | Endgame drop previews | **assigned** | Opus 5, `feat/drop-previews`. Seeded by §28's `namedForSource()`. Must read the existing tables, never duplicate them — a preview that can drift from the real drop table is worse than none. |
-=======
-| 19 | Relics & artifacts | open | Nothing built. (Grep hits for "relic" are the *Reliquary Portal*, an unrelated rename.) Next major unclaimed item. |
 | 20 | Endgame drop previews | **done** | `feat/drop-previews`. `src/data/previews.ts` + `tools/previews.ts`, wired into `npm test`. Every commit screen (Dive, Rifts, Star Map, Vigil, Path) renders one `previewForRun`. Holds **no** table of its own: reads `namedMatchesFor`, `namedDropChance`, `bossSpecForRun` and the `RunMode`. The gate proves the preview lists exactly what the sim's own `rollNamedDrops` can produce, dice rigged, across 13 activities. §17's "clear rewards preview" and §19's "where does this drop?" are the same read. See `docs/drop-previews.md`. |
->>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
 | 21 | Titan rush / tower | open | Lore is written (`game_story_worldbuilding.md`), mechanics aren't. |
 | 22 | Rifts / war concept | open | |
 | 23 | Planets / materials layers | partial | Planets, materials and the star map all exist; the §23 restructuring doesn't. |
