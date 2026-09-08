@@ -42,5 +42,10 @@ export default {
     // usually different checkouts, you end up playing a build you didn't just change and
     // concluding the change didn't work. One port, one game, one relay.
     strictPort: true,
+    // Vite checks the request's Host header against this list (DNS-rebinding guard) and
+    // otherwise only allows localhost — a Tailscale Funnel request arrives with the
+    // tailnet hostname, so it's rejected without this. The leading dot covers every
+    // machine name on the tailnet, present or future, rather than one hardcoded host.
+    allowedHosts: [".tailb8527c.ts.net"],
   },
 };
