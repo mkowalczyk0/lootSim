@@ -134,3 +134,25 @@ Worth recording because it cuts two ways. It is a real buff to skilled play, whi
 awkwardly against §7 ("players become overpowered too early") — but it doubles the gap
 between reading telegraphs and ignoring them, which is the promise the whole difficulty
 design rests on, and it relieves the thin-margin finding above. Net: kept.
+
+**Most classes cannot reach depth 30 at all.** The sharpest finding from the
+class-completion build, and it reframes the reachability question above. Sampled across
+eight classes at level 60 with legendary gear, only **three** could beat depth 30 — and
+that holds for the ordinary depth-30 floor exactly as much as for the Proving, so it is
+not an artifact of the new encounter. A level-34 Elite-geared character cannot clear
+depth 30 in any flavour. This rhymes with `npm run builds` being red for a known set of
+classes pending owner tuning calls.
+
+So the open question is no longer "is the endgame reachable." It is: **what level and
+gear does the curve intend for depth 30, and why can't most classes get there at 60?**
+That is a class-balance and curve question, not an endgame-content one. Nobody has been
+asked to tune around it and nobody should be, until the owner sets the target.
+
+**Three shipped bosses break the additive-phase rule.** CLAUDE.md requires that phases
+*add* abilities rather than replacing them. `tools/legends.ts` now audits every encounter
+against the boss rules and pins the existing violations in `KNOWN_AUTHORED_VIOLATIONS`,
+so a new one fails the gate and so does fixing a pinned one without updating the list:
+`choir` drops `slam` entering Second Verse; `herald` drops `cleave` entering Proclamation;
+`nameless` drops `slam`/`volley`/`windmill` entering Interest, then `charge`/`corruption`
+entering Displeasure. No telegraph, wind-up or cross-arena violations anywhere. All 21
+generated Proving specs are clean on every rule. Scheduled work, not folklore.
