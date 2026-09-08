@@ -1249,7 +1249,7 @@ export class TownUI {
     this.root.innerHTML = `
       <div class="town">
         <header class="town-top">
-          <div class="brand">DEPTHS OF THE <span>UNSPOKEN</span></div>
+          <div class="brand">ASHES OF <span>PURGATORY</span></div>
           <div class="purse">
             <span class="coin">${formatNumber(s.coins)}</span> coins
             <span class="sep">·</span>
