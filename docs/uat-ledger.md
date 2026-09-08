@@ -11,14 +11,6 @@ a worktree, not yet merged).
 
 Last audited: 2026-09-08, PM session `lootsim-70`. §13/§14 rows updated by the session that built them, on landing.
 
-> **⚠ Every difficulty number below and elsewhere in this repo is currently PROVISIONAL.**
-> A defect in the wave director (`dungeon.ts:1288` — the next wave starts only when
-> `enemies.length === 0`, so one unreachable monster stalls a floor forever) was measured
-> stalling 25% of floors at depth 5 rising to 67% at depth 30. Every measurement anyone
-> has taken, including the sharp 11.8 / reckless 9.4 campaign figures and the boss-vs-trash
-> finding, has been reading some amount of that as difficulty. The fix and a re-baseline
-> are in progress; do not tune against any number here until that lands.
-
 ## Phase 12 chunk order
 
 The spec's own recommended order is the priority order, and we've been following it.
@@ -181,27 +173,39 @@ or earlier grants, because those would tread on the Forge bench's `augment`/`ins
 its stated invariant that nothing an op produces is something a chest couldn't have
 dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
 
-**A single unreachable monster stalls a floor permanently.** `updateSpawning`
-(`src/game/dungeon.ts:1288`) starts the next wave only when `enemies.length === 0`; its own
-comment says "the next one starts once the floor is clear of stragglers", naming the
-failure mode without guarding it. So one monster the player cannot reach — a Gorehound
-600 units away, unroutable — holds the floor open forever at, in the observed case, 44/180
-kills.
+**RETRACTED: the "floors stall constantly" finding.** Briefly recorded here as a real
+defect at 25–67% of floors. It was an instrument fault, caught by the investigating
+session falsifying its own detector before publishing. Its measurement bot called
+`FlowField.direction(x, y)` against a signature of `direction(level, x, y)`, which returns
+`null` unconditionally — so the bot never pathfound at all, fell back to straight-line
+steering, and walked into geometry it could have routed around. The "stalls" were the bot
+failing to reach monsters it was capable of killing. Re-measured with the real helpers:
+**0% stalls at every depth from 5 to 30**, one at depth 35.
 
-This is a **player-facing defect**, not only a measurement problem: a real person is left
-on a floor that can never complete, quota short, no completion portal, whose only exit is
-the entrance portal at `EARLY_EXTRACT_KEEP` 15%. The game confiscates 85% of a run and
-appears to do it deliberately.
+Kept because the near-miss is the lesson: a confident, well-quantified headline built on an
+unvalidated instrument, which re-planned the whole board for an hour. The tell was there —
+25% at depth 5 was implausible, and the campaign's own `unfinished` tolerance should have
+been read as falsifying rather than explained away.
 
-Measured at level 60 in Legendary gear, 12 seeds per depth: stall rate 25% at depth 5,
-33% at 10, 58% at 15, 50% at 20 and 25, 67% at 30, 42% at 35. It is **not** depth-specific
-— the per-floor probability simply rises with body count, which is exactly why it
-*masquerades* as a difficulty curve and why it contaminated every measurement taken today.
+**What does survive, stated conservatively:**
 
-Two things it calls into question beyond the numbers: the generator's flood-fill
-reachability validation, if the mechanism turns out to be spawn placement putting a monster
-behind rock; and `tools/smoke.ts`'s `unfinished` counter, which should have been screaming
-at these rates and was not.
+- **The wave gate is fragile.** `updateSpawning` (`dungeon.ts:1288`) starts the next wave
+  only when `enemies.length === 0`, and its own comment names stragglers without guarding
+  against them. *If* it triggers, the floor can never complete and the only exit is the
+  entrance portal at 15%. The evidence that it triggers often has evaporated, so this is
+  **ordinary hardening, not a critical path** — but the guard is cheap and worth having.
+- **Monsters do sometimes spawn clipping a wall** — measured with a correctly-called
+  predicate at ~1.9% at depth 35, near zero at depth 1. `spawnBurst` scatters up to 60u
+  from an open centre, a wall is 32u thick, and `resolveCircle` ejects per-wall-rect over
+  two passes: fine for a thin wall, unable to escape a sealed mass.
+- **Depth 30 is genuinely lethal**, which is the thing we originally set out to measure and
+  which the fake stalls were burying: at level 60 in Legendary gear, 5 cleared / 6 died /
+  1 slow. Real, and the honest version of the "endgame is a wall" question.
+
+**Not a gap after all:** the portal-reachability check was briefly thought to test only
+cell-openness rather than connectivity. It does test connectivity — `level.open` is
+`floodFrom(grid, …, start)`, a BFS from the spawn, so `isWalkable` answers "reachable from
+where you came in" and its doc comment is accurate.
 
 **`recommendedLevel` may be lying to players.** At exactly the level and gear the game
 advises, every floor from depth 18 down killed the character in 6–22 seconds having
