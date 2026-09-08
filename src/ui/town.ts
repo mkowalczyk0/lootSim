@@ -28,7 +28,7 @@ import {
   RELICS, RELIC_BY_ID, RELIC_SLOTS, RELIC_TIER_INFO, relicSourceLines, relicsOfTier, type RelicDef,
 } from "../data/relics";
 import {
-  MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
+  MODES, RIFT_LORE, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import {
@@ -1742,6 +1742,7 @@ export class TownUI {
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
         <h3>The dive</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(MODES.delve.lore)}</p>
         <p>Clear every wave, then step into the portal. <b>Descend</b> to push deeper for
         richer loot, or <b>extract</b> to bank what you're carrying. Every fifth floor is
         a raid boss, and it will take a while.</p>
@@ -1802,10 +1803,12 @@ export class TownUI {
 
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
+        <p class="muted" style="font-style:italic">${escapeHtml(RIFT_LORE)}</p>
         <h3 style="color:${mode.color}">${escapeHtml(mode.name)}</h3>
         <p class="muted">${other}
           <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
           <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+        <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         ${unlocked ? "" : `<p class="danger">Locked. Reach depth ${mode.unlockDepth} in the delve.</p>`}
         <table class="cmp">
@@ -1862,6 +1865,7 @@ export class TownUI {
 
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
+        <p class="muted" style="font-style:italic">${escapeHtml(MODES.planet.lore)}</p>
         <h3 style="color:${ELEMENT_COLORS[planet.element]}">${escapeHtml(planet.name)}
           <span class="muted">· T${planet.order}</span></h3>
         <p class="muted">${other}
@@ -2205,6 +2209,7 @@ export class TownUI {
     return `<div class="list">${row}</div>
       <aside class="side">
         <h3 style="color:${mode.color}">${escapeHtml(DAILY_NAME)}</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         <p class="muted">Today's floor is the same for everyone, everywhere — same layout, same
         twists, same key. It resets at midnight UTC, in <b>${countdown}</b>.</p>
@@ -2273,6 +2278,7 @@ export class TownUI {
     return `<div class="list">${row}</div>
       <aside class="side">
         <h3 style="color:${mode.color}">${escapeHtml(WEEKLY_NAME)}</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         <p class="muted">This week's four floors are the same for everyone, everywhere —
         same layouts, same twists, same warden waiting at the end. It resets at the

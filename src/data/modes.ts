@@ -14,6 +14,17 @@
  * Everything a mode changes lives here, so a new mode is a data entry rather than a
  * branch in the simulation.
  *
+ * **Every mode carries two lines, and they answer different questions.** `blurb` is the
+ * mechanics — floors, what it pays, what it costs you. `lore` is *why the place exists*
+ * (UAT §22): a Rift is not a game mode with a portal on it, it is a wound left where
+ * something from Heaven and something from Hell met, and the Keepers send you in to
+ * contain it. Both are lifted from `docs/game_story_worldbuilding.md` (The Rifts,
+ * Standard / Avarice / Abyssal Rifts, the three-sided cosmology) — that document is the
+ * tiebreaker and it is not short of material, so a new mode's `lore` is a quotation from
+ * it in the game's own deadpan register, never invented cosmology. `RIFT_LORE` is the one
+ * sentence the Rifts screen says once about all of them. `tools/previews.ts` checks each
+ * line actually names the war rather than restating the payout.
+ *
  * **The Avarice Rift's id is still `"hoard"`, and that is deliberate.** It was called the
  * Hoard Rift until `docs/game_story_worldbuilding.md` renamed it, tying the farming
  * content to the Hell / greed / Dante cosmology the rest of the world runs on. Only the
@@ -42,7 +53,10 @@ export interface RunMode {
   readonly id: RunModeId;
   readonly name: string;
   readonly short: string;
+  /** The mechanics in one line: floors, payout, what it will do to you. */
   readonly blurb: string;
+  /** Why this place exists, in the world's own terms (UAT §22). See the file header. */
+  readonly lore: string;
   readonly color: string;
   /** Rifts are a fixed run of floors ending in a boss. The delve is open-ended. */
   readonly isRift: boolean;
@@ -83,10 +97,22 @@ export interface RunMode {
   readonly tileset?: string;
 }
 
+/**
+ * What a Rift is, said once. Shown on the Rifts screen above whichever flavour is
+ * selected; the per-mode `lore` says what makes *this* one different.
+ */
+export const RIFT_LORE =
+  "A Rift is not a portal. It is a wound: something from Heaven and something from Hell "
+  + "met over the mortal world, and reality lost. The Keepers go in to contain the damage "
+  + "and bring back anything useful. That is you.";
+
 export const MODES: Record<RunModeId, RunMode> = {
   delve: {
     id: "delve", name: "The Delve", short: "Delve",
     blurb: "One floor at a time, as deep as you dare. Descend or extract after every clear.",
+    lore: "Purgatory is made of everything that fell between Heaven and Hell, and it goes "
+      + "down. What the war leaves behind, sinks; the deeper you dig, the older and the "
+      + "worse it gets. The Keepers stopped mapping it some way down.",
     color: "#7dd3fc",
     isRift: false, floors: 0,
     baseDepth: 1, depthPerTier: 0, depthPerFloor: 1,
@@ -96,6 +122,9 @@ export const MODES: Record<RunModeId, RunMode> = {
   abyss: {
     id: "abyss", name: "Abyssal Rift", short: "Abyss",
     blurb: "Four floors and a warden at the bottom. It hits like a truck and pays in rarity.",
+    lore: "A Rift that tore through Hell and kept going. Beneath the circles is the "
+      + "Abyss, which has no rulers, no judgment and no interest in you. It unmakes. "
+      + "What comes back up is very rare and no longer quite what it was.",
     color: "#ff1493",
     isRift: true, floors: 4,
     baseDepth: 8, depthPerTier: 2.2, depthPerFloor: 1.4,
@@ -115,6 +144,10 @@ export const MODES: Record<RunModeId, RunMode> = {
   hoard: {
     id: "hoard", name: "Avarice Rift", short: "Avarice",
     blurb: "Three floors, a softer beating, and far more of everything. This is where you farm.",
+    lore: "When lesser angels and demons wipe each other out they leave everything "
+      + "behind: weapons, gold, pieces of greater things. Everything in reach crawls "
+      + "over to hoard it. The Keepers call that an Avarice Rift, and would like it "
+      + "back.",
     color: "#fbbf24",
     isRift: true, floors: 3,
     baseDepth: 5, depthPerTier: 1.7, depthPerFloor: 1.1,
@@ -135,6 +168,9 @@ export const MODES: Record<RunModeId, RunMode> = {
   planet: {
     id: "planet", name: "Reliquary Expedition", short: "Reliquary",
     blurb: "Fight and mine your way to the boss. This is where materials come from.",
+    lore: "The Ashen Reliquary is where Purgatory keeps its dead: a graveyard of gods and "
+      + "broken realms the size of a continent, behind one gate in the Citadel. The "
+      + "Keepers mine it for what the war is fought with. So do you.",
     color: "#4ade80",
     isRift: true, floors: 3,
     baseDepth: 1, depthPerTier: 0, depthPerFloor: 0,
@@ -154,6 +190,9 @@ export const MODES: Record<RunModeId, RunMode> = {
   vigil: {
     id: "vigil", name: "The Vigil", short: "Vigil",
     blurb: "Today's rift, the same for everyone. One floor, two twists, and a key for closing it.",
+    lore: "A Standard Rift: the aftermath of a lesser fight between Heaven and Hell, "
+      + "small enough to close in a day. The Keepers keep watch on it. Somebody still "
+      + "has to go in.",
     color: "#c084fc",
     isRift: true, floors: 1,
     baseDepth: 6, depthPerTier: 0, depthPerFloor: 0,
@@ -175,6 +214,9 @@ export const MODES: Record<RunModeId, RunMode> = {
   convergence: {
     id: "convergence", name: "The Convergence", short: "Convergence",
     blurb: "This week's collision of Rifts, the same for everyone. Four floors, three twists, and a warden waiting past all of them.",
+    lore: "Several Rifts torn open close enough together that they collapsed into one "
+      + "wound: four floors of wreckage from four different fights between Heaven and "
+      + "Hell, fused, and whatever crawled out of the point where they met.",
     color: "#dc2626",
     isRift: true, floors: 4,
     baseDepth: 18, depthPerTier: 0, depthPerFloor: 0,
