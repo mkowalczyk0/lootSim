@@ -527,7 +527,7 @@ path is being rebuilt anyway. `patchResourceSpec` folding `resourcePatches` move
 - `tools/smoke.ts`: the bot must cast the new abilities (read `ability.targeting` /
   `range` / `costs` instead of `skill.shape`), fire the new ultimate path, and the
   per-class ultimate probe (`probeUltimate`) must drive `castAbility`. Keep the two
-  20-dive campaigns, the raid probe, the Hoard Rift, the planet floor, the co-op floor.
+  20-dive campaigns, the raid probe, the Avarice Rift, the planet floor, the co-op floor.
 - `tools/classes.ts`: switch the six pilots from the `World` stub to `DungeonHost` where
   practical, or keep `World` for unit-level and add a dungeon-level pass.
 - `npm test` = check + vocab + prog + classes + roster + smoke, all green.
