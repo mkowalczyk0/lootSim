@@ -143,6 +143,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Spark of the Unfinished Storm",
     flavor: "It was never yours to hold. It is now.",
     description: "Everything you do is lightning: half of every basic hit converts, every skill deals lightning and shocks. Your ultimate follows.",
+    art: "relic.spark-of-the-unfinished-storm",
     effects: [
       { kind: "mods", mods: { lightningDamage: 0.5 } },
       {
@@ -162,6 +163,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Cinder of the Unfinished Pyre",
     flavor: "Still warm. It has been waiting to finish.",
     description: "Your fire skills burn half again as hard, and any hit on a burning enemy detonates the burn as a burst of fire.",
+    art: "relic.cinder-of-the-unfinished-pyre",
     effects: [
       {
         kind: "mutate",
@@ -188,6 +190,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Rime of the Unfinished Vigil",
     flavor: "The Ninth Circle is silent. This is a piece of the silence.",
     description: "Every skill chills. A chilled or frozen enemy under a quarter health is executed by your next hit.",
+    art: "relic.rime-of-the-unfinished-vigil",
     effects: [
       {
         kind: "mutate",
@@ -207,6 +210,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Hymn of the Unfinished Choir",
     flavor: "It finished the song. You get the last verse.",
     description: "Every heal and ward you cast also strikes: holy damage to everything near you, and it leaves them Vulnerable.",
+    art: "relic.hymn-of-the-unfinished-choir",
     effects: [
       {
         kind: "grantEffect", on: { tag: "heal" },
@@ -232,6 +236,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Venom of the Unfinished Garden",
     flavor: "Nothing in it was planted. All of it grew.",
     description: "Every skill poisons. Your critical hits spread every poison and bleed on the target to everything around it.",
+    art: "relic.venom-of-the-unfinished-garden",
     effects: [
       {
         kind: "mutate",
@@ -258,6 +263,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Hollow of the Unfinished Word",
     flavor: "The sentence it belongs to has not been said yet.",
     description: "Your ultimate charges far faster and hits harder. Every other skill costs half again as much.",
+    art: "relic.hollow-of-the-unfinished-word",
     effects: [
       { kind: "mods", mods: { ultimateRate: 0.8, ultimatePower: 0.3 } },
       {
@@ -277,6 +283,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Sigil of the Unfinished Art",
     flavor: "Every spell you decided not to learn, in one glyph.",
     description: "Your skills have almost no cooldown, cost double, and every cast leaves you Weakened for a moment. You are bound by your resource, not the clock.",
+    art: "relic.sigil-of-the-unfinished-art",
     effects: [
       {
         kind: "mutate",
@@ -299,6 +306,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Measure of the Unfinished Duel",
     flavor: "It picked the range. Now you do.",
     description: "Your melee skills reach half again as far and sweep half again as wide, and everything they hit is thrown back.",
+    art: "relic.measure-of-the-unfinished-duel",
     effects: [
       {
         kind: "mutate",

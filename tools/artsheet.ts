@@ -27,13 +27,14 @@ import {
   COSMETICS_BY_ID, defaultAppearance, type Appearance,
 } from "../src/data/cosmetics";
 import { NAMED_ITEMS } from "../src/data/named";
+import { RELICS } from "../src/data/relics";
 import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
 import { RARITY_WASH } from "../src/render/itemart";
 import { ATLAS } from "../src/render/atlas/manifest";
 import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 1720;
+const H = 1860;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -237,6 +238,16 @@ strip(
   stripPng(
     authored.map((d) => decodePng(readFileSync(`src/render/atlas/items/named/${d.art}.png`))),
     3, true, 14,
+  );
+}
+
+{
+  // Relics and artifacts (UAT §19) — same unwashed treatment as named items: a relic's
+  // colour is fixed forever, so it never goes through the rarity wash.
+  const authored = RELICS.filter((d) => d.art && d.art in ATLAS);
+  stripPng(
+    authored.map((d) => decodePng(readFileSync(`src/render/atlas/relics/${d.art}.png`))),
+    3, true, 12,
   );
 }
 

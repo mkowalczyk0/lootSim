@@ -223,7 +223,12 @@ console.log("\n=== a relic looks the same on the floor, in a slot and on the ban
     chooseRelicArt(authored, GLYPH_ONLY).kind === "icon" && chooseRelicArt(authored, GLYPH_AND_ART).kind === "atlas");
   check("with nothing baked at all it still lands on the item fallback sprite",
     (chooseRelicArt(authored, NOTHING) as { sprite: string }).sprite === ITEM_FALLBACK_SPRITE);
-  check("every shipped relic is on the fallback today — the art pass hasn't happened", RELICS.every((d) => !d.art));
+  // How many declare art and actually have a manifest row (and so a real PNG) today —
+  // worth stating rather than implying, the same reason this line exists for named items.
+  const relicsAuthored = RELICS.filter((d) => d.art && d.art in ATLAS);
+  console.log(`       · ${RELICS.length} relics/artifacts; ${relicsAuthored.length} `
+    + `(${relicsAuthored.map((d) => d.id).join(", ")}) have a PNG, the rest are on the `
+    + "tinted-glyph fallback");
 }
 
 // --- 5. every atlas sprite fits the box the DOM actually puts it in --------------
