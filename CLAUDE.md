@@ -1,4 +1,4 @@
-# lootSim — Depths of the Unspoken
+# lootSim — Ashes of Purgatory
 
 A top-down ARPG loot grinder. Originally a Tkinter "click to open chests" gambling
 simulator (`legacy/lootGame_1.2.0.py`); now a real, playable action game in the browser.
