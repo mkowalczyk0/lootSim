@@ -48,6 +48,7 @@ import {
   namedDropChance, namedForSource, namedMatchesFor, namedSourceLines,
   type NamedItemDef, type NamedSource,
 } from "./named";
+import { rewardCurve } from "./rewards";
 import { planetConfig } from "./planets";
 
 /** One named item this activity can pay out, and how. */
@@ -235,8 +236,16 @@ function otherRewards(config: RunConfig): string[] {
   if (mode.keyMult !== 1) out.push(`${pct(mode.keyMult)} chest keys`);
   if (mode.gemMult !== 1) out.push(`${pct(mode.gemMult)} gems`);
   if (mode.xpMult !== 1) out.push(`${pct(mode.xpMult)} XP`);
-  if (config.danger > 1) {
-    out.push(`named-item odds lifted ${pct(namedDropChance(1, config.danger))} by the danger here`);
+  // What the difficulty itself is worth (UAT §16). Read off `rewardCurve` rather than
+  // restated, so the preview cannot promise a curve the drop sites don't roll.
+  const reward = rewardCurve(config.danger);
+  if (reward.dropChance > 1) {
+    out.push(`named-item odds lifted ${pct(reward.dropChance)} by the danger here`);
+  }
+  if (reward.dropCount > 1) out.push(`${pct(reward.dropCount)} as many drops for the danger`);
+  if (reward.itemPower > 0) out.push(`drops roll +${reward.itemPower} item levels`);
+  if (reward.variantChance > 0) {
+    out.push(`${pct(reward.variantChance)} of drops infused with the local element`);
   }
   if (out.length === 0) out.push("ordinary rates on everything — this is the baseline");
   return out;

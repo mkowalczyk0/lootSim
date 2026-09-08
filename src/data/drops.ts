@@ -28,6 +28,7 @@
  */
 
 import { BOSSES } from "./bosses";
+import { rewardCurve } from "./rewards";
 import { CHEST_TIERS, chestName, type ChestTier } from "./chests";
 import { CLASS_IDS, CLASSES, type ClassId } from "./classes";
 import type { ItemRequirement } from "./crafting";
@@ -110,8 +111,10 @@ export type DropQuery =
 
 /** The UAT §16 hook: harder content pays better odds. Gentle, capped, one place. */
 export function dropChance(base: number, danger = 1): number {
-  const mult = Math.min(2.5, 1 + Math.log2(Math.max(1, danger)) * 0.35);
-  return Math.min(1, base * mult);
+  // Delegates to the one reward curve (UAT §16) rather than restating its formula.
+  // "Harder pays better" is a single statement covering odds, count, item power and
+  // variants; a second copy here is exactly the fork that keeps biting this codebase.
+  return Math.min(1, base * rewardCurve(danger).dropChance);
 }
 
 /** True when `src` is a thing `q` could pay out. The one matcher. */

@@ -312,6 +312,18 @@ console.log("\n=== the preview says something worth reading ===");
   check("a sector advertises its material",
     sector.materials.length === 1 && sector.materials[0] === PLANETS[0]!.element,
     sector.other.join(" · "));
+  // And what the difficulty itself is worth (UAT §16). A tier-1 rift is danger 1 and has
+  // nothing to add; a deep tier has all four axes to report, and reports them off
+  // `rewardCurve` rather than from a second copy of the numbers.
+  const deep = previewForRun(riftConfig("abyss", 14, MODES.abyss.floors)).other.join(" · ");
+  check("a deep tier advertises what its danger is worth",
+    /drops for the danger/.test(deep) && /item levels/.test(deep)
+      && /infused/.test(deep) && /named-item odds/.test(deep), deep);
+  const shallowTier = previewForRun(riftConfig("abyss", 1, MODES.abyss.floors)).other.join(" · ");
+  check("…and a first tier, being ordinary danger, claims none of it",
+    !/drops for the danger/.test(shallowTier) && !/item levels/.test(shallowTier),
+    shallowTier);
+
   // A plain delve floor at tier zero has nothing special to say, and says that.
   check("a plain Delve floor admits it is the baseline",
     previewForRun(delveConfig(3)).other.some((o) => /baseline/.test(o)),

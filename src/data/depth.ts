@@ -11,7 +11,9 @@ import { clamp } from "../core/math";
 import { biomeFor } from "./biomes";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
 import { DAILY_MODIFIERS, dailyEffects } from "./daily";
+import type { Element } from "./elements";
 import { delveConfig, partyScale, type RunConfig } from "./modes";
+import { rewardCurve } from "./rewards";
 import { WEEKLY_MODIFIERS, weeklyEffects } from "./weekly";
 
 export interface DepthProfile {
@@ -41,6 +43,19 @@ export interface DepthProfile {
   readonly rarityBias: number;
   /** Multiplies how many separate things drop. */
   readonly quantity: number;
+  /**
+   * Added to the item level a drop rolls at — UAT §16's "potential item power", from
+   * `rewardCurve`. Zero on any floor at ordinary danger.
+   */
+  readonly itemPower: number;
+  /**
+   * Odds a dropped item is infused with this floor's element — §16's "special variants",
+   * from `rewardCurve`. Zero on a physical-element floor, since infusing with physical
+   * would mean nothing, exactly as the monster infusion rule already has it.
+   */
+  readonly variantChance: number;
+  /** The element a variant drop is infused with: this floor's own. */
+  readonly variantElement: Element;
   /** Recommended character level; below it you take a visible beating. */
   readonly recommendedLevel: number;
   /** Short label for the HUD: "Abyssal Rift · T4 · Floor 2/4", or "" for a delve. */
@@ -63,6 +78,22 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   // which nothing else reads. On any other run every one of these is exactly 1 (or 0
   // for the elite bump).
   const weekly = weeklyEffects(run.weekly?.modifiers ?? []);
+  /**
+   * What this floor's difficulty is worth (UAT §16) — keyed on the danger the player
+   * **chose**, which is `danger` with the daily's and weekly's own twists divided back out.
+   *
+   * A rift tier, the Challenger dial and a sector tier are all opted into, and §16 is
+   * about paying for that choice. A rotating activity's modifiers are the weather: §17
+   * deliberately splits them into ones that change how the floor *fights* (Ferocious,
+   * Swarming, Hasty) and ones that change what it *pays* (Bountiful, Sparse Ground), with
+   * at most one payer at a time so the reward stays predictable. Letting a danger modifier
+   * through the reward curve would quietly make it a second payer and undo that.
+   *
+   * So both weathers are divided out — each is 1 on any run that isn't its own activity,
+   * and on one whose roll included no danger modifier. The dial still stacks on top of
+   * either normally, because the dial is a choice.
+   */
+  const reward = rewardCurve(danger / (daily.danger * weekly.danger));
   // A co-op floor is scaled by how many people walked into it. One player leaves every
   // number below exactly where it was.
   const party = partyScale(run.players ?? 1);
@@ -125,7 +156,15 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1) * daily.telegraph * weekly.telegraph,
     isBoss,
     rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier) + daily.rarityBias + weekly.rarityBias,
-    quantity: mode.quantity * daily.quantity * weekly.quantity,
+    // §16's "number of possible drops": the mode's own volume, a rotating activity's
+    // modifier, and now difficulty itself. Every roll site that already respected
+    // `quantity` gets this for free.
+    quantity: mode.quantity * daily.quantity * weekly.quantity * reward.dropCount,
+    itemPower: reward.itemPower,
+    // A floor whose local element is plain physical has no variant to offer — the same
+    // reason `rollElement` skips infusing monsters on one.
+    variantChance: biome.element === "physical" ? 0 : reward.variantChance,
+    variantElement: biome.element,
     // Levelling now tracks depth closely, so the advice should too.
     recommendedLevel: Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35))),
     tag: buildTag(run),
