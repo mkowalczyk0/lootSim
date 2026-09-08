@@ -34,7 +34,8 @@ import {
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
-import { DELVE_BOTTOM, legendName, provingUnlocked } from "../data/legends";
+import { DELVE_BOTTOM, legendName, provingFloor, provingUnlocked } from "../data/legends";
+import { previewForRun, type ActivityPreview } from "../data/previews";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
 import { WEAPONS } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
@@ -1607,6 +1608,42 @@ export class TownUI {
       </aside>`;
   }
 
+  /**
+   * "I want X item, and this is where I get it" — the UAT §20 drop preview, rendered
+   * wherever the player is standing in front of an activity and hasn't committed yet.
+   *
+   * One renderer for every mode, because the read behind it is one function
+   * (`previewForRun`) over the tables the game really rolls. Nothing here knows what any
+   * activity drops; it knows how to lay out an answer. Odds are quoted **per event** and
+   * labelled as such — a world drop's fraction of a percent is per kill, and rolling it
+   * up into a per-run number would need a kill count this screen has no business
+   * inventing.
+   */
+  private previewBlock(preview: ActivityPreview): string {
+    const pct = (c: number) => (c >= 0.01 ? `${Math.round(c * 100)}%` : `${Math.round(c * 1000) / 10}%`);
+    const named = preview.named.length === 0
+      ? `<p class="muted">Nothing named drops here. Ordinary loot only.</p>`
+      : `<ul class="pulls">${preview.named.map((d) => `<li>
+          <b style="color:${RARITY_COLORS[d.def.rarity]}">${escapeHtml(d.def.name)}</b>
+          ${d.exclusive ? '<span class="badge gold">only here</span>' : ""}
+          <span class="muted">${pct(d.chance)}</span>
+          <em>${escapeHtml(d.via)}</em></li>`).join("")}</ul>`;
+    const mats = preview.materials.length === 0
+      ? ""
+      : `<p>Materials: ${preview.materials
+          .map((e) => `<b style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</b>`)
+          .join(", ")}</p>`;
+    const bosses = preview.bosses.length === 0
+      ? ""
+      : `<p class="muted">Standing in it: ${preview.bosses.map((b) => escapeHtml(b)).join(" → ")}</p>`;
+    return `
+      <h3>Possible rewards</h3>
+      ${bosses}
+      ${named}
+      ${mats}
+      <p class="muted">${preview.other.map((o) => escapeHtml(o)).join(" · ")}</p>`;
+  }
+
   private renderDive(): string {
     const challenger = this.state.challengerTier;
     const rows: string[] = [];
@@ -1641,6 +1678,13 @@ export class TownUI {
         <p>Hazards: ${hazards.length ? escapeHtml(hazards.join(", ")) : "none yet. Enjoy it."}</p>
         <p>Local element: <b style="color:${ELEMENT_COLORS[biome.element]}">${ELEMENT_LABELS[biome.element]}</b>
         <span class="muted">· the deeper you go, the more of the wildlife is made of it</span></p>
+        ${this.previewBlock(previewForRun(
+          delveConfig(depth, challenger),
+          // The bottom of the Delve is this class's Proving once it has earned it, and
+          // then the preview has to name the encounter it will actually meet.
+          provingFloor(delveConfig(depth, challenger), this.state.player.deepestDepth)
+            ? this.state.activeClassId : null,
+        ))}
         <h3>Belt</h3>
         <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
         <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
@@ -1699,6 +1743,7 @@ export class TownUI {
           <tr><td>Coins</td><td>×${mode.coinMult.toFixed(1)}</td></tr>
           <tr><td>Keys</td><td>×${mode.keyMult.toFixed(1)}</td></tr>
         </table>
+        ${this.previewBlock(previewForRun(sel))}
         <p class="muted">Clearing the boss opens the next tier. Extracting early keeps
         what you're carrying and opens nothing.</p>
         <p>Rifts closed: <b>${this.state.stats.riftsCleared[this.riftMode] ?? 0}</b></p>
@@ -1757,6 +1802,7 @@ export class TownUI {
           <tr><td>Local element</td><td style="color:${ELEMENT_COLORS[planet.element]}">${ELEMENT_LABELS[planet.element]}</td></tr>
           <tr><td>Material</td><td style="color:${MATERIALS[planet.element].color}">${escapeHtml(MATERIALS[planet.element].name)}</td></tr>
         </table>
+        ${this.previewBlock(previewForRun(sel))}
         <p class="muted">Fight and harvest your way to the boss. Beating it opens
         extraction and the next tier — the deeper the sector, the better it pays.</p>
         <p>Opening a portal doesn't dive — it spawns one by the Reliquary Gate. Walk into
@@ -2099,6 +2145,7 @@ export class TownUI {
           <tr><td>Danger</td><td>×${config.danger.toFixed(2)}</td></tr>
           <tr><td>XP</td><td>×${mode.xpMult.toFixed(1)}</td></tr>
         </table>
+        ${this.previewBlock(previewForRun(config))}
         <p>Vigils kept: <b>${this.state.stats.vigilsCleared}</b></p>
         ${this.challengerNote()}
       </aside>`;
@@ -2831,13 +2878,15 @@ export class TownUI {
           ? `<p><b style="color:var(--gold)">The Legend is Complete.</b> ${escapeHtml(sel.name)} went
              to the bottom of the Delve and came back the whole of itself. The border stays.</p>
              <p class="muted">${escapeHtml(legendName(selId))} is still down there, and still
-             fightable. It will not get any less finished than it already is.</p>`
+             fightable. It will not get any less finished than it already is.</p>
+             ${this.previewBlock(previewForRun(delveConfig(DELVE_BOTTOM, this.state.challengerTier), selId))}`
           : qualified
             ? `<p>This one has stood at the bottom, so the bottom knows it now. Depth
                ${DELVE_BOTTOM} is no longer an ordinary floor for
                ${escapeHtml(sel.name)}: <b>${escapeHtml(legendName(selId))}</b> is waiting on it.</p>
                <p class="muted">Everything of this Legend you never recovered, assembled by
-               something that kept it. Beat it and the class wears a gold border.</p>`
+               something that kept it. Beat it and the class wears a gold border.</p>
+               ${this.previewBlock(previewForRun(delveConfig(DELVE_BOTTOM, this.state.challengerTier), selId))}`
             : `<p class="muted">Clear depth ${DELVE_BOTTOM} — the bottom of the Delve — and bank
                it, on this class. Then come back and something will be waiting.</p>
                <p class="muted">Deepest banked on this one: <b>${selChar.deepestDepth}</b> of

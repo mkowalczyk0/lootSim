@@ -21,7 +21,12 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
+<<<<<<< HEAD
                   # currently check+vocab+prog+classes+roster+rules+universal+named+legends+forge+deadpaths+smoke
+=======
+                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+
+                  # previews+deadpaths+smoke
+>>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
@@ -29,10 +34,15 @@ npm run roster    # full class-roster + anti-overlap audit (tools/roster.ts)
 npm run universal # sanity + balance checks on the Universal Skill Tree (tools/universal.ts)
 npm run legends   # the Proving (class completion) + the only structural audit of the
                   # boss rules in the repo (tools/legends.ts) — part of npm test
+<<<<<<< HEAD
 npm run forge     # the Forge workbench, Ash and multi-item recipes (tools/forge.ts) —
                   # asserts the crafting economy as comparisons; part of npm test
 npm run named     # named-item definitions, acquisition table, save/wire, live passives
                   # (tools/named.ts) — part of npm test
+=======
+npm run previews  # drop previews (tools/previews.ts) — proves a preview lists exactly
+                  # what the real roll can produce; part of npm test
+>>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
@@ -193,6 +203,32 @@ it checks all 21 generated specs against the rules in the boss section below, an
 the five hand-authored encounters against a *pinned* list of their existing violations
 (three of them drop abilities between phases). Pinned, not fixed: a new violation fails,
 and so does silently fixing a pinned one. See `docs/class-completion.md`.
+
+### Drop previews: the answer has to be the same answer
+
+`src/data/previews.ts` (UAT §20). Standing in front of an activity, you can see what it
+drops before committing: the Dive, Rifts, Star Map, Vigil and Path screens all render one
+`previewForRun`.
+
+**The rule that matters is that a preview holds no table of its own.** A preview that can
+drift out of sync with the real drop table is worse than no preview, so everything there is
+a read of what the simulation already rolls: `namedMatchesFor` (the same `sourceMatches`
+`rollNamedDrops` uses), `namedDropChance` (the same call the roll site makes),
+`bossSpecForRun` (the same function `spawnBoss` calls), and the `RunMode`/`PlanetSpec`
+themselves for currencies and materials. Two things were extracted to keep that literal
+rather than approximate — `data/encounters.ts` owns "which boss does this floor spawn"
+for both the sim and the preview, and `namedMatchesFor` is exported so the matcher is
+never reimplemented. **Don't add a lookup table to `previews.ts`**; if the preview is
+wrong, the game should be wrong with it.
+
+`npm run previews` pins that as a property rather than by inspection: for thirteen
+activities it compares the preview against the simulation's own `rollNamedDrops` with the
+dice rigged to always hit, and the sets have to match exactly.
+
+The Delve previews only the floor you're entering, on purpose — "descend or extract" is the
+decision the mode exists to create, and previewing the next floor previews a choice the
+player hasn't made. Odds are quoted **per event** (a world drop's is per kill), never
+compounded into a per-run number. See `docs/drop-previews.md`.
 
 **Depth 30 is far beyond the measured frontier** — the campaign bots reach roughly a third
 of it, and at level 60 most sampled classes can't beat depth 30 in *either* flavour. That's
@@ -706,7 +742,8 @@ src/
   data/     rarities, item tables + affix pool, chest tiers, enemy archetypes, depth
             curves, biomes, trap specs, elements + ailments, modifiers, weapon families,
             classes, run modes (delve/rifts/planet), planets, materials, crafting, the
-            challenger dial, boss encounters, the Proving (legends.ts), cosmetics
+            challenger dial, boss encounters, the Proving (legends.ts), which boss a
+            floor spawns (encounters.ts), drop previews (previews.ts), cosmetics
   game/     state, player, level generation + pathfinding, the dungeon run and the party
             of heroes in it, the ship hub (hub.ts), ailment bookkeeping (combat.ts), the
             rule engine (rules.ts — behaviour-tree-authored keystone/hybrid/archetype

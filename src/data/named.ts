@@ -38,6 +38,8 @@ import type { SkillMutation } from "../progression/mutations";
 import type { ResourceRulePatch } from "../progression/nodes";
 import { BOSSES } from "./bosses";
 import { CHEST_TIERS, chestName, type ChestTier } from "./chests";
+import { CLASS_IDS } from "./classes";
+import { DELVE_BOTTOM, legendName } from "./legends";
 import { ELEMENTS, type Element } from "./elements";
 import type { ItemType, TriggerSpec } from "./items";
 import { requirementLabel, type ItemRequirement } from "./crafting";
@@ -429,6 +431,47 @@ export const NAMED_ITEMS: readonly NamedItemDef[] = [
     }],
     art: "named.the-seal-unbroken", minIlvl: 15,
   },
+
+  // ---- the Proving: the one thing at the bottom of the Delve ----------------
+  {
+    id: "proof-of-the-whole",
+    name: "Proof of the Whole",
+    flavor: "The part of you that was down there. It fits.",
+    description: "Amplifies whatever elements you already carry, and your ultimate lands "
+      + "as though the rest of you were finally in the room.",
+    rarity: "mythic", type: "necklace",
+    mods: [
+      // Deliberately an amplifier and not a source. `elementalDamage` multiplies the
+      // elements you already have (`data/mods.ts`), so this makes a themed build more
+      // itself rather than telling a Legend what it should have been — which is the
+      // whole fiction: what you recovered at the bottom is *your own* missing half.
+      { key: "elementalDamage", value: [0.22, 0.3] },
+      { key: "ultimatePower", value: [0.18, 0.26] },
+      { key: "ultimateRate", value: 0.12 },
+      { key: "healthPercent", value: 0.08 },
+    ],
+    // Two, so a second Proving can roll a better copy — the same "reason to farm" the
+    // other boss-exclusives carry, and the reason the encounter stays repeatable.
+    randomMods: 2,
+    effects: [
+      {
+        kind: "grantEffect", on: { event: "ultimateUse" },
+        note: "Your ultimate shields you for a moment, the way it would have if you had "
+          + "always been whole.",
+        effects: [{ kind: "shield", amount: 0.8, scale: "attack", duration: 4, to: "self" }],
+      },
+    ],
+    // One source per class, generated from the roster rather than typed out: the Proving
+    // boss's id is `legend-<classId>` (see `data/legends.ts`), so a class added to
+    // `CLASS_IDS` gets its own drop of this for free and none can be forgotten. The odds
+    // are the highest of any boss-exclusive on purpose — this is the hardest encounter in
+    // the game and the only one gated behind finishing a class, so it should not also ask
+    // you to be lucky. It is still not certain, because a certainty is a purchase.
+    sources: CLASS_IDS.map((classId) => ({
+      kind: "boss" as const, bossId: `legend-${classId}`, chance: 0.5,
+    })),
+    art: "named.proof-of-the-whole", minIlvl: DELVE_BOTTOM,
+  },
 ];
 
 export const NAMED_BY_ID: Readonly<Record<string, NamedItemDef>> = Object.fromEntries(
@@ -476,6 +519,26 @@ export function namedForSource(q: NamedDropQuery): NamedItemDef[] {
   return NAMED_ITEMS.filter((d) => d.sources.some((s) => sourceMatches(s, q)));
 }
 
+/**
+ * Every (definition, source) pair this event could pay out — `namedForSource` plus the
+ * source that answered it.
+ *
+ * The drop preview (UAT §20) needs more than the list: it needs the `chance` to quote and
+ * the source to describe. Exported here rather than reimplemented there so that
+ * `sourceMatches` stays the only thing in the game that decides whether a source answers
+ * an event. A preview with its own matcher is a second drop table waiting to disagree
+ * with this one.
+ */
+export function namedMatchesFor(q: NamedDropQuery): { def: NamedItemDef; src: NamedSource }[] {
+  const out: { def: NamedItemDef; src: NamedSource }[] = [];
+  for (const def of NAMED_ITEMS) {
+    for (const src of def.sources) {
+      if (src.kind !== "craft" && sourceMatches(src, q)) out.push({ def, src });
+    }
+  }
+  return out;
+}
+
 /** Every named item with a forge recipe, in registry order. */
 export function craftableNamed(): NamedItemDef[] {
   return NAMED_ITEMS.filter((d) => d.sources.some((s) => s.kind === "craft"));
@@ -516,7 +579,11 @@ export function bossDisplayName(bossId: string): string {
   const delve = BOSSES.find((b) => b.id === bossId);
   if (delve) return delve.name;
   const planet = PLANETS.find((p) => `planet-${p.id}` === bossId);
-  return planet ? planet.bossName : bossId;
+  if (planet) return planet.bossName;
+  // A Proving (UAT §13): `legend-<classId>`, generated rather than authored, so it is
+  // resolved rather than listed. Without this the source line would print the raw id.
+  const legend = CLASS_IDS.find((id) => `legend-${id}` === bossId);
+  return legend ? legendName(legend) : bossId;
 }
 
 /** "Drops from the Warden of the First Seal (12%)" — one line per source, for tooltips and previews. */

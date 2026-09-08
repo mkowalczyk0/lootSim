@@ -1,6 +1,6 @@
 import { angleDelta, approach, circlesOverlap, clamp, dist, normalize, TAU } from "../core/math";
 import { Rng } from "../core/rng";
-import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP, bossFor } from "../data/bosses";
+import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP } from "../data/bosses";
 import { challengerRewardMult } from "../data/challenger";
 import {
   BLOCK_CHANCE_CAP, BLOCK_MITIGATION, EVASION_CAP, SKILL_POWER, ULTIMATE_POWER,
@@ -25,8 +25,8 @@ import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materi
 import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
 import { dailyEffects } from "../data/daily";
 import type { ClassId } from "../data/classes";
-import { legendBossSpec, provingFloor } from "../data/legends";
-import { planetBossSpec } from "../data/planets";
+import { bossSpecForRun } from "../data/encounters";
+import { provingFloor } from "../data/legends";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
 import { updateBoss } from "./boss";
@@ -926,13 +926,11 @@ export class Dungeon implements CombatHost, RuleHost {
    * telegraphed abilities and enough health that you'll see all of them.
    */
   private spawnBoss(): void {
-    // A planet's boss is borrowed wholesale from an existing encounter and reskinned —
-    // see `planetBossSpec` — rather than picked off the depth-bucketed ladder. The
-    // Proving at the bottom of the Delve borrows the same way (`legendBossSpec`), and
-    // takes precedence: on that one floor the encounter is the class, not the depth.
-    const spec = this.proving
-      ? legendBossSpec(this.proving)
-      : this.config.planet ? planetBossSpec(this.config.planet.spec) : bossFor(this.profile.depth);
+    // Which encounter a boss floor spawns — a sector's own, the class's Proving, or the
+    // depth-bucketed ladder — is answered in one place (`data/encounters.ts`), because
+    // the UAT §20 drop preview has to ask the identical question and must not be able to
+    // answer it differently.
+    const spec = bossSpecForRun({ ...this.config, depth: this.profile.depth }, this.proving);
     const archetype = ARCHETYPES.boss;
     const spot = this.openSpot(spec.radius, 260);
     const base = this.makeEnemy(archetype, spot.x, spot.y, {});
