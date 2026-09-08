@@ -39,7 +39,7 @@ export interface PlanetSpec {
   /** What the local wildlife, hazards and the sector's material payout are made of. */
   readonly element: Element;
   readonly biome: BiomeStyle;
-  /** Floors before the boss. Shaped like a Hoard Rift: a step easier, pays in volume. */
+  /** Floors before the boss. Shaped like an Avarice Rift: a step easier, pays in volume. */
   readonly floors: number;
   readonly baseDepth: number;
   readonly depthPerTier: number;

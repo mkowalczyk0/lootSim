@@ -8,11 +8,21 @@
  *
  * The two rift flavors are deliberately opposite. The **Abyssal Rift** is brutal and
  * pays in rarity — it bends the loot table upward and hands out very little else. The
- * **Hoard Rift** is a step easier and pays in volume: coins, keys and a pile of drops
+ * **Avarice Rift** is a step easier and pays in volume: coins, keys and a pile of drops
  * you'll mostly sell. Which one you run is the interesting decision.
  *
  * Everything a mode changes lives here, so a new mode is a data entry rather than a
  * branch in the simulation.
+ *
+ * **The Avarice Rift's id is still `"hoard"`, and that is deliberate.** It was called the
+ * Hoard Rift until `docs/game_story_worldbuilding.md` renamed it, tying the farming
+ * content to the Hell / greed / Dante cosmology the rest of the world runs on. Only the
+ * *display* name moved: `RunModeId` is the key type of two persisted records —
+ * `GameState.riftTiers` and `RunStats.riftsCleared` — and both load through
+ * `{ ...fresh, ...saved }`, so changing the id would leave every existing save's real
+ * progress orphaned under a dead `hoard` key while the ladder it reads reset to tier 1.
+ * A rename worth no player's rift progress. If it ever does change, it needs a
+ * `SAVE_VERSION` bump that migrates both records, not a find-and-replace.
  */
 
 import { challengerMultiplier } from "./challenger";
@@ -42,14 +52,14 @@ export interface RunMode {
    * to ever actually stop somebody.
    */
   readonly dangerPerTier: number;
-  /** Added to the rarity roll's depth bias. Abyss pushes hard, hoard barely at all. */
+  /** Added to the rarity roll's depth bias. Abyss pushes hard, Avarice barely at all. */
   readonly rarityBias: number;
-  /** Multiplies how many things drop — the hoard's whole pitch. */
+  /** Multiplies how many things drop — the Avarice Rift's whole pitch. */
   readonly quantity: number;
   readonly coinMult: number;
   readonly keyMult: number;
   /**
-   * Multiplies gem drops — the cosmetic currency. The hoard is where you farm a
+   * Multiplies gem drops — the cosmetic currency. Avarice is where you farm a
    * wardrobe, the abyss barely pays in them at all: it is already paying in rarity.
    */
   readonly gemMult: number;
@@ -59,8 +69,8 @@ export interface RunMode {
   /**
    * A floor tileset id (`render/atlas/manifest.ts` → `TILESETS`) that overrides the
    * depth-bucketed biome's own tileset for this mode — the Abyssal Rift reads as
-   * *beneath* the Delve, not as a deep Delve floor. Optional; the delve, the hoard
-   * rift and planets all take the biome tileset. Only the tileset is swapped, not
+   * *beneath* the Delve, not as a deep Delve floor. Optional; the delve, the Avarice
+   * Rift and planets all take the biome tileset. Only the tileset is swapped, not
    * the biome's palette / props / hazards.
    */
   readonly tileset?: string;
@@ -86,15 +96,17 @@ export const MODES: Record<RunModeId, RunMode> = {
     // Roughly triples the odds of the top end at the same depth as a delve floor.
     rarityBias: 0.16, quantity: 1,
     coinMult: 0.75, keyMult: 1, gemMult: 0.8, xpMult: 1.3,
-    // Gated later than the hoard: its first tier already asks for a level 11 character,
+    // Gated later than Avarice: its first tier already asks for a level 11 character,
     // so meeting it at depth 6 would just be a wall with a nice name on it.
     unlockDepth: 8,
     // §7 — null-black, one wrong colour, geometry that doesn't close. Overrides
     // whatever deep-Delve biome the effective depth would otherwise hand it.
     tileset: "tiles.abyss",
   },
+  // Display name is the Avarice Rift; the id stays `hoard` because it's a save key. See
+  // the file header.
   hoard: {
-    id: "hoard", name: "Hoard Rift", short: "Hoard",
+    id: "hoard", name: "Avarice Rift", short: "Avarice",
     blurb: "Three floors, a softer beating, and far more of everything. This is where you farm.",
     color: "#fbbf24",
     isRift: true, floors: 3,

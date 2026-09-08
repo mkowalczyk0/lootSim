@@ -1437,7 +1437,7 @@ console.log("\n=== rifts ===");
     r.d.bankLoot();
     cleared++;
   }
-  check("a tier 1 hoard rift can be finished", cleared === MODES[mode].floors,
+  check("a tier 1 avarice rift can be finished", cleared === MODES[mode].floors,
     `${cleared}/${MODES[mode].floors} floors`);
   check("finishing a rift opens the next tier", state.riftTiers[mode] >= 2,
     `tier ${state.riftTiers[mode]}`);
@@ -1452,15 +1452,15 @@ console.log("\n=== rifts ===");
   // The two flavors have to actually differ, or there's only one rift.
   const hoardFloor = riftConfig("hoard", 3, 1);
   const abyssFloor = riftConfig("abyss", 3, 1);
-  check("the abyss is harder than the hoard at the same tier",
+  check("the abyss is harder than avarice at the same tier",
     profileFor(abyssFloor.depth, abyssFloor).enemyHealth >
     profileFor(hoardFloor.depth, hoardFloor).enemyHealth * 1.5,
     `${profileFor(abyssFloor.depth, abyssFloor).enemyHealth.toFixed(0)} vs ` +
     `${profileFor(hoardFloor.depth, hoardFloor).enemyHealth.toFixed(0)} hp`);
-  check("the hoard drops more than the abyss",
+  check("avarice drops more than the abyss",
     MODES.hoard.quantity > MODES.abyss.quantity * 1.5,
     `x${MODES.hoard.quantity} vs x${MODES.abyss.quantity}`);
-  check("the abyss pushes rarity harder than the hoard",
+  check("the abyss pushes rarity harder than avarice",
     MODES.abyss.rarityBias > MODES.hoard.rarityBias * 4,
     `${MODES.abyss.rarityBias} vs ${MODES.hoard.rarityBias}`);
   check("rift danger is exponential in tier",
@@ -2127,14 +2127,14 @@ console.log("\n=== gems and the wardrobe ===");
   check("gems bank on extract", state.gems > 0, `${state.gems} banked`);
   console.log(`  a depth 6 floor paid ${state.gems} gems — a Trinket capsule costs ${CAPSULES.Trinket.price}`);
 
-  // A hoard rift is the mode that is supposed to pay for a wardrobe.
+  // An avarice rift is the mode that is supposed to pay for a wardrobe.
   const hoarder = geared(20, 4243, 10);
   const hoard = playFloor(hoarder, riftConfig("hoard", 1, 1), 300, 6162, 0.7);
   const delver = geared(20, 4243, 10);
   const delve = playFloor(delver, 6, 300, 6162, 0.7);
-  check("the hoard rift pays better in gems than the delve",
+  check("the avarice rift pays better in gems than the delve",
     hoard.d.loot.gems > delve.d.loot.gems,
-    `hoard ${hoard.d.loot.gems} (${hoard.d.phase}) vs delve ${delve.d.loot.gems} (${delve.d.phase})`);
+    `avarice ${hoard.d.loot.gems} (${hoard.d.phase}) vs delve ${delve.d.loot.gems} (${delve.d.phase})`);
 
   const broke = new GameState(1);
   check("no gems, no capsule", broke.openCapsules("Trinket", 1).length === 0);

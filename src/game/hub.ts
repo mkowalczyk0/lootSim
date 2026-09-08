@@ -53,12 +53,12 @@ const INTERACT_RANGE = 34;
 // where PixelLab painted the four relic stations directly into the hall: the Comms shrine
 // on the left wall, the Quartermaster's rack and the Reliquary Gate on the right, the
 // Forge in the bottom-right corner. The Abyssal Rift sits in the central archway and the
-// Delve and Hoard rifts fall on the two glowing cracks torn into the flagstone. Each
+// Delve and Avarice rifts fall on the two glowing cracks torn into the flagstone. Each
 // coordinate is the centre of its painted structure. See render/hub.ts for how each draws.
 const FIXED_STATIONS: readonly HubStation[] = [
   { kind: "dive", label: "The Delve", x: 200, y: 300, radius: 24 },
   { kind: "abyss", label: "Abyssal Rift", x: 322, y: 50, radius: 24 },
-  { kind: "hoard", label: "Hoard Rift", x: 424, y: 150, radius: 24 },
+  { kind: "hoard", label: "Avarice Rift", x: 424, y: 150, radius: 24 },
   { kind: "starmap", label: "Reliquary Gate", x: 548, y: 212, radius: 20 },
   { kind: "forge", label: "The Forge", x: 508, y: 372, radius: 20 },
   { kind: "quartermaster", label: "Quartermaster", x: 430, y: 214, radius: 20 },
