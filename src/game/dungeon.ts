@@ -737,6 +737,16 @@ export class Dungeon implements CombatHost, RuleHost {
       trapCooldown: 0,
       stuckTimer: 0,
       dodgeDir: this.rng.chance(0.5) ? 1 : -1,
+      // Off the affix stream so adding archetype behaviours doesn't shift the main
+      // sequence, and only drawn for the roles that actually use it — a floor of plain
+      // melee/ranged monsters stays byte-identical to before the archetype roster grew,
+      // so it doesn't quietly reshuffle every affix roll on a shallow floor.
+      behaviorTimer:
+        archetype.behavior === "melee" || archetype.behavior === "ranged"
+          ? 0
+          : this.affixRng.range(1.5, 4),
+      chargeVx: 0,
+      chargeVy: 0,
       element,
       resists,
       sc: new StatusContainer(Dungeon.ENEMY_ID_BASE + this.nextEnemyId - 1),
@@ -747,6 +757,31 @@ export class Dungeon implements CombatHost, RuleHost {
       affixState: { timers: {}, ward: 0, noSplit: opts.noAffixes === true },
       damageTakenMult: aff.damageTakenMult,
     };
+  }
+
+  /**
+   * A test seam (headless smoke only): drop one monster of a named kind at a point and
+   * return it, bypassing the wave director. Used to walk each archetype behaviour (UAT
+   * §2) in isolation. Not part of normal gameplay — the wave director never calls this.
+   */
+  spawnArchetypeAt(kind: EnemyKind, x: number, y: number, opts?: { noAffixes?: boolean }): Enemy {
+    const e = this.makeEnemy(ARCHETYPES[kind], x, y, { noAffixes: opts?.noAffixes ?? true });
+    e.state = "active";
+    e.spawnTimer = 0;
+    this.enemies.push(e);
+    return e;
+  }
+
+  /**
+   * A test seam (headless smoke only): stop the wave director. No further waves are
+   * queued, and the floor is treated as its last, so it clears the moment the enemies
+   * currently alive are dead. Pairs with `spawnArchetypeAt` to stage a controlled
+   * encounter — see the Item D archetype walk in `tools/smoke.ts`.
+   */
+  sealWaves(): void {
+    this.queued = 0;
+    this.wave = this.profile.waves;
+    this.spawnTimer = Number.POSITIVE_INFINITY;
   }
 
   /** Deep floors infuse their monsters with the local element; elites roll their own. */
@@ -2080,9 +2115,16 @@ export class Dungeon implements CombatHost, RuleHost {
     // spec's "damage resistance" affix, kept off the resist channel so physical is not
     // exempt from it the way it is from elemental resist.
     const amplified = amount * e.sc.incomingDamageMultiplier() * e.damageTakenMult;
-    const mitigated = opts.raw
+    let mitigated = opts.raw
       ? amount * e.damageTakenMult
       : mitigateWithResists(amplified, element, e.resists);
+    // A shieldbearer bounces most of a hit that lands on its front — you have to get
+    // around it or break its guard (a stagger from heavy knockback), never trade with it.
+    if (e.archetype.behavior === "shieldbearer" && !opts.raw && e.state === "active") {
+      const fromAttacker = knockAngle + Math.PI;
+      const diff = Math.abs(((fromAttacker - e.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      if (diff < 1.15) mitigated *= 0.4;
+    }
     let dealt = Math.max(1, Math.round(mitigated));
     // A Warded affix's regenerating shield is eaten before health.
     if (e.affixState.ward > 0) {
@@ -2183,6 +2225,18 @@ export class Dungeon implements CombatHost, RuleHost {
     this.fireTriggers(source, "onKill", e.x, e.y);
     rulesOnKill(this, source, e);
     if (e.affixes.length > 0) this.affixOnDeath(e, source);
+    // A bomber goes off no matter how it dies (UAT §2) — the blast, and a pool where it fell.
+    if (e.archetype.behavior === "bomber" && !e.summoned) {
+      const el: Element = e.element === "physical" ? "fire" : e.element;
+      this.affixBurst(e.x, e.y, 55, e.damage * 0.7, el);
+      this.ground.push({
+        x: e.x, y: e.y, px: e.x, py: e.y, radius: 40,
+        element: el, damage: Math.max(2, e.damage * 0.15),
+        remaining: 2.5, tickTimer: 0.5, hitsPlayer: true, hitsEnemies: false,
+        color: ELEMENT_COLORS[el],
+      });
+      this.events.push({ kind: "shake", amount: 5 });
+    }
     source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
 
@@ -2370,7 +2424,11 @@ export class Dungeon implements CombatHost, RuleHost {
       const a = target.avatar;
       const d = dist(e.x, e.y, a.x, a.y);
       const toPlayer = Math.atan2(a.y - e.y, a.x - e.x);
-      e.facing = toPlayer;
+      // A charger locks its facing when it commits — the wind-up and the dash both go
+      // where it was pointing, not where you dodged to.
+      const facingLocked = e.archetype.behavior === "charger"
+        && (e.windup > 0 || e.chargeVx !== 0 || e.chargeVy !== 0);
+      if (!facingLocked) e.facing = toPlayer;
 
       // The boss brain owns its own movement whenever it's casting or charging.
       const bossBusy = e.boss ? updateBoss(this, e, dt) : false;
@@ -2379,9 +2437,13 @@ export class Dungeon implements CombatHost, RuleHost {
       // shot and everything else takes the long way around, instead of standing there.
       const hasLos = !lineBlocked(this.level, e.x, e.y, a.x, a.y);
 
+      // Archetype behaviour (UAT §2): a summoner's call, a leech's pulse, a charger
+      // lining up its rush. Returns true when it has taken over this enemy's turn.
+      const behaviourBusy = this.tickArchetypeBehavior(e, dt, target, d, hasLos);
+
       // Ranged types hold a standoff distance; melee types close.
       let moveAngle = toPlayer;
-      let move = !bossBusy;
+      let move = !bossBusy && !behaviourBusy;
       if (e.archetype.ranged && hasLos) {
         if (d < e.archetype.standoff * 0.75) moveAngle = toPlayer + Math.PI;
         else if (d < e.archetype.standoff * 1.15) move = false;
@@ -2399,6 +2461,21 @@ export class Dungeon implements CombatHost, RuleHost {
       e.trapCooldown = Math.max(0, e.trapCooldown - dt);
 
       if (e.sc.disables().move) move = false;
+
+      // A charger mid-rush travels on its stored velocity, not the flow field — a
+      // straight line you step out of, with a hard stop and a long recovery after.
+      if (e.chargeVx !== 0 || e.chargeVy !== 0) {
+        e.x += e.chargeVx * dt;
+        e.y += e.chargeVy * dt;
+        if (d <= e.radius + a.radius + 6) {
+          this.hurtPlayer(target, e.damage * 1.0, e.element, AILMENT_CHANCE);
+          e.chargeVx = 0; e.chargeVy = 0;
+          e.behaviorTimer = this.affixRng.range(3, 4.5);
+        }
+        e.chargeVx = approach(e.chargeVx, 0, 620 * dt);
+        e.chargeVy = approach(e.chargeVy, 0, 620 * dt);
+        move = false;
+      }
 
       if (move) {
         const speed = e.speed * this.mireSlowAt(e.x, e.y) * e.sc.slowMultiplier();
@@ -2434,10 +2511,14 @@ export class Dungeon implements CombatHost, RuleHost {
       }
 
       // A boss's auto-attack is the least of your problems, but standing in melee of
-      // one should still cost something.
+      // one should still cost something. A bomber has no ordinary attack — it detonates
+      // (handled in its behaviour tick); a sniper's wind-up is long enough to run from.
       e.attackTimer -= dt;
-      if (!bossBusy && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
-        e.windup = (e.archetype.ranged ? 0.35 : 0.28) * this.profile.telegraph;
+      const canAutoAttack = !bossBusy && !behaviourBusy && e.chargeVx === 0 && e.chargeVy === 0
+        && e.archetype.behavior !== "bomber";
+      if (canAutoAttack && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
+        const windBase = e.archetype.behavior === "sniper" ? 1.85 : e.archetype.ranged ? 0.35 : 0.28;
+        e.windup = windBase * this.profile.telegraph;
         e.attackTimer = e.attackCooldown * this.profile.aggression;
       }
     }
@@ -2472,9 +2553,25 @@ export class Dungeon implements CombatHost, RuleHost {
   private resolveEnemyAttack(e: Enemy): void {
     const target = this.nearestHero(e.x, e.y);
     const a = target.avatar;
+
+    // A charger's wind-up ends in a dash along the direction it locked, not a swing.
+    if (e.archetype.behavior === "charger") {
+      const sp = 500;
+      e.chargeVx = Math.cos(e.facing) * sp;
+      e.chargeVy = Math.sin(e.facing) * sp;
+      return;
+    }
+    // A bomber's wind-up ends in it going off. The blast itself lives in `killEnemy`
+    // (a bomber "explodes on death" however it dies) — here we just kill it.
+    if (e.archetype.behavior === "bomber") {
+      if (e.health > 0) this.killEnemy(e, this.nearestHero(e.x, e.y));
+      return;
+    }
+
     if (e.archetype.ranged) {
       const angle = Math.atan2(a.y - e.y, a.x - e.x);
-      this.spawnEnemyBolt(e.x, e.y, angle, 210, e.damage, e.element, AILMENT_CHANCE);
+      const speed = e.archetype.behavior === "sniper" ? 360 : 210;
+      this.spawnEnemyBolt(e.x, e.y, angle, speed, e.damage, e.element, AILMENT_CHANCE);
       if (e.affixes.length > 0) this.affixOnHitHero(e, target);
       return;
     }
@@ -2508,6 +2605,76 @@ export class Dungeon implements CombatHost, RuleHost {
       followId: e.id,
     });
     this.events.push({ kind: "shake", amount: 5 });
+  }
+
+  /**
+   * The per-archetype AI branch (UAT §2). Runs once a frame for the roles that do more
+   * than walk-and-swing. Returns true when the behaviour has claimed this enemy's turn,
+   * so the generic movement in `updateEnemies` stands down for the frame.
+   */
+  private tickArchetypeBehavior(e: Enemy, dt: number, target: Hero, d: number, hasLos: boolean): boolean {
+    const a = target.avatar;
+    switch (e.archetype.behavior) {
+      case "charger": {
+        if (e.chargeVx !== 0 || e.chargeVy !== 0) return true; // mid-rush, handled by movement
+        if (e.windup > 0) return true;                          // winding up the rush
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        if (!hasLos || d < 80 || d > 400) { e.behaviorTimer = 0.4; return false; }
+        // Lock onto where the player is now and flash red — the tell is the still,
+        // facing body, and the dash that follows goes exactly where it was pointing.
+        e.facing = Math.atan2(a.y - e.y, a.x - e.x);
+        e.windup = 0.62 * this.profile.telegraph;
+        e.behaviorTimer = this.affixRng.range(4, 6);
+        return true;
+      }
+      case "bomber": {
+        if (e.windup > 0) return true;
+        if (d <= e.radius + a.radius + 16 && hasLos) {
+          e.facing = Math.atan2(a.y - e.y, a.x - e.x);
+          e.windup = 0.7 * this.profile.telegraph;
+          return true;
+        }
+        return false; // still rushing in
+      }
+      case "summoner": {
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        e.behaviorTimer = this.affixRng.range(6, 9);
+        if (this.enemies.length < this.profile.maxAlive + 4) {
+          const ang = this.affixRng.angle();
+          const spot = resolveCircle(
+            this.level,
+            clamp(e.x + Math.cos(ang) * 40, 40, this.width - 40),
+            clamp(e.y + Math.sin(ang) * 40, 40, this.height - 40),
+            ARCHETYPES.swarmer.radius,
+          );
+          this.enemies.push(
+            this.makeEnemy(ARCHETYPES.swarmer, spot.x, spot.y, { summoned: true, healthMult: 0.6 }),
+          );
+          this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
+        }
+        return false; // it still kites and shoots
+      }
+      case "leech": {
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        e.behaviorTimer = this.affixRng.range(4, 5.5);
+        let healed = false;
+        for (const other of this.enemies) {
+          if (other === e || other.boss || other.health <= 0 || other.health >= other.maxHealth) continue;
+          if (dist(e.x, e.y, other.x, other.y) > 150) continue;
+          other.health = Math.min(other.maxHealth, other.health + other.maxHealth * 0.03);
+          healed = true;
+        }
+        if (healed) this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
+        return false;
+      }
+      default:
+        // melee / ranged / shieldbearer / sniper — nothing timed; shieldbearer's block
+        // is in `damageEnemy`, the sniper's long wind-up is in the attack trigger.
+        return false;
+    }
   }
 
   // --- monster affixes (UAT §3) ------------------------------------------

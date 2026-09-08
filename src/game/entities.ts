@@ -112,6 +112,12 @@ export interface Enemy extends Body {
   stuckTimer: number;
   /** Which way this one sidesteps when blocked, so a crowd splits around a pillar. */
   dodgeDir: number;
+  /** Cadence clock for an archetype's special behaviour (UAT §2) — a charger's next
+   *  rush, a summoner's next call, a leech's next pulse. Unused by plain melee/ranged. */
+  behaviorTimer: number;
+  /** A charger's dash velocity while it is mid-rush; both zero at rest. */
+  chargeVx: number;
+  chargeVy: number;
   /** What its hits are made of. */
   element: Element;
   resists: Resists;

@@ -26,6 +26,7 @@ import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/cla
 import { CLASS_BY_ID, buildProgressionTree } from "../src/progression/index";
 import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
+import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
 import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, HAIR_STYLES,
   cosmeticProblems,
@@ -620,6 +621,176 @@ console.log("\n=== elements, ailments and mana ===");
   for (let i = 0; i < 600; i++) deep.update(DT, new FakeInput() as unknown as Input);
   for (const e of deep.enemies) { total++; if (e.element !== "physical") infused++; }
   check("deep floors are elemental", total === 0 || infused > 0, `${infused}/${total} infused`);
+}
+
+console.log("\n=== monster variety — six new archetype roles (UAT §2) ===");
+{
+  const NEW_KINDS: EnemyKind[] = ["charger", "bomber", "shieldbearer", "summoner", "sniper", "leech"];
+
+  // Data: every new kind carries its own behaviour tag, sits below a grunt's spawn
+  // weight (it's a spice, not the staple), and is gated to a depth where the player
+  // has the kit to answer it.
+  const behaviours = new Set<EnemyBehavior>();
+  for (const kind of NEW_KINDS) {
+    const a = ARCHETYPES[kind];
+    behaviours.add(a.behavior);
+    check(`${kind}: behaviour-tagged, depth-gated, rarer than a grunt`,
+      a.behavior === kind && a.minDepth >= 5 && a.weight > 0 && a.weight < ARCHETYPES.grunt.weight,
+      `behavior=${a.behavior} minDepth=${a.minDepth} weight=${a.weight}`);
+  }
+  check("the six roles are mechanically distinct, not six reskins", behaviours.size === 6,
+    `${behaviours.size} distinct behaviours`);
+
+  // A sealed floor (no wave director) with one monster of `kind` at ~260 units, and a
+  // geared hero. `mode` is how the hero engages: close and swing, or hold the range so
+  // a ranged role gets to do its thing.
+  const walk = (kind: EnemyKind, seconds: number, mode: "melee" | "kite" | "watch") => {
+    const state = geared(28, 4200 + kind.charCodeAt(0), 26);
+    const d = new Dungeon(state, delveConfig(16, 1), 55_000 + kind.charCodeAt(0));
+    d.sealWaves();
+    d.enemies.length = 0;
+    const mob = d.spawnArchetypeAt(kind, d.avatar.x + 190, d.avatar.y);
+    const input = new FakeInput();
+    let sawCharge = false;
+    let maxWindup = 0;
+    let sawSummon = false;
+    let fastBolt = false;
+    let poolOnDeath = false;
+
+    for (let i = 0; i < seconds * 60 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      const gap = Math.hypot(mob.x - d.avatar.x, mob.y - d.avatar.y);
+      if (mode === "melee") {
+        input.hold("right", mob.x > d.avatar.x + 6);
+        input.hold("left", mob.x < d.avatar.x - 6);
+        input.hold("down", mob.y > d.avatar.y + 6);
+        input.hold("up", mob.y < d.avatar.y - 6);
+        input.press("attack");
+      } else if (mode === "kite" && gap < 170) {
+        // Back off to keep the role at the mid-range it wants to operate from — don't
+        // swing, so a stray ranged weapon can't kill it before it acts.
+        input.hold("left", mob.x > d.avatar.x);
+        input.hold("right", mob.x < d.avatar.x);
+      }
+
+      const groundBefore = d.ground.length;
+      const mobAlive = mob.health > 0;
+      d.update(DT, input as unknown as Input);
+
+      if (Math.abs(mob.chargeVx) + Math.abs(mob.chargeVy) > 1) sawCharge = true;
+      maxWindup = Math.max(maxWindup, mob.windup);
+      if (d.enemies.some((e) => e.summoned)) sawSummon = true;
+      if (d.projectiles.some((p) => !p.friendly && Math.hypot(p.vx, p.vy) > 300)) fastBolt = true;
+      if (mobAlive && mob.health <= 0 && d.ground.length > groundBefore) poolOnDeath = true;
+    }
+    return { d, mob, sawCharge, maxWindup, sawSummon, fastBolt, poolOnDeath };
+  };
+
+  // Charger: after a wind-up it commits to a straight-line dash — its charge velocity
+  // goes non-zero, which nothing else in the roster does.
+  const charger = walk("charger", 20, "kite");
+  check("a charger winds up and dashes a straight line",
+    charger.sawCharge && charger.maxWindup > 0, `charged=${charger.sawCharge} windup ${charger.maxWindup.toFixed(2)}s`);
+
+  // Bomber: goes off however it dies — a blast pool where it fell.
+  const bomber = walk("bomber", 12, "melee");
+  check("a bomber detonates on death and leaves a pool",
+    bomber.poolOnDeath || bomber.d.ground.length > 0, `${bomber.d.ground.length} pools`);
+
+  // Summoner: feeds the floor extra bodies on a timer while it hangs back.
+  const summoner = walk("summoner", 18, "watch");
+  check("a summoner spawns chaff", summoner.sawSummon);
+
+  // Sniper: a fast bolt off a long telegraph — the wind-up dwarfs a melee mob's ~0.3s.
+  const sniper = walk("sniper", 16, "watch");
+  check("a sniper telegraphs long and shoots fast",
+    sniper.maxWindup > 0.9 && sniper.fastBolt,
+    `windup ${sniper.maxWindup.toFixed(2)}s, fast bolt ${sniper.fastBolt}`);
+
+  // Leech: heals a wounded ally back up over time. No hero input at all — the pulse is
+  // on its own clock, and a geared hero shrugs off a lone grunt for the fifteen seconds
+  // it takes to watch a couple of pulses land.
+  {
+    const d = new Dungeon(geared(28, 8123, 26), delveConfig(16, 1), 60_600);
+    d.sealWaves();
+    d.enemies.length = 0;
+    const leech = d.spawnArchetypeAt("leech", d.avatar.x + 200, d.avatar.y);
+    const ally = d.spawnArchetypeAt("brute", d.avatar.x + 260, d.avatar.y);
+    ally.health = ally.maxHealth * 0.3;
+    let healed = false;
+    let prev = ally.health;
+    const input = new FakeInput();
+    for (let i = 0; i < 60 * 16 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      d.update(DT, input as unknown as Input);
+      if (ally.health > prev + 0.01 && ally.health <= ally.maxHealth) healed = true;
+      prev = ally.health;
+    }
+    check("a leech heals wounded allies", healed);
+  }
+
+  // Shieldbearer: a frontal hit is bounced hard. Every swing the bot lands is a frontal
+  // one, so the average damage number on a shieldbearer should come in well under the
+  // same hero's average on a plain grunt.
+  const avgFrontHit = (kind: EnemyKind) => {
+    const state = geared(28, 9001, 26);
+    const d = new Dungeon(state, delveConfig(16, 1), 71_000 + kind.charCodeAt(0));
+    d.sealWaves();
+    d.enemies.length = 0;
+    const mob = d.spawnArchetypeAt(kind, d.avatar.x + 34, d.avatar.y);
+    const input = new FakeInput();
+    let total = 0;
+    let hits = 0;
+    for (let i = 0; i < 60 * 10 && mob.health > 0; i++) {
+      input.beginTick();
+      input.hold("right", mob.x > d.avatar.x + 4);
+      input.hold("left", mob.x < d.avatar.x - 4);
+      input.press("attack");
+      d.update(DT, input as unknown as Input);
+      for (const ev of d.drainEvents()) {
+        if (ev.kind === "damage" && !ev.onPlayer) { total += ev.amount; hits++; }
+      }
+    }
+    return hits > 0 ? total / hits : 0;
+  };
+  const onShield = avgFrontHit("shieldbearer");
+  const onGrunt = avgFrontHit("grunt");
+  check("a shieldbearer bounces a frontal hit", onShield > 0 && onShield < onGrunt * 0.7,
+    `${onShield.toFixed(0)} vs ${onGrunt.toFixed(0)} on a grunt`);
+
+  // Nothing any of the six does throws over a full clear of a floor made of them.
+  {
+    const d = new Dungeon(geared(30, 606, 28), delveConfig(15, 1), 40_404);
+    d.sealWaves();
+    d.enemies.length = 0;
+    for (const kind of NEW_KINDS) {
+      const ang = (NEW_KINDS.indexOf(kind) / NEW_KINDS.length) * Math.PI * 2;
+      d.spawnArchetypeAt(kind, d.avatar.x + Math.cos(ang) * 160, d.avatar.y + Math.sin(ang) * 160);
+    }
+    const input = new FakeInput();
+    let potionCd = 0;
+    for (let i = 0; i < 60 * 120 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      const near = d.enemies.filter((e) => e.state !== "spawning")
+        .sort((a, b) => Math.hypot(a.x - d.avatar.x, a.y - d.avatar.y) - Math.hypot(b.x - d.avatar.x, b.y - d.avatar.y))[0];
+      if (near) {
+        input.hold("left", near.x < d.avatar.x - 8);
+        input.hold("right", near.x > d.avatar.x + 8);
+        input.hold("up", near.y < d.avatar.y - 8);
+        input.hold("down", near.y > d.avatar.y + 8);
+        input.press("attack");
+        input.press("dash");
+      }
+      potionCd -= DT;
+      if (d.localHero.player.health < d.localHero.player.maxHealth * 0.5 && potionCd <= 0) {
+        input.press("potion");
+        potionCd = 2;
+      }
+      d.update(DT, input as unknown as Input);
+    }
+    check("a floor made of the new roles clears without throwing",
+      d.phase === "cleared", `phase=${d.phase}`);
+  }
 }
 
 console.log("\n=== monster affixes (UAT §3 — a modular trait system) ===");

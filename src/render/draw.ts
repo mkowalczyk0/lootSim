@@ -42,6 +42,10 @@ export const ZOOM = 2.2;
 const ENEMY_SPRITES: Record<string, SpriteName> = {
   grunt: "grunt", archer: "archer", brute: "brute",
   swarmer: "swarmer", caster: "caster", boss: "boss",
+  // New archetype roles (UAT §2) reuse the closest existing silhouette until the art
+  // pipeline lands bespoke ones — mapped by combat shape, not by name.
+  charger: "grunt", bomber: "swarmer", shieldbearer: "brute",
+  summoner: "caster", sniper: "archer", leech: "caster",
 };
 
 /** Interpolated position, so motion is smooth between fixed simulation ticks. */

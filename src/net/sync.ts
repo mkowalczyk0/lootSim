@@ -336,6 +336,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
         trapCooldown: 0, stuckTimer: 0, dodgeDir: 1,
+        behaviorTimer: 0, chargeVx: 0, chargeVy: 0,
         element, resists: {} as Enemy["resists"],
         sc: new StatusContainer(1_000_000 + id!),
         knockResist: 1, boss: null, summoned: false,
