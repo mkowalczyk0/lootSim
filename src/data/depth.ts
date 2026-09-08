@@ -71,7 +71,18 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   // with no gear at all, while depth 20 should genuinely frighten a geared character.
   // Rift danger is applied at a lower exponent so a high tier is a longer fight before
   // it's an instant death.
-  const enemyDamage = (5 + 3.6 * (d - 1) + 0.32 * (d - 1) * (d - 1)) * Math.pow(danger, 0.8) * party.damage;
+  //
+  // The post-playtest pass (UAT §8): "difficulty scaling does not keep pace with player
+  // power" past the early floors. The base curve (constant + linear + `0.32·(d-1)²`) is
+  // untouched — a floor at or below depth 8 plays exactly as it did — and a second
+  // quadratic term switches on only past depth 8 and only grows from there, so the deep
+  // floors ramp toward boss-level pressure without touching a curve the smoke tests and
+  // the early game are calibrated against. The rest of the gap is closed by composition
+  // (the monster-affix and elite systems, UAT §3/§4), per §8's own "do not solve this
+  // exclusively by inflating [stats]".
+  const deep = Math.max(0, d - 8);
+  const enemyDamage =
+    (5 + 3.6 * (d - 1) + 0.32 * (d - 1) * (d - 1) + 0.06 * deep * deep) * Math.pow(danger, 0.8) * party.damage;
   const enemySpeed = (54 + Math.min(52, 2.4 * (d - 1))) * Math.min(1.25, Math.pow(danger, 0.15));
   // More bodies at high tiers, but only slowly — a screen full of monsters stops being
   // a fight and starts being a wall.
@@ -96,9 +107,13 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier),
     xpMultiplier: Math.pow(1.22, d - 1) * mode.xpMult,
     // Numbers alone can't threaten a player who dodges well, so the deeper floors
-    // squeeze the thing skill actually spends: reaction time.
-    aggression: clamp(1 - (d - 1) * 0.016, 0.5, 1),
-    telegraph: clamp(1 - (d - 1) * 0.014, 0.55, 1),
+    // squeeze the thing skill actually spends: reaction time. The slopes are unchanged;
+    // the post-playtest pass (UAT §8) only lowered the floors these clamp at, so the
+    // deepest floors (roughly depth 30+) keep getting more aggressive and tighter-
+    // telegraphed instead of plateauing. Nothing at or above those clamps in normal play
+    // is affected.
+    aggression: clamp(1 - (d - 1) * 0.016, 0.4, 1),
+    telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1),
     isBoss,
     rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier),
     quantity: mode.quantity,

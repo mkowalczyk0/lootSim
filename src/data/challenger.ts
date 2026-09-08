@@ -19,15 +19,19 @@ export function challengerMultiplier(tier: number): number {
   return t === 0 ? 1 : Math.pow(CHALLENGER_STEP, t);
 }
 
-/** A slight rarity push for the extra risk — nowhere near what a rift tier gives. */
+/** A rarity push for the extra risk — still nowhere near what a rift tier gives, but
+ *  enough that Challenger is a genuine reward escalation and not just a danger tax
+ *  (UAT §9). Caps out around tier 11. */
 export function challengerRarityBias(tier: number): number {
-  return Math.min(0.12, clampTier(tier) * 0.014);
+  return Math.min(0.17, clampTier(tier) * 0.017);
 }
 
 /** Coins and planet materials — both are general-purpose currency a harder floor should
- *  pay out more of. XP is left alone so levelling pace doesn't quietly warp with the dial. */
+ *  pay out more of. XP is left alone so levelling pace doesn't quietly warp with the dial.
+ *  Raised in the post-playtest pass so the higher tiers are worth turning on for the loot,
+ *  not only survivable for bragging rights. */
 export function challengerRewardMult(tier: number): number {
-  return 1 + Math.min(1.2, clampTier(tier) * 0.09);
+  return 1 + Math.min(1.6, clampTier(tier) * 0.11);
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"] as const;
