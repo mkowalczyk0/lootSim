@@ -890,7 +890,7 @@ function dressFloor(level: Level): Prop[] {
   const out: Prop[] = [];
   const wall: ReadonlySet<PropKind> = new Set(["brazier", "statue", "gibbet", "sarcophagus"]);
   const bulky: ReadonlySet<PropKind> = new Set(["statue", "gibbet", "sarcophagus", "altar"]);
-  const want = 8 + Math.floor(level.width / 150);
+  const want = 11 + Math.floor(level.width / 120);
   for (let i = 0; i < want; i++) {
     const kind = rng.pick(set);
     const spot = wall.has(kind) ? wallSidePoint(level, rng) : randomOpenPoint(level, rng, { tries: 12 });
