@@ -13,7 +13,7 @@
  */
 
 import type { ItemType } from "./items";
-import { RARITIES, rarityIndex, type Rarity } from "./rarity";
+import { RARITIES, RARITY_VALUE, rarityIndex, type Rarity } from "./rarity";
 import { WEAPON_FAMILIES } from "./weapons";
 
 export const CRAFT_CATEGORIES = ["weapon", "armor", "accessory"] as const;
@@ -42,4 +42,17 @@ export function craftBulkCost(rarity: Rarity): number {
 /** Cost of the chosen essence's material, to bias the roll toward that element. */
 export function craftEssenceCost(rarity: Rarity): number {
   return Math.round(5 * Math.pow(1.7, rarityIndex(rarity)));
+}
+
+/**
+ * Coins a reforge burns, on top of the Iron Scrap it shares with a craft
+ * (`craftBulkCost`). Reuses the sell-value scale rather than a new curve — it already
+ * climbs ~2.5-3x a tier, which is "aggressive" without a knob of its own to tune, and it
+ * lands an unspoken reforge above the priciest chest in the game. Unlike crafting,
+ * reforging isn't capped at `CRAFT_MAX_RARITY`: it can only reroll the affixes on an item
+ * you already found, never manufacture a divine or unspoken from nothing, so the "keep it
+ * absurd" acquisition odds in `rarity.ts` are untouched.
+ */
+export function reforgeCoinCost(rarity: Rarity): number {
+  return Math.round(RARITY_VALUE[rarity] * 3);
 }

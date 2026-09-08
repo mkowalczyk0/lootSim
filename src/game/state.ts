@@ -9,9 +9,10 @@ import {
   type Appearance, type CapsuleTier, type Cosmetic, type CosmeticSlot,
 } from "../data/cosmetics";
 import {
-  CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, type CraftCategory,
+  CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, reforgeCoinCost,
+  type CraftCategory,
 } from "../data/crafting";
-import type { EquipSlot } from "../data/items";
+import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
@@ -23,7 +24,9 @@ import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { universalPointsFor } from "../progression/universal";
-import { primeItemIds, randomItemType, rollItem, type Item, type ItemMod, type Stats } from "./item";
+import {
+  primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
+} from "./item";
 import { Player, emptyEquipment } from "./player";
 
 export interface RunStats {
@@ -329,6 +332,43 @@ export class GameState {
     this.stats.raritiesFound[rarity]++;
     this.addToInventory([item]);
     return item;
+  }
+
+  /**
+   * Reforges an item in place — same rarity, type and base stats, a freshly rolled set
+   * of affixes (`game/item.ts#reforgeAffixes`). Works on a stashed item or one the active
+   * character has equipped, since a reforge is something you do to gear you're using, not
+   * just to stash junk. Unlike `craftItem`, every rarity is eligible — reforging can only
+   * reroll affixes on something you already found, never manufacture a divine or
+   * unspoken from nothing, so `CRAFT_MAX_RARITY` doesn't apply here.
+   */
+  reforgeItem(itemId: string): Item | null {
+    const located = this.locateItem(itemId);
+    if (!located) return null;
+    const coinCost = reforgeCoinCost(located.item.rarity);
+    const materialCost = craftBulkCost(located.item.rarity);
+    if (this.materials.physical < materialCost) return null;
+    if (!this.spendCoins(coinCost)) return null;
+    this.materials.physical -= materialCost;
+    const reforged = reforgeAffixes(located.item, this.rng);
+    located.replace(reforged);
+    return reforged;
+  }
+
+  /** Finds an item by id wherever the active character keeps it, stashed or worn. */
+  private locateItem(itemId: string): { item: Item; replace: (next: Item) => void } | null {
+    const invIdx = this.inventory.findIndex((it) => it.id === itemId);
+    if (invIdx >= 0) {
+      return { item: this.inventory[invIdx]!, replace: (next) => { this.inventory[invIdx] = next; } };
+    }
+    const equipment = this.player.equipment;
+    for (const slot of EQUIP_SLOTS) {
+      const worn = equipment[slot];
+      if (worn?.id === itemId) {
+        return { item: worn, replace: (next) => { equipment[slot] = next; } };
+      }
+    }
+    return null;
   }
 
   buyKey(tier: ChestTier, count = 1): boolean {

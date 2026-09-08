@@ -16,7 +16,7 @@ import { Player, xpForLevel } from "../src/game/player";
 import { GameState, POTION_PRICE } from "../src/game/state";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
-import { CRAFTABLE_RARITIES } from "../src/data/crafting";
+import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
 import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
@@ -39,6 +39,8 @@ import { decodePng } from "./png";
 import { readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
+import { MOD_COUNTS } from "../src/data/items";
+import { STAT_KEYS } from "../src/data/mods";
 import { Rng } from "../src/core/rng";
 import { applySnapshot, configFromWire, configToWire, encodeSnapshot } from "../src/net/sync";
 import { isRoomCode, normalizeRoomCode, randomRoomCode } from "../src/net/protocol";
@@ -1584,6 +1586,67 @@ console.log("\n=== crafting ===");
   const poor = new GameState(4401);
   check("crafting without materials fails and refunds nothing",
     poor.craftItem("weapon", "legendary", null) === null && poor.materials.physical === 0);
+}
+
+console.log("\n=== reforging (UAT §26) ===");
+{
+  const rich = new GameState(4410);
+  rich.materials.physical = 1_000_000;
+  rich.coins = 1_000_000_000;
+  const original = rich.craftItem("weapon", "legendary", null)!;
+  const beforeStats = { ...original.stats };
+  const beforeGrant = original.grant;
+  const beforeTrigger = original.trigger;
+  const coinsBefore = rich.coins;
+  const materialsBefore = rich.materials.physical;
+
+  const reforged = rich.reforgeItem(original.id);
+  check("reforging a found item succeeds", reforged !== null);
+  check("reforge keeps the same item id in place", reforged?.id === original.id);
+  check("reforge keeps rarity, type and item level",
+    reforged?.rarity === original.rarity && reforged?.type === original.type
+    && reforged?.ilvl === original.ilvl);
+  check("reforge never touches the base stat block",
+    !!reforged && STAT_KEYS.every((k) => reforged.stats[k] === beforeStats[k]));
+  check("reforge never touches a grant or a trigger",
+    reforged?.grant === beforeGrant && reforged?.trigger === beforeTrigger);
+  check("reforging actually spends coins and materials",
+    rich.coins < coinsBefore && rich.materials.physical < materialsBefore);
+  check("the reforged affix count still respects the rarity's mod range",
+    !!reforged && reforged.mods.length >= MOD_COUNTS[reforged.rarity][0]
+    && reforged.mods.length <= MOD_COUNTS[reforged.rarity][1]);
+  check("the reforged item replaced the original in the stash, not duplicated",
+    rich.inventory.filter((it) => it.id === original.id).length === 1);
+
+  rich.equipFromInventory(original.id);
+  const invCountBefore = rich.inventory.length;
+  const reforgedAgain = rich.reforgeItem(original.id);
+  check("an equipped item reforges in place, without falling into the stash",
+    reforgedAgain !== null && rich.player.equipment[original.slot]?.id === original.id
+    && rich.inventory.length === invCountBefore);
+
+  // Crafting a divine/unspoken item is refused, but reforging one already found isn't —
+  // it can only reroll affixes on something that exists, never manufacture the rarity.
+  const unspoken = rollItem({ rarity: "unspoken", type: "sword", ilvl: 30, rng: new Rng(77) });
+  rich.inventory.push(unspoken);
+  check("crafting still refuses unspoken", rich.craftItem("weapon", "unspoken", null) === null);
+  check("reforging an already-found unspoken item still works",
+    rich.reforgeItem(unspoken.id)?.rarity === "unspoken");
+
+  check("reforge cost climbs hard with rarity",
+    reforgeCoinCost("unspoken") > reforgeCoinCost("legendary")
+    && reforgeCoinCost("legendary") > reforgeCoinCost("epic")
+    && reforgeCoinCost("common") < reforgeCoinCost("uncommon"));
+
+  check("reforging an unknown item id returns null", rich.reforgeItem("no-such-item") === null);
+
+  const poor = new GameState(4411);
+  poor.materials.physical = craftBulkCost("common");
+  const poorItem = poor.craftItem("weapon", "common", null)!;
+  poor.coins = 0;
+  poor.materials.physical = 0;
+  check("reforging without coins or materials fails and spends nothing",
+    poor.reforgeItem(poorItem.id) === null && poor.coins === 0 && poor.materials.physical === 0);
 }
 
 console.log("\n=== the ship hub ===");
