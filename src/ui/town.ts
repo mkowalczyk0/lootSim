@@ -1068,8 +1068,9 @@ export class TownUI {
           break;
         }
         // `wipe` also gags the save, so the `beforeunload` handler can't put it back.
-        this.state.wipe();
-        window.location.reload();
+        // The erase is a server round trip now; reload once it has landed, or the
+        // `pagehide` flush would put the old progress straight back.
+        void this.state.wipe().finally(() => window.location.reload());
         break;
       }
     }

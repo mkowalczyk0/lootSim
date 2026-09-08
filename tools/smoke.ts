@@ -51,6 +51,9 @@ import { Rng } from "../src/core/rng";
 import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
 import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage, type Snapshot } from "../src/net/protocol";
 import { Party } from "../src/net/party";
+import { MemorySaveStore, parseSaved, serializeSave, SAVE_VERSION } from "../src/core/save";
+import { createServer } from "node:http";
+import { hashPassword, openAccounts, verifyPassword } from "./accounts";
 import { playerToJSON } from "../src/game/state";
 
 class FakeInput {
@@ -1835,29 +1838,147 @@ console.log("\n=== the vigil ===");
     check("the portal opens at the bottom of the band", dailyUnlocked(DAILY_DEPTH_MIN) && !dailyUnlocked(DAILY_DEPTH_MIN - 1));
   }
 
-  // 6. The save remembers it, and a save from before the Vigil existed loads clean.
+  // 6. The save remembers it, and a save from before the Vigil existed loads clean. The
+  // blob goes through the same two seams the server round-trips it through.
   {
-    const store = new Map<string, string>();
-    (globalThis as unknown as { localStorage: unknown }).localStorage = {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => { store.set(k, v); },
-      removeItem: (k: string) => { store.delete(k); },
-    };
     const st = geared(14, 9106, 16, "swordsman");
     st.daily.clearedDay = today;
     st.stats.vigilsCleared = 3;
-    st.save();
-    const back = GameState.load();
+    const back = GameState.fromSaved(parseSaved(serializeSave(st.toJSON())));
     check("the save remembers the day you kept it", back.daily.clearedDay === today && back.stats.vigilsCleared === 3);
-    const raw = JSON.parse(store.get([...store.keys()][0]!)!) as Record<string, unknown>;
+    const raw = JSON.parse(serializeSave(st.toJSON())) as Record<string, unknown>;
     delete raw.daily;
     raw.version = 15;
-    store.set([...store.keys()][0]!, JSON.stringify(raw));
-    const old = GameState.load();
+    const old = GameState.fromSaved(parseSaved(JSON.stringify(raw)));
     check("a pre-Vigil save loads as never having kept one", old.daily.clearedDay === 0 && old.coins === st.coins);
-    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
   }
 }
+
+console.log("\n=== accounts ===");
+await (async () => {
+  // Server-side accounts and saves (docs/accounts.md): an in-memory database behind a real
+  // HTTP server on an ephemeral port, driven with fetch exactly the way the browser will.
+  const accounts = openAccounts({ dbPath: ":memory:" });
+  const server = createServer((req, res) => {
+    accounts.handle(req, res).then((handled) => {
+      if (handled) return;
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("fell through");
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+  /** A browser-ish client: remembers the one cookie the server sets. */
+  const jar = { cookie: "" };
+  const call = async (method: string, path: string, body?: string, extraCookie?: string) => {
+    const res = await fetch(base + path, {
+      method, body,
+      headers: {
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(extraCookie ?? jar.cookie ? { cookie: extraCookie ?? jar.cookie } : {}),
+      },
+    });
+    const set = res.headers.get("set-cookie");
+    if (set) jar.cookie = set.split(";")[0]!;
+    const text = await res.text();
+    let json: Record<string, unknown> | null = null;
+    try { json = text ? JSON.parse(text) as Record<string, unknown> : null; } catch { /* not json */ }
+    return { status: res.status, text, json, setCookie: set };
+  };
+
+  let r = await call("GET", "/not-api");
+  check("anything outside /api falls through to the host", r.status === 200 && r.text === "fell through");
+  r = await call("GET", "/api/me");
+  check("nobody is logged in to start with", r.status === 401 && r.json?.error === "not_logged_in");
+  r = await call("POST", "/api/register", JSON.stringify({ username: "ab", password: "hunter22" }));
+  check("a two-letter name is refused", r.status === 400 && r.json?.error === "bad_username");
+  r = await call("POST", "/api/register", JSON.stringify({ username: "Cousin_1", password: "short" }));
+  check("a short password is refused", r.status === 400 && r.json?.error === "bad_password");
+  r = await call("POST", "/api/register", "not json at all");
+  check("a malformed body is a 400, not a crash", r.status === 400);
+  r = await call("POST", "/api/register", JSON.stringify({ username: "Cousin_1", password: "hunter22" }));
+  check("registering works and logs you in",
+    r.status === 201 && r.json?.username === "Cousin_1" && !!r.setCookie && /HttpOnly/.test(r.setCookie) && /SameSite=Lax/.test(r.setCookie),
+    r.setCookie ?? "");
+  const cookie = jar.cookie;
+  r = await call("GET", "/api/me");
+  check("the cookie is the session", r.status === 200 && r.json?.username === "Cousin_1");
+  r = await call("POST", "/api/register", JSON.stringify({ username: "cousin_1", password: "different1" }));
+  check("the same name in another case is taken", r.status === 409 && r.json?.error === "username_taken");
+  const stored = accounts.db.prepare("SELECT password FROM accounts WHERE username = 'Cousin_1'").get() as { password: string };
+  check("the password is stored hashed, never plain",
+    stored.password.startsWith("scrypt$") && !stored.password.includes("hunter22") && verifyPassword("hunter22", stored.password)
+    && !verifyPassword("hunter23", stored.password));
+  check("two hashes of one password differ (salted)", hashPassword("x-y-z-1") !== hashPassword("x-y-z-1"));
+
+  // Saves: nothing yet, then a round trip, byte for byte.
+  r = await call("GET", "/api/save");
+  check("a new account has no save", r.status === 204 && r.text === "");
+  const st = geared(12, 9201, 12, "lancer");
+  st.coins = 123456;
+  const blob = serializeSave(st.toJSON());
+  r = await call("PUT", "/api/save", blob);
+  check("a save is accepted", r.status === 204);
+  r = await call("GET", "/api/save");
+  check("…and comes back byte-identical", r.status === 200 && r.text === blob && r.json?.version === SAVE_VERSION);
+  const back = GameState.fromSaved(parseSaved(r.text));
+  check("…and rebuilds the same state", back.coins === 123456 && back.player.level === 12 && back.activeClassId === "lancer");
+  r = await call("PUT", "/api/save", JSON.stringify({ coins: 5 }));
+  check("a blob without a version is not a save", r.status === 400 && r.json?.error === "bad_save");
+  r = await call("PUT", "/api/save", "[1,2,3]");
+  check("…nor is an array", r.status === 400);
+  r = await call("PUT", "/api/save", "x".repeat(5 * 1024 * 1024)).catch(() => ({ status: 413, text: "", json: null, setCookie: null }));
+  check("an oversize body is refused", r.status === 413);
+  r = await call("GET", "/api/save");
+  check("a bad write never replaces the good save", r.status === 200 && r.text === blob);
+  r = await call("DELETE", "/api/save");
+  check("wiping the save works", r.status === 204);
+  r = await call("GET", "/api/save");
+  check("…and it's gone", r.status === 204);
+
+  // Sessions: forged and tampered cookies are nobody.
+  r = await call("GET", "/api/me", undefined, "lootsim_session=1.1.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  check("a forged cookie is nobody", r.status === 401);
+  const [name, value] = cookie.split("=") as [string, string];
+  const [id, iat, sig] = value.split(".");
+  const flipped = sig!.endsWith("A") ? `${sig!.slice(0, -1)}B` : `${sig!.slice(0, -1)}A`;
+  r = await call("GET", "/api/me", undefined, `${name}=${id}.${iat}.${flipped}`);
+  check("a tampered signature is nobody", r.status === 401);
+  r = await call("GET", "/api/me", undefined, `${name}=${Number(id) + 1}.${iat}.${sig}`);
+  check("somebody else's id with your signature is nobody", r.status === 401);
+  r = await call("GET", "/api/save", undefined, "");
+  check("saves need a session", r.status === 401);
+
+  // Log out, log back in.
+  r = await call("POST", "/api/logout");
+  check("logging out clears the cookie", r.status === 204 && /Max-Age=0/.test(r.setCookie ?? ""));
+  jar.cookie = "";
+  r = await call("POST", "/api/login", JSON.stringify({ username: "cousin_1", password: "wrong-one" }));
+  check("a wrong password is one generic answer", r.status === 401 && r.json?.error === "bad_credentials");
+  r = await call("POST", "/api/login", JSON.stringify({ username: "Nobody_9", password: "hunter22" }));
+  check("…the same answer as an unknown name", r.status === 401 && r.json?.error === "bad_credentials");
+  r = await call("POST", "/api/login", JSON.stringify({ username: "cousin_1", password: "hunter22" }));
+  check("logging in (any case) works", r.status === 200 && r.json?.username === "Cousin_1" && !!r.setCookie);
+  r = await call("GET", "/api/nope");
+  check("an unknown api route is a 404", r.status === 404);
+  r = await call("GET", "/api/register");
+  check("the wrong method is a 405", r.status === 405);
+
+  server.close();
+  accounts.close();
+
+  // The in-memory default store, which everything above the network uses.
+  const mem = new MemorySaveStore();
+  const prev = GameState.saveStore;
+  GameState.saveStore = mem;
+  const s2 = geared(5, 9202, 4, "magician");
+  s2.save();
+  check("GameState.save writes through the installed store", mem.last !== null && parseSaved(mem.last)?.version === SAVE_VERSION);
+  await s2.wipe();
+  check("wipe clears it and a wiped state never writes again", mem.last === null && (s2.save(), mem.last === null));
+  GameState.saveStore = prev;
+})();
 
 console.log("\n=== death loses unbanked loot ===");
 {

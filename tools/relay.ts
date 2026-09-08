@@ -20,6 +20,7 @@ import {
   MAX_PARTY, NET_PATH, PROTOCOL_VERSION, randomRoomCode,
   type FromRelay, type ToRelay,
 } from "../src/net/protocol";
+import { defaultDbPath, openAccounts } from "./accounts";
 
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 /** Nothing the game sends comes close; anything bigger is a bug or an attack. */
@@ -56,14 +57,24 @@ export function attachRelay(server: Server, log: (msg: string) => void = () => {
   setInterval(heartbeat, HEARTBEAT_MS).unref?.();
 }
 
-/** Standalone mode, for serving a built `dist/` without the dev server. */
+/** Standalone mode, for serving a built `dist/` without the dev server. Accounts and
+ *  saves are answered here too (`docs/accounts.md`), so the API isn't dev-server-only. */
 export function startRelay(port: number, log: (msg: string) => void = console.log): Server {
-  const server = createServer((_req, res) => {
-    res.writeHead(200, { "content-type": "text/plain" });
-    res.end("lootSim party relay\n");
+  const accounts = openAccounts({ dbPath: defaultDbPath(), log: (m) => log(`[accounts] ${m}`) });
+  const server = createServer((req, res) => {
+    accounts.handle(req, res).then((handled) => {
+      if (handled) return;
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("lootSim party relay\n");
+    }, (err: unknown) => {
+      log(`accounts error: ${String(err)}`);
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    });
   });
   attachRelay(server, log);
-  server.listen(port, () => log(`party relay listening on :${port}${NET_PATH}`));
+  server.on("close", () => accounts.close());
+  server.listen(port, () => log(`party relay + accounts listening on :${port}${NET_PATH}`));
   return server;
 }
 

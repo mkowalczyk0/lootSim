@@ -1,5 +1,3 @@
-const KEY = "lootsim.save.v2";
-
 /**
  * Bump when the persisted shape changes. Older saves are handed to the loader with
  * their version attached so it can fill in what's new, rather than wiping somebody's
@@ -78,15 +76,22 @@ const KEY = "lootsim.save.v2";
  */
 export const SAVE_VERSION = 16;
 
+/**
+ * Where a save lives is no longer this file's business. The blob below used to go to
+ * `localStorage`; since accounts arrived (`docs/accounts.md`) it goes to the server
+ * through `net/savestore.ts`, and what this file owns is the *shape*: the version guard,
+ * the serialisation, and the `SaveStore` seam `GameState` writes through. The default
+ * store keeps the last blob in memory, which is what tests and tools want.
+ */
 export interface SavedGame {
   readonly version: number;
   readonly data: Record<string, unknown>;
 }
 
-export function loadRaw(): SavedGame | null {
+/** Parses a stored blob, refusing one from a newer build than this. Null means "start fresh". */
+export function parseSaved(text: string | null | undefined): SavedGame | null {
+  if (!text) return null;
   try {
-    const text = localStorage.getItem(KEY);
-    if (!text) return null;
     const parsed = JSON.parse(text) as { version?: number } | null;
     if (!parsed || typeof parsed !== "object") return null;
     const version = Number(parsed.version ?? 1);
@@ -94,23 +99,36 @@ export function loadRaw(): SavedGame | null {
     if (version > SAVE_VERSION) return null;
     return { version, data: parsed as Record<string, unknown> };
   } catch {
-    // Corrupt or unavailable storage (private mode, quota) — start fresh rather than crash.
+    // Corrupt — start fresh rather than crash.
     return null;
   }
 }
 
-export function saveRaw(data: object): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ ...data, version: SAVE_VERSION }));
-  } catch {
-    // Saving is best-effort; a full quota should never interrupt play.
-  }
+/** The one string that ever leaves the game: the state's JSON with this build's version. */
+export function serializeSave(data: object): string {
+  return JSON.stringify({ ...data, version: SAVE_VERSION });
 }
 
-export function clearSave(): void {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    /* ignore */
+export interface SaveStore {
+  /** Hand over the latest blob. Cheap to call often; the store decides when it lands. */
+  write(json: string): void;
+  /** Land whatever is pending. `final` is the tab-closing flavour. */
+  flush(final?: boolean): Promise<void>;
+  /** Erase the stored save. */
+  clear(): Promise<void>;
+}
+
+/** Holds the last blob and nothing more — the default, and what the smoke test reads back. */
+export class MemorySaveStore implements SaveStore {
+  last: string | null = null;
+  write(json: string): void {
+    this.last = json;
+  }
+  flush(): Promise<void> {
+    return Promise.resolve();
+  }
+  clear(): Promise<void> {
+    this.last = null;
+    return Promise.resolve();
   }
 }

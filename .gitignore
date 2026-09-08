@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv
 art-sheet.png
+
+# Accounts and saves live here (tools/accounts.ts); LOOTSIM_DB moves it.
+data/

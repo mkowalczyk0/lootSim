@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
+import { defaultDbPath, openAccounts } from "./tools/accounts";
 import { attachRelay } from "./tools/relay";
 
 /**
@@ -29,8 +31,35 @@ function partyRelay(): Plugin {
   };
 }
 
+/**
+ * Accounts and saves ride along the same way (`docs/accounts.md`): `/api/*` is answered
+ * by `tools/accounts.ts` before Vite's own middleware sees it, against a SQLite file in
+ * `data/` next to this config. Same reason as the relay — the funneled dev server is the
+ * one process everybody actually reaches, so that's where the saves have to live.
+ */
+function accounts(): Plugin {
+  const dbPath = defaultDbPath(fileURLToPath(new URL(".", import.meta.url)));
+  return {
+    name: "lootsim-accounts",
+    configureServer(server) {
+      const store = openAccounts({ dbPath, log: (m) => server.config.logger.info(`  [accounts] ${m}`) });
+      server.middlewares.use((req, res, next) => {
+        store.handle(req, res).then((handled) => { if (!handled) next(); }, next);
+      });
+      server.httpServer?.once("close", () => store.close());
+      server.config.logger.info(`  accounts ready — saves in ${dbPath}`);
+    },
+    configurePreviewServer(server) {
+      const store = openAccounts({ dbPath, log: (m) => console.log(`[accounts] ${m}`) });
+      server.middlewares.use((req, res, next) => {
+        store.handle(req, res).then((handled) => { if (!handled) next(); }, next);
+      });
+    },
+  };
+}
+
 export default {
-  plugins: [partyRelay()],
+  plugins: [partyRelay(), accounts()],
   server: {
     // `npm run host` is the intended way in, but plain `npm run dev` should be reachable
     // from another laptop on the same network too — that's the entire point.
