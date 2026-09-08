@@ -93,6 +93,15 @@ export class Hub {
    * separate party portal. Null until the host has walked into one and confirmed.
    */
   partyTarget: HubStationKind | null = null;
+  /**
+   * Whether the local player currently *counts* as ready — set by `Party.syncHub`, which
+   * is what draws the ring and the "n/m in the portal" line. Not the same thing as
+   * `inPartyPortal`: readiness is an edge, not a level. After a floor ends everybody is
+   * still standing exactly where they dove from, and a run that restarted itself off that
+   * stale geometry is how "extract" once meant "start the Delve again, forever". You have
+   * to step out of the portal and walk back in for it to count again.
+   */
+  partyReady = false;
   /** Everyone else in the room, walking around their own copy of this same deck. */
   mates: HubMate[] = [];
 

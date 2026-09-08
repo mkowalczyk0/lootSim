@@ -59,7 +59,7 @@ export function renderHub(
   // The party's portal (UAT §1 D1): whichever one the host picked gets a wide pulsing
   // ring, so "everyone walk into it" has an obvious "it".
   const target = hub.partyStation;
-  if (target) drawPartyRing(ctx, target, time, hub.inPartyPortal);
+  if (target) drawPartyRing(ctx, target, time, hub.partyReady);
 
   // Everyone else in the room is walking around their own copy of this deck; their
   // positions arrive over the relay a dozen times a second and are drawn here.
@@ -87,7 +87,7 @@ export function renderHub(
     ctx.textAlign = "center";
     ctx.font = `bold 11px ${MONO}`;
     ctx.fillStyle = PARTY_COLOR;
-    const ready = hub.mates.filter((m) => m.ready).length + (hub.inPartyPortal ? 1 : 0);
+    const ready = hub.mates.filter((m) => m.ready).length + (hub.partyReady ? 1 : 0);
     const text = !target
       ? hub.partyHost
         ? "PARTY — walk into a portal and confirm it to pick the party's run"
