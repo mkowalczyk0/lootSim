@@ -18,6 +18,10 @@ import {
 } from "../data/elements";
 import { MATERIALS } from "../data/materials";
 import {
+  NAMED_ITEMS, craftRecipeFor, craftableNamed, NAMED_BY_ID, namedSourceLines, type NamedItemDef,
+} from "../data/named";
+import type { NodeEffect } from "../progression/nodes";
+import {
   MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
@@ -61,7 +65,7 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroSprite, itemIcon, weaponSprite } from "../render/sprites";
+import { chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
 import { pixelImage, pixelImageBody, pixelImageFit } from "./pixelimage";
 import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
@@ -133,7 +137,11 @@ function k(settings: Settings, action: RebindableAction): string {
  * bindings rather than hardcoded, since a rebind has to move this legend too, the same
  * rule `combatHints` follows for the dungeon HUD.
  */
-function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"): string {
+/** The Forge's three screens: an ordinary craft, a reforge, and the named-item recipes (UAT §25). */
+type ForgeMode = "craft" | "reforge" | "named";
+const FORGE_MODES: readonly ForgeMode[] = ["craft", "reforge", "named"];
+
+function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
   const e = k(s, "confirm");
@@ -146,8 +154,10 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Craft": return forgeMode === "reforge"
-      ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to crafting`
-      : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
+      ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to named recipes`
+      : forgeMode === "named"
+        ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
+        : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
@@ -191,7 +201,7 @@ export class TownUI {
   /** The Forge is two screens sharing a station: craft something new, or reforge
    *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
    *  on a station tab. */
-  private forgeMode: "craft" | "reforge" = "craft";
+  private forgeMode: ForgeMode = "craft";
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
@@ -254,7 +264,7 @@ export class TownUI {
       }
       const forgeModeEl = target.closest<HTMLElement>("[data-forge-mode]");
       if (forgeModeEl) {
-        this.forgeMode = forgeModeEl.dataset.forgeMode as "craft" | "reforge";
+        this.forgeMode = forgeModeEl.dataset.forgeMode as ForgeMode;
         this.cursor = 0;
         this.render();
         return;
@@ -396,7 +406,8 @@ export class TownUI {
     // the one exception: it's two screens sharing a station, and [I]/[O] flip between
     // them since there's no CYCLE_TABS row to browse past there anyway.
     if (this.tab === "Craft" && (input.wasPressed("tabNext") || input.wasPressed("tabPrev"))) {
-      this.forgeMode = this.forgeMode === "craft" ? "reforge" : "craft";
+      const step = input.wasPressed("tabNext") ? 1 : -1;
+      this.forgeMode = FORGE_MODES[(FORGE_MODES.indexOf(this.forgeMode) + step + FORGE_MODES.length) % FORGE_MODES.length]!;
       this.cursor = 0;
       this.resetArmed = false;
       dirty = true;
@@ -499,7 +510,8 @@ export class TownUI {
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
       case "Vigil": return 1;
       case "Craft": return this.forgeMode === "reforge"
-        ? this.reforgeCandidates().length : CRAFTABLE_RARITIES.length;
+        ? this.reforgeCandidates().length
+        : this.forgeMode === "named" ? craftableNamed().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
       case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
@@ -860,6 +872,18 @@ export class TownUI {
           }
           break;
         }
+        if (this.forgeMode === "named") {
+          const def = craftableNamed()[this.cursor];
+          if (!def) break;
+          const made = this.state.craftNamed(def.id);
+          if (made) {
+            this.notify(`Forged: ${made.name}`, RARITY_COLORS[made.rarity]);
+            this.state.save();
+          } else {
+            this.notify("The recipe asks for more than you have.", "#ef4444");
+          }
+          break;
+        }
         const rarity = CRAFTABLE_RARITIES[this.cursor]!;
         const item = this.state.craftItem(this.craftCategory, rarity, this.craftEssence);
         if (item) {
@@ -1118,7 +1142,7 @@ export class TownUI {
         break;
       }
       case "Craft": {
-        if (this.forgeMode === "reforge") break;
+        if (this.forgeMode !== "craft") break;
         if (this.craftEssence === null) {
           this.notify("No essence selected.", "#9aa4b2");
           break;
@@ -1214,6 +1238,8 @@ export class TownUI {
     if (this.tab !== "Stash") return;
     const equipped = this.state.player.equipment;
     const junk = this.state.inventory.filter((it) => {
+      // A named item is never junk, whatever its score says — it's a thing you farmed for.
+      if (it.named) return false;
       const worn = equipped[it.slot];
       const cls = this.state.heroClass;
       return worn ? itemScore(it, cls) < itemScore(worn, cls) : false;
@@ -1704,6 +1730,7 @@ export class TownUI {
     return `<div class="chest-cats">
         <div class="chest-cat ${this.forgeMode === "craft" ? "on" : ""}" data-forge-mode="craft">Craft</div>
         <div class="chest-cat ${this.forgeMode === "reforge" ? "on" : ""}" data-forge-mode="reforge">Reforge</div>
+        <div class="chest-cat ${this.forgeMode === "named" ? "on" : ""}" data-forge-mode="named">Named</div>
       </div>`;
   }
 
@@ -1715,6 +1742,7 @@ export class TownUI {
    */
   private renderCraft(): string {
     if (this.forgeMode === "reforge") return this.renderReforge();
+    if (this.forgeMode === "named") return this.renderNamedForge();
 
     const category = this.craftCategory;
     const essence = this.craftEssence;
@@ -1758,6 +1786,75 @@ export class TownUI {
       </aside>`;
   }
 
+  /**
+   * Named recipes (UAT §25): the Forge's third screen. Every definition with a `craft`
+   * source, the exact bill for each, and the item's own lore beside it — a chest never
+   * tells you what you're paying for; this does.
+   */
+  private renderNamedForge(): string {
+    const defs = craftableNamed();
+    const rows = defs.map((def, i) => {
+      const afford = this.state.canAffordNamed(def.id);
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="dot" style="background:${RARITY_COLORS[def.rarity]}"></span>
+            <span class="name" style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</span>
+          </div>
+          <div class="row-side ${afford ? "" : "warn"}">${escapeHtml(rarityLabel(def.rarity))} ${escapeHtml(def.type)}</div>
+        </div>`;
+    }).join("");
+    const def = defs[this.cursor];
+    const bag = ELEMENTS.map((e) =>
+      `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td><td>${formatNumber(this.state.materials[e])}</td></tr>`,
+    ).join("");
+    return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="list">${rows
+        || '<p class="muted">No named recipes yet.</p>'}</div></div>
+      <aside class="side">
+        ${def ? this.renderNamedRecipe(def) : '<p class="muted">Nothing on the anvil.</p>'}
+        <h3>Materials</h3>
+        <table class="cmp">${bag}</table>
+        <p class="muted">A named recipe is exact — no rarity dial, no essence, no gamble.
+        What it lists is what it costs, and what it makes is what it says.</p>
+      </aside>`;
+  }
+
+  /** One named recipe, priced line by line against what's in the bag. */
+  private renderNamedRecipe(def: NamedItemDef): string {
+    const recipe = craftRecipeFor(def);
+    if (!recipe) return "";
+    const dctx: DescribeCtx = {
+      abilityName: (id) => ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === id)?.name,
+    };
+    const lines = describeEffects((def.effects ?? []) as readonly NodeEffect[], dctx)
+      .map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+    const mods = def.mods.map((m) => {
+      const v = Array.isArray(m.value) ? m.value[1] : (m.value as number);
+      const lo = Array.isArray(m.value) ? m.value[0] : v;
+      const range = lo !== v ? `${fmtMod(m.key, lo)}–${fmtMod(m.key, v)}` : fmtMod(m.key, v);
+      return `<tr><td>${escapeHtml(shortLabel(m.key))}</td><td>${range}${m.scale === "rarity" ? " <span class=\"muted\">× rarity</span>" : ""}</td></tr>`;
+    }).join("");
+    const bill = (Object.entries(recipe.materials) as [Element, number][])
+      .filter(([, n]) => n > 0)
+      .map(([e, n]) => `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td>
+        <td class="${this.state.materials[e] >= n ? "" : "warn"}">${formatNumber(n)} <span class="muted">/ ${formatNumber(this.state.materials[e])}</span></td></tr>`)
+      .concat(recipe.coins > 0
+        ? [`<tr><td>Coins</td><td class="${this.state.coins >= recipe.coins ? "" : "warn"}">${formatNumber(recipe.coins)} <span class="muted">/ ${formatNumber(this.state.coins)}</span></td></tr>`]
+        : [])
+      .join("");
+    const grantName = def.grant ? dctx.abilityName?.(def.grant) : undefined;
+    return `
+      <h3 style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</h3>
+      <p class="muted" style="font-style:italic">${escapeHtml(def.flavor)}</p>
+      <p>${escapeHtml(def.description)}</p>
+      <table class="cmp">${mods}</table>
+      ${lines ? `<ul class="pulls">${lines}</ul>` : ""}
+      ${grantName ? `<p style="color:#7dd3fc">Grants <b>${escapeHtml(grantName)}</b>.</p>` : ""}
+      ${def.trigger ? `<p style="color:${ELEMENT_COLORS[def.trigger.element]}">${escapeHtml(triggerLine(def.trigger))}</p>` : ""}
+      <h3>The bill</h3>
+      <table class="cmp">${bill}</table>`;
+  }
+
   /** Every item the active character could reforge: worn first, then the stash. */
   private reforgeCandidates(): Item[] {
     const equipment = this.state.player.equipment;
@@ -1789,7 +1886,7 @@ export class TownUI {
       const coinCost = reforgeCoinCost(it.rarity);
       const matCost = craftBulkCost(it.rarity);
       const afford = this.state.coins >= coinCost && this.state.materials.physical >= matCost;
-      const icon = pixelImageFit(itemIcon(it.type, it.rarity), 64, `item:${it.type}:${it.rarity}`);
+      const icon = pixelImageFit(itemArt(it), 64, itemArtKey("item", it));
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}">
@@ -1985,12 +2082,15 @@ export class TownUI {
         ? '<span class="ic-mark up">▲</span>'
         : worn && delta < 0 ? '<span class="ic-mark down">▼</span>' : "";
       const dots = [
+        it.named ? '<span class="dot" style="background:#fbbf24" title="named item"></span>' : "",
         it.grant ? '<span class="dot" style="background:#7dd3fc" title="grants a skill"></span>' : "",
         it.trigger ? '<span class="dot" style="background:#ff1493" title="triggered effect"></span>' : "",
       ].join("");
       const locked = !this.state.player.canEquip(it);
-      const icon = pixelImageFit(itemIcon(it.type, it.rarity), 64, `item:${it.type}:${it.rarity}`);
+      const icon = pixelImageFit(itemArt(it), 64, itemArtKey("item", it));
+      const named = it.named ? NAMED_BY_ID[it.named] : undefined;
       const tip = `${it.name} — ${rarityLabel(it.rarity)} ${it.type} · ilvl ${it.ilvl}\n`
+        + (named ? `${named.flavor}\n` : "")
         + `${statLine(it)}\nsells for ${formatNumber(sellPrice(it))}c`;
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
@@ -2060,7 +2160,7 @@ export class TownUI {
          ${escapeHtml(this.state.heroClass.name)} is only ${this.state.player.level}.</p>`
       : "";
 
-    const icon = pixelImageFit(itemIcon(item.type, item.rarity), 96, `item:${item.type}:${item.rarity}`);
+    const icon = pixelImageFit(itemArt(item), 96, itemArtKey("item", item));
     const cmpHead = worn
       ? `<tr class="cmp-head"><td></td><td>this</td><td>vs equipped</td></tr>`
       : `<tr class="cmp-head"><td></td><td>this</td><td>gain</td></tr>`;
@@ -2074,9 +2174,31 @@ export class TownUI {
         </div>
       </div>
       ${reqLine}
+      ${this.renderNamedLore(item)}
       ${weaponLine}
       <table class="cmp wide">${cmpHead}${rows}</table>
       ${grant}${trigger}`;
+  }
+
+  /**
+   * What makes a named item *this* item — the flavour line, what it does, the live effect
+   * lines read straight off its definition, and where another copy comes from. Empty for
+   * ordinary gear, so the compare and hero panels can drop it in unconditionally.
+   */
+  private renderNamedLore(item: Item): string {
+    const def = item.named ? NAMED_BY_ID[item.named] : undefined;
+    if (!def) return "";
+    const dctx: DescribeCtx = {
+      abilityName: (id) => ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === id)?.name,
+    };
+    const lines = describeEffects((def.effects ?? []) as readonly NodeEffect[], dctx)
+      .map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+    const sources = namedSourceLines(def).map((l) => `<li class="muted">${escapeHtml(l)}</li>`).join("");
+    return `
+      <p class="muted" style="font-style:italic;margin:4px 0">${escapeHtml(def.flavor)}</p>
+      <p style="color:#fbbf24;margin:0 0 4px"><b>Named.</b> ${escapeHtml(def.description)}</p>
+      ${lines ? `<ul class="pulls">${lines}</ul>` : ""}
+      <ul class="pulls">${sources}</ul>`;
   }
 
   /** The piece in a Hero slot, shown flat — no comparison, since it's what you're wearing. */
@@ -2085,14 +2207,14 @@ export class TownUI {
     const rows = MOD_KEYS.filter((key) => (mods[key] ?? 0) !== 0)
       .map((key) => `<tr><td>${escapeHtml(shortLabel(key))}</td><td>${fmtMod(key, mods[key] ?? 0)}</td></tr>`)
       .join("");
-    const icon = pixelImageFit(itemIcon(item.type, item.rarity), 96, `item:${item.type}:${item.rarity}`);
+    const icon = pixelImageFit(itemArt(item), 96, itemArtKey("item", item));
     const weapon = item.family ? WEAPONS[item.family] : null;
     const affine = item.family ? this.state.heroClass.affinity.includes(item.family) : false;
-    const weaponLine = weapon
+    const weaponLine = this.renderNamedLore(item) + (weapon
       ? `<p style="color:${affine ? this.state.heroClass.color : "#9aa4b2"}">
           <b>${escapeHtml(weapon.name)}</b> — ${escapeHtml(weapon.blurb)}
           ${affine ? "<br><em>Your class was built for this.</em>" : ""}</p>`
-      : "";
+      : "");
     const grantAbility = item.grant
       ? CLASS_BY_ID[item.grant.split(".")[0]!]?.abilities.find((a) => a.id === item.grant)
         ?? ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === item.grant)
@@ -2126,7 +2248,7 @@ export class TownUI {
     const it = p.equipment[slot];
     const affine = it?.family ? cls.affinity.includes(it.family) : false;
     const art = it
-      ? `<img src="${pixelImageFit(itemIcon(it.type, it.rarity), 72, `item:${it.type}:${it.rarity}`)}" alt="">`
+      ? `<img src="${pixelImageFit(itemArt(it), 72, itemArtKey("item", it))}" alt="">`
       : `<span class="ds-empty">${SLOT_GLYPH[slot]}</span>`;
     const tip = it ? `${it.name} — ${rarityLabel(it.rarity)}\n${statLine(it)}` : `${slot} — empty`;
     return `
@@ -2989,6 +3111,14 @@ export class TownUI {
     const rifts = RIFT_MODES.map(
       (m) => `<tr><td style="color:${MODES[m].color}">${MODES[m].name}</td>
         <td>${formatNumber(st.riftsCleared[m] ?? 0)} cleared · tier ${this.state.riftTiers[m]}</td></tr>`).join("");
+    // Every named item and where it comes from — the seed of the UAT §20 drop preview:
+    // "I want X, and this is where I get it", whether or not you've seen X yet.
+    const named = NAMED_ITEMS.map((def) => {
+      const n = st.namedFound[def.id] ?? 0;
+      return `<li><b style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</b>
+        <span class="muted">${n > 0 ? `found ×${n}` : "not yet"}</span>
+        <em>${escapeHtml(namedSourceLines(def).join(" · "))}</em></li>`;
+    }).join("");
 
     return `
       <div class="list records">
@@ -3009,6 +3139,8 @@ export class TownUI {
       <aside class="side">
         <h3>Rifts</h3>
         <table class="cmp">${rifts}</table>
+        <h3>Named items <span class="muted">${Object.keys(st.namedFound).filter((id) => id in NAMED_BY_ID).length} / ${NAMED_ITEMS.length}</span></h3>
+        <ul class="pulls">${named}</ul>
         <h3>Rarities found</h3>
         <table class="cmp">${rarities}</table>
         <h3>Chests opened</h3>

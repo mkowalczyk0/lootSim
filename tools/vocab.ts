@@ -737,7 +737,7 @@ function chargeMultWith(value: number): number {
     id: "test-ring", name: "Test Ring", rarity: "epic", type: "ring", slot: "ring",
     family: null, ilvl: 1, stats: zeroStats(),
     mods: [{ id: "ascendant", key: "ultimateRate", value }],
-    grant: null, trigger: null, value: 1,
+    grant: null, trigger: null, named: null, value: 1,
   };
   p.refresh();
   return p.ultimateChargeMult;

@@ -361,6 +361,38 @@ keep opening chests once your slots are full:
 - From **legendary**, an item can carry a **trigger**: a nova on kill, bolts when you
   dash, a chain when your ultimate fires. The item plays itself.
 
+### Named items: a definition that forges an ordinary item
+
+`src/data/named.ts` (UAT §28/§29). A named item is **a definition that forges an ordinary
+`Item`**, and its behaviour is **a tree node you wear**: `forgeNamedItem` bakes the
+definition's base block and fixed affixes into the same `stats`/`mods` every drop has (so
+the compare table, score, sell price, save and wire need no special case), and the only
+thing the item remembers is `named: <def id>`. `Player.build` folds a worn named item's
+`effects` — `NodeEffect` minus `mods`: skill mutations, event-keyed passives, resource
+patches — into the class `ResolvedBuild` through the same fold a tree node uses, so
+`applyBuild`, `runBuildGrants` and the rule hooks see one build and **the simulation
+never asks "is this named"**. If you find yourself writing a `switch` on an item id,
+you've taken the wrong turn: extend the effect vocabulary in `src/combat/` instead.
+
+- **Acquisition is the table.** A definition names its sources (`boss` by `BossSpec.id`,
+  `chest` by tier, `clearCache`, `worldDrop`, `craft` with an exact recipe); the existing
+  roll sites read it (`Dungeon.dropNamed`, `GameState.openChests`, `GameState.craftNamed`)
+  and no boss, chest or forge code ever names an item. `namedDropChance` scales odds
+  gently with `danger` — the §16 hook. `namedForSource` is the pure read the §20 drop
+  previews will build on; the Records tab's list is its seed.
+- **Two lifetimes, on purpose — read docs/named-items.md before tuning one.** Baked
+  stats are frozen into copies already dropped; `effects`/`grant`/`trigger` are looked up
+  live by id and a retune reaches every copy ever forged.
+- **Rules stay namespaced** `named.<id>.*` — a named item may not flip a class's keystone
+  (the roster audit only walks class defs and would never see it). Granted skills crossing
+  class lines are fine and different. `npm run named` (`tools/named.ts`, in `npm test`)
+  asserts this plus: every reference resolves, art exists or falls back, forged copies
+  are ordinary Items on the one `Mods` path, save/wire round-trips, every source pays out,
+  passives fire in a live dungeon.
+- **Art** is `def.art` → an `ATLAS` row `named.<id>` + PNG; missing art draws the type
+  icon tinted by rarity, never a broken screen. Every shipped item is on the fallback
+  until the art pass.
+
 ### Elemental damage, ailments and resistance
 
 `src/data/elements.ts` — nine elements (`ELEMENTS`): physical, fire, cold, lightning,

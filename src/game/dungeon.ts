@@ -56,7 +56,8 @@ import {
 import type { Appearance } from "../data/cosmetics";
 import type { AvatarInput } from "../core/input";
 import type { Player } from "./player";
-import { randomItemType, rollItem, type Item } from "./item";
+import { forgeNamedItem, randomItemType, rollItem, type Item } from "./item";
+import { rollNamedDrops, type NamedDropQuery } from "../data/named";
 import {
   circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
   type Level, type ResourceNode, type Trap,
@@ -2642,6 +2643,27 @@ export class Dungeon implements CombatHost, RuleHost {
       });
       this.dropPickup(e.x, e.y, { kind: "item", item, rarity });
     }
+
+    // Named items (UAT §28). A boss rolls its own table, a wave monster the world table;
+    // `data/named.ts` owns who drops what and at what odds — this only asks.
+    if (e.boss) this.dropNamed(e.x, e.y, { kind: "boss", bossId: e.boss.spec.id }, source);
+    else if (e.fromWave) {
+      this.dropNamed(e.x, e.y, { kind: "worldDrop", depth: this.profile.depth, elite: e.elite !== null }, source);
+    }
+  }
+
+  /**
+   * Rolls the named-item table for one event and drops whatever hit, forged at this
+   * floor's depth. `danger` (rift tier × Challenger) lifts the odds — UAT §16's "harder
+   * pays better" — through the one helper in `data/named.ts`. Recorded in the account's
+   * records only for the local hero's drops, since every browser keeps its own save.
+   */
+  private dropNamed(x: number, y: number, q: NamedDropQuery, source: Hero): void {
+    for (const def of rollNamedDrops(q, this.rng, this.config.danger)) {
+      const item = forgeNamedItem(def, this.profile.depth, this.rng);
+      if (source.local) this.state.noteNamed(def.id);
+      this.dropPickup(x, y, { kind: "item", item, rarity: item.rarity });
+    }
   }
 
   /**
@@ -2672,6 +2694,9 @@ export class Dungeon implements CombatHost, RuleHost {
       });
       this.dropPickup(x, y, { kind: "item", item, rarity });
     }
+    // The clear cache has its own named table (UAT §28): a reward that, like the rest of
+    // the cache, only exists for finishing the floor.
+    this.dropNamed(x, y, { kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id }, this.localHero);
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
     if (gems > 0) this.dropPickup(x, y, { kind: "gem", value: gems });

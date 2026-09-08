@@ -26,8 +26,8 @@ import { evaluateUnlocks, type PathUnlockDef } from "./unlocks";
 export interface GrantedEffect {
   on: { tag?: string; event?: string };
   effects: readonly EffectStep[];
-  /** Which layer granted it, for tooltips. */
-  from: "node" | "hybrid" | "mythic";
+  /** Which layer granted it, for tooltips. `gear` is a worn named item (`data/named.ts`). */
+  from: "node" | "hybrid" | "mythic" | "gear";
 }
 
 export interface ResolvedBuild {
@@ -51,7 +51,13 @@ export interface ResolvedBuild {
   pathPoints: number[];
 }
 
-function foldEffects(
+/**
+ * Folds a list of node-shaped effects into a build. Exported for the one layer outside
+ * the tree that speaks the same vocabulary — a worn named item (`data/named.ts`), which
+ * `Player.build` folds in after the class tree, hybrids and archetypes have resolved, so
+ * the item never influences which hybrid unlocks and the dungeon reads one build.
+ */
+export function foldEffects(
   effects: readonly NodeEffect[],
   from: GrantedEffect["from"],
   out: ResolvedBuild,

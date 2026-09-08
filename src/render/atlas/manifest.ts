@@ -124,6 +124,13 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "icon.ring":     { id: "icon.ring",     w: 20, h: 20, worldScale: 0.55, feet: 0.15 },
   "icon.gloves":   { id: "icon.gloves",   w: 20, h: 26, worldScale: 0.66, feet: 0.12 },
   "icon.necklace": { id: "icon.necklace", w: 28, h: 29, worldScale: 0.50, feet: 0.12 },
+
+  // --- named items (UAT §28 step 3/4) --- one row per `NamedItemDef.art`, by convention
+  // `named.<def id>`, PNG under `src/render/atlas/named/`. A definition may name an id that
+  // has no row here yet: `itemIcon` / `pickupSprite` fall back to the type icon tinted by
+  // rarity, so art can land after the item does. Sizes follow the icon rows above — the
+  // UI normalises by width through pixelImageFit, so `worldScale` is only the floor size.
+  // (No rows yet: every shipped named item is on the fallback. Add art here + a PNG.)
 };
 
 /**

@@ -26,7 +26,7 @@
 
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import { statLine, type Item } from "../game/item";
-import { itemIcon } from "../render/sprites";
+import { itemArt, itemArtKey } from "../render/sprites";
 import { pixelImageFit } from "./pixelimage";
 import { atLeast, CINEMATIC_FLOOR, HALT_FLOOR, PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
@@ -111,7 +111,7 @@ export class LootBanner {
     this.el.hidden = false;
     this.fx.reset();
 
-    this.art.src = pixelImageFit(itemIcon(item.type, item.rarity), 120, `loot:${item.type}:${item.rarity}`);
+    this.art.src = pixelImageFit(itemArt(item), 120, itemArtKey("loot", item));
     this.name.textContent = item.name;
     this.name.style.color = RARITY_COLORS[item.rarity];
     this.line.textContent = statLine(item);

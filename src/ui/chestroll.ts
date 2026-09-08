@@ -27,7 +27,7 @@
 import { ITEM_TYPES } from "../data/items";
 import { RARITIES, RARITY_COLORS, rarityIndex, type Rarity } from "../data/rarity";
 import type { Item } from "../game/item";
-import { itemIcon } from "../render/sprites";
+import { itemArt, itemArtKey, itemIcon } from "../render/sprites";
 import { pixelImageFit } from "./pixelimage";
 import { PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
@@ -250,7 +250,7 @@ export class ChestRoll {
   private land(reel: Reel, react: boolean): void {
     const { item } = reel;
     reel.locked = true;
-    reel.face.src = pixelImageFit(itemIcon(item.type, item.rarity), 96, `roll:${item.type}:${item.rarity}`);
+    reel.face.src = pixelImageFit(itemArt(item), 96, itemArtKey("roll", item));
     reel.label.textContent = item.name;
     reel.label.style.color = RARITY_COLORS[item.rarity];
     reel.cell.style.setProperty("--r", RARITY_COLORS[item.rarity]);
