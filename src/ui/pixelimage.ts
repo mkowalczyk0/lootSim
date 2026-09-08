@@ -12,13 +12,39 @@ import { portraitScale } from "./portrait";
 const imageCache = new Map<string, string>();
 
 /**
- * Like {@link pixelImage} but scales to a target pixel width rather than by a fixed
- * factor — so a 12px procedural icon and a 69px pipeline sprite come out the same size
- * in the same slot. Integer factor, never below 1.
+ * The integer scale {@link pixelImageFit} would use to fit a `srcWidth`x`srcHeight`
+ * sprite inside a `targetWidth`x`targetHeight` box — pulled out as pure arithmetic (no
+ * canvas, no DOM) so `tools/itemart.ts` can assert every atlas sprite fits its real UI
+ * box without a browser.
+ *
+ * Fits **both** dimensions, not just width: a width-only fit (the original shape of this
+ * function) sized purely off `srcWidth`, so a tall, narrow sprite — a staff icon, a bow
+ * — blew up to the width's scale factor on both axes and came out far taller than its
+ * box. The DOM then had to squash it back down by a second, non-integer factor to fit the
+ * box's `max-height`, and `image-rendering: pixelated` nearest-neighbour-samples that
+ * squash unevenly, so the sprite rendered as a mangled sliver rather than a smaller clean
+ * copy of itself. Bounding on the *smaller* of the two ratios means the produced bitmap
+ * never exceeds the box on either axis, so the DOM never has to downscale it at all.
+ *
+ * `targetHeight` defaults to `Infinity` (no vertical bound) for the one caller that fits
+ * only a width — a weapon portrait with padding instead of a fixed box.
  */
-export function pixelImageFit(src: HTMLCanvasElement, targetWidth: number, key?: string): string {
-  const scale = Math.max(1, Math.round(targetWidth / Math.max(1, src.width)));
-  return pixelImage(src, scale, key ? `${key}|fit${targetWidth}` : undefined);
+export function fitScale(
+  srcWidth: number, srcHeight: number, targetWidth: number, targetHeight = Infinity,
+): number {
+  return Math.max(1, Math.floor(Math.min(
+    targetWidth / Math.max(1, srcWidth),
+    targetHeight / Math.max(1, srcHeight),
+  )));
+}
+
+/** Like {@link pixelImage} but scales to fit a target pixel box — see {@link fitScale}. */
+export function pixelImageFit(
+  src: HTMLCanvasElement, targetWidth: number, targetHeight = Infinity, key?: string,
+): string {
+  const scale = fitScale(src.width, src.height, targetWidth, targetHeight);
+  const fitKey = Number.isFinite(targetHeight) ? `${targetWidth}x${targetHeight}` : `${targetWidth}`;
+  return pixelImage(src, scale, key ? `${key}|fit${fitKey}` : undefined);
 }
 
 /**

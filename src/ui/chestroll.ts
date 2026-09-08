@@ -243,14 +243,14 @@ export class ChestRoll {
   private spinFace(reel: Reel): void {
     const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)]!;
     const rarity = RARITIES[Math.floor(Math.random() * RARITIES.length)]!;
-    reel.face.src = pixelImageFit(itemIcon(type, rarity), 96, `roll:${type}:${rarity}`);
+    reel.face.src = pixelImageFit(itemIcon(type, rarity), 96, 96, `roll:${type}:${rarity}`);
   }
 
   /** A reel arriving on its real item. `react` is false when a skip lands ten at once. */
   private land(reel: Reel, react: boolean): void {
     const { item } = reel;
     reel.locked = true;
-    reel.face.src = pixelImageFit(itemArt(item), 96, itemArtKey("roll", item));
+    reel.face.src = pixelImageFit(itemArt(item), 96, 96, itemArtKey("roll", item));
     reel.label.textContent = item.name;
     reel.label.style.color = RARITY_COLORS[item.rarity];
     reel.cell.style.setProperty("--r", RARITY_COLORS[item.rarity]);
