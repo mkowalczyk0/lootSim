@@ -1124,3 +1124,645 @@ The entire game can eventually be summarized as:
 > **Something older is waking beneath them all.**
 >
 > **And if the war continues, there may be nothing left for anyone to inherit.**
+
+---
+
+# The Ashen Reliquary
+
+The old planet system should be completely replaced.
+
+The game no longer needs a science-fiction explanation for where crafting materials come from. Instead, the materials should come from **Purgatory itself**—from the accumulated remains of the war between Heaven and Hell.
+
+That place is known as:
+
+# **The Ashen Reliquary**
+
+A vast, unnatural region of Purgatory where the remains of supernatural conflicts have accumulated over thousands of years.
+
+It is part battlefield.
+
+Part graveyard.
+
+Part archive.
+
+Part wound in reality.
+
+And nobody fully understands how deep it goes.
+
+---
+
+# What Is the Ashen Reliquary?
+
+Whenever something powerful dies in the war, it leaves something behind.
+
+An angel does not simply leave a corpse.
+
+A demon does not simply disappear.
+
+A divine weapon does not become ordinary metal when it is shattered.
+
+A god does not necessarily cease to exist when its body is destroyed.
+
+Their essence persists.
+
+Their blood becomes material.
+
+Their bones become stone.
+
+Their weapons become artifacts.
+
+Their deaths leave behind storms, fire, frost, poison, darkness, and other supernatural remnants.
+
+Over countless battles, all of this accumulated within Purgatory.
+
+Eventually, those remains formed an enormous region:
+
+> **The Ashen Reliquary.**
+
+The Keepers discovered that these remnants can be harvested and refined.
+
+They can be forged into weapons.
+
+They can reinforce armor.
+
+They can be used to reforge legendary equipment.
+
+They can be used to maintain the Citadel.
+
+And, most importantly:
+
+> **They can be turned into weapons capable of killing things that should be impossible to kill.**
+
+That is why the Keepers send the Legends into the Reliquary.
+
+---
+
+# Why "Reliquary"?
+
+A reliquary is a container for the remains of something holy or important.
+
+That idea fits perfectly.
+
+The Ashen Reliquary is effectively a **continent-sized tomb for the supernatural**.
+
+Inside are the remains of:
+
+- Dead angels
+- Dead demons
+- Forgotten gods
+- Ancient monsters
+- Broken celestial weapons
+- Infernal weapons
+- Shattered sanctuaries
+- Lost civilizations
+- Ancient battlefields
+- Fragments of souls
+- Pieces of realms that no longer exist
+
+The Keepers have catalogued some of it.
+
+Most of it remains unknown.
+
+---
+
+# The Reliquary Is Alive
+
+The most important thing about the Reliquary is that it should **not behave like a normal dungeon**.
+
+Purgatory is shaped by memory.
+
+The Reliquary is filled with thousands of years of supernatural memories.
+
+Those memories bleed together.
+
+As a result, the Reliquary is constantly changing.
+
+A hallway may lead somewhere different tomorrow.
+
+A ruined cathedral may suddenly appear where a cavern existed before.
+
+A battlefield may materialize around the player.
+
+A forest may be built from the memories of a civilization that died thousands of years ago.
+
+A Greek temple may exist inside a Gothic monastery.
+
+A celestial garden may be growing through the rib cage of some enormous dead creature.
+
+The geography is fundamentally unstable.
+
+This gives us a lore justification for procedural generation.
+
+The dungeon isn't randomly generated because "that's how the game works."
+
+It's randomly generated because:
+
+> **The Reliquary does not remember itself the same way twice.**
+
+---
+
+# The Resource-Run Gameplay Loop
+
+The player enters the Reliquary through a permanent gateway within the Citadel.
+
+Unlike the Delve, the purpose isn't necessarily to push endlessly downward.
+
+The purpose is **extraction**.
+
+The basic loop becomes:
+
+> **Enter → Explore → Fight → Harvest → Push your luck → Extract**
+
+The deeper or more dangerous sections the player enters, the greater the potential material yield.
+
+But materials are still unbanked loot.
+
+Die?
+
+You lose what you collected.
+
+Which means the Reliquary still feeds directly into the game's central risk/reward philosophy.
+
+The player isn't just walking around gathering rocks.
+
+They're deciding:
+
+> "I've got enough for what I need. Do I leave now, or do I go deeper?"
+
+---
+
+# Material Gathering
+
+The old elemental materials can remain mechanically.
+
+What changes is what they **are**.
+
+There shouldn't be an item called:
+
+> "Fire Material"
+
+because that feels like a crafting placeholder.
+
+Instead, it's something physically extracted from the world.
+
+---
+
+## Fire
+
+Could be remnants of Infernal fire or celestial flame.
+
+Possible material concepts:
+
+**Hellfire Ember**
+
+**Cinderheart**
+
+**Infernal Ash**
+
+**Ember Shard**
+
+The important part is that the material looks like something that actually came from Hell.
+
+---
+
+## Cold
+
+Frozen remnants of celestial realms or the deepest parts of Hell.
+
+Possible concepts:
+
+**Frostglass**
+
+**Saint's Ice**
+
+**Pale Crystal**
+
+**Glacial Heart**
+
+---
+
+## Lightning
+
+Fragments of divine weapons or energy released when higher beings collided.
+
+Possible concepts:
+
+**Divine Spark**
+
+**Stormglass**
+
+**Thunder Shard**
+
+**Heaven's Fragment**
+
+---
+
+## Poison
+
+The remains of corrupted life and demonic decay.
+
+Possible concepts:
+
+**Blight Resin**
+
+**Venomstone**
+
+**Rotheart**
+
+---
+
+## Void
+
+Material touched directly by the Abyss.
+
+This should be significantly rarer and more disturbing.
+
+Possible concepts:
+
+**Nullstone**
+
+**Abyssal Glass**
+
+**Black Ember**
+
+**Void Shard**
+
+The final names can come later.
+
+The guiding rule should be:
+
+> **Every material should feel like a physical piece of the mythology.**
+
+---
+
+# Resource Nodes
+
+Resource nodes should stop looking like generic MMO deposits.
+
+They should look like **things that belong in the Reliquary**.
+
+Examples:
+
+A sword broken off inside a stone wall, still radiating divine energy.
+
+A giant frozen organ from some dead celestial creature.
+
+A mass of black demonic crystal growing from a corpse.
+
+Lightning permanently trapped inside an ancient weapon.
+
+A pool of condensed poison dripping from the remains of a dead god.
+
+Chunks of infernal stone still burning after thousands of years.
+
+Bones from creatures so large the player cannot see the entire skeleton.
+
+The player shouldn't feel like they're mining an ore vein.
+
+They should feel like they're **harvesting the corpse of a dead god.**
+
+---
+
+# Reliquary Sectors
+
+The Reliquary can eventually be divided into regions.
+
+These aren't planets.
+
+They're areas within the same massive supernatural repository.
+
+Each one has its own visual identity, enemy population, events, and material affinity.
+
+For example:
+
+## The Cinder Catacombs
+
+A labyrinth of ruined structures buried beneath infernal ash.
+
+Fire-heavy.
+
+---
+
+## The Frozen Basilica
+
+A massive cathedral frozen in supernatural ice.
+
+The statues within are not statues.
+
+They're the preserved remains of celestial beings.
+
+Cold-heavy.
+
+---
+
+## The Storm Sepulcher
+
+A battlefield where two armies of higher beings once annihilated each other.
+
+Weapons remain embedded everywhere.
+
+The entire region still crackles with divine lightning.
+
+Lightning-heavy.
+
+---
+
+## The Rotting Garden
+
+A beautiful celestial garden that has been corrupted by Hell.
+
+Plants grow from corpses.
+
+Flowers release poison.
+
+Trees bleed.
+
+Poison-heavy.
+
+---
+
+## The Black Archive
+
+A region where the Reliquary has begun touching the Abyss.
+
+The architecture doesn't make sense.
+
+Rooms overlap.
+
+Distance stops behaving normally.
+
+Things sometimes exist where they shouldn't.
+
+Void-heavy.
+
+This would be one of the game's most dangerous regions.
+
+---
+
+## The Wargrave
+
+An enormous battlefield packed with the remains of mortal, demonic, and celestial armies.
+
+Broken siege weapons.
+
+Dead horses.
+
+Buried swords.
+
+Armor piled in mountains.
+
+Massive corpses half buried beneath the earth.
+
+Physical-material focused.
+
+---
+
+# Reliquary Events
+
+This system gives us an opportunity to make resource farming feel less repetitive.
+
+Sometimes the player finds something unusual.
+
+---
+
+## Fallen Angel
+
+The corpse of a higher celestial being lies within the Reliquary.
+
+Its body is surrounded by monsters feeding on its remains.
+
+Kill the monsters and harvest the corpse.
+
+Potentially massive celestial material payout.
+
+---
+
+## Infernal Breach
+
+A temporary tear into Hell appears inside the Reliquary.
+
+Demons begin pouring through.
+
+The player has to survive until the breach collapses.
+
+Then the area becomes saturated with Infernal materials.
+
+---
+
+## War Remnant
+
+The player finds an ancient battlefield frozen in time.
+
+Interacting with it causes the battle to replay.
+
+For a short period, the player fights alongside or against echoes of the forces that originally died there.
+
+When the event ends, the battlefield leaves behind materials.
+
+---
+
+## Forgotten God
+
+A fragment of an ancient god is still alive.
+
+The player can choose to:
+
+Destroy it.
+
+Harvest it.
+
+Or attempt to kill it.
+
+If they kill it, they receive an enormous reward.
+
+But it's dangerous.
+
+---
+
+## Abyssal Contamination
+
+A portion of the Reliquary suddenly becomes contaminated by the Abyss.
+
+Monsters begin mutating.
+
+Resource nodes become more dangerous.
+
+Rare materials begin appearing.
+
+The player can choose to push further into the contaminated zone for a much greater payout.
+
+This can also act as the player's introduction to the Abyssal side of the world.
+
+---
+
+# Abyssal Reliquary Content
+
+This is where I think the **Artifact system** can connect beautifully.
+
+Artifacts are primarily Abyssal rewards.
+
+The deepest or most corrupted sections of the Reliquary can contain objects that have been touched by the Abyss.
+
+They're not necessarily weapons.
+
+They're not necessarily divine.
+
+They're things that **should not exist**.
+
+And occasionally, something survives the Abyss without being destroyed.
+
+Those are Artifacts.
+
+So you get:
+
+**Reliquary**
+
+→ ordinary crafting materials
+
+**Deep Reliquary**
+
+→ better materials and rare events
+
+**Abyssal Reliquary**
+
+→ extremely rare materials + Artifacts
+
+This creates a very natural progression.
+
+---
+
+# The Keepers Need the Reliquary
+
+The Reliquary should also serve a narrative purpose beyond crafting.
+
+The Citadel is under constant strain.
+
+The barriers keeping Heaven and Hell from completely crossing into Purgatory are weakening.
+
+The Keepers need resources to maintain:
+
+- The Citadel
+- The Threshold
+- The wards
+- Their weapons
+- Their defensive structures
+
+And the Legends themselves require materials to grow stronger.
+
+So the Reliquary becomes essential to the war effort.
+
+The player isn't harvesting resources because the game needs an economy.
+
+They are harvesting them because:
+
+> **Purgatory is running out of time.**
+
+Every weapon forged from those materials exists because something had to die to create it.
+
+That makes crafting feel much more meaningful.
+
+---
+
+# The Reliquary and the Story
+
+This is where I think the system can eventually become **more important than just a farming zone**.
+
+At first, the player thinks the Reliquary is basically an enormous supernatural graveyard.
+
+Then they start finding things that don't make sense.
+
+Old battles.
+
+Memories.
+
+Historical events the Keepers say never happened.
+
+Bodies that belong to people who should have died somewhere else.
+
+Weapons from civilizations the player has never heard of.
+
+Eventually they realize:
+
+> **The Reliquary isn't simply storing the remains of the war.**
+
+It's storing the **memory of the war**.
+
+And because Purgatory is built from memory...
+
+the Reliquary may contain things that even the Keepers have forgotten.
+
+Including:
+
+> **The truth about the First Rift.**
+
+---
+
+# The Potential Twist
+
+Maybe the Reliquary isn't growing because Heaven and Hell are fighting.
+
+Maybe it has been growing because the war has happened **before**.
+
+Again and again.
+
+For thousands of years.
+
+Civilization after civilization.
+
+Legend after legend.
+
+The same war repeating in different forms.
+
+Different names.
+
+Different gods.
+
+Different armies.
+
+But the same conflict.
+
+The player eventually begins finding echoes of previous cycles.
+
+And suddenly the Legends themselves become suspicious.
+
+Why are the Keepers summoning people from so many different eras?
+
+Why do so many myths contain references to the same war?
+
+Why do ancient artifacts depict events that supposedly haven't happened yet?
+
+And why does the Abyss seem to recognize the Legends?
+
+That turns the Reliquary from:
+
+> "The place where we farm crafting materials"
+
+to:
+
+> **"The graveyard containing the history of the entire war."**
+
+---
+
+# The Core Fantasy
+
+The old fantasy was:
+
+> "Travel to another planet and gather materials."
+
+The new fantasy is:
+
+> **"Enter the supernatural graveyard of a war between Heaven and Hell, harvest the remains of dead gods and broken realms, and forge the weapons humanity needs to survive."**
+
+That's so much more aligned with **Ashes of Purgatory**.
+
+And I think that title actually makes the whole resource system stronger:
+
+### The player gathers the ashes of the war.
+
+### The Forge turns those ashes into power.
+
+### The Legends carry that power back into the fight.
+
+### Eventually, the player learns what those ashes actually came from.
+
+That gives you a repeatable farming system that doesn't feel bolted onto the setting—it feels like **one of the reasons the setting exists at all.**
