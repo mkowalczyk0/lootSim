@@ -38,6 +38,8 @@ npm run previews  # drop previews (tools/previews.ts) — proves a preview lists
                   # what the real roll can produce; part of npm test
 npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
                   # everywhere" as a property; part of npm test
+npm run rewards   # the reward curve (tools/rewards.ts) — UAT §16's "harder pays better",
+                  # including that it stays neutral at ordinary danger; part of npm test
 npm run markers   # refuses to let a committed conflict marker survive (grep, no build) —
                   # runs first in npm test; added after two merges shipped live markers
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
@@ -350,6 +352,35 @@ looks inside a save — it stores and returns the exact string `GameState.save()
 produced for `localStorage`, so `SAVE_VERSION` and the co-op wire format (`playerToJSON`'s
 double duty as both the save format and the wire payload) are both untouched by any of
 this. See `docs/accounts.md` for the schema, the API, and the session/cookie design.
+
+### What difficulty is worth: one curve
+
+`src/data/rewards.ts` (UAT §16). "Harder content pays better" is one function,
+`rewardCurve(danger)`, returning the four axes a number can express: **drop chance** (a
+named item's odds), **drop count**, **item power** (added item levels) and **variant
+chance** (a drop infused with the floor's own element, via the `favorElement` knob a
+crafting essence already uses). Keyed on `danger`, so a rift tier, the Challenger dial and
+a sector tier all climb it without any of them knowing it exists.
+
+Three things about it are load-bearing:
+
+- **It is neutral at `danger` 1.** Every axis is exactly 1 or 0 on a plain Delve floor with
+  the dial off, which is why adding it moved no existing balance number. Keep it that way:
+  anything that pays out at ordinary difficulty belongs in `MODES` or `profileFor`, not here.
+- **Every axis is capped (`REWARD_CAPS`), and rarity is deliberately *not* an axis.**
+  Drop rarity stays composed in `profileFor` from `challengerRarityBias`, which caps around
+  tier 11 by §9's design — the Death March tiers are about raw danger, not about paying
+  more. A second rarity term keyed on `danger` would route around that cap; don't add one.
+  Nothing here can lift the rarity ceiling either: divine and unspoken don't become
+  reachable because a floor got harder.
+- **Difficulty you chose pays; the day's weather doesn't.** `profileFor` divides the Vigil's
+  own modifiers back out before asking the curve, because §17 splits the daily's twists into
+  ones that change how a floor fights and ones that change what it pays, with at most one
+  payer a day. Letting Ferocious through would have made it a second payer — the Vigil's own
+  acceptance check caught exactly that, which is the check doing its job.
+
+The §20 drop preview reads the curve, so what a floor advertises and what it rolls are the
+same numbers. See `docs/reward-curve.md`.
 
 ### Challenger: a difficulty dial the player owns
 
@@ -770,7 +801,8 @@ src/
   data/     rarities, item tables + affix pool, chest tiers, enemy archetypes, depth
             curves, biomes, trap specs, elements + ailments, modifiers, weapon families,
             classes, run modes (delve/rifts/planet), planets, materials, crafting, the
-            challenger dial, boss encounters, the Proving (legends.ts), which boss a
+            challenger dial, the reward curve (rewards.ts), boss encounters, the
+            Proving (legends.ts), which boss a
             floor spawns (encounters.ts), drop previews (previews.ts), cosmetics
   game/     state, player, level generation + pathfinding, the dungeon run and the party
             of heroes in it, the ship hub (hub.ts), ailment bookkeeping (combat.ts), the

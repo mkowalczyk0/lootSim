@@ -48,6 +48,7 @@ import { MODES, RUN_MODES, type RunModeId } from "./modes";
 import { MOD_KEYS, type ModKey } from "./mods";
 import { PLANETS } from "./planets";
 import { RARITIES, type Rarity } from "./rarity";
+import { rewardCurve } from "./rewards";
 
 // --- the schema ------------------------------------------------------------
 
@@ -494,10 +495,16 @@ export type NamedDropQuery =
   | { readonly kind: "clearCache"; readonly depth: number; readonly mode: RunModeId }
   | { readonly kind: "worldDrop"; readonly depth: number; readonly elite: boolean };
 
-/** The UAT §16 hook: harder content pays better odds. Gentle, capped, one place. */
+/**
+ * The UAT §16 hook: harder content pays better odds.
+ *
+ * The multiplier itself is `rewardCurve(danger).dropChance` — the same curve that scales
+ * drop count, item power and variants, so "harder pays better" is one statement rather
+ * than one statement and this special case. The formula is unchanged from the one this
+ * function shipped with; only its home moved.
+ */
 export function namedDropChance(base: number, danger = 1): number {
-  const mult = Math.min(2.5, 1 + Math.log2(Math.max(1, danger)) * 0.35);
-  return Math.min(1, base * mult);
+  return Math.min(1, base * rewardCurve(danger).dropChance);
 }
 
 /** True when `src` is a thing `q` could pay out. */

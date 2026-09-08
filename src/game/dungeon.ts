@@ -16,6 +16,7 @@ import {
 } from "../data/monster-affixes";
 import {
   BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
+  type WeaponFamily,
 } from "../data/weapons";
 import { weaponAbilityFor } from "../data/weapon-abilities";
 import type { TriggerKind, TriggerSpec } from "../data/items";
@@ -2665,12 +2666,7 @@ export class Dungeon implements CombatHost, RuleHost {
     for (let i = 0; i < rolls; i++) {
       const boost = (e.elite ? rarityIndex(e.elite) * 2 : 0) + (e.boss ? 5 : 0);
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + boost, bias));
-      const item = rollItem({
-        rarity,
-        type: randomItemType(this.rng, source.player.heroClass.affinity),
-        ilvl: this.profile.depth,
-        rng: this.rng,
-      });
+      const item = this.rollDrop(rarity, source.player.heroClass.affinity);
       this.dropPickup(e.x, e.y, { kind: "item", item, rarity });
     }
 
@@ -2690,10 +2686,39 @@ export class Dungeon implements CombatHost, RuleHost {
    */
   private dropNamed(x: number, y: number, q: NamedDropQuery, source: Hero): void {
     for (const def of rollNamedDrops(q, this.rng, this.config.danger)) {
-      const item = forgeNamedItem(def, this.profile.depth, this.rng);
+      // Item power (UAT §16) lifts a named copy exactly as it lifts an ordinary drop — a
+      // named item that ignored the axis would be the one piece of loot in the game that
+      // got no stronger for the difficulty it came out of. `minIlvl` on the definition
+      // still floors it from below.
+      const item = forgeNamedItem(def, this.profile.depth + this.profile.itemPower, this.rng);
       if (source.local) this.state.noteNamed(def.id);
       this.dropPickup(x, y, { kind: "item", item, rarity: item.rarity });
     }
+  }
+
+  /**
+   * One dropped item, rolled the way this floor's difficulty says to (UAT §16).
+   *
+   * Both drop sites — a monster's gear and the clear cache — go through here so the two
+   * axes difficulty adds can't apply to one and not the other:
+   *
+   *  - **item power**: `profile.itemPower` lifts the item level, so the Challenger dial
+   *    (which deliberately never touches depth) still pays in power. It also raises
+   *    `requiredLevel`, which is why `rewardCurve` caps it hard.
+   *  - **special variants**: with `profile.variantChance`, the roll leans toward the
+   *    floor's own element via `favorElement` — the same knob a crafting essence uses.
+   *    Same rarity, same affix count; what changes is which element it rolls, which is
+   *    the thing a themed build is actually farming for.
+   */
+  private rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[]): Item {
+    const infused = this.profile.variantChance > 0 && this.rng.chance(this.profile.variantChance);
+    return rollItem({
+      rarity,
+      type: randomItemType(this.rng, affinity),
+      ilvl: this.profile.depth + this.profile.itemPower,
+      rng: this.rng,
+      favorElement: infused ? this.profile.variantElement : undefined,
+    });
   }
 
   /**
@@ -2716,12 +2741,7 @@ export class Dungeon implements CombatHost, RuleHost {
     const drops = Math.max(1, Math.round(quantity * finale));
     for (let i = 0; i < drops; i++) {
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2, this.profile.rarityBias));
-      const item = rollItem({
-        rarity,
-        type: randomItemType(this.rng, this.player.heroClass.affinity),
-        ilvl: this.profile.depth,
-        rng: this.rng,
-      });
+      const item = this.rollDrop(rarity, this.player.heroClass.affinity);
       this.dropPickup(x, y, { kind: "item", item, rarity });
     }
     // The clear cache has its own named table (UAT §28): a reward that, like the rest of
