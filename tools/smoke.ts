@@ -9,7 +9,9 @@
  */
 import { Input, type Action, type AvatarInput } from "../src/core/input";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
-import { Dungeon, inTelegraph } from "../src/game/dungeon";
+import { Dungeon, inTelegraph, type Hero } from "../src/game/dungeon";
+import { runBuildGrants } from "../src/game/abilities";
+import type { ResolvedBuild } from "../src/progression/index";
 import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
@@ -2655,6 +2657,69 @@ console.log("\n=== controls ===");
       });
       return prevented;
     })());
+}
+
+console.log("\n=== build grants fire for their own hero, at the thing they hit ===");
+{
+  // `runBuildGrants` used to subscribe with the event payload discarded and aim every
+  // grant at "hostiles within 220 of the caster". Two consequences, both now fixed and
+  // both pinned here: every party member's on-kill grant fired on *anyone's* kill (a
+  // buff for parties nobody designed — the fix is a nerf to shipped classes, on purpose),
+  // and an on-hit grant could never reach the enemy a bow shot or staff bolt actually
+  // struck if it stood further away than that reach.
+  const aState = geared(14, 8811, 16, "swordsman");
+  const bState = geared(14, 8812, 16, "magician");
+  const d = new Dungeon(aState, delveConfig(8, 0, 2), {
+    seed: 4243, role: "host", heroes: [
+      { netId: "", name: "A", player: aState.player, appearance: aState.appearance, potions: 5, local: true },
+      { netId: "p2", name: "B", player: bState.player, appearance: bState.appearance, potions: 5, local: false },
+    ],
+  });
+  const [a, b] = d.heroes as [Hero, Hero];
+  const priv = d as unknown as { placeMonsterAt(p: { x: number; y: number }): void };
+  const ENEMY_ID_BASE = (Dungeon as unknown as { ENEMY_ID_BASE: number }).ENEMY_ID_BASE;
+  const hostId = (e: { id: number }) => ENEMY_ID_BASE + e.id;
+  // One monster next to A, one far beyond the old 220 reach. Placed, then moved by hand
+  // — nothing here ticks, so walkability is irrelevant and the wave director never runs.
+  priv.placeMonsterAt({ x: a.avatar.x, y: a.avatar.y });
+  const near = d.enemies[d.enemies.length - 1]!;
+  near.x = a.avatar.x + 90; near.y = a.avatar.y; near.state = "active";
+  priv.placeMonsterAt({ x: a.avatar.x, y: a.avatar.y });
+  const far = d.enemies[d.enemies.length - 1]!;
+  far.x = a.avatar.x + 600; far.y = a.avatar.y + 600; far.state = "active";
+
+  const grants: ResolvedBuild["grants"] = [
+    { on: { event: "kill" }, from: "node", effects: [{ kind: "heal", amount: 25, scale: "flat", to: "self" }] },
+    { on: { event: "hit" }, from: "node", effects: [{ kind: "damage", damage: { base: 40, scale: "flat", type: "physical" }, to: "target" }] },
+    { on: { event: "dodge" }, from: "node", effects: [{ kind: "damage", damage: { base: 40, scale: "flat", type: "physical" }, to: "allTargets" }] },
+  ];
+  runBuildGrants(d.bus, { ...a.player.build, grants }, d, a.rt, a.index, () => ({}), () => a.avatar.facing);
+
+  // 1. ownership — B's kill must not heal A; A's own kill must.
+  a.player.health = Math.round(a.player.maxHealth / 2);
+  const half = a.player.health;
+  d.bus.emit({ type: "kill", actorId: b.index, x: a.avatar.x, y: a.avatar.y });
+  check("a party-mate's kill does not fire your on-kill grant", a.player.health === half,
+    `${half} -> ${a.player.health}`);
+  d.bus.emit({ type: "kill", actorId: a.index, x: a.avatar.x, y: a.avatar.y });
+  check("your own kill does", a.player.health > half, `${half} -> ${a.player.health}`);
+
+  // 2. the struck enemy — an on-hit grant lands on what was hit, however far away it is.
+  const farBefore = far.health;
+  const nearBefore = near.health;
+  d.bus.emit({ type: "hit", actorId: a.index, targetId: hostId(far), x: far.x, y: far.y });
+  check("an on-hit grant resolves at the enemy that was hit, beyond the old 220 reach",
+    far.health < farBefore, `${farBefore.toFixed(0)} -> ${far.health.toFixed(0)}`);
+  check("...and only at that enemy for `to: \"target\"`", near.health === nearBefore);
+  const farMid = far.health;
+  d.bus.emit({ type: "hit", actorId: b.index, targetId: hostId(far), x: far.x, y: far.y });
+  check("a party-mate's hit does not fire your on-hit grant", far.health === farMid);
+
+  // 3. no target named — the caster-centred fallback still finds what stands nearby.
+  d.bus.emit({ type: "dodge", actorId: a.index, x: a.avatar.x, y: a.avatar.y });
+  check("a grant on an event with no target still reaches enemies around the caster",
+    near.health < nearBefore, `${nearBefore.toFixed(0)} -> ${near.health.toFixed(0)}`);
+  check("...but not one far outside that reach", far.health === farMid);
 }
 
 console.log("\n=== multiplayer ===");
