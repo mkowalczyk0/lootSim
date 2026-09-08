@@ -18,6 +18,7 @@ import type { AvatarInput, Action } from "../core/input";
 import { TAU } from "../core/math";
 import { BOSSES, BOSS_ABILITIES, bossFor, type BossAbilityId } from "../data/bosses";
 import { ARCHETYPES, type EnemyKind } from "../data/enemies";
+import { MONSTER_AFFIXES, affixPrefix } from "../data/monster-affixes";
 import { CHEST_TIERS } from "../data/chests";
 import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type StatusKind } from "../data/elements";
 import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "../data/modes";
@@ -25,11 +26,24 @@ import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
-import type { Enemy } from "../game/entities";
+import type { Enemy, Minion } from "../game/entities";
 import {
-  NET_ACTIONS, actionBit,
-  type HeroSnap, type RunConfigWire, type Snapshot, type NetAction,
+  NET_ACTIONS, SNAPSHOT_HZ, actionBit,
+  type HeroSnap, type PartyMessage, type RunConfigWire, type Snapshot, type NetAction,
 } from "./protocol";
+
+/** One client tick's worth of buttons, as it crosses the wire. */
+export type InputPacket = Omit<Extract<PartyMessage, { k: "in" }>, "k">;
+
+/**
+ * How long a client gives a remote body to slide to where the latest snapshot put it.
+ * A little over one snapshot interval, so ordinary jitter in arrival doesn't leave a
+ * monster standing still waiting for the next one (UAT §1 B1).
+ */
+const LERP_SPAN = 1.2 / SNAPSHOT_HZ;
+/** Host ticks without a packet before a remote player's stick is centred (UAT §1 B4). */
+const STALE_TICKS = 12;
+const TICK = 1 / 60;
 
 const ENEMY_KINDS = Object.keys(ARCHETYPES) as EnemyKind[];
 const STATUS_KINDS = Object.keys(STATUSES) as StatusKind[];
@@ -75,20 +89,21 @@ export function configFromWire(wire: RunConfigWire): RunConfig {
 
 // --- input ------------------------------------------------------------------
 
-/** Packs a local player's tick into the three numbers that cross the wire. */
-export function packInput(input: AvatarInput, x: number, y: number): {
-  move: [number, number]; aim: number | null; press: number;
-} {
+/** Packs a local player's tick into the numbers that cross the wire. */
+export function packInput(input: AvatarInput, x: number, y: number, seq: number): InputPacket {
   const move = input.moveVector();
   let press = 0;
   for (const action of NET_ACTIONS) {
     if (input.wasPressed(action)) press |= actionBit(action);
   }
   const aim = input.aimAngle(x, y);
+  const point = input.aimPoint?.(x, y) ?? null;
   return {
+    seq,
     move: [r2(move.x), r2(move.y)],
     aim: aim === null ? null : r2(aim),
     press,
+    ...(point ? { ap: [Math.round(point.x), Math.round(point.y)] as [number, number] } : {}),
   };
 }
 
@@ -96,30 +111,48 @@ export function packInput(input: AvatarInput, x: number, y: number): {
  * A remote player's controller, on the host. It is an `AvatarInput` like any other, so
  * `Dungeon.updateHero` cannot tell the difference between this and a keyboard.
  *
- * Presses are queued rather than overwritten: input arrives once per client tick and is
- * consumed once per host tick, and when the two clocks drift apart the choice is between
- * dropping somebody's dash or firing it a frame late. It fires late.
+ * Packets are queued whole and consumed one per host tick, so each one moves the hero
+ * for exactly the tick it was meant to — that is what lets the client replay its own
+ * unacknowledged inputs and land on the host's answer (UAT §1 B2). When the two clocks
+ * drift apart the choice is between dropping somebody's dash or firing it a frame late:
+ * it fires late, and a dropped packet's buttons are folded into the next.
  */
 export class NetInput implements AvatarInput {
   private move = { x: 0, y: 0 };
   private aim: number | null = null;
+  private point: { x: number; y: number } | null = null;
   private pressed = 0;
-  private queue: number[] = [];
+  private queue: InputPacket[] = [];
+  /** Host ticks since a packet was consumed. Past `STALE_TICKS` the stick is centred,
+   *  so a lag spike never walks somebody into the hazard they'd stopped short of. */
+  private starving = 0;
+  /** Sequence number of the last packet consumed — echoed to the client in its snapshot. */
+  lastSeq = 0;
 
-  receive(packet: { move: [number, number]; aim: number | null; press: number }): void {
-    this.move = { x: packet.move[0], y: packet.move[1] };
-    this.aim = packet.aim;
-    if (packet.press !== 0) {
-      // A backed-up queue means the client is running ahead; keep it short rather than
-      // replaying half a second of old buttons at somebody.
-      if (this.queue.length > 6) this.queue.shift();
-      this.queue.push(packet.press);
+  receive(packet: InputPacket): void {
+    // A backed-up queue means the client is running ahead of us; keep it short rather
+    // than replaying a fifth of a second of old movement at somebody.
+    if (this.queue.length > 6) {
+      const dropped = this.queue.shift()!;
+      if (this.queue[0]) this.queue[0] = { ...this.queue[0], press: this.queue[0].press | dropped.press };
     }
+    this.queue.push(packet);
   }
 
   /** Called once per host tick, before the hero is updated. */
   beginTick(): void {
-    this.pressed = this.queue.shift() ?? 0;
+    const next = this.queue.shift();
+    if (!next) {
+      this.pressed = 0;
+      if (++this.starving > STALE_TICKS) this.move = { x: 0, y: 0 };
+      return;
+    }
+    this.starving = 0;
+    this.move = { x: next.move[0], y: next.move[1] };
+    this.aim = next.aim;
+    this.point = next.ap ? { x: next.ap[0], y: next.ap[1] } : null;
+    this.pressed = next.press;
+    this.lastSeq = next.seq;
   }
 
   moveVector(): { x: number; y: number } {
@@ -133,6 +166,46 @@ export class NetInput implements AvatarInput {
 
   aimAngle(): number | null {
     return this.aim;
+  }
+
+  aimPoint(): { x: number; y: number } | null {
+    return this.point;
+  }
+}
+
+/** What a client remembers about one of its own ticks, for the reconciliation replay. */
+export interface LoggedInput {
+  readonly seq: number;
+  readonly move: { x: number; y: number };
+  readonly dash: boolean;
+}
+
+/**
+ * A client's recent inputs, by sequence number (UAT §1 B2). `record` numbers the tick
+ * being sent; `since` hands back everything the host hasn't acknowledged yet and forgets
+ * what it has. A few seconds is far more than any round trip.
+ */
+export class InputLog {
+  private seq = 0;
+  private entries: LoggedInput[] = [];
+
+  record(move: { x: number; y: number }, dash: boolean): number {
+    this.seq++;
+    this.entries.push({ seq: this.seq, move: { x: move.x, y: move.y }, dash });
+    if (this.entries.length > 240) this.entries.shift();
+    return this.seq;
+  }
+
+  since(ack: number): readonly LoggedInput[] {
+    let drop = 0;
+    while (drop < this.entries.length && this.entries[drop]!.seq <= ack) drop++;
+    if (drop > 0) this.entries.splice(0, drop);
+    return this.entries;
+  }
+
+  reset(): void {
+    this.seq = 0;
+    this.entries.length = 0;
   }
 }
 
@@ -157,8 +230,14 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       : {}),
     h: d.heroes.map(encodeHero),
     e: d.enemies.map(encodeEnemy),
+    m: d.minions.map((m) => [
+      m.id, m.owner, Math.round(m.x), Math.round(m.y), Math.round(m.radius), r2(m.facing),
+      Math.round(m.health), Math.round(m.maxHealth), r2(m.windup), r2(m.hitFlash), ELEMENTS.indexOf(m.element),
+    ]),
+    c: d.corpsePile.map((c) => [Math.round(c.x), Math.round(c.y), r2(c.remaining)]),
     p: d.projectiles.map((p) => [
       Math.round(p.x), Math.round(p.y), p.radius, ELEMENTS.indexOf(p.element), p.friendly ? 1 : 0,
+      Math.round(p.vx), Math.round(p.vy),
     ]),
     k: d.pickups.map((p) => [
       PICKUP_KINDS.indexOf(p.kind), Math.round(p.x), Math.round(p.y), p.value,
@@ -191,24 +270,42 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
   };
 }
 
+function statusBitsOf(sc: StatusContainer): number {
+  let bits = 0;
+  for (const s of sc.list) {
+    const i = STATUS_KINDS.indexOf(s.id as StatusKind);
+    if (i >= 0) bits |= 1 << i;
+  }
+  return bits;
+}
+
+/** Client-side mirror of a status bitmask. Cosmetic durations — the host owns the real
+ *  ones — but the kinds are right, which is what the renderer and prediction read. */
+function mirrorStatuses(sc: StatusContainer, bits: number): void {
+  sc.list.length = 0;
+  STATUS_KINDS.forEach((kindName, i) => {
+    if ((bits & (1 << i)) !== 0) sc.apply(kindName, { sourceActorId: -1, chance: 1, roll: () => 0 });
+  });
+}
+
 function encodeHero(hero: Hero): HeroSnap {
   const a = hero.avatar;
   const p = hero.player;
+  const st = statusBitsOf(hero.sc);
   return {
     i: hero.index,
     x: r2(a.x), y: r2(a.y), f: r2(a.facing),
     hp: Math.round(p.health), mp: Math.round(p.mana), wd: Math.round(hero.ward),
     ch: r2(hero.specialCharge),
-    // `ul` / `ut` / `bt` are dead fields kept for wire compatibility — the ability
-    // cutover made ultimates instant casts and buffs into statuses, and the whole
-    // snapshot protocol is being replaced (see docs/combat-cutover-plan.md C3).
-    ul: "",
-    ut: 0,
     sw: r2(a.swingTimer), sa: r2(a.swingAngle),
-    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash), bt: 0,
+    dt: r2(a.dashTimer), iv: r2(a.invulnTimer), hf: r2(a.hitFlash),
+    dc: r2(a.dashCooldown), vx: r2(a.vx), vy: r2(a.vy),
+    ack: hero.input instanceof NetInput ? hero.input.lastSeq : 0,
+    ...(st !== 0 ? { st } : {}),
     cd: hero.skillCooldowns.map(r2),
     pot: hero.potions,
     down: hero.downed,
+    ...(hero.departed ? { gn: true } : {}),
     rev: r2(hero.reviveProgress),
     lt: [
       hero.loot.coins, hero.loot.gems, hero.loot.xp, hero.loot.kills, hero.loot.items.length,
@@ -219,11 +316,7 @@ function encodeHero(hero: Hero): HeroSnap {
 }
 
 function encodeEnemy(e: Enemy): number[] {
-  let statusBits = 0;
-  for (const s of e.sc.list) {
-    const i = STATUS_KINDS.indexOf(s.id as StatusKind);
-    if (i >= 0) statusBits |= 1 << i;
-  }
+  const statusBits = statusBitsOf(e.sc);
   return [
     e.id,
     ENEMY_KINDS.indexOf(e.archetype.kind),
@@ -235,15 +328,19 @@ function encodeEnemy(e: Enemy): number[] {
     ELEMENTS.indexOf(e.element),
     e.boss ? 1 : 0,
     statusBits,
+    e.affixes.length,
+    ...e.affixes.map((a) => MONSTER_AFFIXES.indexOf(a)),
   ];
 }
 
 /**
- * Adopts the host's world wholesale. Bodies are matched by id where they have one so
- * interpolation keeps working — a monster that was here last frame keeps its previous
- * position rather than teleporting from wherever the array happened to put it.
+ * Adopts the host's world wholesale. Bodies are matched by id where they have one and
+ * given the snapshot position as a *target* (`Dungeon.netLerp`) rather than teleported
+ * to it — `Dungeon.advanceRemote` slides them there over the next few ticks, so the
+ * 20 Hz stream draws as 60 Hz motion (UAT §1 B1). The local hero is reconciled against
+ * `log` instead (see `applyHero`).
  */
-export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<string, string>): void {
+export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<string, string>, log?: InputLog): void {
   d.phase = s.ph === 0 ? "fighting" : s.ph === 1 ? "cleared" : "dead";
   d.wave = s.wv;
   d.remoteRemaining = s.left;
@@ -257,10 +354,11 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
   for (const h of s.h) {
     const hero = d.heroes[h.i];
     if (!hero) continue;
-    applyHero(d, hero, h);
+    applyHero(d, hero, h, log);
   }
 
   applyEnemies(d, s, planetNames);
+  applyMinions(d, s);
   applySimpleBodies(d, s);
 
   for (let i = 0; i < d.level.traps.length; i++) {
@@ -276,39 +374,52 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
   });
 }
 
-function applyHero(d: Dungeon, hero: Hero, h: HeroSnap): void {
+function applyHero(d: Dungeon, hero: Hero, h: HeroSnap, log?: InputLog): void {
   const a = hero.avatar;
-  a.px = a.x;
-  a.py = a.y;
-  if (hero.local) {
-    // Your own character is predicted locally so the keyboard feels immediate, and
-    // pulled gently back toward where the host actually has you. A big disagreement —
-    // a dash, a knockback, a comet charge — is snapped rather than slid.
-    const gap = Math.hypot(h.x - a.x, h.y - a.y);
-    if (gap > 48) {
-      a.x = h.x;
-      a.y = h.y;
-    } else {
-      a.x += (h.x - a.x) * 0.25;
-      a.y += (h.y - a.y) * 0.25;
-    }
-  } else {
-    a.x = h.x;
-    a.y = h.y;
-    a.facing = h.f;
-  }
   a.swingTimer = h.sw;
   a.swingAngle = h.sa;
-  a.dashTimer = h.dt;
-  a.invulnTimer = h.iv;
   a.hitFlash = h.hf;
+  // Statuses first: the replay below reads slows and roots off them.
+  mirrorStatuses(hero.sc, h.st ?? 0);
+  hero.downed = h.down;
+  hero.departed = h.gn ?? false;
+
+  if (hero.local) {
+    // Reconciliation (UAT §1 B2). Adopt the host's position and dash state as of the
+    // last input it consumed, then re-apply every input it hasn't seen yet through the
+    // same movement step it will use. In the common case that lands exactly where the
+    // client already predicted, so nothing visibly moves; a knockback or a slow the
+    // client couldn't have known about arrives as one small correction rather than the
+    // old steady backward tug. `px`/`py` are left alone so the renderer eases over it.
+    a.x = h.x;
+    a.y = h.y;
+    a.vx = h.vx ?? 0;
+    a.vy = h.vy ?? 0;
+    a.dashTimer = h.dt;
+    a.dashCooldown = h.dc ?? 0;
+    a.invulnTimer = h.iv;
+    if (log && !hero.downed && d.phase !== "dead") {
+      for (const cmd of log.since(h.ack ?? 0)) d.predictStep(hero, cmd.move, cmd.dash, TICK);
+    }
+  } else {
+    a.facing = h.f;
+    a.dashTimer = h.dt;
+    a.invulnTimer = h.iv;
+    if (d.netLerp.has(a)) d.netLerp.set(a, { x: h.x, y: h.y, t: LERP_SPAN });
+    else {
+      a.x = h.x;
+      a.y = h.y;
+      a.px = h.x;
+      a.py = h.y;
+      d.netLerp.set(a, { x: h.x, y: h.y, t: 0 });
+    }
+  }
 
   hero.player.health = h.hp;
   hero.player.mana = h.mp;
   hero.ward = h.wd;
   hero.specialCharge = h.ch;
   hero.potions = h.pot;
-  hero.downed = h.down;
   hero.reviveProgress = h.rev;
   for (let i = 0; i < hero.skillCooldowns.length; i++) hero.skillCooldowns[i] = h.cd[i] ?? 0;
 
@@ -328,7 +439,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
 
   for (const wire of s.e) {
     const [id, kindIndex, x, y, facing, radius, hp, maxHp, elite, state,
-      spawnTimer, windup, hitFlash, elementIndex, isBoss, statusBits] = wire as number[];
+      spawnTimer, windup, hitFlash, elementIndex, isBoss, statusBits, affixCount] = wire as number[];
     seen.add(id!);
     const kind = ENEMY_KINDS[kindIndex!] ?? "grunt";
     const archetype = ARCHETYPES[kind];
@@ -337,12 +448,17 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
 
     let e = byId.get(id!);
     if (!e) {
+      // Affixes are fixed at spawn, so they're rebuilt once, here — and only for drawing
+      // and naming: the behaviours they describe run on the host alone.
+      const affixes = wire.slice(17, 17 + (affixCount ?? 0))
+        .map((i) => MONSTER_AFFIXES[i]!)
+        .filter((a) => a !== undefined);
       e = {
         id: id!, x: x!, y: y!, px: x!, py: y!, radius: radius!,
         archetype,
         name: isBoss && s.b
           ? s.b.nm
-          : enemyDisplayName(archetype.name, element, eliteRarity, planetNames?.[kind]),
+          : affixPrefix(affixes) + enemyDisplayName(archetype.name, element, eliteRarity, planetNames?.[kind]),
         health: hp!, maxHealth: maxHp!, damage: 0, speed: 0,
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
@@ -356,15 +472,14 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         // `fromWave` likewise: the quota is counted on the host and arrives as a number.
         attackCooldown: archetype.attackCooldown,
         eliteCast: 0,
-        affixes: [], affixState: { timers: {}, ward: 0, noSplit: false },
+        affixes, affixState: { timers: {}, ward: 0, noSplit: false },
         damageTakenMult: 1,
       };
       d.enemies.push(e);
+      d.netLerp.set(e, { x: x!, y: y!, t: 0 });
+    } else {
+      d.netLerp.set(e, { x: x!, y: y!, t: LERP_SPAN });
     }
-    e.px = e.x;
-    e.py = e.y;
-    e.x = x!;
-    e.y = y!;
     e.facing = facing!;
     e.health = hp!;
     e.maxHealth = maxHp!;
@@ -375,12 +490,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
     e.hitFlash = hitFlash!;
     // Client-side status pips are cosmetic — the host owns the real durations. Mirror
     // the bitmask onto `sc` so the renderer's badge row still lights up.
-    e.sc.list.length = 0;
-    STATUS_KINDS.forEach((kindName, i) => {
-      if ((statusBits! & (1 << i)) !== 0) {
-        e!.sc.apply(kindName, { sourceActorId: -1, chance: 1, roll: () => 0 });
-      }
-    });
+    mirrorStatuses(e.sc, statusBits!);
 
     if (isBoss && s.b) {
       const spec = BOSSES.find((b) => b.id === s.b!.sp) ?? bossFor(d.config.depth);
@@ -397,19 +507,68 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
   }
 
   for (let i = d.enemies.length - 1; i >= 0; i--) {
-    if (!seen.has(d.enemies[i]!.id)) d.enemies.splice(i, 1);
+    if (seen.has(d.enemies[i]!.id)) continue;
+    d.netLerp.delete(d.enemies[i]!);
+    d.enemies.splice(i, 1);
   }
   d.boss = d.enemies.find((e) => e.boss) ?? null;
 }
 
-/** Projectiles, drops, telegraphs, ground and totems: rebuilt outright every snapshot. */
+/**
+ * Summons, matched by id like monsters so they slide rather than jump. Everything a
+ * minion *does* — pathing, attacks, its status effects — happens on the host; the client
+ * body carries only what `drawMinions` reads.
+ */
+function applyMinions(d: Dungeon, s: Snapshot): void {
+  const seen = new Set<number>();
+  const byId = new Map<number, Minion>();
+  for (const m of d.minions) byId.set(m.id, m);
+  for (const [id, owner, x, y, radius, facing, hp, maxHp, windup, hitFlash, elementIndex] of s.m) {
+    seen.add(id!);
+    const element = ELEMENTS[elementIndex!] ?? "physical";
+    let m = byId.get(id!);
+    if (!m) {
+      m = {
+        id: id!, owner: owner!, unit: "summon",
+        x: x!, y: y!, px: x!, py: y!, radius: radius!,
+        health: hp!, maxHealth: maxHp!, damage: 0, attackCooldown: 1, attackTimer: 0, attackRange: 0,
+        windup: windup!, speed: 0, element, facing: facing!, hitFlash: hitFlash!, knockX: 0, knockY: 0,
+        remaining: Infinity, behavior: "follow", commandTargetId: null, guardX: x!, guardY: y!,
+        sc: new StatusContainer(2_000_000 + id!), stuckTimer: 0, dodgeDir: 1,
+      };
+      d.minions.push(m);
+      d.netLerp.set(m, { x: x!, y: y!, t: 0 });
+    } else {
+      d.netLerp.set(m, { x: x!, y: y!, t: LERP_SPAN });
+    }
+    m.facing = facing!;
+    m.health = hp!;
+    m.maxHealth = maxHp!;
+    m.radius = radius!;
+    m.windup = windup!;
+    m.hitFlash = hitFlash!;
+    m.element = element;
+  }
+  for (let i = d.minions.length - 1; i >= 0; i--) {
+    if (seen.has(d.minions[i]!.id)) continue;
+    d.netLerp.delete(d.minions[i]!);
+    d.minions.splice(i, 1);
+  }
+}
+
+/** Projectiles, drops, telegraphs, ground, totems and corpses: rebuilt outright every snapshot. */
 function applySimpleBodies(d: Dungeon, s: Snapshot): void {
+  d.corpsePile.length = 0;
+  s.c.forEach(([x, y, remaining], i) => {
+    d.corpsePile.push({ id: i + 1, x: x!, y: y!, remaining: remaining ?? 1 });
+  });
+
   d.projectiles.length = 0;
-  for (const [x, y, radius, elementIndex, friendly] of s.p) {
+  for (const [x, y, radius, elementIndex, friendly, vx, vy] of s.p) {
     const element = ELEMENTS[elementIndex!] ?? "physical";
     d.projectiles.push({
       x: x!, y: y!, px: x!, py: y!, radius: radius!,
-      vx: 0, vy: 0, damage: 0, friendly: friendly === 1, owner: -1, life: 1,
+      vx: vx ?? 0, vy: vy ?? 0, damage: 0, friendly: friendly === 1, owner: -1, life: 1,
       color: ELEMENT_COLORS[element], element, pierce: 0, hits: new Set(),
       ailment: 0, basic: false,
     });

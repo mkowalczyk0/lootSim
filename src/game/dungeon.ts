@@ -47,7 +47,7 @@ const WARD_RESIST = 60;
 // Registers burn/chill/shock/venom/drain/sear/sunder on the unified status registry so
 // `Hero.sc` / `Enemy.sc` mean the same thing the legacy ailment list does.
 import "../combat/legacy-ailments";
-import type { Avatar, Corpse, Enemy, GroundZone, Minion, Pickup, Projectile, Telegraph, Totem } from "./entities";
+import type { Avatar, Body, Corpse, Enemy, GroundZone, Minion, Pickup, Projectile, Telegraph, Totem } from "./entities";
 import {
   MINION_CAP_GLOBAL, MINION_CAP_PER_OWNER, MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN,
   MINION_GUARD_LEASH, MINION_LEASH, MINION_SEPARATION, MINION_WINDUP,
@@ -265,6 +265,13 @@ export class Hero {
   /** Out of health, waiting for an ally. In a solo run this is simply "dead". */
   downed = false;
   reviveProgress = 0;
+  /**
+   * Their browser left the room mid-run (UAT §1 A1). The body stays on the floor so the
+   * party keeps its bearings, but it is out of every count that could hold the run
+   * hostage: it can't be revived, doesn't gate the descend, isn't targeted, and doesn't
+   * keep a wipe from being a wipe. Nothing brings it back — there is no reconnect.
+   */
+  departed = false;
   /** XP earned since the host last told this hero's own browser about it. */
   xpPending = 0;
   /** Items picked up since the host last told this hero's own browser about them. */
@@ -482,7 +489,14 @@ export class Dungeon implements CombatHost, RuleHost {
       hero.flow.update(this.level, spot.x, spot.y);
       this.heroes.push(hero);
     }
-    this.localHero = this.heroes.find((h) => h.local) ?? this.heroes[0]!;
+    // A party floor with no hero of our own in it is a bug upstream, never something to
+    // paper over: falling back to `heroes[0]` would have this browser driving — and, as
+    // a client, banking the mirrored loot of — the *host's* character (UAT §1 A2).
+    const local = this.heroes.find((h) => h.local);
+    if (!local && this.role !== "solo") {
+      throw new Error("a party floor was built without the hero this browser drives");
+    }
+    this.localHero = local ?? this.heroes[0]!;
     for (const hero of this.heroes) {
       runBuildGrants(
         this.bus, hero.player.build, this, hero.rt, hero.index,
@@ -554,6 +568,12 @@ export class Dungeon implements CombatHost, RuleHost {
 
   /** On a client the wave director isn't running here, so the host says what's left. */
   remoteRemaining = 0;
+  /**
+   * Client only (UAT §1 B1): where the last snapshot put each remote body and how long
+   * it has left to get there. `advanceRemote` slides bodies toward these every tick so a
+   * 20 Hz snapshot stream draws as 60 Hz motion. Written by `net/sync.ts`.
+   */
+  readonly netLerp = new Map<Body, { x: number; y: number; t: number }>();
 
   get enemiesRemaining(): number {
     if (this.role === "client") return this.remoteRemaining;
@@ -929,6 +949,7 @@ export class Dungeon implements CombatHost, RuleHost {
   update(dt: number, input: AvatarInput): void {
     this.elapsed += dt;
     if (this.role === "client") {
+      this.advanceRemote(dt);
       this.predictLocal(dt, input);
       return;
     }
@@ -965,7 +986,7 @@ export class Dungeon implements CombatHost, RuleHost {
       this.completionPortal = this.pickCompletionSpot();
       // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
       for (const hero of this.heroes) {
-        if (hero.downed) this.reviveHero(hero);
+        if (hero.downed && !hero.departed) this.reviveHero(hero);
       }
       this.dropClearCache();
       this.events.push({ kind: "cleared" });
@@ -1008,10 +1029,11 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   /**
-   * A client moves its own character immediately and lets the host's next snapshot
-   * correct it (see `applyHero` in `net/sync.ts`). Nothing else is predicted — a swing
-   * that hasn't happened yet must never draw a number, and on a home network the
-   * correction arrives before you could notice one.
+   * A client moves its own character immediately (UAT §1 B2), dash included, and is
+   * reconciled against the host by `applyHero` in `net/sync.ts`: the host echoes the
+   * last input it consumed, and the client re-applies everything newer than that from
+   * the host's position through `predictStep` — the very step the host used. Nothing
+   * else is predicted: a swing that hasn't happened yet must never draw a number.
    */
   private predictLocal(dt: number, input: AvatarInput): void {
     const hero = this.localHero;
@@ -1023,13 +1045,70 @@ export class Dungeon implements CombatHost, RuleHost {
     const move = input.moveVector();
     if (aim !== null) a.facing = aim;
     else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
-    if (a.dashTimer > 0) return; // the host owns a dash outright; it lands in one snapshot
-    const speed = PLAYER_SPEED * hero.player.moveMult * this.mireSlowAt(a.x, a.y);
-    a.x = clamp(a.x + move.x * speed * dt, a.radius + WALL_PAD, this.width - a.radius - WALL_PAD);
-    a.y = clamp(a.y + move.y * speed * dt, a.radius + WALL_PAD, this.height - a.radius - WALL_PAD);
-    const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
-    a.x = fixed.x;
-    a.y = fixed.y;
+    this.predictStep(hero, move, input.wasPressed("dash"), dt);
+  }
+
+  /**
+   * One tick of a client's own movement — the timers a dash depends on, then the shared
+   * movement step. Used live by `predictLocal` and again, instantaneously, by the
+   * reconciliation replay in `net/sync.ts`. Never touches `px`/`py`: a replay is not
+   * motion the renderer should see.
+   */
+  predictStep(hero: Hero, move: { x: number; y: number }, dash: boolean, dt: number): void {
+    const a = hero.avatar;
+    a.dashCooldown = Math.max(0, a.dashCooldown - dt);
+    a.invulnTimer = Math.max(0, a.invulnTimer - dt);
+    a.dashInvuln = Math.max(0, a.dashInvuln - dt);
+    this.moveHero(hero, move, dash, dt, false);
+  }
+
+  /**
+   * Between snapshots a client keeps the host's world moving on its own (UAT §1 B1):
+   * bodies slide toward where the last snapshot put them over one snapshot interval,
+   * projectiles fly on at the speed they arrived with, and the purely visual timers —
+   * wind-ups, telegraph fills, hit flashes — keep counting down. Without this everything
+   * but your own character stood still for two ticks out of three.
+   */
+  private advanceRemote(dt: number): void {
+    for (const [body, target] of this.netLerp) {
+      body.px = body.x;
+      body.py = body.y;
+      if (target.t <= 0) {
+        body.x = target.x;
+        body.y = target.y;
+        continue;
+      }
+      const f = Math.min(1, dt / target.t);
+      body.x += (target.x - body.x) * f;
+      body.y += (target.y - body.y) * f;
+      target.t -= dt;
+    }
+    for (const p of this.projectiles) {
+      p.px = p.x;
+      p.py = p.y;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    for (const e of this.enemies) {
+      e.windup = Math.max(0, e.windup - dt);
+      e.spawnTimer = Math.max(0, e.spawnTimer - dt);
+      e.hitFlash = Math.max(0, e.hitFlash - dt);
+    }
+    for (const m of this.minions) {
+      m.windup = Math.max(0, m.windup - dt);
+      m.hitFlash = Math.max(0, m.hitFlash - dt);
+    }
+    for (const c of this.corpsePile) c.remaining = Math.max(0, c.remaining - dt);
+    for (const t of this.telegraphs) t.remaining = Math.max(0, t.remaining - dt);
+    for (const g of this.ground) g.remaining = Math.max(0, g.remaining - dt);
+    for (const hero of this.heroes) {
+      if (hero.local) continue;
+      const a = hero.avatar;
+      a.swingTimer = Math.max(0, a.swingTimer - dt);
+      a.hitFlash = Math.max(0, a.hitFlash - dt);
+      a.dashTimer = Math.max(0, a.dashTimer - dt);
+      a.invulnTimer = Math.max(0, a.invulnTimer - dt);
+    }
   }
 
   /**
@@ -1040,7 +1119,7 @@ export class Dungeon implements CombatHost, RuleHost {
   private updateRevives(dt: number): void {
     if (!this.isParty) return;
     for (const hero of this.heroes) {
-      if (!hero.downed) continue;
+      if (!hero.downed || hero.departed) continue;
       const helper = this.heroes.some(
         (other) => other.alive && dist(other.avatar.x, other.avatar.y, hero.avatar.x, hero.avatar.y) <= REVIVE_RANGE,
       );
@@ -1091,15 +1170,37 @@ export class Dungeon implements CombatHost, RuleHost {
   /** How many of the party are standing in the entrance portal. */
   get partyAtPortal(): number {
     return this.heroes.filter(
-      (h) => dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
+      (h) => !h.departed && dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
   }
 
   /** How many of the party are standing in the completion portal — descending needs
-   *  everybody, and the HUD counts them out loud. */
+   *  everybody still here (`partySize`), and the HUD counts them out loud. */
   get partyAtCompletionPortal(): number {
     const p = this.completionPortal;
     if (!p) return 0;
-    return this.heroes.filter((h) => dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
+    return this.heroes.filter((h) => !h.departed && dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
+  }
+
+  /** Heroes still in the run — everybody, minus anyone whose browser has left. This is
+   *  the number a descend waits for, so a dropped connection can't hold the floor. */
+  get partySize(): number {
+    return this.heroes.filter((h) => !h.departed).length;
+  }
+
+  /**
+   * A remote player's connection is gone for good (UAT §1 A1). Their body stays where it
+   * fell, downed, but out of every count: no revive, no descend gate, no aggro. If that
+   * leaves nobody standing, the floor is lost the same as if they'd died.
+   */
+  dropHero(hero: Hero): void {
+    if (hero.departed) return;
+    hero.departed = true;
+    hero.downed = true;
+    hero.reviveProgress = 0;
+    hero.input = null;
+    hero.avatar.vx = 0;
+    hero.avatar.vy = 0;
+    if (this.heroes.every((h) => h.downed)) this.phase = "dead";
   }
 
   private updateSpawning(dt: number): void {
@@ -1408,25 +1509,49 @@ export class Dungeon implements CombatHost, RuleHost {
     // lands where the mouse is, not at a fixed reach along the facing.
     hero.aimPoint = input.aimPoint?.(a.x, a.y) ?? null;
 
+    this.moveHero(hero, move, input.wasPressed("dash"), dt, true);
+
+    if (input.wasPressed("attack") && a.attackTimer <= 0 && !disabled.attack) this.attack(hero);
+    if (input.wasPressed("potion")) this.drinkPotion(hero);
+    if (input.wasPressed("special")) this.useUltimate(hero);
+    if (input.wasPressed("skill1")) this.castSkill(hero, 0);
+    if (input.wasPressed("skill2")) this.castSkill(hero, 1);
+    if (input.wasPressed("skill3")) this.castSkill(hero, 2);
+    if (input.wasPressed("skill4")) this.castSkill(hero, 3);
+  }
+
+  /**
+   * The movement half of a hero tick — dash start, dash travel or walking, wall
+   * resolution. Shared by the host's real update and a client's prediction and replay
+   * (UAT §1 B2), so both ends compute the identical position from the identical inputs;
+   * that is what lets a reconciled client sit exactly where the host has it rather than
+   * being tugged toward it. `live` is false while predicting: nothing fires, nothing is
+   * broadcast, no position history.
+   */
+  moveHero(hero: Hero, move: { x: number; y: number }, dash: boolean, dt: number, live: boolean): void {
+    const a = hero.avatar;
+    const disabled = hero.sc.disables();
     if (a.dashTimer > 0) {
       a.dashTimer -= dt;
-    } else if (input.wasPressed("dash") && a.dashCooldown <= 0 && !disabled.move) {
+    } else if (dash && a.dashCooldown <= 0 && !disabled.move) {
       a.dashTimer = DASH_TIME;
-      a.dashCooldown = DASH_COOLDOWN * player.dashCooldownMult;
+      a.dashCooldown = DASH_COOLDOWN * hero.player.dashCooldownMult;
       // The dash grants i-frames — it's the main defensive tool, so it must feel reliable.
       a.invulnTimer = Math.max(a.invulnTimer, DASH_TIME + 0.08);
       a.dashInvuln = DASH_TIME + 0.08;
       const dir = move.x || move.y ? move : { x: Math.cos(a.facing), y: Math.sin(a.facing) };
       a.vx = dir.x * DASH_SPEED;
       a.vy = dir.y * DASH_SPEED;
-      this.fireTriggers(hero, "onDash", a.x, a.y);
-      hero.resources.broadcast({ type: "dashStart" });
+      if (live) {
+        this.fireTriggers(hero, "onDash", a.x, a.y);
+        hero.resources.broadcast({ type: "dashStart" });
+      }
     }
 
     if (a.dashTimer <= 0) {
       // Tar slows a walk to a crawl but never a dash — the dash stays the way out.
       const slow = disabled.move ? 0 : this.mireSlowAt(a.x, a.y) * hero.sc.slowMultiplier();
-      const speed = PLAYER_SPEED * player.moveMult * (1 + bm.moveSpeed) * slow;
+      const speed = PLAYER_SPEED * hero.player.moveMult * (1 + hero.sc.modsContribution().moveSpeed) * slow;
       a.vx = move.x * speed;
       a.vy = move.y * speed;
     }
@@ -1438,18 +1563,11 @@ export class Dungeon implements CombatHost, RuleHost {
     const fixed = resolveCircle(this.level, a.x, a.y, a.radius);
     a.x = fixed.x;
     a.y = fixed.y;
+    if (!live) return;
     const travelled = dist(beforeX, beforeY, a.x, a.y);
     if (travelled > 0.01) hero.resources.broadcast({ type: "move", distance: travelled });
     hero.posHistory.unshift({ x: a.x, y: a.y });
     if (hero.posHistory.length > 90) hero.posHistory.length = 90;
-
-    if (input.wasPressed("attack") && a.attackTimer <= 0 && !disabled.attack) this.attack(hero);
-    if (input.wasPressed("potion")) this.drinkPotion(hero);
-    if (input.wasPressed("special")) this.useUltimate(hero);
-    if (input.wasPressed("skill1")) this.castSkill(hero, 0);
-    if (input.wasPressed("skill2")) this.castSkill(hero, 1);
-    if (input.wasPressed("skill3")) this.castSkill(hero, 2);
-    if (input.wasPressed("skill4")) this.castSkill(hero, 3);
   }
 
   /** Ailments on a hero tick here, along with the mana a void hit tears out. */

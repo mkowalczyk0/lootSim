@@ -18,7 +18,7 @@ import type { Appearance } from "../data/cosmetics";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms" | "party";
+  | "comms";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -29,7 +29,7 @@ export interface HubStation {
 }
 
 /** Somebody else's ship, seen through the comms relay: where they are and whether
- *  they're standing in the party portal yet. Drawn, never simulated. */
+ *  they're standing in the party's portal yet. Drawn, never simulated. */
 export interface HubMate {
   readonly id: string;
   readonly name: string;
@@ -68,11 +68,9 @@ const FIXED_STATIONS: readonly HubStation[] = [
 /** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
  *  floor left of the central seal. */
 const EXPEDITION_SPOT = { x: 270, y: 250 };
-/** Where the party portal opens once you're in a room. Near the spawn on purpose —
- *  "everyone walk into the portal" should be a two second walk, not a hike. */
-const PARTY_SPOT = { x: 185, y: 388 };
-/** Standing this close to the party portal counts as being in it. */
-const PARTY_PORTAL_RADIUS = 30;
+/** How far past a portal's own radius still counts as standing in it for the party
+ *  ready check — generous, since four people have to fit. */
+const READY_PAD = 12;
 
 export class Hub {
   x = HUB_WIDTH / 2;
@@ -80,8 +78,16 @@ export class Hub {
   facing = -Math.PI / 2;
   /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
-  /** True while a party room is open, which is what puts the party portal on the deck. */
+  /** True while a party room is open — the deck shows the room's state. */
   partyOpen = false;
+  /** Whether this browser is the room's host, i.e. the one who picks the portal. */
+  partyHost = false;
+  /**
+   * The portal the host has picked for the party (UAT §1 D1): the Delve, a rift, or the
+   * expedition portal. Standing in *that* station is the ready signal — there is no
+   * separate party portal. Null until the host has walked into one and confirmed.
+   */
+  partyTarget: HubStationKind | null = null;
   /** Everyone else in the room, walking around their own copy of this same deck. */
   mates: HubMate[] = [];
 
@@ -93,29 +99,25 @@ export class Hub {
         x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
       });
     }
-    if (this.partyOpen) {
-      stations.push({
-        kind: "party", label: "Party Portal",
-        x: PARTY_SPOT.x, y: PARTY_SPOT.y, radius: 24,
-      });
-    }
     return stations;
   }
 
-  /**
-   * Whether the local player is standing in the party portal. This is the whole "ready
-   * up" mechanic: there is no ready button, you walk into the portal, and the run starts
-   * when everybody has. Pressing confirm is never involved, so nobody can start a run
-   * for a friend who wandered off to the stash.
-   */
-  get inPartyPortal(): boolean {
-    if (!this.partyOpen) return false;
-    return Math.hypot(this.x - PARTY_SPOT.x, this.y - PARTY_SPOT.y) <= PARTY_PORTAL_RADIUS;
+  /** The station the party dives from, if the host has picked one and it's on the deck. */
+  get partyStation(): HubStation | null {
+    if (!this.partyOpen || !this.partyTarget) return null;
+    return this.stations.find((s) => s.kind === this.partyTarget) ?? null;
   }
 
-  /** Where the party portal stands, for the renderer's benefit. */
-  static get partySpot(): { x: number; y: number } {
-    return PARTY_SPOT;
+  /**
+   * Whether the local player is standing in the party's portal. This is the whole "ready
+   * up" mechanic: there is no ready button, you walk into the portal the host picked, and
+   * the run starts when everybody has. Pressing confirm is never involved, so nobody can
+   * start a run for a friend who wandered off to the stash.
+   */
+  get inPartyPortal(): boolean {
+    const s = this.partyStation;
+    if (!s) return false;
+    return Math.hypot(this.x - s.x, this.y - s.y) <= s.radius + HUB_PLAYER_RADIUS + READY_PAD;
   }
 
   /** The station close enough to interact with right now, or null. */

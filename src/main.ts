@@ -1,5 +1,5 @@
 import { GameLoop } from "./core/loop";
-import { Input } from "./core/input";
+import { Input, isEditableTarget } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
 import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
@@ -51,14 +51,48 @@ let viewH = 0;
 
 const town = new TownUI(
   townRoot, state,
-  (config) => enterDungeon(config),
+  (config) => launchOrPlan(config),
   (planet, tier) => {
-    // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into.
+    // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into. In a
+    // room, the host picking a sector makes that portal the party's (UAT §1 D1).
     hub.setExpedition(planet.id, tier);
+    if (party.inRoom && party.isHost) {
+      party.setPlan(planetConfig(planet, tier, 1, state.challengerTier), "expedition");
+      flash(`${planet.name} T${tier} it is — everyone into the Reliquary Portal.`);
+    }
     enterHub();
   },
   party,
 );
+
+/**
+ * A run screen's confirm. Solo, it dives. In a room it's the host choosing the party's
+ * run (UAT §1 D1): the portal they walked into becomes the ready spot, and the floor
+ * starts when the last person is standing in it. Clients never get here — the run
+ * stations are closed to them in `handleHubInteraction`.
+ */
+function launchOrPlan(config: RunConfig): void {
+  if (!party.inRoom) {
+    enterDungeon(config);
+    return;
+  }
+  if (!party.isHost) {
+    flash("The host picks the portal — walk into the one they chose.");
+    enterHub();
+    return;
+  }
+  const station = config.mode.id === "abyss" || config.mode.id === "hoard" ? config.mode.id : "dive";
+  party.setPlan(config, station);
+  enterHub();
+  flash(`${describeRun(config)} it is — everyone into the ${station === "dive" ? "Delve" : config.mode.name} portal.`);
+}
+
+/** One line naming a run, for the party's flashes and lobby. */
+function describeRun(config: RunConfig): string {
+  if (config.planet) return `${config.planet.spec.name} T${config.planet.tier}`;
+  if (config.mode.isRift) return `${config.mode.name} tier ${config.tier}`;
+  return `Delve depth ${config.depth}`;
+}
 
 // --- the party ------------------------------------------------------------
 // Everything co-op reaches the rest of the game through these four callbacks. Nothing
@@ -72,23 +106,28 @@ party.onStart = (config, seed, heroes) => {
   party.attach(dungeon!);
 };
 
-party.onEnd = (how) => {
+party.onEnd = (how, early) => {
   const d = dungeon;
   if (!d) return;
-  if (how === "wipe") {
-    state.save();
-    returnToTown();
-    flash("The party went down. Everything you were carrying stayed on the floor.");
-    return;
-  }
   const coins = d.loot.coins;
   const items = d.loot.items.length;
-  // An extraction with the floor's quota still unmet is an early one, and it pays the
-  // penalty (UAT §6). The phase is host-authoritative and already in every client's
-  // last snapshot, so nobody needed a new run-end reason on the wire to know which
-  // kind of extraction this was.
-  const early = how === "extract" && d.phase !== "cleared";
-  if (early) d.earlyExtractLoot();
+  const plural = `${items} item${items === 1 ? "" : "s"}`;
+  // The host leaving takes the floor with it (UAT §1 D2). A floor already cleared banks
+  // in full, one already lost stays lost, and anything in between is an early
+  // extraction — the same 15% sliver as bailing out, nothing new to balance.
+  const lost = how === "wipe" || (how === "hostLeft" && d.phase === "dead");
+  if (lost) {
+    state.save();
+    returnToTown();
+    flash(how === "hostLeft"
+      ? "The host left after the party fell. Nothing came back with you."
+      : "The party went down. Everything you were carrying stayed on the floor.");
+    return;
+  }
+  // Whether an extraction was the penalty kind is the host's word on the wire, not an
+  // inference from whatever phase the last snapshot happened to carry.
+  const isEarly = how === "hostLeft" ? d.phase !== "cleared" : how === "extract" && early;
+  if (isEarly) d.earlyExtractLoot();
   else d.bankLoot();
   state.save();
   if (how === "descend") {
@@ -98,11 +137,17 @@ party.onEnd = (how) => {
     return;
   }
   returnToTown();
+  if (how === "hostLeft") {
+    flash(isEarly
+      ? `The host left mid-floor. You got out with a sliver of the coin — ${plural} stayed behind.`
+      : `The host left, but the floor was already cleared — banked ${formatNumber(coins)} coins and ${plural}.`,
+      isEarly ? "#f87171" : undefined);
+    return;
+  }
   flash(
-    early
-      ? `Bailed out early — ${items} item${items === 1 ? "" : "s"} left on the floor, `
-        + `most of the coin with them.`
-      : `Extracted with ${formatNumber(coins)} coins and ${items} items.`,
+    isEarly
+      ? `Bailed out early — ${plural} left on the floor, most of the coin with them.`
+      : `Extracted with ${formatNumber(coins)} coins and ${plural}.`,
   );
 };
 
@@ -117,6 +162,10 @@ function enterHub(): void {
   canvas.hidden = false;
   lootBanner.clear();
   town.hide();
+  // Every town screen exits through here, so this is where a room learns about a
+  // re-gear in the Quartermaster or a run's worth of banked loot (UAT §1 C5) — the host
+  // builds everyone's character from their last hello. A no-op outside a room.
+  party.sendHello();
 }
 
 /** Opened by walking up to a hub station; `tab` is which one, `riftMode` pins a
@@ -152,9 +201,6 @@ function returnToTown(): void {
   party.detach();
   state.player.fullHeal();
   state.save();
-  // Back on the ship with whatever the run left you holding — the rest of the room
-  // needs the new numbers, since the host builds everyone's character from these.
-  party.sendHello();
   enterHub();
 }
 
@@ -162,12 +208,22 @@ function returnToTown(): void {
 function handleHubInteraction(): void {
   const station = hub.nearStation();
   if (!station) return;
-  // While a party room is open, every other portal has to wait — walking into the
-  // Delve (or a rift, the Reliquary Gate, a sector portal or the forge) would launch a solo run out
-  // from under the room and strand whoever joined. The Party Portal and the screens
-  // that don't start a run (Comms Relay, the Quartermaster) stay open.
-  if (party.inRoom && station.kind !== "party" && station.kind !== "comms" && station.kind !== "quartermaster") {
-    flash("You're in a party — walk into the Party Portal to dive together.");
+  // In a room, the run portals are the host's to choose from (UAT §1 D1): the host
+  // walks into one and confirms, and that portal becomes where everybody readies up. A
+  // client pressing confirm at one is told so; the stations that don't start a run (the
+  // Comms Relay, the Quartermaster, the Forge) stay open to everybody.
+  const startsARun = station.kind !== "comms" && station.kind !== "quartermaster" && station.kind !== "forge";
+  if (party.inRoom && startsARun && !party.isHost) {
+    flash(party.plan
+      ? `The host picked ${describeRun(party.plan.config)} — stand in that portal to ready up.`
+      : "The host picks the portal. Wait for them to choose one.");
+    return;
+  }
+  if (party.inRoom && station.kind === "expedition") {
+    // The sector portal in a room is the party's ready spot, never a solo launch.
+    flash(party.plan?.config.planet
+      ? `This is the party's portal — everyone stand in it to begin.`
+      : "Pick a sector at the Reliquary Gate first.");
     return;
   }
   switch (station.kind) {
@@ -178,10 +234,6 @@ function handleHubInteraction(): void {
     case "forge": enterTown("Craft"); break;
     case "quartermaster": enterTown("Stash"); break;
     case "comms": enterTown("Party"); break;
-    // The party portal isn't opened by pressing anything — standing in it is the ready
-    // signal, and the host's run starts when the last person is inside. Pressing confirm
-    // on it just opens the room screen, which is where you'd look anyway.
-    case "party": enterTown("Party"); break;
     case "expedition": {
       const expedition = hub.expedition;
       const planet = expedition ? PLANETS_BY_ID[expedition.planetId] : undefined;
@@ -437,14 +489,24 @@ function handleRunDecisions(d: Dungeon): void {
   if (d.atCompletionPortal) {
     if (input.wasPressed("confirm")) {
       const config = d.config;
-      // Nobody gets dragged down a floor while they're still picking up the last room.
-      if (d.isParty && d.partyAtCompletionPortal < d.heroes.length) {
-        flash(`Waiting for the party — ${d.partyAtCompletionPortal}/${d.heroes.length} in the portal.`);
+      // Nobody gets dragged down a floor while they're still picking up the last room —
+      // nobody still *here*, that is; a dropped connection doesn't get a vote (A1).
+      if (d.isParty && d.partyAtCompletionPortal < d.partySize) {
+        flash(`Waiting for the party — ${d.partyAtCompletionPortal}/${d.partySize} in the portal.`);
         return;
       }
       d.bankLoot();
       state.save();
       if (d.isParty) {
+        if (config.mode.isRift && config.lastFloor) {
+          // The rift's boss is down: the run is over for everybody, banked in full, and
+          // each player's own save opens its next tier (UAT §1 D1 — rifts in co-op).
+          party.endRun("extract");
+          const tier = state.riftTiers[config.mode.id];
+          returnToTown();
+          flash(`${config.mode.name} tier ${config.tier} closed. Tier ${tier} is open.`);
+          return;
+        }
         party.endRun("descend");
         party.descend(config);
         return;
@@ -495,7 +557,7 @@ function handleRunDecisions(d: Dungeon): void {
         return;
       }
       earlyExtractArmedAt = 0;
-      if (d.isParty) party.endRun("extract");
+      if (d.isParty) party.endRun("extract", true);
       const kept = d.earlyExtractLoot();
       state.save();
       returnToTown();
@@ -598,16 +660,15 @@ function flash(text: string, color?: string): void {
 // character. "focusout" re-enables input once the field loses focus — without it,
 // blurring the field (Escape, Enter, or a click elsewhere) left the keyboard dead,
 // including Escape itself, so there was no way back to the ship.
-function isTextField(t: EventTarget | null): boolean {
-  return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
-}
+// `Input.onKey` also checks the event's own target (UAT §1), so a key typed into a field
+// is never swallowed even if this bookkeeping is a frame behind.
 window.addEventListener("focusin", (e) => {
-  input.setEnabled(!isTextField(e.target));
+  input.setEnabled(!isEditableTarget(e.target));
 });
 window.addEventListener("focusout", () => {
   // The element about to gain focus isn't known yet at "focusout" time, so check on
   // the next tick once `document.activeElement` has actually moved.
-  window.setTimeout(() => input.setEnabled(!isTextField(document.activeElement)), 0);
+  window.setTimeout(() => input.setEnabled(!isEditableTarget(document.activeElement)), 0);
 });
 
 applySettings();

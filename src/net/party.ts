@@ -13,9 +13,9 @@
 import type { AvatarInput } from "../core/input";
 import { cleanPlayerName } from "../data/settings";
 import { nextFloorConfig } from "../data/planets";
-import { delveConfig, type RunConfig } from "../data/modes";
+import type { RunConfig } from "../data/modes";
 import type { Dungeon, HeroSetup, RunEvent } from "../game/dungeon";
-import type { Hub } from "../game/hub";
+import type { Hub, HubStationKind } from "../game/hub";
 import type { GameState } from "../game/state";
 import { playerFromJSON, playerToJSON } from "../game/state";
 import { normalizeAppearance, type Appearance } from "../data/cosmetics";
@@ -26,7 +26,7 @@ import {
   SNAPSHOT_HZ, normalizeRoomCode,
   type HeroWire, type PartyMessage, type Snapshot,
 } from "./protocol";
-import { NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "./sync";
+import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "./sync";
 
 /** How often a lobby broadcasts where you're standing on the ship. */
 const HUB_SYNC_HZ = 12;
@@ -45,29 +45,57 @@ export interface PartyMember {
 
 export type RunEnd = "extract" | "descend" | "wipe";
 
+/** What the host has picked for the party, and which portal on the deck it is. */
+export interface PartyPlan {
+  readonly config: RunConfig;
+  readonly station: HubStationKind;
+}
+/** Why a floor ended for *this* browser: the wire's three, plus the host vanishing. */
+export type RunEndReason = RunEnd | "hostLeft";
+
 export class Party {
   readonly net = new NetClient();
   /** Everyone else in the room. You are never in here. */
   members: PartyMember[] = [];
-  /** The delve depth the host has picked for the party. */
-  depth = 1;
+  /**
+   * The run the host has picked by walking into a portal and confirming it (UAT §1 D1):
+   * a delve depth, a rift tier or a planet expedition. Null until they have. Its portal
+   * is the ready spot for everybody.
+   */
+  plan: PartyPlan | null = null;
   /** True between a `start` and the `end` that follows it. */
   running = false;
 
   /** The host has committed to a floor: build it and switch scenes. */
   onStart: (config: RunConfig, seed: number, heroes: HeroSetup[]) => void = () => {};
-  /** The floor is over for everybody. `descend` is followed by another `onStart`. */
-  onEnd: (how: RunEnd) => void = () => {};
+  /**
+   * The floor is over for everybody. `descend` is followed by another `onStart`. `early`
+   * is the host's word that an extraction was the penalty kind (UAT §6), carried on the
+   * wire rather than inferred from the last snapshot's phase. `hostLeft` never comes
+   * over the wire — it's the room closing under a running floor (UAT §1 D2).
+   */
+  onEnd: (how: RunEndReason, early: boolean) => void = () => {};
   /** Something worth a line of text on screen. */
   onNotice: (text: string, color?: string) => void = () => {};
   /** The roster, the code or the plan changed — redraw whatever is showing it. */
   onChange: () => void = () => {};
 
   private dungeon: Dungeon | null = null;
+  /**
+   * Peer ids on the floor for this run, frozen when it starts (UAT §1 A2). Somebody who
+   * joins the room mid-run waits on the ship until the *next run* rather than being
+   * dropped into floor N+1 — and is never sent a `start` that doesn't have them in it,
+   * which is what used to leave a hero-less client driving the host's character.
+   */
+  private runRoster: string[] = [];
+  /** A client's view of the host: a floor is under way that we may not be part of. */
+  hostRunning = false;
   /** Remote controllers, by peer id, for as long as a run lasts. */
   private inputs = new Map<string, NetInput>();
   /** Hero index per peer id, fixed for the whole run. */
   private slots = new Map<string, number>();
+  /** A client's own recent inputs, for reconciliation against the host (UAT §1 B2). */
+  private readonly inputLog = new InputLog();
   private hubTimer = 0;
   private snapTimer = 0;
   /** Renderer events since the last snapshot. Batched to the same cadence so a busy
@@ -116,6 +144,9 @@ export class Party {
 
   leave(): void {
     this.running = false;
+    this.hostRunning = false;
+    this.runRoster = [];
+    this.plan = null;
     this.dungeon = null;
     this.members = [];
     this.inputs.clear();
@@ -123,10 +154,21 @@ export class Party {
     this.net.leave();
   }
 
-  setDepth(depth: number): void {
-    this.depth = Math.max(1, Math.min(depth, this.state.maxUnlockedDepth));
-    if (this.isHost) this.send({ k: "plan", depth: this.depth, players: this.size });
+  /** Host only. The host walked into a portal and confirmed a run: that's the party's. */
+  setPlan(config: RunConfig, station: HubStationKind): void {
+    if (!this.isHost) return;
+    this.plan = { config, station };
+    this.broadcastPlan();
     this.onChange();
+  }
+
+  /** Host only: the plan and whether a floor is under way, for one lobby or every lobby. */
+  private broadcastPlan(to?: string): void {
+    if (!this.isHost || !this.inRoom) return;
+    this.send({
+      k: "plan", players: this.size, running: this.running,
+      ...(this.plan ? { run: configToWire(this.plan.config), station: this.plan.station } : {}),
+    }, to);
   }
 
   /** Announce this character — sent on arrival and again whenever gear may have changed. */
@@ -155,7 +197,22 @@ export class Party {
     hub.partyOpen = this.inRoom;
     if (!this.inRoom) {
       hub.mates = [];
+      hub.partyHost = false;
+      hub.partyTarget = null;
       return;
+    }
+    hub.partyHost = this.isHost;
+    hub.partyTarget = this.plan?.station ?? null;
+    // A planet run dives from the expedition portal, which only exists once the Reliquary
+    // Gate has spawned it — so while the party's plan is a planet, everybody's deck grows
+    // that portal, and it goes again when the plan changes to something else.
+    const planet = this.plan?.config.planet;
+    if (planet) {
+      if (hub.expedition?.planetId !== planet.spec.id || hub.expedition.tier !== planet.tier) {
+        hub.setExpedition(planet.spec.id, planet.tier);
+      }
+    } else if (hub.expedition) {
+      hub.clearExpedition();
     }
 
     hub.mates = this.members.map((m) => ({
@@ -174,12 +231,13 @@ export class Party {
       this.send({ k: "hub", x: Math.round(hub.x), y: Math.round(hub.y), facing: Number(hub.facing.toFixed(2)), ready: hub.inPartyPortal });
     }
 
-    if (!this.isHost || this.running) return;
-    // Everybody in, and there has to be a somebody: a room of one dives through the
-    // ordinary Delve portal, and walking over this one by accident shouldn't start a run.
+    if (!this.isHost || this.running || !this.plan) return;
+    // Everybody in, and there has to be a somebody: a room of one is just a person
+    // standing next to a portal, and walking over it by accident shouldn't start a run.
     if (!hub.inPartyPortal || this.members.length === 0) return;
     if (!this.members.every((m) => m.ready && m.hero)) return;
-    this.startFloor(delveConfig(this.depth, this.state.challengerTier, this.size));
+    // The party comes with the run: the roster could have changed since the host picked.
+    this.startFloor({ ...this.plan.config, players: this.size });
   }
 
   // --- starting and ending a floor -----------------------------------------
@@ -188,20 +246,34 @@ export class Party {
   startFloor(config: RunConfig): void {
     if (!this.isHost) return;
     const seed = Math.floor(Math.random() * 0x7fffffff);
+    // A fresh run takes everybody who's ready; the next floor of a running one takes
+    // exactly who was on the last, minus anyone whose connection went. Nobody joins a
+    // run in the middle, and the `start` goes only to the people who are in it.
+    const ids = this.running
+      ? this.runRoster.filter((id) => this.members.some((m) => m.id === id && m.hero))
+      : this.members.filter((m) => m.hero).map((m) => m.id);
+    this.runRoster = ids;
     const heroes: HeroWire[] = [this.localHeroWire()];
-    for (const m of this.members) {
-      if (m.hero) heroes.push({ ...m.hero, id: m.id, name: m.name });
+    for (const id of ids) {
+      const m = this.member(id);
+      if (m?.hero) heroes.push({ ...m.hero, id: m.id, name: m.name });
     }
     this.running = true;
-    this.send({ k: "start", seed, config: configToWire(config), heroes });
+    const start: PartyMessage = { k: "start", seed, config: configToWire(config), heroes };
+    for (const id of ids) this.send(start, id);
+    this.broadcastPlan();
     this.onStart(config, seed, this.setupsFrom(heroes));
   }
 
-  /** Host only. Ends the floor for everybody, banking or not as `how` says. */
-  endRun(how: RunEnd): void {
+  /** Host only. Ends the floor for everybody, banking or not as `how` and `early` say. */
+  endRun(how: RunEnd, early = false): void {
     if (!this.isHost) return;
-    this.send({ k: "end", how });
-    if (how !== "descend") this.running = false;
+    this.send({ k: "end", how, early });
+    if (how !== "descend") {
+      this.running = false;
+      this.runRoster = [];
+    }
+    this.broadcastPlan();
   }
 
   /** Host only, after `endRun("descend")`: the next floor of the same run. */
@@ -215,6 +287,7 @@ export class Party {
     this.inputs.clear();
     this.slots.clear();
     this.fxBuffer.length = 0;
+    this.inputLog.reset();
     for (const hero of dungeon.heroes) {
       if (hero.local || hero.netId === "") continue;
       const input = new NetInput();
@@ -230,6 +303,7 @@ export class Party {
     this.inputs.clear();
     this.slots.clear();
     this.running = false;
+    this.runRoster = [];
   }
 
   private setupsFrom(heroes: HeroWire[]): HeroSetup[] {
@@ -270,7 +344,8 @@ export class Party {
       // Straight to the host: nobody else has anything to do with your buttons, and at
       // sixty packets a second that's the difference between one stream and three.
       const a = d.avatar;
-      this.send({ k: "in", ...packInput(input, a.x, a.y) }, this.net.hostId);
+      const seq = this.inputLog.record(input.moveVector(), input.wasPressed("dash"));
+      this.send({ k: "in", ...packInput(input, a.x, a.y, seq) }, this.net.hostId);
     }
   }
 
@@ -285,8 +360,11 @@ export class Party {
       const slot = this.slots.get(member.id);
       if (slot === undefined) continue;
       // Most events are for everybody; a few belong to one person, and somebody else's
-      // level-up has no business taking over your screen.
-      const mine = this.fxBuffer.filter((ev) => !("owner" in ev) || ev.owner === slot);
+      // level-up has no business taking over your screen. A remote player's *own*
+      // level-up isn't forwarded either — their browser raises it from the XP it's
+      // handed below, and forwarding this copy too fired the fireworks twice (UAT §1 C3).
+      const mine = this.fxBuffer.filter((ev) =>
+        !("owner" in ev) || (ev.owner === slot && ev.kind !== "levelUp"));
       if (mine.length > 0) this.send({ k: "fx", e: mine as unknown[] }, member.id);
 
       // Items and XP go as their own messages rather than being sampled out of a
@@ -328,13 +406,28 @@ export class Party {
         member.ready = msg.ready;
         return;
       }
-      case "plan":
-        this.depth = msg.depth;
+      case "plan": {
+        if (this.isHost) return;
+        this.plan = msg.run
+          ? { config: configFromWire(msg.run), station: (msg.station ?? "dive") as HubStationKind }
+          : null;
+        const running = msg.running ?? false;
+        if (running && !this.hostRunning && !this.running) {
+          this.onNotice("The party is mid-dive — you'll go with them on their next run.", "#fbbf24");
+        }
+        this.hostRunning = running;
         this.onChange();
         return;
+      }
       case "start": {
         if (this.isHost) return;
+        // Never adopt a floor we're not on (UAT §1 A2). The host only addresses `start`
+        // to its roster, but this is the client's own guarantee: without a hero of ours
+        // in the list, `Dungeon` would refuse to build — and before it did, it fell back
+        // to driving the host's character and banking a mirror of the host's loot.
+        if (!msg.heroes.some((h) => h.id === this.net.id)) return;
         this.running = true;
+        this.hostRunning = true;
         this.onStart(configFromWire(msg.config), msg.seed, this.setupsFrom(msg.heroes));
         return;
       }
@@ -344,7 +437,7 @@ export class Party {
       }
       case "snap": {
         const d = this.dungeon;
-        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.planetNames());
+        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.planetNames(), this.inputLog);
         return;
       }
       case "fx": {
@@ -365,8 +458,11 @@ export class Party {
         return;
       }
       case "end":
+        // A floor we weren't on ending is none of our business.
+        if (this.isHost || !this.running) return;
         this.running = msg.how === "descend";
-        this.onEnd(msg.how);
+        this.hostRunning = this.running;
+        this.onEnd(msg.how, msg.early ?? false);
         return;
     }
   }
@@ -382,9 +478,16 @@ export class Party {
     this.inputs.clear();
     this.slots.clear();
     this.running = false;
+    this.hostRunning = false;
+    this.runRoster = [];
+    this.plan = null;
     this.onChange();
     this.onNotice(reason, "#ef4444");
-    if (wasRunning) this.onEnd("wipe");
+    // The host's browser *is* the floor, so the floor is gone with it. That's nobody's
+    // death and nobody's choice, so it isn't a wipe: main.ts treats it as an early
+    // extraction (UAT §1 D2) — the existing 15% sliver of coin, items forfeit — banks a
+    // floor that was already cleared in full, and lets one already lost stay lost.
+    if (wasRunning) this.onEnd("hostLeft", true);
   }
 
   private member(id: string): PartyMember | undefined {
@@ -394,25 +497,39 @@ export class Party {
   /** Keeps `members` in step with the relay's roster, preserving what we already know. */
   private syncRoster(): void {
     const previous = new Map(this.members.map((m) => [m.id, m]));
+    const arrived: PartyMember[] = [];
     this.members = this.net.peers.map((peer) => {
       const existing = previous.get(peer.id);
       if (existing) {
         existing.name = peer.name;
         return existing;
       }
-      return { id: peer.id, name: peer.name, hero: null, x: 320, y: 420, facing: -Math.PI / 2, ready: false };
+      const member: PartyMember = {
+        id: peer.id, name: peer.name, hero: null, x: 320, y: 420, facing: -Math.PI / 2, ready: false,
+      };
+      arrived.push(member);
+      return member;
     });
 
+    if (this.isHost) {
+      // A new arrival needs the plan straight away — above all whether a floor is under
+      // way, since in that case they're waiting on the ship for the next run (A2).
+      for (const member of arrived) {
+        this.broadcastPlan(member.id);
+        if (this.running) this.onNotice(`${member.name} joined — they'll dive with you next run.`, "#fbbf24");
+      }
+    }
+
     // Somebody's laptop closed mid-fight. Their character stays on the floor as a body
-    // rather than vanishing — the party can still finish, they just can't be revived.
+    // rather than vanishing, but out of every count that could hold the run hostage
+    // (UAT §1 A1): no revive, no descend gate, no aggro.
     const d = this.dungeon;
     if (d && d.role === "host") {
       for (const hero of d.heroes) {
-        if (hero.local || hero.netId === "") continue;
+        if (hero.local || hero.netId === "" || hero.departed) continue;
         if (this.members.some((m) => m.id === hero.netId)) continue;
-        if (!hero.downed) this.onNotice(`${hero.name} dropped out.`, "#fbbf24");
-        hero.downed = true;
-        hero.input = null;
+        this.onNotice(`${hero.name} dropped out.`, "#fbbf24");
+        d.dropHero(hero);
         this.inputs.delete(hero.netId);
       }
     }

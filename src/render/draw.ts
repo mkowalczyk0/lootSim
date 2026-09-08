@@ -471,6 +471,22 @@ export class WorldRenderer {
     const hs = heroSprite(hero.appearance);
     blob(ctx, x, y, 9);
 
+    // Somebody whose browser left the room: a ghost of a body and no revive meter, since
+    // nothing brings them back (UAT §1 A1). Kept on the floor so the party doesn't lose
+    // track of where they fell, but there's deliberately nothing here to go and do.
+    if (hero.departed) {
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      drawSprite(ctx, hs.canvas, x, y + 4, false, hs.scale, hs.feet);
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = "#9aa4b2";
+      ctx.font = "7px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`${hero.name.toUpperCase()} LEFT`, x, y - 30);
+      ctx.restore();
+      return;
+    }
+
     // A downed ally is a slumped, faded body with a revive meter over it. Standing on
     // them is the whole interaction, so it has to be obvious from across the room.
     if (hero.downed) {

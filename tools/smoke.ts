@@ -7,9 +7,10 @@
  * boss telegraphs and gets out of them, it casts the skills it has, and it retreats
  * when it's hurt. A bot that can't do those things measures a game nobody is playing.
  */
-import type { Action, AvatarInput, Input } from "../src/core/input";
+import { Input, type Action, type AvatarInput } from "../src/core/input";
+import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, inTelegraph } from "../src/game/dungeon";
-import { Hub, HUB_HEIGHT, HUB_WIDTH } from "../src/game/hub";
+import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
 import { Player, xpForLevel } from "../src/game/player";
@@ -18,7 +19,7 @@ import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
-import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
+import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
@@ -42,8 +43,10 @@ import { rollItem } from "../src/game/item";
 import { MOD_COUNTS } from "../src/data/items";
 import { STAT_KEYS } from "../src/data/mods";
 import { Rng } from "../src/core/rng";
-import { applySnapshot, configFromWire, configToWire, encodeSnapshot } from "../src/net/sync";
-import { isRoomCode, normalizeRoomCode, randomRoomCode } from "../src/net/protocol";
+import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
+import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage, type Snapshot } from "../src/net/protocol";
+import { Party } from "../src/net/party";
+import { playerToJSON } from "../src/game/state";
 
 class FakeInput {
   private down = new Set<Action>();
@@ -1664,6 +1667,27 @@ console.log("\n=== the ship hub ===");
   check("choosing an expedition spawns its portal", hub.stations.some((s) => s.kind === "expedition"));
   hub.clearExpedition();
   check("walking into it clears it back out", !hub.stations.some((s) => s.kind === "expedition"));
+
+  // The party's ready spot is whichever portal the host picked (UAT §1 D1) — there is
+  // no separate party portal any more.
+  check("no party portal on the deck", !hub.stations.some((s) => (s.kind as string) === "party"));
+  hub.partyOpen = true;
+  check("nobody is ready before the host has picked", !hub.inPartyPortal && hub.partyStation === null);
+  hub.partyTarget = "abyss";
+  const abyss = hub.stations.find((s) => s.kind === "abyss")!;
+  hub.x = abyss.x + abyss.radius;
+  hub.y = abyss.y;
+  check("standing in the picked portal is being ready", hub.inPartyPortal && hub.partyStation === abyss);
+  hub.x = abyss.x + abyss.radius + HUB_PLAYER_RADIUS + 40;
+  check("…standing next to it isn't", !hub.inPartyPortal);
+  const dive = hub.stations.find((s) => s.kind === "dive")!;
+  hub.x = dive.x;
+  hub.y = dive.y;
+  check("the wrong portal doesn't count", !hub.inPartyPortal);
+  hub.partyTarget = "dive";
+  check("…until the host picks it", hub.inPartyPortal);
+  hub.partyOpen = false;
+  hub.partyTarget = null;
 }
 
 console.log("\n=== death loses unbanked loot ===");
@@ -2159,6 +2183,60 @@ console.log("\n=== gems and the wardrobe ===");
     COSMETIC_SLOTS.every((slot) => dressed.appearance[slot] !== null));
 }
 
+console.log("\n=== controls ===");
+{
+  // UAT §1: typing a name or a room code into the Comms Relay must never be eaten by the
+  // game's own key handling. Before the fix every bound key was `preventDefault`ed before
+  // the enabled check ran, so W/A/S/D, E, Q and most of the room-code alphabet could not
+  // be typed into a field at all. `Input` is DOM-shaped but built here against a fake
+  // target, so this pins the rule headlessly.
+  class FakeTarget {
+    private listeners = new Map<string, ((e: unknown) => void)[]>();
+    addEventListener(type: string, cb: (e: unknown) => void): void {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), cb]);
+    }
+    fire(type: string, e: object): void {
+      for (const cb of this.listeners.get(type) ?? []) cb(e);
+    }
+  }
+  const target = new FakeTarget();
+  const input = new Input(
+    { ...DEFAULT_SETTINGS, keybinds: { ...DEFAULT_KEYBINDS } },
+    target as unknown as EventTarget,
+  );
+  /** Presses `code` at `tagName` (or the bare canvas); returns whether the game claimed it. */
+  const press = (code: string, tagName?: string): boolean => {
+    let prevented = false;
+    const ev = {
+      code, repeat: false,
+      target: tagName ? { tagName } : {},
+      preventDefault: () => { prevented = true; },
+    };
+    target.fire("keydown", ev);
+    target.fire("keyup", ev);
+    return prevented;
+  };
+  check("a bound key on the canvas is the game's", press("KeyW") === true);
+  check("a bound key typed into a text field reaches the field", press("KeyW", "INPUT") === false);
+  check("… and a textarea", press("KeyE", "TEXTAREA") === false);
+  input.setEnabled(false);
+  check("with the keyboard handed to a field, no key is swallowed", press("KeyE") === false);
+  input.setEnabled(true);
+  check("every room-code letter can be typed into the code box",
+    [..."ABCDEFGHJKLMNPQRTUVWXY"].every((c) => press(`Key${c}`, "INPUT") === false));
+  check("every default binding can be typed into a name",
+    REBINDABLE_ACTIONS.every((a) => press(DEFAULT_KEYBINDS[a], "INPUT") === false));
+  check("but a checkbox isn't a place you type",
+    (() => {
+      let prevented = false;
+      target.fire("keydown", {
+        code: "KeyW", repeat: false, target: { tagName: "INPUT", type: "checkbox" },
+        preventDefault: () => { prevented = true; },
+      });
+      return prevented;
+    })());
+}
+
 console.log("\n=== multiplayer ===");
 {
   // A co-op floor is the same simulation with more than one hero in it, so it can be
@@ -2350,6 +2428,466 @@ console.log("\n=== multiplayer ===");
   idle.beginTick();
   rescue.update(DT, idle as unknown as AvatarInput);
   check("a party still standing keeps the floor alive", rescue.phase !== "dead");
+
+  // 6. A dropped connection can't hold the run hostage (UAT §1 A1). The body stays, but
+  // it is out of every count: no revive, no descend gate, no aggro — and if it was the
+  // last one standing besides you, the floor is lost rather than stuck.
+  {
+    const gone = new Dungeon(geared(14, 8804, 16, "lancer"), delveConfig(3, 0, 2), {
+      seed: 7, role: "host", heroes: setups,
+    });
+    const stayed = gone.heroes[0]!;
+    const left = gone.heroes[1]!;
+    gone.dropHero(left);
+    check("a departed hero is out of the descend count", gone.partySize === 1 && left.downed && left.departed);
+    gone.completionPortal = { x: stayed.avatar.x, y: stayed.avatar.y };
+    left.avatar.x = stayed.avatar.x;
+    left.avatar.y = stayed.avatar.y;
+    check("…even with its body lying in the portal",
+      gone.partyAtCompletionPortal === 1 && gone.partyAtCompletionPortal >= gone.partySize);
+    gone.completionPortal = null;
+    check("monsters don't chase a body that left", gone.nearestHero(left.avatar.x, left.avatar.y) === stayed);
+    const over = new FakeInput();
+    for (let i = 0; i < 240; i++) {
+      over.beginTick();
+      stayed.avatar.x = left.avatar.x;
+      stayed.avatar.y = left.avatar.y;
+      gone.update(DT, over as unknown as AvatarInput);
+      gone.drainEvents();
+    }
+    check("standing over a departed hero doesn't revive it", left.downed && left.departed && left.reviveProgress === 0);
+    // Clearing the floor picks up the downed — not the departed.
+    gone.killsSoFar = gone.killsRequired;
+    gone.elitesKilled = gone.elitesRequired;
+    gone.wave = gone.profile.waves;
+    gone.enemies.length = 0;
+    over.beginTick();
+    gone.update(DT, over as unknown as AvatarInput);
+    check("clearing the floor doesn't stand a departed hero back up",
+      gone.phase === "cleared" && left.downed && left.departed, gone.phase);
+    // The snapshot carries the flag, so a client draws them as gone rather than as
+    // somebody to go and rescue.
+    const mirror = new Dungeon(geared(14, 8802, 16, "magician"), delveConfig(3, 0, 2), {
+      seed: 7, role: "client", heroes: setups.map((setup, i) => ({ ...setup, local: i === 1 })),
+    });
+    applySnapshot(mirror, JSON.parse(JSON.stringify(encodeSnapshot(gone))));
+    check("a client learns who left from the snapshot", mirror.heroes[1]!.departed && !mirror.heroes[0]!.departed);
+
+    const limbo = new Dungeon(geared(14, 8805, 16, "lancer"), delveConfig(3, 0, 2), {
+      seed: 8, role: "host", heroes: setups,
+    });
+    limbo.heroes[0]!.downed = true;
+    limbo.heroes[0]!.player.health = 0;
+    check("one down and one connected is still a floor", limbo.phase === "fighting");
+    limbo.dropHero(limbo.heroes[1]!);
+    check("the last one standing leaving is a wipe, not a limbo", limbo.phase === "dead");
+
+    // And the backstop under all of it: a party floor with no hero of our own refuses to
+    // build, rather than quietly driving (and banking for) the host's character (A2).
+    let refused = false;
+    try {
+      new Dungeon(geared(14, 8802, 16, "magician"), delveConfig(3, 0, 2), {
+        seed: 7, role: "client", heroes: setups.map((setup) => ({ ...setup, local: false })),
+      });
+    } catch {
+      refused = true;
+    }
+    check("a client floor without our own hero refuses to build", refused);
+  }
+
+  // 7. The run's roster is frozen when it starts (UAT §1 A2). The party layer is driven
+  // here with a stubbed relay: `Party` never opens a socket until asked, so its message
+  // handler can be fed directly and its sends captured.
+  {
+    type Sent = { msg: PartyMessage; to?: string };
+    const wire = (state: GameState, id: string): HeroWire => ({
+      id, name: id, classId: state.activeClassId,
+      player: playerToJSON(state.player) as unknown as Record<string, unknown>,
+      appearance: state.appearance as unknown as Record<string, unknown>, potions: 3,
+    });
+    const rig = (state: GameState, id: string, host: boolean) => {
+      const party = new Party(state);
+      const sent: Sent[] = [];
+      const net = party.net;
+      net.send = (msg, to) => { sent.push({ msg, to }); };
+      net.status = "connected";
+      net.code = "ABCD";
+      net.id = id;
+      net.isHost = host;
+      net.hostId = host ? id : "p1";
+      const notices: string[] = [];
+      party.onNotice = (text) => notices.push(text);
+      const starts: { ids: string[]; localIndex: number }[] = [];
+      party.onStart = (_config, _seed, heroes) => {
+        starts.push({ ids: heroes.map((h) => h.netId), localIndex: heroes.findIndex((h) => h.local) });
+      };
+      const ends: { how: string; early: boolean }[] = [];
+      party.onEnd = (how, early) => ends.push({ how, early });
+      return { party, net, sent, notices, starts, ends };
+    };
+    const startsSent = (sent: Sent[]) => sent.filter((s): s is Sent & { msg: Extract<PartyMessage, { k: "start" }> } => s.msg.k === "start");
+
+    const hostState = geared(14, 8806, 16, "swordsman");
+    const host = rig(hostState, "p1", true);
+    host.net.peers = [{ id: "p2", name: "Cousin" }];
+    host.net.onChange();
+    host.net.onMessage("p2", { k: "hello", hero: wire(geared(14, 8807, 16, "magician"), "p2") });
+    host.party.startFloor(delveConfig(2, 0, 2));
+    let starts = startsSent(host.sent);
+    check("the host starts a run with everybody who said hello",
+      host.starts[0]?.ids.join() === "p1,p2" && starts.length === 1 && starts[0]!.to === "p2",
+      JSON.stringify(host.starts[0]));
+
+    // Somebody joins mid-run. They get the plan (and that a floor is under way), a hello
+    // is fine, but the next floor is still the original roster's.
+    host.sent.length = 0;
+    host.net.peers.push({ id: "p3", name: "Latecomer" });
+    host.net.onChange();
+    const planToNewcomer = host.sent.find((s) => s.msg.k === "plan" && s.to === "p3")?.msg as Extract<PartyMessage, { k: "plan" }> | undefined;
+    check("a mid-run arrival is told a floor is under way", planToNewcomer?.running === true);
+    host.net.onMessage("p3", { k: "hello", hero: wire(geared(14, 8808, 16, "lancer"), "p3") });
+    host.sent.length = 0;
+    host.party.endRun("descend");
+    host.party.descend(delveConfig(2, 0, 2));
+    starts = startsSent(host.sent);
+    check("descending keeps the roster the run started with",
+      host.starts[1]?.ids.join() === "p1,p2" && starts.every((s) => s.to === "p2"),
+      JSON.stringify(host.starts[1]));
+    check("…and the newcomer is never sent that floor", !starts.some((s) => s.to === "p3"));
+    // If the original mate drops mid-run, the next floor is just the host.
+    host.net.peers = host.net.peers.filter((p) => p.id !== "p2");
+    host.net.onChange();
+    host.party.endRun("descend");
+    host.party.descend(delveConfig(3, 0, 2));
+    check("a dropped mate isn't carried into the next floor", host.starts[2]?.ids.join() === "p1", JSON.stringify(host.starts[2]));
+    // A finished run frees the roster: the next one takes whoever's ready.
+    host.sent.length = 0;
+    host.party.endRun("extract", true);
+    const end = host.sent.find((s) => s.msg.k === "end")?.msg as Extract<PartyMessage, { k: "end" }> | undefined;
+    check("an early bail-out says so on the wire", end?.how === "extract" && end.early === true);
+    host.party.startFloor(delveConfig(2, 0, 2));
+    check("the next run takes the newcomer", host.starts[3]?.ids.join() === "p1,p3", JSON.stringify(host.starts[3]));
+
+    // The client's own guarantee: a start without us in it is ignored outright.
+    const clientState = geared(14, 8808, 16, "lancer");
+    const client = rig(clientState, "p3", false);
+    client.net.peers = [{ id: "p1", name: "Host" }, { id: "p2", name: "Cousin" }];
+    client.net.onChange();
+    const cfg = configToWire(delveConfig(2, 0, 2));
+    const others = [wire(hostState, "p1"), wire(geared(14, 8807, 16, "magician"), "p2")];
+    client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: others });
+    check("a client ignores a start it isn't part of", client.starts.length === 0 && !client.party.running);
+    client.net.onMessage("p1", { k: "plan", players: 3, running: true });
+    check("…and is told to wait for the next run", client.notices.some((n) => /next run/.test(n)) && client.party.hostRunning);
+    client.net.onMessage("p1", { k: "end", how: "descend", early: false });
+    check("a floor it wasn't on ending is none of its business", client.ends.length === 0 && !client.party.running);
+    client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: [...others, wire(clientState, "p3")] });
+    check("a start that includes it is adopted, with itself as the local hero",
+      client.starts.length === 1 && client.starts[0]!.localIndex === 2 && client.party.running);
+    client.net.onMessage("p1", { k: "end", how: "extract", early: true });
+    check("the early flag arrives with the end", client.ends[0]?.how === "extract" && client.ends[0]?.early === true);
+
+    // The host's browser going away mid-floor is an early extraction, not a wipe (D2).
+    client.net.onMessage("p1", { k: "start", seed: 2, config: cfg, heroes: [...others, wire(clientState, "p3")] });
+    client.net.onClosed("The host left.");
+    check("the host leaving ends the floor as an early extraction",
+      client.ends[1]?.how === "hostLeft" && client.ends[1]?.early === true && !client.party.running);
+
+    // D1: the host picks the party's run by walking into a portal — any portal. The plan
+    // crosses the wire as a config, that portal is everybody's ready spot, and the run
+    // that starts is the one the host picked, sized to the party.
+    const picker = rig(geared(14, 8815, 16, "swordsman"), "p1", true);
+    picker.net.peers = [{ id: "p2", name: "Cousin" }];
+    picker.net.onChange();
+    picker.net.onMessage("p2", { k: "hello", hero: wire(geared(14, 8816, 16, "magician"), "p2") });
+    const hostHub = new Hub();
+    picker.party.syncHub(hostHub, DT);
+    check("a room with no plan has no ready spot", hostHub.partyOpen && hostHub.partyHost && hostHub.partyTarget === null);
+    picker.sent.length = 0;
+    picker.party.setPlan(riftConfig("abyss", 2, 1, 0), "abyss");
+    const planMsg = picker.sent.find((s) => s.msg.k === "plan")?.msg as Extract<PartyMessage, { k: "plan" }> | undefined;
+    check("picking a rift broadcasts it as the plan", planMsg?.run?.mode === "abyss" && planMsg.run.tier === 2 && planMsg.station === "abyss");
+    const watcher = rig(geared(14, 8816, 16, "magician"), "p2", false);
+    watcher.net.peers = [{ id: "p1", name: "Host" }];
+    watcher.net.onChange();
+    watcher.net.onMessage("p1", planMsg!);
+    check("a client learns the plan", watcher.party.plan?.config.mode.id === "abyss" && watcher.party.plan?.config.tier === 2
+      && watcher.party.plan?.station === "abyss");
+    const mateHub = new Hub();
+    watcher.party.syncHub(mateHub, DT);
+    check("…and its ready spot is that portal", mateHub.partyTarget === "abyss" && !mateHub.partyHost);
+    // Everybody walks into the Abyssal Rift.
+    const abyss = hostHub.stations.find((s) => s.kind === "abyss")!;
+    hostHub.x = abyss.x;
+    hostHub.y = abyss.y;
+    picker.party.syncHub(hostHub, DT);
+    check("the host alone in the portal starts nothing", picker.starts.length === 0);
+    picker.net.onMessage("p2", { k: "hub", x: abyss.x, y: abyss.y, facing: 0, ready: true });
+    picker.party.syncHub(hostHub, DT);
+    check("the last one in starts the run the host picked", picker.starts.length === 1);
+    const started = picker.sent.filter((s) => s.msg.k === "start").map((s) => s.msg as Extract<PartyMessage, { k: "start" }>);
+    check("…as that rift, sized to the party",
+      started[0]?.config.mode === "abyss" && started[0].config.tier === 2 && started[0].config.players === 2,
+      JSON.stringify(started[0]?.config));
+    // A planet plan grows the expedition portal on everybody's deck; another plan takes it away.
+    picker.party.endRun("extract");
+    picker.party.setPlan(planetConfig(PLANETS[0]!, 1, 1, 0), "expedition");
+    picker.party.syncHub(hostHub, DT);
+    check("a planet plan puts the Reliquary Portal on the host's deck",
+      hostHub.expedition?.planetId === PLANETS[0]!.id && hostHub.partyTarget === "expedition");
+    const planetPlan = picker.sent.filter((s) => s.msg.k === "plan").pop()!.msg as Extract<PartyMessage, { k: "plan" }>;
+    watcher.net.onMessage("p1", planetPlan);
+    watcher.party.syncHub(mateHub, DT);
+    check("…and on the client's", mateHub.expedition?.planetId === PLANETS[0]!.id && mateHub.stations.some((s) => s.kind === "expedition"));
+    picker.party.setPlan(delveConfig(5, 0), "dive");
+    picker.party.syncHub(hostHub, DT);
+    check("switching to the Delve takes the sector portal away again", hostHub.expedition === null && hostHub.partyTarget === "dive");
+    // Leaving the room clears the plan and the deck.
+    watcher.party.leave();
+    watcher.party.syncHub(mateHub, DT);
+    check("leaving the room clears the plan", watcher.party.plan === null && mateHub.partyTarget === null && !mateHub.partyOpen);
+  }
+
+  // 8. Procedural generation is deterministic across the wire (UAT §1 C6): a client
+  // rebuilding a floor from the seed and the flattened config gets the identical level
+  // — every wall, trap, prop and node, not just the wall count — for every run mode.
+  {
+    const fingerprint = (d: Dungeon) => JSON.stringify({
+      size: [d.level.width, d.level.height, d.level.cols, d.level.rows],
+      layout: d.level.layout, label: d.level.label, rooms: d.level.rooms, seed: d.level.seed,
+      start: d.level.start, portal: d.level.portal,
+      walls: d.level.walls, traps: d.level.traps, props: d.level.props, nodes: d.level.resourceNodes,
+      blocked: Array.from(d.level.blocked).reduce((h, v, i) => (h * 31 + v * (i + 1)) % 2147483647, 7),
+      quota: [d.killsRequired, d.elitesRequired],
+    });
+    const hostSide = geared(14, 8809, 16, "swordsman");
+    const clientSide = geared(14, 8810, 16, "magician");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostSide.player, appearance: hostSide.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: clientSide.player, appearance: clientSide.appearance, potions: 5, local: false },
+    ];
+    const cases: [string, RunConfig][] = [
+      ["a delve floor", delveConfig(8, 0, 2)],
+      ["a boss floor", delveConfig(10, 0, 2)],
+      ["a rift floor", { ...riftConfig("abyss", 2, 1, 0), players: 2 }],
+      ["a planet floor", { ...planetConfig(PLANETS[0]!, 1, 1, 0), players: 2 }],
+    ];
+    for (const [label, config] of cases) {
+      const h = new Dungeon(hostSide, config, { seed: 31337, role: "host", heroes: pair });
+      const c = new Dungeon(clientSide, configFromWire(configToWire(config)), {
+        seed: 31337, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+      });
+      check(`${label} is identical on both ends of the wire`, fingerprint(h) === fingerprint(c),
+        `${h.level.walls.length} walls, ${h.level.traps.length} traps, quota ${h.killsRequired}/${h.elitesRequired}`);
+    }
+  }
+
+  // 9. What a client sees between snapshots (UAT §1 B1): a body the client already had
+  // slides to where the new snapshot put it over the next few ticks instead of jumping
+  // there and freezing; projectiles fly on; wind-ups keep counting down.
+  {
+    const snap = (d: Dungeon): Snapshot => JSON.parse(JSON.stringify(encodeSnapshot(d))) as Snapshot;
+    const hostS = geared(14, 8811, 16, "swordsman");
+    const cliS = geared(14, 8812, 16, "magician");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+    ];
+    const cfg = delveConfig(4, 0, 2);
+    const h = new Dungeon(hostS, cfg, { seed: 555, role: "host", heroes: pair });
+    const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 555, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    const idle = new FakeInput();
+    for (let i = 0; i < 600 && !h.enemies.some((e) => e.state !== "spawning"); i++) {
+      idle.beginTick();
+      h.update(DT, idle as unknown as AvatarInput);
+      h.drainEvents();
+    }
+    applySnapshot(c, snap(h));
+    const target = h.enemies.find((e) => e.state !== "spawning")!;
+    const mirror = c.enemies.find((e) => e.id === target.id)!;
+    check("a client has the monster in the first place", mirror !== undefined && Math.abs(mirror.x - target.x) < 1);
+    target.x += 30;
+    target.windup = 0.5;
+    const before = mirror.x;
+    applySnapshot(c, snap(h));
+    check("a new snapshot doesn't teleport a monster the client already had", Math.abs(mirror.x - before) < 1);
+    const xs: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      idle.beginTick();
+      c.update(DT, idle as unknown as AvatarInput);
+      xs.push(mirror.x);
+    }
+    const monotone = xs.every((x, i) => i === 0 || x >= xs[i - 1]! - 1e-6);
+    // The wire rounds positions to whole pixels, so "there" is the rounded spot.
+    check("…it slides there over the next ticks", monotone && xs[0]! > before + 1 && Math.abs(xs[3]! - Math.round(target.x)) < 0.01,
+      `${before.toFixed(1)} → ${xs.map((v) => v.toFixed(1)).join(" → ")} (target ${Math.round(target.x)})`);
+    check("…with a fresh previous position every tick for the renderer to lerp from",
+      Math.abs(mirror.px - xs[2]!) < 1e-6);
+    check("a monster's wind-up keeps counting down between snapshots", mirror.windup < 0.5 - DT * 3.5 && mirror.windup > 0.5 - DT * 4.5,
+      mirror.windup.toFixed(3));
+
+    // The host's own hero is a remote body on the client, and slides the same way.
+    const hostAvatar = h.heroes[0]!.avatar;
+    const hostMirror = c.heroes[0]!.avatar;
+    hostAvatar.x += 20;
+    const hb = hostMirror.x;
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    check("an ally slides too, rather than jumping", hostMirror.x > hb + 1 && hostMirror.x < hostAvatar.x - 1,
+      `${hb.toFixed(1)} → ${hostMirror.x.toFixed(1)} → ${hostAvatar.x.toFixed(1)}`);
+
+    // A bolt carries its velocity across and keeps flying until the next snapshot.
+    h.projectiles.push({
+      x: 100, y: 100, px: 100, py: 100, radius: 4, vx: 120, vy: 0, damage: 0, friendly: true, owner: 0,
+      life: 1, color: "#fff", element: "physical", pierce: 0, hits: new Set(), ailment: 0, basic: false,
+    });
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    const bolt = c.projectiles[c.projectiles.length - 1]!;
+    check("a projectile flies on between snapshots", Math.abs(bolt.x - (100 + 120 * DT)) < 0.01, bolt.x.toFixed(2));
+    h.projectiles.length = 0;
+
+    // A hero's ailments cross the wire (B3), so a client can predict its own slow.
+    h.heroes[1]!.sc.apply("chill", { sourceActorId: -1, chance: 1, roll: () => 0 });
+    applySnapshot(c, snap(h));
+    check("a hero's ailments cross the wire", c.heroes[1]!.sc.list.some((st) => st.id === "chill"));
+    h.heroes[1]!.sc.list.length = 0;
+    applySnapshot(c, snap(h));
+    check("…and clear with it", c.heroes[1]!.sc.list.length === 0);
+
+    // C1: a summoner's army and the corpses it's raised from cross the wire.
+    h.minions.push({
+      id: 41, owner: 0, unit: "skeleton", x: 300, y: 300, px: 300, py: 300, radius: 7,
+      health: 30, maxHealth: 40, damage: 5, attackCooldown: 1, attackTimer: 0, attackRange: 20,
+      windup: 0.3, speed: 100, element: "void", facing: 1, hitFlash: 0, knockX: 0, knockY: 0,
+      remaining: 20, behavior: "follow", commandTargetId: null, guardX: 300, guardY: 300,
+      sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1,
+    });
+    h.corpsePile.push({ id: 1, x: 220, y: 240, remaining: 6 });
+    applySnapshot(c, snap(h));
+    const pet = c.minions.find((m) => m.id === 41);
+    check("a summon crosses the wire", pet !== undefined && pet.owner === 0 && pet.x === 300 && pet.element === "void"
+      && pet.health === 30 && pet.maxHealth === 40 && Math.abs(pet.windup - 0.3) < 0.01);
+    check("a corpse crosses the wire", c.corpsePile.length === 1 && c.corpsePile[0]!.x === 220 && c.corpsePile[0]!.remaining === 6);
+    h.minions[h.minions.length - 1]!.x = 330;
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    check("a summon slides like everything else", pet!.x > 301 && pet!.x < 329 && pet!.windup < 0.3 - DT * 0.5,
+      `${pet!.x.toFixed(1)}, windup ${pet!.windup.toFixed(3)}`);
+    h.minions.pop();
+    h.corpsePile.length = 0;
+    applySnapshot(c, snap(h));
+    check("…and leaves with the host's", c.minions.every((m) => m.id !== 41) && c.corpsePile.length === 0);
+
+    // C2: affixes travel too, so a client draws the ring and glyphs and reads the same
+    // name the host does, not a bare "Grunt".
+    const marked = h.enemies.find((e) => !e.boss)!;
+    marked.affixes = [MONSTER_AFFIXES[0]!, MONSTER_AFFIXES[3]!];
+    const fresh = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 555, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    applySnapshot(fresh, snap(h));
+    const seenMarked = fresh.enemies.find((e) => e.id === marked.id)!;
+    check("a monster's affixes cross the wire",
+      seenMarked.affixes.map((a) => a.id).join() === marked.affixes.map((a) => a.id).join(),
+      seenMarked.affixes.map((a) => a.id).join());
+    check("…and the client names it the way the host does",
+      seenMarked.name.startsWith(affixPrefix(marked.affixes)), seenMarked.name);
+  }
+
+  // 10. A client's own character is reconciled, not tugged (UAT §1 B2). Host and client
+  // run in one process with a real delay between them — the client's buttons reach the
+  // host LAG ticks late, the host's snapshots reach the client LAG ticks late — and the
+  // question is how far each snapshot has to *move* the client's own character. The old
+  // 25% blend moved it by a quarter of RTT×speed every time; a replayed prediction
+  // should move it by nothing at all, dash included.
+  {
+    const LAG = 4;
+    const hostS = geared(14, 8813, 16, "swordsman");
+    const cliS = geared(14, 8814, 16, "lancer");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+    ];
+    const cfg = delveConfig(2, 0, 2);
+    const h = new Dungeon(hostS, cfg, { seed: 777, role: "host", heroes: pair });
+    const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 777, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    const remote = new NetInput();
+    h.heroes[1]!.input = remote as unknown as AvatarInput;
+    const log = new InputLog();
+    const hostInput = new FakeInput();
+    const cliInput = new FakeInput();
+    const toHost: { due: number; packet: ReturnType<typeof packInput> }[] = [];
+    const toClient: { due: number; snap: Snapshot }[] = [];
+    const corrections: number[] = [];
+    let clientDashed = false;
+    let hostDashed = false;
+    const me = c.localHero.avatar;
+    cliInput.hold("right", true);
+    cliInput.hold("down", true);
+    for (let tick = 0; tick < 300; tick++) {
+      hostInput.beginTick();
+      cliInput.beginTick();
+      if (tick === 120) cliInput.press("dash");
+      if (tick === 180) { cliInput.hold("down", false); cliInput.hold("up", true); }
+      if (tick === 240) { cliInput.hold("right", false); cliInput.hold("left", true); }
+
+      // The client's tick: predict, then send — the order main.ts uses.
+      c.update(DT, cliInput as unknown as AvatarInput);
+      if (me.dashTimer > 0) clientDashed = true;
+      const seq = log.record(cliInput.moveVector(), cliInput.wasPressed("dash"));
+      toHost.push({ due: tick + LAG, packet: packInput(cliInput as unknown as AvatarInput, me.x, me.y, seq) });
+
+      // The host's tick: consume what has arrived, simulate, publish every third tick.
+      while (toHost.length > 0 && toHost[0]!.due <= tick) remote.receive(toHost.shift()!.packet);
+      remote.beginTick();
+      h.update(DT, hostInput as unknown as AvatarInput);
+      if (h.heroes[1]!.avatar.dashTimer > 0) hostDashed = true;
+      h.enemies.length = 0; // movement only — no knockbacks, nothing the client couldn't predict
+      h.drainEvents();
+      if (tick % 3 === 0) toClient.push({ due: tick + LAG, snap: JSON.parse(JSON.stringify(encodeSnapshot(h))) as Snapshot });
+
+      while (toClient.length > 0 && toClient[0]!.due <= tick) {
+        const wasX = me.x;
+        const wasY = me.y;
+        applySnapshot(c, toClient.shift()!.snap, undefined, log);
+        if (tick > 30) corrections.push(Math.hypot(me.x - wasX, me.y - wasY));
+      }
+    }
+    corrections.sort((a, b) => a - b);
+    const median = corrections[Math.floor(corrections.length / 2)] ?? Infinity;
+    const worst = corrections[corrections.length - 1] ?? Infinity;
+    check("a walking client is never tugged back by the host", median < 0.1 && worst < 1.5,
+      `median ${median.toFixed(3)}px, worst ${worst.toFixed(2)}px over ${corrections.length} snapshots at ${LAG * 2} ticks RTT`);
+    check("the client dashed the instant it pressed, and the host agreed", clientDashed && hostDashed);
+    // The uncorrected baseline, for the record: how far ahead a client at this RTT
+    // actually runs, which is what the old blend used to pull it back by a quarter of.
+    const lead = Math.hypot(me.x - h.heroes[1]!.avatar.x, me.y - h.heroes[1]!.avatar.y);
+    console.log(`  the client runs ${lead.toFixed(1)}px ahead of the host at that lag — now replayed, not blended`);
+
+    // B4: a lag spike centres the stick rather than walking somebody into a hazard.
+    const stale = new NetInput();
+    stale.receive({ seq: 1, move: [1, 0], aim: null, press: 0, ap: [10, 20] });
+    stale.beginTick();
+    check("a remote stick holds between packets, and carries its aim point",
+      stale.moveVector().x === 1 && stale.aimPoint()?.x === 10 && stale.aimPoint()?.y === 20);
+    for (let i = 0; i < 6; i++) stale.beginTick();
+    check("…for a few ticks", stale.moveVector().x === 1);
+    for (let i = 0; i < 10; i++) stale.beginTick();
+    check("…but centres itself when the packets stop", stale.moveVector().x === 0);
+    // A dropped packet's buttons survive into the next one rather than vanishing.
+    const flood = new NetInput();
+    for (let i = 1; i <= 9; i++) flood.receive({ seq: i, move: [0, 0], aim: null, press: i === 1 ? 2 : 0 });
+    flood.beginTick();
+    check("a dash in a dropped packet fires late rather than never", flood.wasPressed("dash"));
+  }
 
   // 5. Room codes: four letters, no lookalikes, and paste-and-pray survives.
   const codes = new Set<string>();
