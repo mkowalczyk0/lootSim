@@ -64,6 +64,9 @@ export class HeroRuleState {
   readonly gates = new Map<string, number>();
   /** Last skill element seen, for Spellblade "sword copies last spell". */
   lastSkillElement: Element | null = null;
+  /** Mythic Archetype "the ultimate becomes a state" — which rule, and when the window shuts. */
+  mythicRule: string | null = null;
+  mythicUntil = 0;
 
   /** True and clears the gate if `seconds` have passed since it last fired. */
   gateReady(host: RuleHost, rule: string, seconds: number): boolean {
@@ -184,6 +187,36 @@ function flowStacks(hero: Hero): number {
   return hero.sc.stacksOf("flow");
 }
 
+/**
+ * Mythic Archetype persistent-state (B-6). Each of these ultimates has a "stops being a
+ * cooldown, becomes a state" clause the `mutations` can't express — a window after the
+ * cast during which some rule holds. The window length per rule; the conditional part
+ * (free casts, no-death, an execute floor, a standing aura) is checked in the hooks.
+ * `berserker.mythic.blood_god` is not here — it is health-gated, not timed.
+ */
+const MYTHIC_WINDOW: Record<string, number> = {
+  "juggernaut.mythic.the_keep": 12,
+  "monk.mythic.infinite_motion": 5,
+  "reaper.mythic.the_final_harvest": 9,
+  "stormcaller.mythic.stormlord": 6,
+  "warden.mythic.the_wildwood": 20,
+  "paladin.mythic.saint_of_the_last_stand": 9,
+  "assassin.mythic.the_perfect_contract": 9,
+  "magician.mythic.singularity": 7,
+  "alchemist.mythic.the_reaction": 10,
+  "shaman.mythic.hollow_king": 12,
+};
+
+function mythicOn(st: HeroRuleState, host: RuleHost, rule: string): boolean {
+  return st.mythicRule === rule && host.now() < st.mythicUntil;
+}
+
+/** Damage multiplier that carries `e`'s remaining health through resists + mitigation. */
+function inflateToKill(e: Enemy, projected: number): number {
+  const needed = (e.health + 1) * 1.6;
+  return projected > 0 && projected < needed ? needed / projected : 1;
+}
+
 /** Prime the next hit if nothing stronger is already queued. */
 function prime(
   st: HeroRuleState,
@@ -246,6 +279,14 @@ export function rulesOnCast(host: RuleHost, hero: Hero, ability: Ability): void 
     hero.rt.clearCooldown(ability.id);
   }
 
+  // Mythic "becomes a state" — free casts inside the window.
+  if (mythicOn(st, host, "monk.mythic.infinite_motion") && ability.tags.includes("melee")) {
+    hero.rt.clearCooldown(ability.id);
+  }
+  if (mythicOn(st, host, "warden.mythic.the_wildwood") && ability.tags.includes("nature")) {
+    hero.rt.clearCooldown(ability.id);
+  }
+
   // Bard "Improvise" — a song not used recently grants a personal burst (approximated
   // as a primed strike so it reads without a full buff-status).
   if (has(rules, "bard.vt.improvise") && !st.recentSkills.slice(0, -1).includes(ability.id)) {
@@ -299,16 +340,26 @@ export function rulesOnHit(
   // Execute-threshold keystones (B-2) — finish a wounded, correctly-afflicted target.
   if (ctx.amount && e.maxHealth > 0) {
     const frac = e.health / e.maxHealth;
+    let execute = false;
     for (const x of EXECUTE_RULES) {
       if (!has(rules, x.rule) || frac > x.frac || !x.test(e)) continue;
       if (x.gate && !st.gateReady(host, x.rule, x.gate)) continue;
-      const projected = ctx.amount * damageMult;
-      const needed = (e.health + 1) * 1.6; // headroom for resists + mitigation
-      if (projected < needed) damageMult *= needed / projected;
-      forceCrit = true;
-      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 30, color: hero.player.heroClass.color });
+      execute = true;
       break;
     }
+    // Mythic execute floors — Reaper's basic scythe under half, Assassin's rolling contract.
+    if (mythicOn(st, host, "reaper.mythic.the_final_harvest") && frac <= 0.5) execute = true;
+    if (mythicOn(st, host, "assassin.mythic.the_perfect_contract") && isMarked(e) && frac <= 0.35) execute = true;
+    if (execute) {
+      damageMult *= inflateToKill(e, ctx.amount * damageMult);
+      forceCrit = true;
+      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 30, color: hero.player.heroClass.color });
+    }
+  }
+
+  // Monk "Infinite Motion" — every landed hit keeps the do-not-stop window alive.
+  if (mythicOn(st, host, "monk.mythic.infinite_motion")) {
+    st.mythicUntil = Math.max(st.mythicUntil, host.now() + 2);
   }
 
   // Damage-link keystones (B-1) — a hit on a linked enemy bleeds onto every other one.
@@ -368,6 +419,19 @@ export function rulesOnKill(host: RuleHost, hero: Hero, e: Enemy): void {
   if (has(rules, "berserker.predator.carnage_engine") || has(rules, "berserker.hybrid.butchers_rhythm")) {
     hero.rt.reduceCooldowns(1.5);
   }
+  // Reaper "The Final Harvest" — each kill during the state extends it and pays a Soul.
+  if (mythicOn(st, host, "reaper.mythic.the_final_harvest")) {
+    st.mythicUntil += 1.5;
+    const souls = soulPool(hero);
+    if (souls) souls.value = Math.min(souls.max, souls.value + 1);
+  }
+  // Assassin "The Perfect Contract" — a kill re-locks the Contract onto the next target.
+  if (mythicOn(st, host, "assassin.mythic.the_perfect_contract")) {
+    st.mythicUntil += 1.5;
+    for (const near of host.enemiesAround(e.x, e.y, 420).slice(0, 1)) {
+      host.afflict(hero, near, "mark", { duration: 12 });
+    }
+  }
   host.emit({ kind: "trail", x: a.x, y: a.y, color: hero.player.heroClass.color });
 }
 
@@ -413,6 +477,14 @@ export function rulesOnDamageTaken(host: RuleHost, hero: Hero, amount: number, f
   // to everyone else. The blow from the marked target itself is unaffected.
   if (has(rules, "duelist.bd.one_opponent") && !(fromEnemy && isMarked(fromEnemy))) {
     if (host.enemiesAround(hero.avatar.x, hero.avatar.y, 1200).some(isMarked)) out *= 0.15;
+  }
+  // Mythic "cannot die" states — Juggernaut's walking Citadel, Paladin's Last Light.
+  if (
+    out >= p.health &&
+    (mythicOn(st, host, "juggernaut.mythic.the_keep") ||
+      mythicOn(st, host, "paladin.mythic.saint_of_the_last_stand"))
+  ) {
+    out = Math.max(0, p.health - 1);
   }
   return out;
 }
@@ -493,4 +565,72 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
   auraTick("berserker.marauder.world_eater", () => {
     for (const e of host.enemiesAround(a.x, a.y, 70)) host.hitEnemy(hero, e, p.attackDamage * 0.2, "physical");
   });
+
+  // --- Mythic Archetype persistent-state auras (B-6) -------------------
+  // Stormcaller "Stormlord" — the eye holds as long as the Stormcaller keeps moving.
+  if (mythicOn(st, host, "stormcaller.mythic.stormlord") && Math.hypot(a.vx, a.vy) > 20) {
+    st.mythicUntil = Math.max(st.mythicUntil, host.now() + 1.5);
+  }
+
+  const mythicAura = (rule: string, run: () => void): void => {
+    if (!mythicOn(st, host, rule)) return;
+    const t = (st.auraTimers.get(rule) ?? 0) - dt;
+    if (t <= 0) {
+      st.auraTimers.set(rule, AURA_TICK);
+      run();
+    } else {
+      st.auraTimers.set(rule, t);
+    }
+  };
+
+  // Juggernaut "The Keep" — the walking Citadel's walls grind everything against them.
+  mythicAura("juggernaut.mythic.the_keep", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 135)) {
+      host.hitEnemy(hero, e, p.attackDamage * 0.35, "physical", { fromUltimate: true });
+    }
+  });
+  // Stormcaller "Stormlord" — Rain, Wind and Thunder run through the eye wall at once.
+  mythicAura("stormcaller.mythic.stormlord", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 155)) {
+      host.hitEnemy(hero, e, p.attackDamage * 0.4, "lightning", { fromUltimate: true });
+      host.afflict(hero, e, "shock", { duration: 3 });
+    }
+  });
+  // Magician "Singularity" — Astral Collapse's impact site stays a folded gravity well.
+  mythicAura("magician.mythic.singularity", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 145)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.3, "void", { fromUltimate: true });
+    }
+  });
+  // Alchemist "The Reaction" — every phase's zone stays and reacts, cycling elements.
+  mythicAura("alchemist.mythic.the_reaction", () => {
+    const els: Element[] = ["fire", "poison", "void", "cold"];
+    const el = els[Math.floor(host.now() / AURA_TICK) % els.length]!;
+    for (const e of host.enemiesAround(a.x, a.y, 150)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.3, el, { fromUltimate: true });
+    }
+  });
+  // Shaman "Hollow King" — the spirit realm stays open; withering pours off it.
+  mythicAura("shaman.mythic.hollow_king", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 190)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.25, "void", { fromUltimate: true });
+      host.afflict(hero, e, "withering", { duration: 4 });
+    }
+  });
+}
+
+/**
+ * The hero just cast their class ultimate. If the build carries a Mythic Archetype whose
+ * clause turns the ultimate into a lasting state, open that window. `rulesTick` and the
+ * other hooks keep it alive and read it.
+ */
+export function rulesOnUltimate(host: RuleHost, hero: Hero): void {
+  const st = hero.ruleState;
+  for (const rule of hero.player.build.rules) {
+    const w = MYTHIC_WINDOW[rule];
+    if (w === undefined) continue;
+    st.mythicRule = rule;
+    st.mythicUntil = host.now() + w;
+    host.emit({ kind: "boom", x: hero.avatar.x, y: hero.avatar.y, radius: 90, color: hero.player.heroClass.color });
+  }
 }

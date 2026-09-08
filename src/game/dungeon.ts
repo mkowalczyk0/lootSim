@@ -34,8 +34,8 @@ import {
 } from "../combat/index";
 import { applyRuleFx, runBuildGrants, type BuildRuleContext } from "./abilities";
 import {
-  HeroRuleState, rulesOnAvoid, rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesTick,
-  type RuleHost,
+  HeroRuleState, rulesOnAvoid, rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill,
+  rulesOnUltimate, rulesTick, type RuleHost,
 } from "./rules";
 
 /** Fraction of a ward's pool that also counts as flat resistance while it holds — was
@@ -1559,6 +1559,7 @@ export class Dungeon implements CombatHost, RuleHost {
     });
     this.events.push({ kind: "shake", amount: 14 });
     applyRuleFx(this.ruleContext(hero), ability);
+    rulesOnUltimate(this, hero);
     this.fireTriggers(hero, "onUltimate", a.x, a.y);
   }
 

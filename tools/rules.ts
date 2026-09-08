@@ -14,7 +14,7 @@
 import { Dungeon } from "../src/game/dungeon";
 import type { Enemy } from "../src/game/entities";
 import {
-  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesTick,
+  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesOnUltimate, rulesTick,
 } from "../src/game/rules";
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
@@ -198,6 +198,31 @@ section("execute-threshold keystones");
   healthy.sc.apply("quarry", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
   const rr = rulesOnHit(d, hero, healthy, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 100 });
   check("Cull the Weak leaves a healthy quarry alone", rr.damageMult === 1 && !rr.forceCrit);
+}
+
+// --- B-6: Mythic Archetype "the ultimate becomes a state" ------------
+
+section("Mythic persistent-state windows");
+{
+  const d = dungeonWith("juggernaut", ["Fortress", "Sentinel", "Iron Tyrant"]);
+  const hero = d.localHero;
+  check(
+    "the three required paths unlock juggernaut.mythic.the_keep",
+    hero.player.build.rules.has("juggernaut.mythic.the_keep"),
+    [...hero.player.build.rules].filter((r) => r.includes("mythic")).join(", "),
+  );
+  check("no window before the ultimate", hero.ruleState.mythicUntil === 0);
+  rulesOnUltimate(d, hero);
+  check("casting the ultimate opens the window", hero.ruleState.mythicRule === "juggernaut.mythic.the_keep" && hero.ruleState.mythicUntil > d.now());
+  const out = rulesOnDamageTaken(d, hero, hero.player.health + 999);
+  check("The Keep holds you at 1 HP while the window is open", out === hero.player.health - 1, `${out}`);
+}
+{
+  // A class with no wired Mythic never opens a window.
+  const d = dungeonWith("swordsman", ["Master of Arms"]);
+  const hero = d.localHero;
+  rulesOnUltimate(d, hero);
+  check("a class with no persistent-state Mythic opens no window", hero.ruleState.mythicUntil === 0);
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);

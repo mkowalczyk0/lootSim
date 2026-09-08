@@ -94,8 +94,40 @@ encounter), `warden.hm.apex_predator` (entangled/rooted, ≤25%),
 `corsair.hybrid.bounty_hunter` (bounty, ≤25%), `paladin.hybrid.holy_execution` (judged,
 ≤25%). Tested against a quarried low target vs a healthy one.
 
+**Batch 4** — B-6 Mythic Archetype persistent-state: **+10 rule ids**. New
+`rulesOnUltimate` hook (called from `useUltimate`) opens a per-rule window
+(`MYTHIC_WINDOW`, 5–20 s) on `HeroRuleState.mythicRule` / `mythicUntil`; the other hooks
+read `mythicOn(st, host, rule)`:
+- **Free casts inside the window** (`rulesOnCast`): `monk.mythic.infinite_motion` (melee),
+  `warden.mythic.the_wildwood` (nature).
+- **Execute floor** (`rulesOnHit`): `reaper.mythic.the_final_harvest` (≤50%),
+  `assassin.mythic.the_perfect_contract` (marked, ≤35%) — share the B-2 `inflateToKill`.
+- **Cannot die** (`rulesOnDamageTaken`): `juggernaut.mythic.the_keep`,
+  `paladin.mythic.saint_of_the_last_stand`.
+- **Window upkeep**: `infinite_motion` re-armed by any landed hit; `the_final_harvest`
+  and `the_perfect_contract` extended on kill (+ a Soul / a re-lock); `stormlord`
+  re-armed while moving (`rulesTick`).
+- **Standing auras** (`rulesTick`, `fromUltimate: true` so they can't refill the meter):
+  `the_keep`, `stormcaller.mythic.stormlord`, `magician.mythic.singularity`,
+  `alchemist.mythic.the_reaction` (cycling element), `shaman.mythic.hollow_king`.
+
+`berserker.mythic.blood_god` was already wired (health-gated aura, batch 1).
+
+**Mutation-only Mythics — no engine work, verified against their `mutations`:**
+`lancer.mythic.comet_vanguard`, `swordsman.mythic.sword_saint`,
+`ranger.mythic.winters_quarry`, `duelist.mythic.the_last_word`, `bard.mythic.the_symphony`
+— each ships a `mutate` that already does the mechanical change; the `rule` string is a
+label. **Deferred to B-4** (need the summon layer): `corsair.mythic.dread_admiral`,
+`engineer.mythic.the_foundry`, `trickster.mythic.reality_killer`,
+`necromancer.mythic.soul_legion`, `warlock.mythic.the_reckoning` (mass-Doom detonation).
+
 ## Backlog (ordered)
 
+- **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
+  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`, plus
+  the 5 summon/detonation Mythics above.
+- **B-5 zone keystones** — `alchemist.py.conflagration`, `warden.tk.briarheart`,
+  `warden.vd.worldroot`, `shaman.rt.great_ritual`, `stormcaller.eye.*`.
 - **B-1 remainder** — `warlock.co.total_corruption` (status → permanent), the two Duelist
   bleed-tick rewrites, `corsair.cm.harpooner` (after Hookshot tether lands in B-4).
 - **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form abilities).
