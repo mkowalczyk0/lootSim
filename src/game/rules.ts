@@ -98,6 +98,50 @@ function isChilled(e: Enemy): boolean {
   return e.sc.has("chill") || e.sc.has("freeze");
 }
 
+/** Statuses that are a boon, so they don't count toward "how many debuffs are on it". */
+const BUFF_STATUS = new Set(["hasted", "fortified", "enraged", "regen", "flow", "shielded", "empowered"]);
+/** Distinct hostile statuses currently riding an enemy. */
+function debuffCount(e: Enemy): number {
+  return e.sc.list.filter((s) => !BUFF_STATUS.has(s.id)).length;
+}
+
+/**
+ * Damage-link keystones (B-1): while the struck enemy is an `anchor`, a fraction of the
+ * hit is dealt again to every `linked` enemy in range. Capped per hit so a raid pack
+ * can't turn one swing into a room wipe.
+ */
+interface LinkRule {
+  rule: string;
+  anchor: (e: Enemy) => boolean;
+  linked: (e: Enemy) => boolean;
+  frac: number;
+  radius: number;
+}
+const LINK_RULES: LinkRule[] = [
+  // Shaman "Shared Suffering" — curse damage on one cursed enemy bleeds onto the rest.
+  { rule: "shaman.wd.shared_suffering", anchor: isCursed, linked: isCursed, frac: 0.3, radius: 220 },
+  // Shaman "Hexmaster" — enemies at (near-)max Withering are wired together.
+  {
+    rule: "shaman.wd.hexmaster",
+    anchor: (e) => e.sc.stacksOf("withering") >= 5,
+    linked: (e) => e.sc.stacksOf("withering") >= 5,
+    frac: 0.5,
+    radius: 320,
+  },
+  // Shaman "Master Hex" — three debuffs on one enemy links every debuffed enemy in the room.
+  {
+    rule: "shaman.hybrid.master_hex",
+    anchor: (e) => debuffCount(e) >= 3,
+    linked: (e) => debuffCount(e) >= 1,
+    frac: 0.35,
+    radius: 320,
+  },
+];
+const LINK_SPREAD_CAP = 6;
+
+/** Hard crowd control "Adamant Form" locks out while Flow is high. */
+const ADAMANT_CC = ["stunned", "rooted", "freeze", "silenced", "taunted"] as const;
+
 /** The class's own Souls-like pool (Reaper's is `reaped_souls`, not `souls`). */
 function soulPool(hero: Hero) {
   return hero.resources.get("souls") ?? hero.resources.get("reaped_souls") ?? hero.resources.get("harvested_souls");
@@ -154,7 +198,19 @@ export function rulesOnCast(host: RuleHost, hero: Hero, ability: Ability): void 
   ) {
     prime(st, { crit: true, damageMult: 1.8, reason: "technique" });
     st.distinctStreak = 0;
+    // Duelist "Perfect Rhythm" — every third distinct skill also comes off cooldown free.
+    if (has(rules, "duelist.tp.perfect_rhythm")) hero.rt.clearCooldown(ability.id);
     host.emit({ kind: "pickup", x: hero.avatar.x, y: hero.avatar.y - 30, label: "primed", color: hero.player.heroClass.color });
+  }
+
+  // Monk "Infinite Sequence" — at 8 Flow, a melee skill you did not just use is free.
+  if (
+    has(rules, "monk.cm.infinite_sequence") &&
+    flowStacks(hero) >= 8 &&
+    ability.tags.includes("melee") &&
+    !st.recentSkills.slice(0, -1).includes(ability.id)
+  ) {
+    hero.rt.clearCooldown(ability.id);
   }
 
   // Bard "Improvise" — a song not used recently grants a personal burst (approximated
@@ -173,7 +229,7 @@ export function rulesOnHit(
   host: RuleHost,
   hero: Hero,
   e: Enemy,
-  ctx: { isBasic: boolean; isCrit: boolean; movedRecently: boolean; outOfReach: boolean },
+  ctx: { isBasic: boolean; isCrit: boolean; movedRecently: boolean; outOfReach: boolean; amount?: number },
 ): { damageMult: number; forceCrit: boolean } {
   const st = hero.ruleState;
   const rules = hero.player.build.rules;
@@ -205,6 +261,21 @@ export function rulesOnHit(
   // Corsair "Six Shooter" — every sixth pistol shot crits and reloads.
   if (!ctx.isBasic && has(rules, "corsair.gs.six_shooter") && ctx.isCrit === false) {
     if (st.bump("corsair.gs.six_shooter") % 6 === 0) forceCrit = true;
+  }
+
+  // Damage-link keystones (B-1) — a hit on a linked enemy bleeds onto every other one.
+  const base = ctx.amount ?? 0;
+  if (base > 0) {
+    for (const link of LINK_RULES) {
+      if (!has(rules, link.rule) || !link.anchor(e)) continue;
+      const bleed = base * damageMult * link.frac;
+      let spread = 0;
+      for (const other of host.enemiesAround(e.x, e.y, link.radius)) {
+        if (other === e || other.health <= 0 || !link.linked(other)) continue;
+        host.hitEnemy(hero, other, bleed, "void");
+        if (++spread >= LINK_SPREAD_CAP) break;
+      }
+    }
   }
 
   return { damageMult, forceCrit };
@@ -281,6 +352,15 @@ export function rulesOnDamageTaken(host: RuleHost, hero: Hero, amount: number, f
       host.emit({ kind: "nova", x: hero.avatar.x, y: hero.avatar.y, radius: 60 });
     }
   }
+  // Reaper "Deathless Form" — a downing hit is spent as 8 Souls and a second of phase-out.
+  if (has(rules, "reaper.wr.deathless_form") && souls && out >= p.health && souls.value >= 8) {
+    if (st.gateReady(host, "reaper.wr.deathless_form", 6)) {
+      souls.value -= 8;
+      out = 0;
+      hero.avatar.invulnTimer = Math.max(hero.avatar.invulnTimer, 1);
+      host.emit({ kind: "nova", x: hero.avatar.x, y: hero.avatar.y, radius: 70 });
+    }
+  }
   // Duelist "One Opponent" — while a Final Lesson (marked) target lives, almost immune
   // to everyone else. The blow from the marked target itself is unaffected.
   if (has(rules, "duelist.bd.one_opponent") && !(fromEnemy && isMarked(fromEnemy))) {
@@ -313,6 +393,16 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
   const st = hero.ruleState;
   const a = hero.avatar;
   const p = hero.player;
+
+  // Monk "Adamant Form" (B-3) — while Flow is at least half, hard CC cannot land, and
+  // anything already on you is shrugged off. Cleared the moment Flow drops back under.
+  if (has(rules, "monk.ib.adamant_form")) {
+    const locked = flowStacks(hero) >= 4;
+    for (const id of ADAMANT_CC) {
+      if (locked) hero.sc.grantImmunity(id);
+      else hero.sc.clearImmunity(id);
+    }
+  }
 
   const auraTick = (rule: string, run: () => void): void => {
     if (!has(rules, rule)) return;

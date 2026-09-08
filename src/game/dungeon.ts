@@ -1409,6 +1409,7 @@ export class Dungeon implements CombatHost, RuleHost {
       isCrit: false,
       movedRecently: Math.hypot(hero.avatar.vx, hero.avatar.vy) > 24,
       outOfReach: dist(hero.avatar.x, hero.avatar.y, e.x, e.y) > 96,
+      amount,
     });
     // Roll unconditionally so a rule-forced crit never shifts the RNG stream.
     const crit = this.rng.chance(p.critChance) || rr.forceCrit;
@@ -2995,6 +2996,7 @@ export class Dungeon implements CombatHost, RuleHost {
           isCrit: !!packet.crit,
           movedRecently: Math.hypot(source.avatar.vx, source.avatar.vy) > 24,
           outOfReach: dist(source.avatar.x, source.avatar.y, enemy.x, enemy.y) > 96,
+          amount: packet.amount,
         });
         amount *= rr.damageMult;
         crit = crit || rr.forceCrit;
