@@ -9,7 +9,7 @@ import {
 } from "../data/cosmetics";
 import {
   CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, craftBulkCost, craftEssenceCost,
-  type CraftCategory,
+  reforgeCoinCost, type CraftCategory,
 } from "../data/crafting";
 import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
@@ -36,6 +36,8 @@ import {
   ALL_CLASSES, CLASS_BY_ID, classMatrixRow,
   categoryGloss, describeEffects, describeNode, describeNodeLong, pathPointsByName,
   unlockProgress,
+  UNIVERSAL_PATH_BLURBS, UNIVERSAL_PATH_COUNT, UNIVERSAL_PATH_DEPTH, UNIVERSAL_PATH_NAMES,
+  UNIVERSAL_TREE, UNIVERSAL_UNLOCKS, isCrossLinked,
   type DescribeCtx, type PilotClass, type PathUnlockDef, type TreeNodeV2,
 } from "../progression/index";
 import type { Ability } from "../combat/ability";
@@ -43,6 +45,12 @@ import type { Ability } from "../combat/ability";
 /** Tree shape after the class refactor: five behaviour paths, five rows deep. */
 const TREE_PATH_COUNT = 5;
 const TREE_PATH_DEPTH = 5;
+/**
+ * The universal tree's accent. Every class tree is tinted with the class's own colour;
+ * this one belongs to no class, so it gets one fixed colour of its own — which is also
+ * the point being made on screen.
+ */
+const UNIVERSAL_ACCENT = "#7dd3fc";
 import { cleanPlayerName } from "../data/settings";
 import type { Party } from "../net/party";
 import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
@@ -60,7 +68,8 @@ import { pixelImage, pixelImageFit } from "./pixelimage";
  * the Quartermaster's screen, browsed the old way with [I]/[O].
  */
 const CYCLE_TABS = [
-  "Chests", "Stash", "Hero", "Skills", "Tree", "Path", "Style", "Capsules", "Codex", "Records", "Settings",
+  "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
+  "Records", "Settings",
 ] as const;
 const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party"] as const;
 type StationTab = (typeof STATION_TABS)[number];
@@ -112,23 +121,27 @@ function k(settings: Settings, action: RebindableAction): string {
  * bindings rather than hardcoded, since a rebind has to move this legend too, the same
  * rule `combatHints` follows for the dungeon HUD.
  */
-function tabHelp(tab: Tab, s: Settings): string {
+function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
   const e = k(s, "confirm");
   const q = k(s, "cancel");
   const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
+  const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
-    case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
+    case "Craft": return forgeMode === "reforge"
+      ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to crafting`
+      : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
     case "Hero": return `${sel} / ${adj} pick a slot · ${e} unequip`;
     case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
+    case "Universal": return `${sel} walk a path · ${adj} switch path · ${e} spend a point · ${q} refund it all — shared by every class`;
     case "Path": return `${sel} choose a class · ${e} commit to it`;
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
@@ -161,10 +174,17 @@ export class TownUI {
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
+  /** The Forge is two screens sharing a station: craft something new, or reforge
+   *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
+   *  on a station tab. */
+  private forgeMode: "craft" | "reforge" = "craft";
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
+  /** The same, for the universal tree's six paths. Its own field, since the two screens
+   *  are browsed independently and switching tabs shouldn't move the other one. */
+  private universalBranch = 0;
   private toast: { text: string; color: string; until: number } | null = null;
   /**
    * Wiping the save is the one irreversible thing in the game, so it takes two presses
@@ -212,6 +232,13 @@ export class TownUI {
       const catEl = target.closest<HTMLElement>("[data-category]");
       if (catEl) {
         this.chestCategory = Number(catEl.dataset.category);
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const forgeModeEl = target.closest<HTMLElement>("[data-forge-mode]");
+      if (forgeModeEl) {
+        this.forgeMode = forgeModeEl.dataset.forgeMode as "craft" | "reforge";
         this.cursor = 0;
         this.render();
         return;
@@ -332,7 +359,15 @@ export class TownUI {
 
     // Only the Quartermaster's own tabs cycle with [I]/[O] — a station tab (Dive, a
     // rift, the star map, the forge) is a destination you walked to, not a row you
-    // browse past, so these are simply inert while one of them is open.
+    // browse past, so these are otherwise inert while one of them is open. The Forge is
+    // the one exception: it's two screens sharing a station, and [I]/[O] flip between
+    // them since there's no CYCLE_TABS row to browse past there anyway.
+    if (this.tab === "Craft" && (input.wasPressed("tabNext") || input.wasPressed("tabPrev"))) {
+      this.forgeMode = this.forgeMode === "craft" ? "reforge" : "craft";
+      this.cursor = 0;
+      this.resetArmed = false;
+      dirty = true;
+    }
     if (input.wasPressed("tabNext")) {
       const i = (CYCLE_TABS as readonly Tab[]).indexOf(this.tab);
       if (i >= 0) {
@@ -354,12 +389,16 @@ export class TownUI {
 
     const count = this.rowCount();
 
-    // Stash and Hero are real 2-D grids: W/A/S/D walk them in both axes and A/D are
-    // spent on nothing but movement. Every other tab keeps the flat-list model —
-    // up/down walk the cursor, left/right adjust whatever that tab adjusts.
-    if (this.tab === "Stash" || this.tab === "Hero") {
+    // Stash, Hero and Reforge (Craft's other screen) are real 2-D grids: W/A/S/D walk
+    // them in both axes and A/D are spent on nothing but movement. Every other tab keeps
+    // the flat-list model — up/down walk the cursor, left/right adjust whatever that tab
+    // adjusts.
+    const reforgeGrid = this.tab === "Craft" && this.forgeMode === "reforge";
+    if (this.tab === "Stash" || this.tab === "Hero" || reforgeGrid) {
       const walk = (dx: number, dy: number) => {
-        const moved = this.tab === "Stash" ? this.navStash(dx, dy) : this.navHero(dx, dy);
+        const moved = this.tab === "Stash" ? this.navStash(dx, dy)
+          : reforgeGrid ? this.navReforge(dx, dy)
+          : this.navHero(dx, dy);
         if (moved) { this.resetArmed = false; dirty = true; }
       };
       if (input.wasPressedOrRepeated("up")) walk(0, -1);
@@ -424,13 +463,17 @@ export class TownUI {
       case "Dive": return this.state.maxUnlockedDepth;
       case "Rifts": return this.state.riftTiers[this.riftMode];
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
-      case "Craft": return CRAFTABLE_RARITIES.length;
+      case "Craft": return this.forgeMode === "reforge"
+        ? this.reforgeCandidates().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
       case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length;
       case "Skills": return SKILL_SLOTS;
       case "Tree": return TREE_PATH_DEPTH;
+      // Row 0 is the shared root, which sits above the columns and is reachable by
+      // walking up out of any of them — exactly what the tree's DAG says it is.
+      case "Universal": return UNIVERSAL_PATH_DEPTH + 1;
       case "Path": return CLASS_IDS.length;
       case "Style": return STYLE_ROWS.length;
       case "Capsules": return CAPSULE_TIERS.length;
@@ -471,7 +514,7 @@ export class TownUI {
       this.cursor = 0;
       return true;
     }
-    if (this.tab === "Craft") {
+    if (this.tab === "Craft" && this.forgeMode === "craft") {
       const options: (Element | null)[] = [null, ...MAGIC_ELEMENTS];
       const i = options.indexOf(this.craftEssence);
       this.craftEssence = options[(i + dir + options.length) % options.length] ?? null;
@@ -483,6 +526,10 @@ export class TownUI {
     }
     if (this.tab === "Tree") {
       this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_PATH_COUNT - 1);
+      return true;
+    }
+    if (this.tab === "Universal") {
+      this.universalBranch = clamp(this.universalBranch + dir, 0, UNIVERSAL_PATH_COUNT - 1);
       return true;
     }
     if (this.tab === "Settings") {
@@ -518,8 +565,10 @@ export class TownUI {
     return true;
   }
 
-  /** How many columns the stash card grid is actually laid out in right now. The grid
-   *  is `auto-fill`, so this is read back off the DOM rather than assumed. */
+  /** How many columns the currently-shown card grid is actually laid out in right now
+   *  (Stash's or Reforge's — they share the `.stash-grid` class and only one is ever on
+   *  screen at a time). The grid is `auto-fill`, so this is read back off the DOM rather
+   *  than assumed. */
   private stashColumns(): number {
     const grid = this.root.querySelector<HTMLElement>(".stash-grid");
     if (grid) {
@@ -547,6 +596,24 @@ export class TownUI {
     let next = this.cursor;
     if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
     else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /**
+   * 2-D movement across the Reforge card grid — the same column-stepping Stash uses,
+   * minus the rarity-filter bar Reforge doesn't have, so "up" from the top row simply
+   * stays put instead of walking onto a bar that isn't there.
+   */
+  private navReforge(dx: number, dy: number): boolean {
+    const n = this.reforgeCandidates().length;
+    if (n === 0) return false;
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0 && this.cursor >= cols) next = this.cursor - cols;
     else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
     if (next === this.cursor) return false;
     this.cursor = next;
@@ -732,6 +799,17 @@ export class TownUI {
         break;
       }
       case "Craft": {
+        if (this.forgeMode === "reforge") {
+          const item = this.reforgeCandidates()[this.cursor];
+          if (!item) break;
+          const reforged = this.state.reforgeItem(item.id);
+          if (reforged) {
+            this.notify(`Reforged: ${reforged.name}`, RARITY_COLORS[reforged.rarity]);
+          } else {
+            this.notify("Not enough coins or materials for that.", "#ef4444");
+          }
+          break;
+        }
         const rarity = CRAFTABLE_RARITIES[this.cursor]!;
         const item = this.state.craftItem(this.craftCategory, rarity, this.craftEssence);
         if (item) {
@@ -825,6 +903,36 @@ export class TownUI {
           } else {
             this.notify("Take the node above it first.", "#ef4444");
           }
+        }
+        break;
+      }
+      case "Universal": {
+        const p = this.state.player;
+        const node = this.universalNodeAt(this.universalBranch, this.cursor);
+        if (!node) break;
+        if (p.universalAllocated.includes(node.id)) {
+          this.notify("Already yours. Points don't come back one at a time.", "#9aa4b2");
+          break;
+        }
+        const before = unlockIds(p.universalBuild);
+        if (p.allocateUniversal(node, this.state.universalPoints)) {
+          this.notify(`${node.name} taken`, UNIVERSAL_ACCENT);
+          for (const u of p.universalBuild.hybrids) {
+            if (!before.has(u.id)) this.announce(`${u.name} unlocked.`, UNIVERSAL_ACCENT);
+          }
+          for (const u of p.universalBuild.archetypes) {
+            if (!before.has(u.id)) this.announce(`${u.name} — every basic improved at once.`, "#ff1493");
+          }
+        } else if (this.state.universalPoints < node.cost) {
+          this.notify(
+            `Needs ${node.cost} universal point${node.cost > 1 ? "s" : ""}. Go deeper to earn ${node.cost > 1 ? "them" : "one"}.`,
+            "#ef4444",
+          );
+        } else {
+          const need = node.requires
+            ? UNIVERSAL_TREE.find((n) => n.id === node.requires)
+            : undefined;
+          this.notify(need ? `Take ${need.name} first.` : "Take the node above it first.", "#ef4444");
         }
         break;
       }
@@ -955,6 +1063,7 @@ export class TownUI {
         break;
       }
       case "Craft": {
+        if (this.forgeMode === "reforge") break;
         if (this.craftEssence === null) {
           this.notify("No essence selected.", "#9aa4b2");
           break;
@@ -1012,6 +1121,16 @@ export class TownUI {
         this.notify(`Refunded ${spent} nodes. Changing your mind is free.`, "#7dd3fc");
         break;
       }
+      case "Universal": {
+        const spent = this.state.player.universalAllocated.length;
+        if (spent === 0) {
+          this.notify("Nothing to refund — you haven't spent a universal point yet.", "#9aa4b2");
+          break;
+        }
+        this.state.player.respecUniversal();
+        this.notify(`Refunded ${spent} nodes. This class only — your others keep theirs.`, "#7dd3fc");
+        break;
+      }
       default:
         break;
     }
@@ -1024,7 +1143,7 @@ export class TownUI {
    * left/right drive the carousel instead.
    */
   private tertiary(): void {
-    if (this.tab === "Craft") {
+    if (this.tab === "Craft" && this.forgeMode === "craft") {
       const i = CRAFT_CATEGORIES.indexOf(this.craftCategory);
       this.craftCategory = CRAFT_CATEGORIES[(i + 1) % CRAFT_CATEGORIES.length]!;
       this.cursor = 0;
@@ -1098,7 +1217,7 @@ export class TownUI {
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${tabHelp(this.tab, this.state.settings)}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
@@ -1122,6 +1241,7 @@ export class TownUI {
       case "Hero": return this.renderHero();
       case "Skills": return this.renderSkills();
       case "Tree": return this.renderTree();
+      case "Universal": return this.renderUniversal();
       case "Path": return this.renderPath();
       case "Style": return this.renderStyle();
       case "Capsules": return this.renderCapsules();
@@ -1523,12 +1643,23 @@ export class TownUI {
       </aside>`;
   }
 
+  /** The switcher pill pair shared by both Forge screens — Craft and Reforge. */
+  private renderForgeSwitcher(): string {
+    return `<div class="chest-cats">
+        <div class="chest-cat ${this.forgeMode === "craft" ? "on" : ""}" data-forge-mode="craft">Craft</div>
+        <div class="chest-cat ${this.forgeMode === "reforge" ? "on" : ""}" data-forge-mode="reforge">Reforge</div>
+      </div>`;
+  }
+
   /**
    * The forge: pick a rarity, a category and (optionally) an essence, and see the cost
    * before spending anything — a chest never shows you that in advance, which is the
-   * whole difference between gambling and crafting.
+   * whole difference between gambling and crafting. tabPrev/tabNext flip to Reforge,
+   * the other half of this station.
    */
   private renderCraft(): string {
+    if (this.forgeMode === "reforge") return this.renderReforge();
+
     const category = this.craftCategory;
     const essence = this.craftEssence;
     const rows = CRAFTABLE_RARITIES.map((rarity, i) => {
@@ -1551,7 +1682,7 @@ export class TownUI {
       `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td><td>${formatNumber(this.state.materials[e])}</td></tr>`,
     ).join("");
 
-    return `<div class="list">${rows}</div>
+    return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="list">${rows}</div></div>
       <aside class="side">
         <h3>Craft: <b>${CRAFT_CATEGORY_LABELS[category]}</b>
           <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} cycle</span></h3>
@@ -1568,6 +1699,71 @@ export class TownUI {
         <table class="cmp">${bag}</table>
         <p class="muted">Dropped by monsters and mined from resource nodes — planets
         only. The dive and the rifts never pay in these.</p>
+      </aside>`;
+  }
+
+  /** Every item the active character could reforge: worn first, then the stash. */
+  private reforgeCandidates(): Item[] {
+    const equipment = this.state.player.equipment;
+    const worn = EQUIP_SLOTS.map((slot) => equipment[slot]).filter((it): it is Item => it !== null);
+    return [...worn, ...this.state.inventory];
+  }
+
+  /**
+   * Reforge: the other half of the Forge. Same card grid Stash uses, so a piece of gear
+   * still reads the same way it does everywhere else — clicking (or confirming) a card
+   * rerolls its affixes on the spot, at the cost already shown on it, exactly like
+   * clicking a rarity row crafts one over in Craft mode.
+   */
+  private renderReforge(): string {
+    const items = this.reforgeCandidates();
+    if (items.length === 0) {
+      return `<div class="forge-pane">${this.renderForgeSwitcher()}
+          <div class="stash-grid empty"><div class="stash-none">Nothing to reforge yet — equip or find something first.</div></div>
+        </div>
+        <aside class="side"><p class="muted">Reforging rerolls an item's affixes for coins
+        and Iron Scrap, climbing hard with rarity. It never touches the base stats, a
+        granted skill or a trigger.</p></aside>`;
+    }
+
+    const wornIds = new Set(
+      EQUIP_SLOTS.map((slot) => this.state.player.equipment[slot]?.id).filter((id): id is string => !!id),
+    );
+    const cards = items.map((it, i) => {
+      const coinCost = reforgeCoinCost(it.rarity);
+      const matCost = craftBulkCost(it.rarity);
+      const afford = this.state.coins >= coinCost && this.state.materials.physical >= matCost;
+      const icon = pixelImageFit(itemIcon(it.type, it.rarity), 64, `item:${it.type}:${it.rarity}`);
+      return `
+        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+             style="--r:${RARITY_COLORS[it.rarity]}">
+          ${wornIds.has(it.id) ? `<span class="ic-mark" title="equipped">E</span>` : ""}
+          ${afford ? "" : `<span class="ic-lock">${formatNumber(coinCost)}c</span>`}
+          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
+          <span class="ic-slot">${it.slot}</span>
+        </div>`;
+    }).join("");
+
+    const sel = items[this.cursor];
+    const coinCost = sel ? reforgeCoinCost(sel.rarity) : 0;
+    const matCost = sel ? craftBulkCost(sel.rarity) : 0;
+    const afford = sel ? this.state.coins >= coinCost && this.state.materials.physical >= matCost : false;
+
+    return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="stash-grid">${cards}</div></div>
+      <aside class="side">
+        ${sel ? this.renderCompare(sel) : `<p class="muted">Pick something to reforge.</p>`}
+        ${sel ? `
+          <h3>Cost</h3>
+          <table class="cmp">
+            <tr><td>Coins</td><td class="${this.state.coins >= coinCost ? "" : "warn"}">${formatNumber(coinCost)}</td></tr>
+            <tr><td>${escapeHtml(MATERIALS.physical.name)}</td>
+              <td class="${this.state.materials.physical >= matCost ? "" : "warn"}">${formatNumber(matCost)}</td></tr>
+          </table>
+          <p class="muted">${k(this.state.settings, "confirm")}, or click the card, to reforge —
+          rerolls every affix, keeps the base stats, the grant and the trigger.</p>
+          ${afford ? "" : `<p class="danger">Not enough coins or ${escapeHtml(MATERIALS.physical.name)}.</p>`}
+        ` : ""}
       </aside>`;
   }
 
@@ -2089,6 +2285,129 @@ export class TownUI {
         <p class="muted">
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund the whole tree</span>
           free, any time. Nobody is going to charge you for changing your mind.</p>
+      </aside>`;
+  }
+
+  /**
+   * The node at a grid position on the universal screen. Row 0 is the shared root for
+   * every column, so walking up out of any path lands on it — which is exactly the
+   * prerequisite the tree data describes, rather than a UI convenience.
+   */
+  private universalNodeAt(branch: number, row: number): TreeNodeV2 | null {
+    return row === 0
+      ? treeNodeAt(UNIVERSAL_TREE, -1, 0)
+      : treeNodeAt(UNIVERSAL_TREE, branch, row - 1);
+  }
+
+  /**
+   * The universal tree — UAT §18. Six paths off one shared root, walked the same way the
+   * class tree is, and deliberately looking like it: the two screens are siblings, and a
+   * player who has learned one shouldn't have to learn the other.
+   *
+   * What it says differently is whose progress it is. The class tree's header counts the
+   * points *this character* levelled into; this one counts the pool the **account**
+   * earned, spent per class — so the copy has to make clear both that an alt inherits the
+   * points and that the spending is this character's own.
+   */
+  private renderUniversal(): string {
+    const p = this.state.player;
+    const left = this.state.universalPoints;
+    const columns: string[] = [];
+
+    for (let b = 0; b < UNIVERSAL_PATH_COUNT; b++) {
+      const nodes: string[] = [];
+      for (let row = 1; row <= UNIVERSAL_PATH_DEPTH; row++) {
+        const node = this.universalNodeAt(b, row);
+        if (!node) continue;
+        const taken = p.universalAllocated.includes(node.id);
+        const open = p.canAllocateUniversal(node, left);
+        const here = b === this.universalBranch && row === this.cursor;
+        const state = taken ? "taken" : open ? "open" : "locked";
+        nodes.push(`
+          <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${isCrossLinked(node) ? "crosslink" : ""} ${here ? "on" : ""}"
+               style="--accent:${UNIVERSAL_ACCENT}">
+            <span class="tree-name">${escapeHtml(node.name)}</span>
+            <span class="tree-mods">${escapeHtml(describeNode(node))}</span>
+          </div>`);
+      }
+      columns.push(`
+        <div class="tree-col ${b === this.universalBranch ? "on" : ""}">
+          <h4>${escapeHtml(UNIVERSAL_PATH_NAMES[b] ?? "")}</h4>
+          ${nodes.join("")}
+        </div>`);
+    }
+
+    const root = this.universalNodeAt(0, 0);
+    const rootTaken = root ? p.universalAllocated.includes(root.id) : false;
+    const rootHere = this.cursor === 0;
+    const rootCell = root
+      ? `<div class="tree-root">
+           <div class="tree-node ${rootTaken ? "taken" : p.canAllocateUniversal(root, left) ? "open" : "locked"} ${rootHere ? "on" : ""}"
+                style="--accent:${UNIVERSAL_ACCENT}">
+             <span class="tree-name">${escapeHtml(root.name)}</span>
+             <span class="tree-mods">${escapeHtml(describeNode(root))} · every path starts here</span>
+           </div>
+         </div>`
+      : "";
+
+    const sel = this.universalNodeAt(this.universalBranch, this.cursor);
+    const selTaken = sel ? p.universalAllocated.includes(sel.id) : false;
+    const selLines = sel ? describeNodeLong(sel) : [];
+    const prereq = sel?.requires
+      ? UNIVERSAL_TREE.find((n) => n.id === sel.requires)
+      : undefined;
+    const crossed = sel ? isCrossLinked(sel) : false;
+
+    const points = pathPointsByName(UNIVERSAL_TREE, p.universalAllocated);
+    const unlockRow = (u: PathUnlockDef): string => {
+      const prog = unlockProgress(u, points);
+      const tint = u.tier === "mythic" ? "#ff1493" : UNIVERSAL_ACCENT;
+      const bits = prog.parts
+        .map((pt) => `<span class="${pt.ok ? "up" : "muted"}">${escapeHtml(pt.path)} ${pt.have}/${pt.need}</span>`)
+        .join(" · ");
+      return `<li class="${prog.met ? "up" : ""}">
+        <b style="color:${tint}">${escapeHtml(u.name)}</b>${prog.met ? " — unlocked" : ""}
+        <em>${escapeHtml(u.description)}</em>
+        <span class="muted">${bits}</span></li>`;
+    };
+    const hybridRows = UNIVERSAL_UNLOCKS.filter((u) => u.tier === "hybrid").map(unlockRow).join("");
+    const archRows = UNIVERSAL_UNLOCKS.filter((u) => u.tier === "mythic").map(unlockRow).join("");
+    const blurb = UNIVERSAL_PATH_BLURBS[this.universalBranch];
+
+    return `<div class="list"><div class="tree universal">${rootCell}${columns.join("")}</div></div>
+      <aside class="side">
+        <h3 style="color:${UNIVERSAL_ACCENT}">Universal · ${left} of ${this.state.universalPool} points</h3>
+        <p class="muted">Every class shares this tree. The points are the <b>account's</b> —
+        earned by how deep anyone has ever been, so a brand new alt starts with all
+        ${this.state.universalPool} of them — but how they're spent is
+        ${escapeHtml(p.heroClass.name)}'s own choice, and refunding here leaves your other
+        characters alone.</p>
+        <p class="muted">Where the class tree asks how your build works, this one asks how
+        your character improves. ${p.universalAllocated.length} nodes lit.</p>
+        ${sel ? `
+          <h3>${escapeHtml(sel.name)}</h3>
+          <p class="muted">${escapeHtml(categoryGloss(sel.category))}${sel.cost > 1 ? " · costs 2 points" : ""}</p>
+          ${selLines.length
+            ? `<ul class="pulls">${selLines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
+            : `<p class="muted">${escapeHtml(sel.blurb)}</p>`}
+          ${crossed && prereq
+            ? `<p class="muted">Reached from <b>${escapeHtml(prereq.name)}</b> in
+               ${escapeHtml(prereq.pathName)} — this path's lower half is only open to
+               someone who has been down the one next to it.</p>`
+            : ""}
+          <p class="${selTaken ? "up" : p.canAllocateUniversal(sel, left) ? "" : "muted"}">
+            ${selTaken ? "Lit."
+              : p.canAllocateUniversal(sel, left) ? `Press ${k(this.state.settings, "confirm")} to take it.`
+              : prereq && !p.universalAllocated.includes(prereq.id) ? `Take ${escapeHtml(prereq.name)} first.`
+              : `Needs ${sel.cost} point${sel.cost > 1 ? "s" : ""}. The pool grows as the account goes deeper.`}</p>
+        ` : ""}
+        ${blurb ? `<h3>${escapeHtml(UNIVERSAL_PATH_NAMES[this.universalBranch] ?? "")}</h3><p class="muted">${escapeHtml(blurb)}</p>` : ""}
+        ${hybridRows ? `<h3>Cross-path payoffs</h3><ul class="pulls">${hybridRows}</ul>` : ""}
+        ${archRows ? `<h3>Paragon</h3><ul class="pulls">${archRows}</ul>` : ""}
+        <p class="muted">
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund this class's universal tree</span>
+          free, any time — and every keystone here costs you something, so changing your
+          mind is part of the design.</p>
       </aside>`;
   }
 

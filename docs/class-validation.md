@@ -1076,6 +1076,16 @@ is canonical — not a one-line edit from me.
 - **Two `MoveRequest` fields the host ignores** — `leaveAnchor` is accepted and dropped by
   `Dungeon.moveActor`, so a "dash out and come back" follow-up dashes again instead of
   returning. `temporalAnchor` targeting probably wants the same stored position.
+- **`ultimateRate` is a dead modifier, and gear rolls it.** It is declared in
+  `data/mods.ts`, priced in `MOD_SCORE`, and rolled as a real affix (`of Ascent`,
+  `minTier: 2`, so epic and up) — but **nothing in the simulation reads it.** Ultimate
+  meters fill purely from `ResourceSpec.generation` rules, and no code path multiplies
+  that gain. So an epic-or-better item can roll "+x% ultimate charge rate" and do
+  literally nothing, which is worse than a balance bug: the player is paying an affix slot
+  for it. Either plumb it into `combat/resources.ts` generation (multiply the credited
+  amount) or pull it from `MOD_POOL`. Found while auditing which knobs the universal tree
+  could honestly promise (UAT §18) — deliberately *not* fixed there, since it's a live
+  loot bug rather than anything to do with that tree. See `docs/universal-tree.md`.
 - **Four event types are declared and never broadcast** — `summonDeath`, `corpseCreated`,
   `enterCombat`, `leaveCombat`, in both `ResourceEventType` and `triggers.ts`. Two authored
   grants key on `summonDeath` and are dead because of it. The Cluster 8 assertion covers

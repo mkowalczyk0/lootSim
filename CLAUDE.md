@@ -21,11 +21,12 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
-                  # currently check+vocab+prog+classes+roster+rules+deadpaths+smoke
+                  # currently check+vocab+prog+classes+roster+rules+universal+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
 npm run roster    # full class-roster + anti-overlap audit (tools/roster.ts)
+npm run universal # sanity + balance checks on the Universal Skill Tree (tools/universal.ts)
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
@@ -358,6 +359,28 @@ moment, not a rotation filler.
 is unlocked by levelling, nothing is bought. The one exception is a granted skill: an
 epic-or-better item can hand you anything, and breaking the class rule is exactly what
 makes that drop worth wearing.
+
+### The Universal Skill Tree: the basics, not the build
+
+`src/progression/universal.ts`. A second tree every class shares alongside its own
+five-path class tree — the class tree answers "how does my class/build work?"
+(behaviour: mutations, rules, resources); this one answers "how does my character
+fundamentally improve?" (health, defense, move speed, cooldown rate, pickup radius,
+coin/gem find, and the like). It grants no abilities and flips no rules on purpose —
+a universal node must never be the reason a class plays differently.
+
+It's a DAG rooted at one shared node, not five independent columns: six paths (Vitality,
+Swiftness, Might, Attunement, Warding, Avarice), a few of which cross-link into a
+neighboring path partway down, and every keystone carries a real downside (a wall of
+health that moves slower, a glass cannon that gives up defense) so the tree stays a set
+of tradeoffs rather than a shopping list. The point *pool* is account-wide and derived
+from record depth (`universalPointsFor`, capped at `UNIVERSAL_POINT_CAP` so a deep enough
+account can never afford the whole tree), but the *allocation* is per-class
+(`Player.universalAllocated`) — that split is what lets an alt feel like it inherited the
+account's progress while still letting a caster and a melee spend the same pool
+differently, and it's also why co-op didn't need a new wire field (a character's
+allocation already travels with the rest of `Player` on the snapshot). See
+`docs/universal-tree.md`.
 
 ### Bosses are raid encounters, not fat monsters
 

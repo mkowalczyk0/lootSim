@@ -66,8 +66,17 @@ const KEY = "lootsim.save.v2";
  * shows a one-time "your build was reset — N points to spend" notice
  * (`GameState.treePointsRefunded`). An old `item.grant` (a legacy `SkillId`) is dropped
  * on load by `normalizeItem`, since the ability ids it named no longer exist.
+ *
+ * Version 15 added the Universal Skill Tree (UAT §18) — a second, account-wide tree every
+ * class shares. It needed one new persisted field per character
+ * (`Player.universalAllocated`), and nothing else: the point *pool* it spends from is
+ * derived on the fly from the account record depth by `universalPointsFor`, so there is
+ * no earned-points counter to persist or migrate. A version 14 save loads with the
+ * allocation empty — exactly what a brand new character gets — and the pool it can then
+ * spend is whatever its record depth already earned, so an existing character opens the
+ * new screen with points waiting rather than having to go and re-earn them.
  */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 
 export interface SavedGame {
   readonly version: number;

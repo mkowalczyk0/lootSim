@@ -9,9 +9,10 @@ import {
   type Appearance, type CapsuleTier, type Cosmetic, type CosmeticSlot,
 } from "../data/cosmetics";
 import {
-  CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, type CraftCategory,
+  CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, reforgeCoinCost,
+  type CraftCategory,
 } from "../data/crafting";
-import type { EquipSlot } from "../data/items";
+import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
@@ -22,7 +23,10 @@ import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
-import { primeItemIds, randomItemType, rollItem, type Item, type ItemMod, type Stats } from "./item";
+import { universalPointsFor } from "../progression/universal";
+import {
+  primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
+} from "./item";
 import { Player, emptyEquipment } from "./player";
 
 export interface RunStats {
@@ -178,6 +182,26 @@ export class GameState {
     return this.players[this.activeClassId];
   }
 
+  /**
+   * The universal tree's point pool — UAT §18. **Account-wide**, unlike the class tree's,
+   * and derived from the lifetime record depth across every character rather than from
+   * any one character's level.
+   *
+   * That is the whole reason the tree feels different from a second class tree: the class
+   * tree is what *this* character earned, and this is what the *account* earned. A brand
+   * new alt starts with the full pool already spendable, which is the payoff — the
+   * account's progress is inherited, while how to spend it stays a per-class decision
+   * (`Player.universalAllocated`).
+   */
+  get universalPool(): number {
+    return universalPointsFor(this.stats.deepestDepth);
+  }
+
+  /** What's left to spend on the active character's universal tree. */
+  get universalPoints(): number {
+    return this.universalPool - this.player.universalSpent;
+  }
+
   addCoins(n: number): void {
     this.coins += n;
     this.stats.coinsEarned += n;
@@ -308,6 +332,43 @@ export class GameState {
     this.stats.raritiesFound[rarity]++;
     this.addToInventory([item]);
     return item;
+  }
+
+  /**
+   * Reforges an item in place — same rarity, type and base stats, a freshly rolled set
+   * of affixes (`game/item.ts#reforgeAffixes`). Works on a stashed item or one the active
+   * character has equipped, since a reforge is something you do to gear you're using, not
+   * just to stash junk. Unlike `craftItem`, every rarity is eligible — reforging can only
+   * reroll affixes on something you already found, never manufacture a divine or
+   * unspoken from nothing, so `CRAFT_MAX_RARITY` doesn't apply here.
+   */
+  reforgeItem(itemId: string): Item | null {
+    const located = this.locateItem(itemId);
+    if (!located) return null;
+    const coinCost = reforgeCoinCost(located.item.rarity);
+    const materialCost = craftBulkCost(located.item.rarity);
+    if (this.materials.physical < materialCost) return null;
+    if (!this.spendCoins(coinCost)) return null;
+    this.materials.physical -= materialCost;
+    const reforged = reforgeAffixes(located.item, this.rng);
+    located.replace(reforged);
+    return reforged;
+  }
+
+  /** Finds an item by id wherever the active character keeps it, stashed or worn. */
+  private locateItem(itemId: string): { item: Item; replace: (next: Item) => void } | null {
+    const invIdx = this.inventory.findIndex((it) => it.id === itemId);
+    if (invIdx >= 0) {
+      return { item: this.inventory[invIdx]!, replace: (next) => { this.inventory[invIdx] = next; } };
+    }
+    const equipment = this.player.equipment;
+    for (const slot of EQUIP_SLOTS) {
+      const worn = equipment[slot];
+      if (worn?.id === itemId) {
+        return { item: worn, replace: (next) => { equipment[slot] = next; } };
+      }
+    }
+    return null;
   }
 
   buyKey(tier: ChestTier, count = 1): boolean {
@@ -520,11 +581,17 @@ export class GameState {
       // the town can tell the player once.
       const preProgression = saved.version < 14;
 
+      // The universal pool is derived from the account record, which is already loaded
+      // above — so every class's universal allocation can be validated against the pool
+      // it was actually spent from.
+      const universalPool = universalPointsFor(state.stats.deepestDepth);
+
       const playersRaw = d.players as Record<string, unknown> | undefined;
       if (playersRaw) {
         for (const id of CLASS_IDS) {
           state.treePointsRefunded += applyPlayerJSON(
             state.players[id], playersRaw[id] as Record<string, unknown> | undefined, preProgression,
+            universalPool,
           );
         }
         state.activeClassId = isClassId(d.activeClassId) ? d.activeClassId : state.activeClassId;
@@ -534,7 +601,9 @@ export class GameState {
         const p = d.player as Record<string, unknown> | undefined;
         if (p) {
           const legacyClass: ClassId = isClassId(p.classId) ? p.classId : DEFAULT_CLASS;
-          state.treePointsRefunded += applyPlayerJSON(state.players[legacyClass], p, preProgression);
+          state.treePointsRefunded += applyPlayerJSON(
+            state.players[legacyClass], p, preProgression, universalPool,
+          );
           state.activeClassId = legacyClass;
         }
       }
@@ -566,14 +635,28 @@ export function playerToJSON(p: Player) {
     mana: p.mana,
     skills: p.skills,
     allocated: p.allocated,
+    // The universal tree (UAT §18) travels with the sheet for the same reason the class
+    // allocation does: the host rebuilds a remote hero from exactly this blob, and a
+    // universal node left behind here would mean the host computing that player's damage
+    // from a weaker character than the one sitting on their own screen.
+    universalAllocated: p.universalAllocated,
     equipment: p.equipment,
   };
 }
 
-/** Builds a character sheet from somebody else's `playerToJSON` blob. */
+/**
+ * Builds a character sheet from somebody else's `playerToJSON` blob.
+ *
+ * The universal pool is `Infinity` here, deliberately: a remote player's pool is derived
+ * from *their* account record, which this machine has no way to know, and trimming their
+ * tree against the local pool would nerf anyone whose account is further along than the
+ * host's. Their allocation is still pruned for structure. This trusts the sheet exactly
+ * as much as the existing model already trusts its `level`, `allocated` and `equipment`
+ * — it is not a new hole, but it is the same one.
+ */
 export function playerFromJSON(classId: ClassId, raw: Record<string, unknown> | undefined): Player {
   const player = new Player(classId);
-  applyPlayerJSON(player, raw, false);
+  applyPlayerJSON(player, raw, false, Infinity);
   return player;
 }
 
@@ -589,6 +672,7 @@ function applyPlayerJSON(
   p: Player,
   raw: Record<string, unknown> | undefined,
   preProgression: boolean,
+  universalPool: number,
 ): number {
   if (!raw) return 0;
   p.level = Number(raw.level ?? 1);
@@ -601,6 +685,11 @@ function applyPlayerJSON(
   p.allocated = preProgression || !Array.isArray(raw.allocated)
     ? []
     : (raw.allocated as unknown[]).filter((id): id is string => typeof id === "string");
+  // A save from before v15 has no universal tree; an empty allocation is exactly what a
+  // brand new character gets, so there is nothing to migrate and nothing to refund.
+  p.universalAllocated = Array.isArray(raw.universalAllocated)
+    ? (raw.universalAllocated as unknown[]).filter((id): id is string => typeof id === "string")
+    : [];
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {
@@ -610,6 +699,7 @@ function applyPlayerJSON(
   p.equipment = equipment;
   p.refresh();
   p.normalizeTree();
+  p.normalizeUniversalTree(universalPool);
   p.health = Number(raw.health ?? p.maxHealth);
   p.mana = Number(raw.mana ?? p.maxMana);
   p.skills = preProgression ? [null, null, null] : readSkills(raw.skills);
