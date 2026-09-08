@@ -53,6 +53,8 @@ export interface RunStats {
   riftsCleared: Record<RunModeId, number>;
   /** Daily Vigils closed (UAT §17). */
   vigilsCleared: number;
+  /** Weekly Convergences closed (UAT §17). */
+  convergencesCleared: number;
   bossesKilled: number;
   /** Vanity bookkeeping. Nobody needs it; everybody looks at it. */
   gemsEarned: number;
@@ -77,6 +79,7 @@ function freshStats(): RunStats {
     deaths: 0,
     riftsCleared: Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>,
     vigilsCleared: 0,
+    convergencesCleared: 0,
     bossesKilled: 0,
     gemsEarned: 0,
     capsulesOpened: 0,
@@ -148,6 +151,10 @@ export class GameState {
   /** The Vigil (UAT §17): the UTC day number it was last closed on, 0 for never. The
    *  portal stays shut for the rest of that day — one key a day is the whole design. */
   daily: { clearedDay: number } = { clearedDay: 0 };
+  /** The Convergence (UAT §17): the UTC week number it was last closed on, 0 for never.
+   *  The portal stays shut for the rest of that week — one closing a week is the design,
+   *  same as the Vigil's one a day. */
+  weekly: { clearedWeek: number } = { clearedWeek: 0 };
   /** One per element, spent at the forge. Dropped and mined on planets, nowhere else. */
   materials: MaterialBag = emptyMaterials();
   /**
@@ -703,6 +710,15 @@ export class GameState {
       this.stats.vigilsCleared++;
       return;
     }
+    // The Convergence is closed for the week. Its four floors each call this (every
+    // completion portal banks), so only the boss floor — `lastFloor` — actually closes
+    // it; the first three just fall through to the depth-record update above.
+    if (config?.weekly) {
+      if (!config.lastFloor) return;
+      this.weekly.clearedWeek = config.weekly.week;
+      this.stats.convergencesCleared++;
+      return;
+    }
     // A planet is rift-shaped (`mode.isRift` is true for it too) but each one keeps its
     // own tier ladder, so it's tracked by planet id rather than the shared rift Records.
     if (config?.planet) {
@@ -759,6 +775,7 @@ export class GameState {
       riftTiers: this.riftTiers,
       planetProgress: this.planetProgress,
       daily: this.daily,
+      weekly: this.weekly,
       materials: this.materials,
       ash: this.ash,
       challengerTier: this.challengerTier,
@@ -824,6 +841,9 @@ export class GameState {
       // Version 16 added the daily Vigil; an older save has simply never closed one.
       const daily = d.daily as { clearedDay?: unknown } | undefined;
       state.daily = { clearedDay: Math.max(0, Math.floor(Number(daily?.clearedDay ?? 0)) || 0) };
+      // Version 21 added the weekly Convergence; an older save has simply never closed one.
+      const weekly = d.weekly as { clearedWeek?: unknown } | undefined;
+      state.weekly = { clearedWeek: Math.max(0, Math.floor(Number(weekly?.clearedWeek ?? 0)) || 0) };
       state.setChallengerTier(Number(d.challengerTier ?? 0));
       state.inventory = ((d.inventory as Item[]) ?? []).map(normalizeItem);
 

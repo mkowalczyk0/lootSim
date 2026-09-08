@@ -27,6 +27,7 @@ import { dailyEffects } from "../data/daily";
 import type { ClassId } from "../data/classes";
 import { bossSpecForRun } from "../data/encounters";
 import { provingFloor } from "../data/legends";
+import { WEEKLY_GUARANTEED_RARITY, weeklyEffects, weeklyFloorSeed } from "../data/weekly";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
 import { updateBoss } from "./boss";
@@ -478,8 +479,13 @@ export class Dungeon implements CombatHost, RuleHost {
     this.state = state;
     this.config = typeof depth === "number" ? delveConfig(depth) : depth;
     // The Vigil carries its own seed (UAT §17): the same UTC day is the same floor for
-    // everybody. Anything handed an explicit seed — a co-op `start`, a test — still wins.
-    const seed = options.seed ?? this.config.daily?.seed ?? ((Math.random() * 2 ** 32) >>> 0);
+    // everybody. The Convergence does the same per week, mixed with the floor index so
+    // its four floors don't repeat each other. Anything handed an explicit seed — a
+    // co-op `start`, a test — still wins.
+    const seed = options.seed
+      ?? this.config.daily?.seed
+      ?? (this.config.weekly ? weeklyFloorSeed(this.config.weekly.seed, this.config.floor) : undefined)
+      ?? ((Math.random() * 2 ** 32) >>> 0);
     // Is this the bottom, and has the character playing earned the right to be measured
     // there? Asked once, before a single monster exists.
     this.proving = provingFloor(this.config, state.player.deepestDepth) ? state.activeClassId : null;
@@ -494,8 +500,10 @@ export class Dungeon implements CombatHost, RuleHost {
       this.killsRequired = Math.max(1, this.profile.enemiesPerWave * this.profile.waves);
       this.elitesRequired = clamp(
         (this.config.danger >= 1.6 ? 1 + Math.floor(this.config.danger - 1.6) : this.profile.depth >= 8 ? 1 : 0)
-          // The Vigil's Elite Hunt asks for more (UAT §17); still clamped to what the floor can make.
-          + dailyEffects(this.config.daily?.modifiers ?? []).elites,
+          // The Vigil's Elite Hunt and the Convergence's Purge ask for more (UAT §17);
+          // still clamped to what the floor can make.
+          + dailyEffects(this.config.daily?.modifiers ?? []).elites
+          + weeklyEffects(this.config.weekly?.modifiers ?? []).elites,
         0,
         this.eliteCapForFloor(),
       );
@@ -668,9 +676,11 @@ export class Dungeon implements CombatHost, RuleHost {
       + (this.config.danger > 1.6 ? 1 : 0)
       + Math.floor(d / 18)
       + (this.config.danger > 3.5 ? 1 : 0)
-      // The Vigil's Elite Hunt (UAT §17) raises what the floor *makes* as well as what it
-      // asks for — otherwise the quota bump would clamp straight back to the cap.
-      + dailyEffects(this.config.daily?.modifiers ?? []).elites;
+      // The Vigil's Elite Hunt and the Convergence's Purge (UAT §17) raise what the floor
+      // *makes* as well as what they ask for — otherwise the quota bump would clamp
+      // straight back to the cap.
+      + dailyEffects(this.config.daily?.modifiers ?? []).elites
+      + weeklyEffects(this.config.weekly?.modifiers ?? []).elites;
   }
 
   /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
@@ -2739,6 +2749,21 @@ export class Dungeon implements CombatHost, RuleHost {
     // The Vigil pays in keys (UAT §17): one of the day's tier, guaranteed, here and only
     // here — so it can't be had without closing the floor, and only once a day.
     if (this.config.daily) this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
+    // The Convergence's signature reward lands only on the boss floor (UAT §17): one
+    // guaranteed key at the week's tier — Adept's Trove or Collector's Hoard more often
+    // than not, tiers the Quartermaster otherwise only sells outright — plus one item
+    // forced to at least Legendary. Floors 1-3 pay the ordinary depth-weighted loot above
+    // and nothing more, so the reward can't be farmed piecemeal.
+    if (this.config.weekly && this.config.lastFloor) {
+      this.dropPickup(x, y, { kind: "key", keyTier: this.config.weekly.keyTier });
+      const item = rollItem({
+        rarity: WEEKLY_GUARANTEED_RARITY,
+        type: randomItemType(this.rng, this.player.heroClass.affinity),
+        ilvl: this.profile.depth,
+        rng: this.rng,
+      });
+      this.dropPickup(x, y, { kind: "item", item, rarity: WEEKLY_GUARANTEED_RARITY });
+    }
     if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }
 

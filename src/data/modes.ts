@@ -33,8 +33,9 @@
 import { challengerMultiplier } from "./challenger";
 import type { DailyRun } from "./daily";
 import type { PlanetSpec } from "./planets";
+import type { WeeklyRun } from "./weekly";
 
-export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil"] as const;
+export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence"] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
 export interface RunMode {
@@ -160,6 +161,27 @@ export const MODES: Record<RunModeId, RunMode> = {
     rarityBias: 0, quantity: 1,
     coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1.4, unlockDepth: 0,
   },
+  /**
+   * The Convergence — the weekly dungeon (UAT §17), the Vigil's harder sibling. Four
+   * floors and a boss, the same for everybody in a given UTC week, with three rotating
+   * modifiers; `data/weekly.ts` derives all of it from the week number and hangs the
+   * specifics on `RunConfig.weekly`. `baseDepth`/`depthPerTier`/`depthPerFloor` here are
+   * nominal and unused — `weeklyConfig` sets `depth` directly per floor, the same way
+   * `dailyConfig` does for the Vigil. It pays in the two chests the Quartermaster
+   * otherwise only sells outright (Adept's Trove, Collector's Hoard): the clear cache on
+   * the boss floor carries one guaranteed key at that tier or better, plus one item
+   * forced to Legendary or above. Unlock is `WEEKLY_UNLOCK_DEPTH` in `weekly.ts`, not here.
+   */
+  convergence: {
+    id: "convergence", name: "The Convergence", short: "Convergence",
+    blurb: "This week's collision of Rifts, the same for everyone. Four floors, three twists, and a warden waiting past all of them.",
+    color: "#dc2626",
+    isRift: true, floors: 4,
+    baseDepth: 18, depthPerTier: 0, depthPerFloor: 0,
+    dangerPerTier: 1,
+    rarityBias: 0, quantity: 1,
+    coinMult: 1, keyMult: 1, gemMult: 1.3, xpMult: 1.6, unlockDepth: 0,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -188,6 +210,9 @@ export interface RunConfig {
   readonly planet?: { readonly spec: PlanetSpec; readonly tier: number };
   /** Set only for the daily Vigil — the day, its seed, its modifiers and its key. */
   readonly daily?: DailyRun;
+  /** Set only for the weekly Convergence — the week, its base seed, its modifiers and
+   *  its key. */
+  readonly weekly?: WeeklyRun;
 }
 
 /**

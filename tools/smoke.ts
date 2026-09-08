@@ -24,10 +24,16 @@ import { profileFor } from "../src/data/depth";
 import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import {
-  DAILY_DEPTH_MAX, DAILY_DEPTH_MIN, DAILY_KEY_ODDS, DAILY_MODIFIERS, DAILY_MODIFIER_IDS, DAY_MS,
-  dailyConfig, dailyEffects, dailyPlan, dailyUnlocked, dayNumber, daySeed, msUntilReset,
+  DAILY_DEPTH_MAX, DAILY_DEPTH_MIN, DAILY_KEY_ODDS, DAILY_MODIFIERS, DAILY_MODIFIER_IDS, DAILY_UNLOCK_DEPTH,
+  DAY_MS, dailyConfig, dailyEffects, dailyPlan, dailyUnlocked, dayNumber, daySeed, msUntilReset,
   type DailyModifierId,
 } from "../src/data/daily";
+import {
+  WEEKLY_BOSS_DEPTH_MAX, WEEKLY_BOSS_DEPTH_MIN, WEEKLY_DEPTH_MAX, WEEKLY_DEPTH_MIN, WEEKLY_DEPTH_PER_FLOOR,
+  WEEKLY_FLOORS, WEEKLY_GUARANTEED_RARITY, WEEKLY_KEY_ODDS, WEEKLY_MODIFIERS, WEEKLY_MODIFIER_IDS,
+  WEEKLY_UNLOCK_DEPTH, msUntilWeeklyReset, weekNumber, weeklyConfig, weeklyEffects, weeklyFloorSeed, weeklyPlan,
+  weeklySeed, weeklyUnlocked, type WeeklyModifierId,
+} from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
@@ -525,9 +531,14 @@ function campaign(seed: number, dodge: number, dives = 20, log = false) {
 const CAMPAIGN_SEEDS = [4242, 991, 7777, 31337, 606, 5150, 20226, 88813, 41029, 63071, 17402, 94651];
 
 let sharpDeepest = 0;
+// Lifted out of the block below (rather than recomputed) so the Convergence's
+// survivability check can fight real characters a sharp player actually produced,
+// instead of a synthetic stand-in — see "=== the convergence ===" further down.
+let sharpRuns: ReturnType<typeof campaign>[] = [];
 console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraphs) ===");
 {
   const runs = CAMPAIGN_SEEDS.map((seed, i) => campaign(seed, 0.55, 20, i === 0));
+  sharpRuns = runs;
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -1699,6 +1710,18 @@ console.log("\n=== the ship hub ===");
       hub.stations.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius)));
   hub.vigilOpen = false;
 
+  check("no Convergence portal until the delve has gone deep enough", !hub.stations.some((s) => s.kind === "convergence"));
+  hub.weeklyOpen = true;
+  check("unlocking the Convergence puts its portal on the deck, clear of everything else — including the Vigil's",
+    hub.stations.some((s) => s.kind === "convergence") && hub.stations.every((a, i) =>
+      hub.stations.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius)));
+  hub.vigilOpen = true;
+  check("…even with both portals open at once",
+    hub.stations.every((a, i) => hub.stations.every((b, j) =>
+      i === j || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius)));
+  hub.vigilOpen = false;
+  hub.weeklyOpen = false;
+
   // The party's ready spot is whichever portal the host picked (UAT §1 D1) — there is
   // no separate party portal any more.
   check("no party portal on the deck", !hub.stations.some((s) => (s.kind as string) === "party"));
@@ -2169,6 +2192,265 @@ console.log("\n=== the Proving: the bottom of the Delve (UAT §13/§14) ===");
   }
 }
 
+console.log("\n=== the convergence ===");
+{
+  // The weekly dungeon (UAT §17), the Vigil's harder sibling. Same idiom, scaled up:
+  // one integer (the UTC week) decides four floors instead of one, three modifiers
+  // instead of two, and a boss instead of a plain exit. Same shape of proof, in the
+  // same order: the calendar, the plan, per-floor determinism, that it's genuinely
+  // harder than the Vigil (compared directly, not just bounded), that each modifier
+  // moves exactly its own knob, and that it pays its prize once and only for finishing.
+
+  // 1. The calendar.
+  const noon = Date.UTC(2026, 8, 8, 12, 0, 0);
+  check("the week number is whole UTC weeks", weekNumber(noon) === Math.floor(dayNumber(noon) / 7));
+  check("a minute before the week boundary is still this week",
+    weekNumber((weekNumber(noon) + 1) * 7 * DAY_MS - 60_000) === weekNumber(noon));
+  check("…and a minute after is next week",
+    weekNumber((weekNumber(noon) + 1) * 7 * DAY_MS + 60_000) === weekNumber(noon) + 1);
+  check("the countdown reaches zero exactly at the reset",
+    msUntilWeeklyReset((weekNumber(noon) + 1) * 7 * DAY_MS - 1) === 1);
+  check("a week's seed differs from the day-number seed even when the integers coincide",
+    weeklySeed(7) !== daySeed(7));
+
+  // 2. One plan per week, a different one each week, always inside the rules.
+  const week = weekNumber(noon);
+  const wa = weeklyPlan(week);
+  const wb = weeklyPlan(week);
+  check("the same week is the same plan", JSON.stringify(wa) === JSON.stringify(wb));
+  const wSeeds = new Set<number>();
+  const wDepths = new Set<number>();
+  const wTiers = { CollectorsHoard: 0, AdeptsTrove: 0, Legendary: 0 };
+  let weeklyRulesHeld = true;
+  const WEEKS = 52 * 10;
+  for (let w = week; w < week + WEEKS; w++) {
+    const plan = weeklyPlan(w);
+    wSeeds.add(plan.seed);
+    wDepths.add(plan.depth);
+    wTiers[plan.keyTier as keyof typeof wTiers]++;
+    const mods = plan.modifiers;
+    const distinct = new Set(mods).size === mods.length;
+    const rewardCount = mods.filter((id) => WEEKLY_MODIFIERS[id].reward).length;
+    const valid = mods.length === 3 && distinct && rewardCount <= 1
+      && mods.every((id) => (WEEKLY_MODIFIER_IDS as readonly string[]).includes(id));
+    const inBand = plan.depth >= WEEKLY_DEPTH_MIN && plan.depth <= WEEKLY_DEPTH_MAX;
+    if (!valid || !inBand || plan.seed !== weeklySeed(w)) weeklyRulesHeld = false;
+  }
+  check(`${WEEKS} weeks of Convergences never repeat a seed`, wSeeds.size === WEEKS);
+  check("every week stays inside the depth band, with three distinct twists and at most one reward twist",
+    weeklyRulesHeld);
+  check("the band actually gets used", wDepths.size === WEEKLY_DEPTH_MAX - WEEKLY_DEPTH_MIN + 1,
+    [...wDepths].sort((x, y) => x - y).join(","));
+  const wn = WEEKS;
+  const hoard = wTiers.CollectorsHoard / wn;
+  const adept = wTiers.AdeptsTrove / wn;
+  check("the key tier lands near its stated odds",
+    Math.abs(hoard - WEEKLY_KEY_ODDS.CollectorsHoard) < 0.03 && Math.abs(adept - WEEKLY_KEY_ODDS.AdeptsTrove) < 0.04,
+    `Collector's Hoard ${(hoard * 100).toFixed(1)}%, Adept's Trove ${(adept * 100).toFixed(1)}%, Legendary ${(wTiers.Legendary / wn * 100).toFixed(1)}%`);
+  check("never worse than Legendary", wTiers.Legendary + wTiers.AdeptsTrove + wTiers.CollectorsHoard === wn);
+  check("next week is a different seed", weeklySeed(week) !== weeklySeed(week + 1));
+
+  // 3. Per-floor determinism: the same week's same floor is identical for anyone, a
+  // different floor within the same week is not, and a different week is not either.
+  const fingerprint = (d: Dungeon) => JSON.stringify({
+    walls: d.level.walls, traps: d.level.traps, props: d.level.props, start: d.level.start, portal: d.level.portal,
+    quota: [d.killsRequired, d.elitesRequired], depth: d.profile.depth,
+  });
+  const wOne = new Dungeon(geared(30, 9201, 20, "swordsman"), weeklyConfig(week, 1));
+  const wTwo = new Dungeon(geared(30, 9202, 20, "magician"), weeklyConfig(week, 1));
+  check("two players get the identical floor 1 in the same week", fingerprint(wOne) === fingerprint(wTwo));
+  const wFloor2 = new Dungeon(geared(30, 9201, 20, "swordsman"), weeklyConfig(week, 2));
+  check("…but floor 2 of that same week is a different floor", fingerprint(wOne) !== fingerprint(wFloor2));
+  const wNextWeek = new Dungeon(geared(30, 9201, 20, "swordsman"), weeklyConfig(week + 1, 1));
+  check("…and floor 1 of next week is different again", fingerprint(wOne) !== fingerprint(wNextWeek));
+
+  check("the trash floors (1-3) escalate by exactly the per-floor step",
+    [1, 2, 3].every((f) =>
+      weeklyConfig(week, f).depth === Math.max(1, Math.round(wa.depth + WEEKLY_DEPTH_PER_FLOOR * (f - 1)))));
+  // The boss floor deliberately does NOT continue that escalation — see the comment on
+  // `WEEKLY_BOSS_DEPTH_MIN` in data/weekly.ts. It draws from its own, much shallower,
+  // survivability-tested band instead, independent of how deep the trash floors got.
+  check("the boss floor's depth is its own draw, inside its own band",
+    weeklyConfig(week, WEEKLY_FLOORS).depth >= WEEKLY_BOSS_DEPTH_MIN
+    && weeklyConfig(week, WEEKLY_FLOORS).depth <= WEEKLY_BOSS_DEPTH_MAX);
+  check("only the last of the four floors is the boss", [1, 2, 3].every((f) =>
+    !weeklyConfig(week, f).bossFloor && !weeklyConfig(week, f).lastFloor)
+    && weeklyConfig(week, WEEKLY_FLOORS).bossFloor && weeklyConfig(week, WEEKLY_FLOORS).lastFloor);
+  check("the Convergence really is four floors ending in a boss",
+    weeklyConfig(week, 1).mode.isRift && weeklyConfig(week, 1).mode.floors === WEEKLY_FLOORS);
+  check("the Challenger dial still applies on top", weeklyConfig(week, 1, 3).danger > weeklyConfig(week, 1, 0).danger);
+  check("floor number clamps to the run's own length", weeklyConfig(week, 99).floor === WEEKLY_FLOORS);
+
+  // 4. Significantly harder than the Vigil — asserted directly against the Vigil's own
+  // numbers, not just bounded on its own (the lesson from the Sept 2026 campaign-
+  // comparison bug: a one-sided threshold doesn't prove a design promise, a comparison
+  // does).
+  const vigilProfile = profileFor(dailyConfig(dayNumber(noon), 0).depth, dailyConfig(dayNumber(noon), 0));
+  const convergenceProfile = profileFor(weeklyConfig(week, 1, 0).depth, weeklyConfig(week, 1, 0));
+  check("the Convergence's floor 1 hits harder than the Vigil's one floor",
+    convergenceProfile.enemyDamage > vigilProfile.enemyDamage && convergenceProfile.enemyHealth > vigilProfile.enemyHealth,
+    `damage ${convergenceProfile.enemyDamage.toFixed(0)} vs ${vigilProfile.enemyDamage.toFixed(0)}, health ${convergenceProfile.enemyHealth.toFixed(0)} vs ${vigilProfile.enemyHealth.toFixed(0)}`);
+  // The boss floor is deliberately NOT deeper than floor 1 — see WEEKLY_BOSS_DEPTH_MIN
+  // in data/weekly.ts. Its threat comes from being a solo raid encounter, the quota
+  // being the boss itself, and arriving there with three floors of wear already on the
+  // clock, not from a bigger depth number; the survivability check below is what
+  // actually proves the boss is a real fight rather than a free win or a certain wipe.
+  check("the boss floor sits inside its own shallower band, not the trash floors' escalation",
+    weeklyConfig(week, WEEKLY_FLOORS, 0).depth <= weeklyConfig(week, 1, 0).depth);
+
+  // 5. Each modifier moves exactly what it says. Build a Convergence floor-1 config with
+  // a chosen set and compare its profile against the same week with no twists at all.
+  const wBase = weeklyConfig(week, 1);
+  const wWithMods = (mods: readonly WeeklyModifierId[]): RunConfig => ({
+    ...wBase,
+    danger: weeklyEffects(mods).danger,
+    weekly: { ...wBase.weekly!, modifiers: mods },
+  });
+  const wPlain = profileFor(wBase.depth, wWithMods([]));
+  const wRatio = (mods: readonly WeeklyModifierId[], pick: (p: ReturnType<typeof profileFor>) => number) =>
+    pick(profileFor(wBase.depth, wWithMods(mods))) / pick(wPlain);
+  check("Onslaught is danger and nothing else",
+    Math.abs(wRatio(["onslaught"], (p) => p.enemyHealth) - 1.45) < 1e-9
+    && Math.abs(wRatio(["onslaught"], (p) => p.quantity) - 1) < 1e-9);
+  check("Legion means more, softer bodies",
+    wRatio(["legion"], (p) => p.enemiesPerWave) > 1.2 && Math.abs(wRatio(["legion"], (p) => p.enemyHealth) - 0.75) < 1e-9);
+  check("Blitz tightens the telegraph and the swing",
+    Math.abs(wRatio(["blitz"], (p) => p.telegraph) - 0.78) < 1e-9 && Math.abs(wRatio(["blitz"], (p) => p.aggression) - 0.85) < 1e-9);
+  check("Feral is pure speed — a knob the Vigil's modifiers never touch",
+    Math.abs(wRatio(["feral"], (p) => p.enemySpeed) - 1.25) < 1e-9
+    && Math.abs(wRatio(["feral"], (p) => p.enemyHealth) - 1) < 1e-9);
+  check("Dire stacks its own health bump on top of its own danger bump",
+    Math.abs(wRatio(["dire"], (p) => p.enemyHealth) - 1.35 * 1.1) < 1e-9);
+  check("Hoarder pays in volume and coin",
+    Math.abs(wRatio(["hoarder"], (p) => p.quantity) - 1.8) < 1e-9 && Math.abs(wRatio(["hoarder"], (p) => p.coinMultiplier) - 1.6) < 1e-9);
+  check("Rarefied trades volume for rarity",
+    Math.abs(wRatio(["rarefied"], (p) => p.quantity) - 0.5) < 1e-9
+    && Math.abs(profileFor(wBase.depth, wWithMods(["rarefied"])).rarityBias - wPlain.rarityBias - 0.15) < 1e-9);
+  {
+    const st = geared(30, 9203, 20, "swordsman");
+    const quiet = new Dungeon(st, wWithMods([]), 4343);
+    const purge = new Dungeon(st, wWithMods(["purge"]), 4343);
+    check("Purge asks for more elites, within what the floor can make",
+      purge.elitesRequired === Math.min(quiet.elitesRequired + 4, purge.eliteCapForFloor()) && purge.elitesRequired > quiet.elitesRequired,
+      `${quiet.elitesRequired} → ${purge.elitesRequired}`);
+  }
+  check("a plain floor is untouched by any of it",
+    JSON.stringify(weeklyEffects([])) === JSON.stringify({
+      danger: 1, count: 1, health: 1, telegraph: 1, aggression: 1, speed: 1, quantity: 1, coins: 1, rarityBias: 0, elites: 0,
+    }));
+
+  // 6. The reward and close-out plumbing, all four floors end to end. This teleports
+  // every floor straight to "cleared" (`killsSoFar = killsRequired` etc.) rather than
+  // fighting anything — it proves floors 1-3 bank ordinary loot and must not close the
+  // week, and that the boss floor pays the guaranteed key and item and is what actually
+  // closes it, but it says nothing about whether the floor is survivable. That's what
+  // section 6b, right after this block, is for — it actually fights.
+  {
+    const st = geared(30, 9204, 20, "lancer");
+    let config: RunConfig = weeklyConfig(week, 1, st.challengerTier);
+    const wPlan = weeklyPlan(week);
+    for (let f = 1; f <= WEEKLY_FLOORS; f++) {
+      const d = new Dungeon(st, config);
+      const idle = new FakeInput();
+      d.killsSoFar = d.killsRequired;
+      d.elitesKilled = d.elitesRequired;
+      d.wave = d.profile.waves;
+      d.enemies.length = 0;
+      idle.beginTick();
+      d.update(DT, idle as unknown as AvatarInput);
+      check(`floor ${f}/${WEEKLY_FLOORS} of the Convergence opens its completion portal`,
+        d.phase === "cleared" && d.completionPortal !== null);
+      if (f === WEEKLY_FLOORS) {
+        const keys = d.pickups.filter((p) => p.kind === "key" && p.keyTier === wPlan.keyTier);
+        check("the warden's floor guarantees the week's key tier", keys.length >= 1, `${keys.length} × ${wPlan.keyTier}`);
+        const items = d.pickups.filter((p) => p.kind === "item" && p.rarity === WEEKLY_GUARANTEED_RARITY);
+        check("…and a guaranteed item at the promised rarity", items.length >= 1);
+        for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier!]++;
+      }
+      check(`nothing closes the week before the warden falls`, st.weekly.clearedWeek === 0);
+      d.bankLoot();
+      if (f < WEEKLY_FLOORS) {
+        check(`banking floor ${f} doesn't close the week early`, st.weekly.clearedWeek === 0 && st.stats.convergencesCleared === 0);
+        config = nextFloorConfig(config);
+      }
+    }
+    check("banking the warden's floor closes the Convergence for the week",
+      st.weekly.clearedWeek === week && st.stats.convergencesCleared === 1);
+    const before = st.keys[wPlan.keyTier];
+    check("…and the key is in the bag", before > 0);
+    check("a Convergence never opens a rift tier by accident",
+      st.riftTiers.convergence === 1 && st.stats.riftsCleared.convergence === 0);
+
+    const again = new Dungeon(st, weeklyConfig(week, 1, st.challengerTier));
+    again.loot.coins = 100;
+    again.earlyExtractLoot();
+    check("bailing out doesn't touch an already-closed week",
+      st.weekly.clearedWeek === week && st.stats.convergencesCleared === 1);
+    const fresh = geared(30, 9205, 20, "lancer");
+    const lostRun = new Dungeon(fresh, weeklyConfig(week, 1, fresh.challengerTier));
+    lostRun.earlyExtractLoot();
+    check("…nor does leaving early on a week you haven't closed", fresh.weekly.clearedWeek === 0);
+    check("a fresh save has never closed one",
+      new GameState().weekly.clearedWeek === 0 && !weeklyUnlocked(new GameState().stats.deepestDepth));
+    check("the portal opens well past the Vigil's own unlock, at the bottom of its band",
+      weeklyUnlocked(WEEKLY_UNLOCK_DEPTH) && !weeklyUnlocked(WEEKLY_UNLOCK_DEPTH - 1) && WEEKLY_UNLOCK_DEPTH > DAILY_UNLOCK_DEPTH);
+  }
+
+  /**
+   * 6b. Survivability, for real — the raid-boss section's precedent (playFloor against a
+   * kitted character), not the teleport-to-cleared plumbing above. This is what actually
+   * answers "can anyone survive this" rather than just "does the reward land correctly."
+   *
+   * Reuses the exact characters the sharp campaign (dodge 0.55, "=== a campaign: 20
+   * dives, a sharp player ===" above) already produced, rather than a synthetic
+   * fixed-level-plus-N-chests stand-in — a first pass at this check used the synthetic
+   * kind and it cleared almost nothing anywhere in the depth 18-30 band the mode
+   * originally shipped with, which is what caught that the band was two to four times
+   * past the delve's own measured frontier (sharp bot averages deepest depth ~10.3, best
+   * single seed ~16) before it ever reached a real player.
+   *
+   * Filtered to characters whose campaign actually reached `WEEKLY_UNLOCK_DEPTH` — testing
+   * ones that never unlocked the mode would prove nothing about it.
+   */
+  {
+    const qualified = sharpRuns.filter((r) => r.deepest >= WEEKLY_UNLOCK_DEPTH);
+    check("the sharp campaign produces at least one character that actually unlocks the Convergence",
+      qualified.length > 0, `${qualified.length}/${sharpRuns.length} reached depth ${WEEKLY_UNLOCK_DEPTH}+`);
+    // A single fixed week draws one fixed depth for floor 1 (12-18) and one for the
+    // boss (9-11) — testing only that one week makes the result hostage to whichever
+    // end of the band it happened to land on, exactly the "five seeds routinely flipped
+    // the ordering" problem the campaign comparison above widened to twelve seeds for.
+    // Spreading across several consecutive weeks, crossed with every qualifying
+    // character, samples the whole band instead of one draw from it.
+    const TEST_WEEKS = [week, week + 1, week + 2, week + 3, week + 4];
+    const floor1Results = qualified.flatMap((r) =>
+      TEST_WEEKS.map((w, wi) => playFloor(r.state, weeklyConfig(w, 1), 400, 6100 + wi, 0.85)));
+    const bossResults = qualified.flatMap((r) =>
+      TEST_WEEKS.map((w, wi) => playFloor(r.state, weeklyConfig(w, WEEKLY_FLOORS), 400, 6200 + wi, 0.85)));
+    const wins = (rs: typeof floor1Results) => rs.filter((r) => r.d.phase === "cleared").length;
+    console.log(`  across ${TEST_WEEKS.length} weeks × ${qualified.length} qualifying characters ` +
+      `(their own deepest: ${qualified.map((r) => r.deepest).join(",")}): ` +
+      `floor 1 ${wins(floor1Results)}/${floor1Results.length} cleared, boss ${wins(bossResults)}/${bossResults.length} cleared`);
+    check("a character who just unlocked it can actually clear floor 1 on at least some weeks",
+      wins(floor1Results) >= 1, `${wins(floor1Results)}/${floor1Results.length}`);
+    check("…and can actually clear the boss floor on at least some weeks — the mode is beatable, not a wall",
+      wins(bossResults) >= 1, `${wins(bossResults)}/${bossResults.length}`);
+  }
+
+  // 7. The save remembers it, and a save from before the Convergence existed loads clean.
+  {
+    const st = geared(30, 9206, 20, "swordsman");
+    st.weekly.clearedWeek = week;
+    st.stats.convergencesCleared = 2;
+    const back = GameState.fromSaved(parseSaved(serializeSave(st.toJSON())));
+    check("the save remembers the week you closed it", back.weekly.clearedWeek === week && back.stats.convergencesCleared === 2);
+    const raw = JSON.parse(serializeSave(st.toJSON())) as Record<string, unknown>;
+    delete raw.weekly;
+    raw.version = 16;
+    const old = GameState.fromSaved(parseSaved(JSON.stringify(raw)));
+    check("a pre-Convergence save loads as never having closed one", old.weekly.clearedWeek === 0 && old.coins === st.coins);
+  }
+}
 
 console.log("\n=== accounts ===");
 await (async () => {

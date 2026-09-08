@@ -18,7 +18,7 @@ import type { Appearance } from "../data/cosmetics";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms" | "vigil";
+  | "comms" | "vigil" | "convergence";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -71,6 +71,9 @@ const EXPEDITION_SPOT = { x: 270, y: 250 };
 /** Where the Vigil's portal opens once it's unlocked — the open flagstone bottom-left,
  *  a short walk from the spawn, since it's meant to be the first thing you do each day. */
 const VIGIL_SPOT = { x: 150, y: 390 };
+/** Where the Convergence's portal opens once it's unlocked — open flagstone on the
+ *  opposite side of the deck from the Vigil, clear of the Forge and the Reliquary Gate. */
+const CONVERGENCE_SPOT = { x: 580, y: 330 };
 /** How far past a portal's own radius still counts as standing in it for the party
  *  ready check — generous, since four people have to fit. */
 const READY_PAD = 12;
@@ -83,6 +86,9 @@ export class Hub {
   expedition: { planetId: string; tier: number } | null = null;
   /** The daily Vigil is unlocked (UAT §17), which is what puts its portal on the deck. */
   vigilOpen = false;
+  /** The weekly Convergence is unlocked (UAT §17), which is what puts its portal on the
+   *  deck. */
+  weeklyOpen = false;
   /** True while a party room is open — the deck shows the room's state. */
   partyOpen = false;
   /** Whether this browser is the room's host, i.e. the one who picks the portal. */
@@ -115,6 +121,12 @@ export class Hub {
     }
     if (this.vigilOpen) {
       stations.push({ kind: "vigil", label: "The Vigil", x: VIGIL_SPOT.x, y: VIGIL_SPOT.y, radius: 22 });
+    }
+    if (this.weeklyOpen) {
+      stations.push({
+        kind: "convergence", label: "The Convergence",
+        x: CONVERGENCE_SPOT.x, y: CONVERGENCE_SPOT.y, radius: 22,
+      });
     }
     return stations;
   }

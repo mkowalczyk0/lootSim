@@ -31,6 +31,10 @@ import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/
 import {
   DAILY_MODIFIERS, DAILY_NAME, DAILY_UNLOCK_DEPTH, dailyConfig, dailyPlan, dailyUnlocked, dayNumber, msUntilReset,
 } from "../data/daily";
+import {
+  WEEKLY_GUARANTEED_RARITY, WEEKLY_MODIFIERS, WEEKLY_NAME, WEEKLY_UNLOCK_DEPTH, weeklyConfig, weeklyPlan,
+  weeklyUnlocked, weekNumber, msUntilWeeklyReset,
+} from "../data/weekly";
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
@@ -84,13 +88,13 @@ const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
-const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party", "Vigil"] as const;
+const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party", "Vigil", "Convergence"] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
 const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
-  Party: "COMMS RELAY", Vigil: "THE VIGIL",
+  Party: "COMMS RELAY", Vigil: "THE VIGIL", Convergence: "THE CONVERGENCE",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -181,6 +185,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
+    case "Convergence": return `${e} open the Convergence · the same four floors for everyone this week · a warden and a real prize at the end`;
     case "Craft": return forgeMode === "reforge"
       ? `${sel} / ${adj} choose an item · ${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
       : forgeMode === "named"
@@ -205,8 +210,9 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
 // "planet" is rift-shaped internally (fixed floors, a boss, tier scaling) but it isn't
 // a selectable rift flavor — it's the mechanical shell every Reliquary expedition borrows.
 // The Rifts screen only ever shows the two the player actually picks between.
-// The planet shell and the daily Vigil are rift-*shaped* but have their own screens.
-const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet" && m !== "vigil");
+// The planet shell, the daily Vigil and the weekly Convergence are rift-*shaped* but
+// have their own screens.
+const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet" && m !== "vigil" && m !== "convergence");
 
 /**
  * The town hub: dive selection, rift tiers, chest gambling, stash, equipment, skills
@@ -564,6 +570,7 @@ export class TownUI {
       case "Rifts": return this.state.riftTiers[this.riftMode];
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
       case "Vigil": return 1;
+      case "Convergence": return 1;
       case "Craft": return this.forgeMode === "reforge"
         ? this.reforgeCandidates().length
         : this.forgeMode === "named" ? craftableNamed().length : CRAFTABLE_RARITIES.length;
@@ -902,6 +909,21 @@ export class TownUI {
         }
         this.state.player.fullHeal();
         this.onDive(dailyConfig(day, this.state.challengerTier));
+        break;
+      }
+      case "Convergence": {
+        if (!this.requireClass()) break;
+        const week = weekNumber();
+        if (!weeklyUnlocked(this.state.stats.deepestDepth)) {
+          this.notify(`Reach depth ${WEEKLY_UNLOCK_DEPTH} in the delve first.`, "#ef4444");
+          break;
+        }
+        if (this.state.weekly.clearedWeek === week) {
+          this.notify(`Closed. The next Convergence opens in ${formatCountdown(msUntilWeeklyReset())}.`, "#9aa4b2");
+          break;
+        }
+        this.state.player.fullHeal();
+        this.onDive(weeklyConfig(week, 1, this.state.challengerTier));
         break;
       }
       case "StarMap": {
@@ -1381,6 +1403,7 @@ export class TownUI {
       case "Rifts": return this.renderRifts();
       case "StarMap": return this.renderStarMap();
       case "Vigil": return this.renderVigil();
+      case "Convergence": return this.renderConvergence();
       case "Craft": return this.renderCraft();
       case "Chests": return this.renderChests();
       case "Stash": return this.renderStash();
@@ -2170,6 +2193,78 @@ export class TownUI {
         </table>
         ${this.previewBlock(previewForRun(config))}
         <p>Vigils kept: <b>${this.state.stats.vigilsCleared}</b></p>
+        ${this.challengerNote()}
+      </aside>`;
+  }
+
+  /**
+   * The Convergence (UAT §17): this week's four floors, laid out before you enter — the
+   * depth each one reads at, the three modifiers, the boss floor's key and its
+   * guaranteed item, and the countdown to the reset. Still one row, because there is
+   * still one decision: open it, or don't. Floors 2-4 aren't separately chosen — they
+   * follow automatically as each one clears, the same way an Abyssal Rift's do.
+   */
+  private renderConvergence(): string {
+    const week = weekNumber();
+    const plan = weeklyPlan(week);
+    const config = weeklyConfig(week, 1, this.state.challengerTier);
+    const profile = profileFor(config.depth, config);
+    const unlocked = weeklyUnlocked(this.state.stats.deepestDepth);
+    const cleared = this.state.weekly.clearedWeek === week;
+    const under = this.state.player.level < profile.recommendedLevel;
+    const mode = MODES.convergence;
+    const countdown = formatCountdown(msUntilWeeklyReset());
+
+    const row = `
+      <div class="row on" data-index="0">
+        <div class="row-main">
+          <span class="depth">${String(config.depth).padStart(2, "0")}</span>
+          <span class="name">${cleared ? "Closed for the week" : unlocked ? "Open the Convergence" : "Sealed"}</span>
+          ${cleared ? '<span class="badge">DONE</span>' : ""}
+        </div>
+        <div class="row-side ${cleared || !unlocked ? "warn" : under ? "warn" : ""}">
+          ${cleared
+            ? `next Convergence in ${countdown}`
+            : unlocked
+              ? `req. lv ${profile.recommendedLevel} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
+              : `reach depth ${WEEKLY_UNLOCK_DEPTH} in the delve`}
+        </div>
+      </div>`;
+
+    const twists = plan.modifiers.map((id) => {
+      const m = WEEKLY_MODIFIERS[id];
+      return `<tr><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.blurb)}</td></tr>`;
+    }).join("");
+
+    const floors = Array.from({ length: mode.floors }, (_, i) => {
+      const f = i + 1;
+      const fc = weeklyConfig(week, f, this.state.challengerTier);
+      return `<tr><td>${f === mode.floors ? `Floor ${f} — Warden` : `Floor ${f}`}</td><td>${fc.depth}</td></tr>`;
+    }).join("");
+
+    return `<div class="list">${row}</div>
+      <aside class="side">
+        <h3 style="color:${mode.color}">${escapeHtml(WEEKLY_NAME)}</h3>
+        <p>${escapeHtml(mode.blurb)}</p>
+        <p class="muted">This week's four floors are the same for everyone, everywhere —
+        same layouts, same twists, same warden waiting at the end. It resets at the
+        next UTC week, in <b>${countdown}</b>.</p>
+        <h3>This week's floors</h3>
+        <table class="cmp">${floors}</table>
+        <h3>This week's twists</h3>
+        <table class="cmp">${twists}</table>
+        <h3>The warden's prize</h3>
+        <p>Felling the warden on floor ${mode.floors} drops one <b>${escapeHtml(plan.keyTier)}</b>
+        key and an item of at least <b style="color:${RARITY_COLORS[WEEKLY_GUARANTEED_RARITY]}">${escapeHtml(rarityLabel(WEEKLY_GUARANTEED_RARITY))}</b>
+        rarity in the clear cache, on top of the ordinary loot — once a week. Dying or bailing out anywhere along the way
+        costs you the run like any other floor, but never closes it; you can walk back in
+        and try again until you win.</p>
+        <table class="cmp">
+          <tr><td>Danger</td><td>×${config.danger.toFixed(2)}</td></tr>
+          <tr><td>XP</td><td>×${mode.xpMult.toFixed(1)}</td></tr>
+          <tr><td>Gems</td><td>×${mode.gemMult.toFixed(1)}</td></tr>
+        </table>
+        <p>Convergences closed: <b>${this.state.stats.convergencesCleared}</b></p>
         ${this.challengerNote()}
       </aside>`;
   }

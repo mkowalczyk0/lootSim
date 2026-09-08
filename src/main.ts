@@ -5,6 +5,7 @@ import { ELEMENT_COLORS } from "./data/elements";
 import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { dailyUnlocked } from "./data/daily";
+import { weeklyUnlocked } from "./data/weekly";
 import { RARITY_COLORS } from "./data/rarity";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
 import { Hub } from "./game/hub";
@@ -135,6 +136,14 @@ function start(state: GameState, who: AccountInfo): void {
     // and the party wire doesn't carry a daily plan. Solo it's just another dive.
     if (config.daily && party.inRoom) {
       flash("The Vigil is kept alone for now — leave the room to enter it.");
+      enterHub();
+      return;
+    }
+    // The Convergence is solo in v1 too (UAT §17), for the same reason as the Vigil:
+    // the once-a-week bookkeeping is per account and the party wire doesn't carry a
+    // weekly plan.
+    if (config.weekly && party.inRoom) {
+      flash("The Convergence is kept alone for now — leave the room to enter it.");
       enterHub();
       return;
     }
@@ -301,6 +310,7 @@ function start(state: GameState, who: AccountInfo): void {
       case "quartermaster": enterTown("Stash"); break;
       case "comms": enterTown("Party"); break;
       case "vigil": enterTown("Vigil"); break;
+      case "convergence": enterTown("Convergence"); break;
       case "expedition": {
         const expedition = hub.expedition;
         const planet = expedition ? PLANETS_BY_ID[expedition.planetId] : undefined;
@@ -584,6 +594,14 @@ function start(state: GameState, who: AccountInfo): void {
           enterDungeon(nextFloorConfig(config));
           return;
         }
+        // The Vigil and the Convergence don't climb a tier ladder — closing one just
+        // closes it until the next reset, so the generic "tier N is open" flash below
+        // would be reporting a ladder that doesn't exist.
+        if (config.daily || config.weekly) {
+          returnToTown();
+          flash(`${config.mode.name} closed${config.weekly ? " for the week" : " for the day"}.`);
+          return;
+        }
         const tier = state.riftTiers[config.mode.id];
         returnToTown();
         flash(`${config.mode.name} tier ${config.tier} closed. Tier ${tier} is open.`);
@@ -661,6 +679,8 @@ function start(state: GameState, who: AccountInfo): void {
       hub.update(dt, input);
       // The Vigil's portal is on the deck once the delve has gone deep enough (UAT §17).
       hub.vigilOpen = dailyUnlocked(state.stats.deepestDepth);
+      // Same for the Convergence, at its own (deeper) unlock threshold.
+      hub.weeklyOpen = weeklyUnlocked(state.stats.deepestDepth);
       // Tells the room where you're standing, draws everybody else on the deck, and —
       // if you're hosting — starts the run once the last person is in the portal.
       party.syncHub(hub, dt);
