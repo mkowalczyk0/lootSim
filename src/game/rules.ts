@@ -139,6 +139,39 @@ const LINK_RULES: LinkRule[] = [
 ];
 const LINK_SPREAD_CAP = 6;
 
+/**
+ * Execute-threshold keystones (B-2): while the struck enemy is under `frac` of its max
+ * health and `test` holds, the hit is inflated to finish it. The sim has no instant-kill
+ * primitive — `executeMissingHealth` only adds missing-health damage on abilities that
+ * carry it — so a rule "every shot executes the wounded" is expressed here as a damage
+ * multiplier big enough to carry through resists and mitigation.
+ */
+interface ExecuteRule {
+  rule: string;
+  frac: number;
+  test: (e: Enemy) => boolean;
+  /** Throttle (seconds) for "once per encounter" clauses; 0 = every qualifying hit. */
+  gate?: number;
+}
+const EXECUTE_RULES: ExecuteRule[] = [
+  // Ranger "Cull the Weak" — chilled / quarried enemies are executed by every shot.
+  { rule: "ranger.ch.cull_the_weak", frac: 0.30, test: (e) => isChilled(e) || e.sc.has("quarry") },
+  // Ranger "Perfect Shot" — a Deadeye shot executes the low (the full-stack gate is dropped).
+  { rule: "ranger.de.perfect_shot", frac: 0.30, test: () => true },
+  // Reaper "Final Sentence" — the execute window rises to 40% on a branded target.
+  { rule: "reaper.ex.final_sentence", frac: 0.40, test: isMarked },
+  // Assassin "Death Spiral" — bleeding + poisoned + marked: every hit is an Execution.
+  { rule: "assassin.bh.death_spiral", frac: 0.50, test: (e) => e.sc.has("bleed") && e.sc.has("poison") && isMarked(e) },
+  // Assassin "Critical Weakness" — an exposed Contract target, once per encounter.
+  { rule: "assassin.sb.critical_weakness", frac: 0.25, test: (e) => e.sc.has("exposed") && isMarked(e), gate: 25 },
+  // Warden "Apex Predator" — the Warden and pack execute entangled enemies.
+  { rule: "warden.hm.apex_predator", frac: 0.25, test: (e) => e.sc.has("entangled") || e.sc.has("rooted") },
+  // Corsair "Bounty Hunter" — hooked / bountied targets are executed on a line.
+  { rule: "corsair.hybrid.bounty_hunter", frac: 0.25, test: (e) => e.sc.has("bounty") },
+  // Paladin "Holy Execution" — a Judged target that drops low is struck down.
+  { rule: "paladin.hybrid.holy_execution", frac: 0.25, test: (e) => e.sc.has("judged") },
+];
+
 /** Hard crowd control "Adamant Form" locks out while Flow is high. */
 const ADAMANT_CC = ["stunned", "rooted", "freeze", "silenced", "taunted"] as const;
 
@@ -261,6 +294,21 @@ export function rulesOnHit(
   // Corsair "Six Shooter" — every sixth pistol shot crits and reloads.
   if (!ctx.isBasic && has(rules, "corsair.gs.six_shooter") && ctx.isCrit === false) {
     if (st.bump("corsair.gs.six_shooter") % 6 === 0) forceCrit = true;
+  }
+
+  // Execute-threshold keystones (B-2) — finish a wounded, correctly-afflicted target.
+  if (ctx.amount && e.maxHealth > 0) {
+    const frac = e.health / e.maxHealth;
+    for (const x of EXECUTE_RULES) {
+      if (!has(rules, x.rule) || frac > x.frac || !x.test(e)) continue;
+      if (x.gate && !st.gateReady(host, x.rule, x.gate)) continue;
+      const projected = ctx.amount * damageMult;
+      const needed = (e.health + 1) * 1.6; // headroom for resists + mitigation
+      if (projected < needed) damageMult *= needed / projected;
+      forceCrit = true;
+      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 30, color: hero.player.heroClass.color });
+      break;
+    }
   }
 
   // Damage-link keystones (B-1) — a hit on a linked enemy bleeds onto every other one.

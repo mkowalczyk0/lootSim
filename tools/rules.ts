@@ -177,5 +177,28 @@ section("stance / form keystones");
   check("Deathless Form negates a downing hit and spends Souls", out === 0 && !!souls && souls.value <= 12, `out=${out} souls=${souls?.value}`);
 }
 
+// --- B-2: execute-threshold keystones finish a wounded target ---------
+
+section("execute-threshold keystones");
+{
+  const d = dungeonWith("ranger", ["Cold Hunt"]);
+  const hero = d.localHero;
+  const low = spawn(d, 120, 120);
+  low.health = low.maxHealth * 0.2;
+  low.sc.apply("quarry", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const rr = rulesOnHit(d, hero, low, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 1 });
+  check("Cull the Weak inflates a tiny hit into a kill on a quarried low target", rr.damageMult * 1 >= low.health, `x${rr.damageMult.toFixed(1)} vs ${low.health.toFixed(0)}`);
+  check("Cull the Weak forces the crit", rr.forceCrit);
+}
+{
+  const d = dungeonWith("ranger", ["Cold Hunt"]);
+  const hero = d.localHero;
+  const healthy = spawn(d, 120, 120);
+  healthy.health = healthy.maxHealth * 0.8; // above the 30% window
+  healthy.sc.apply("quarry", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const rr = rulesOnHit(d, hero, healthy, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 100 });
+  check("Cull the Weak leaves a healthy quarry alone", rr.damageMult === 1 && !rr.forceCrit);
+}
+
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

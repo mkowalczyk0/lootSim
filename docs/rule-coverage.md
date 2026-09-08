@@ -81,13 +81,21 @@ double-count), `assassin.bh.death_spiral` (really a B-2 execute flip).
 Remaining B-3: `shaman.ws.avatar_of_the_hunt`, `warden.be.primal_guardian`,
 `warden.hybrid.elder_form` — all gated on an Aspect/Site ability that isn't a rule.
 
+**Batch 3** — B-2 execute-threshold keystones: **+8 rule ids** (`EXECUTE_RULES` in
+`rules.ts`, resolved inside `rulesOnHit`). The sim has no instant-kill primitive
+(`executeMissingHealth` only *adds* missing-health damage on abilities that carry it), so
+"every shot executes the wounded" is expressed as a damage multiplier scaled up to carry
+the target's remaining health through resists + mitigation (`(health+1) * 1.6`), plus a
+forced crit. Each rule is `{frac, test}`: `ranger.ch.cull_the_weak` (chilled/quarried,
+≤30%), `ranger.de.perfect_shot` (≤30%, the full-Deadeye gate dropped),
+`reaper.ex.final_sentence` (branded, ≤40%), `assassin.bh.death_spiral` (bleed+poison+mark,
+≤50%), `assassin.sb.critical_weakness` (exposed mark, ≤25%, throttled 25 s ≈ once per
+encounter), `warden.hm.apex_predator` (entangled/rooted, ≤25%),
+`corsair.hybrid.bounty_hunter` (bounty, ≤25%), `paladin.hybrid.holy_execution` (judged,
+≤25%). Tested against a quarried low target vs a healthy one.
+
 ## Backlog (ordered)
 
-- **B-2 execute-threshold flips** — `ranger.ch.cull_the_weak`, `ranger.de.perfect_shot`,
-  `reaper.ex.final_sentence`, `assassin.sb.critical_weakness`, `assassin.bh.death_spiral`,
-  `warden.hm.apex_predator`, `corsair.hybrid.bounty_hunter`, `paladin.hybrid.holy_execution`.
-  One seam: `rulesOnHit` returns an `execute` flag when the target is below the rule's
-  threshold and carries the rule's required status; the hit path finishes the enemy.
 - **B-1 remainder** — `warlock.co.total_corruption` (status → permanent), the two Duelist
   bleed-tick rewrites, `corsair.cm.harpooner` (after Hookshot tether lands in B-4).
 - **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form abilities).
