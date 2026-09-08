@@ -264,6 +264,23 @@ export class TownUI {
         this.render();
         return;
       }
+      // A skill-tree node is a grid cell, so a click has to place *both* axes before it
+      // fires — the generic row handler below can only move the cursor, which would take
+      // the click's row but keep whichever column the keyboard was last on. A screen's
+      // second axis gets its own attribute here rather than being packed into a flat
+      // index, the same way `data-forge-mode` above is its own attribute: the keyboard
+      // path stays the plain `cursor` + branch pair it already was, and both routes end
+      // up calling the identical `primary()`.
+      const cell = target.closest<HTMLElement>("[data-branch]");
+      if (cell) {
+        const branch = Number(cell.dataset.branch);
+        if (this.tab === "Tree") this.treeBranch = branch;
+        else if (this.tab === "Universal") this.universalBranch = branch;
+        this.cursor = Number(cell.dataset.index ?? 0);
+        this.primary();
+        this.render();
+        return;
+      }
       const row = target.closest<HTMLElement>("[data-index]");
       if (!row) return;
       this.cursor = Number(row.dataset.index);
@@ -2226,6 +2243,7 @@ export class TownUI {
         const state = taken ? "taken" : open ? "open" : "locked";
         nodes.push(`
           <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${here ? "on" : ""}"
+               data-branch="${b}" data-index="${row}"
                style="--accent:${cls.color}">
             <span class="tree-name">${escapeHtml(node.name)}</span>
             <span class="tree-mods">${escapeHtml(describeNode(node, dctx))}</span>
@@ -2325,6 +2343,7 @@ export class TownUI {
         const state = taken ? "taken" : open ? "open" : "locked";
         nodes.push(`
           <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${isCrossLinked(node) ? "crosslink" : ""} ${here ? "on" : ""}"
+               data-branch="${b}" data-index="${row}"
                style="--accent:${UNIVERSAL_ACCENT}">
             <span class="tree-name">${escapeHtml(node.name)}</span>
             <span class="tree-mods">${escapeHtml(describeNode(node))}</span>
@@ -2343,6 +2362,7 @@ export class TownUI {
     const rootCell = root
       ? `<div class="tree-root">
            <div class="tree-node ${rootTaken ? "taken" : p.canAllocateUniversal(root, left) ? "open" : "locked"} ${rootHere ? "on" : ""}"
+                data-branch="${this.universalBranch}" data-index="0"
                 style="--accent:${UNIVERSAL_ACCENT}">
              <span class="tree-name">${escapeHtml(root.name)}</span>
              <span class="tree-mods">${escapeHtml(describeNode(root))} · every path starts here</span>
