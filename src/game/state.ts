@@ -1,6 +1,6 @@
 import { clamp } from "../core/math";
 import { Rng } from "../core/rng";
-import { clearSave, loadRaw, saveRaw } from "../core/save";
+import { MemorySaveStore, serializeSave, type SavedGame, type SaveStore } from "../core/save";
 import { MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../data/chests";
 import {
@@ -541,9 +541,16 @@ export class GameState {
     };
   }
 
+  /**
+   * Where saves go. `main.ts` installs the server-backed store once the player is logged
+   * in (`docs/accounts.md`); until then — and in every test and tool — the default just
+   * remembers the last blob.
+   */
+  static saveStore: SaveStore = new MemorySaveStore();
+
   save(): void {
     if (this.wiped) return;
-    saveRaw(this.toJSON());
+    GameState.saveStore.write(serializeSave(this.toJSON()));
   }
 
   /**
@@ -551,14 +558,14 @@ export class GameState {
    * reload immediately — rebuilding a whole GameState in place would leave the town,
    * the renderer and the loop holding the old one.
    */
-  wipe(): void {
+  wipe(): Promise<void> {
     this.wiped = true;
-    clearSave();
+    return GameState.saveStore.clear();
   }
 
-  static load(): GameState {
+  /** A fresh state, or one rebuilt from a parsed save (`parseSaved` in `core/save.ts`). */
+  static fromSaved(saved: SavedGame | null): GameState {
     const state = new GameState();
-    const saved = loadRaw();
     if (!saved) return state;
 
     try {
