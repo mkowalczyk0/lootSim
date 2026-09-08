@@ -61,8 +61,20 @@ export function emptyEquipment(): Equipment {
   return { weapon: null, armor: null, shield: null, ring: null, gloves: null, necklace: null };
 }
 
+/**
+ * XP to advance from `level` to the next one (not cumulative).
+ *
+ * The post-playtest rebalance (UAT §7) steepened this: the old `100 * 1.35^(n-1)` let a
+ * fresh character reach level 6 — enough tree points to complete a whole path — inside the
+ * first ~10 minutes, so a build was "done" before the game had really started. The base
+ * and the exponent are both up a little now, which compounds: the first few levels still
+ * come fast enough to unlock the early abilities, but the back half of the level range is
+ * meaningfully slower, so deep content keeps its impact. The heavy lifting on "a build is
+ * done too fast" is done by the roughly-halved `treePointsFor` below — this curve just
+ * stops raw level (health, growth mods, ability unlocks) from outrunning the content.
+ */
 export function xpForLevel(level: number): number {
-  return Math.floor(100 * Math.pow(1.35, level - 1));
+  return Math.floor(115 * Math.pow(1.38, level - 1));
 }
 
 /**

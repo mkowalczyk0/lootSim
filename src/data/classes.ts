@@ -351,7 +351,16 @@ export function isClassId(id: unknown): id is ClassId {
   return typeof id === "string" && (CLASS_IDS as readonly string[]).includes(id);
 }
 
-/** Tree points earned by reaching `level`: one a level, two on every fifth. */
+/**
+ * Tree points earned by reaching `level`: one every two levels, plus one on every tenth.
+ *
+ * The post-playtest rebalance (UAT §7) roughly halved this. The old "one a level plus one
+ * on every fifth" handed out a full path's worth of points (six — the fifth-row keystone
+ * costs two) by level six, and the entire 5×5 tree well before the level cap with dozens
+ * of points left to waste. Now a full path lands around level ten, a second around twenty,
+ * and finishing the tree is a level-fifty-ish achievement rather than a formality — the
+ * player is *building* through the early game and *completing* through the late one.
+ */
 export function treePointsFor(level: number): number {
-  return Math.max(0, level - 1) + Math.floor(level / 5);
+  return Math.floor(Math.max(0, level) / 2) + Math.floor(Math.max(0, level) / 10);
 }

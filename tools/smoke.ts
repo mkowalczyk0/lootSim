@@ -12,7 +12,7 @@ import { Dungeon, inTelegraph } from "../src/game/dungeon";
 import { Hub, HUB_HEIGHT, HUB_WIDTH } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
-import { Player } from "../src/game/player";
+import { Player, xpForLevel } from "../src/game/player";
 import { GameState, POTION_PRICE } from "../src/game/state";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
@@ -21,7 +21,7 @@ import { profileFor } from "../src/data/depth";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
-import { CLASSES, CLASS_IDS, type ClassId } from "../src/data/classes";
+import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
 import { CLASS_BY_ID, buildProgressionTree } from "../src/progression/index";
 import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
@@ -911,6 +911,31 @@ console.log("\n=== the behaviour tree ===");
   check("switching back restores the tree", swap.player.allocated.length === shamanAllocated);
   check("switching back restores the gear",
     Object.values(swap.player.equipment).filter((it) => it !== null).length === shamanGearCount);
+}
+
+console.log("\n=== progression pace (UAT §7 — power is earned, not handed out) ===");
+{
+  // A full tree path costs 6 points: four 1-point rows plus a 2-point keystone. The
+  // post-playtest rebalance pushes completing one from ~level 6 to ~level 10, a second
+  // to ~level 20, and finishing the whole 5-path tree (30 points) from the low 30s out
+  // past level 45 — so the early game is *building* and the late game is *completing*.
+  const PATH_COST = 6;
+  const TREE_COST = 30;
+  const levelFor = (points: number) => { let l = 1; while (treePointsFor(l) < points && l < 200) l++; return l; };
+  const onePath = levelFor(PATH_COST);
+  const twoPaths = levelFor(PATH_COST * 2);
+  const wholeTree = levelFor(TREE_COST);
+  console.log(`  one full path at level ${onePath}, two at ${twoPaths}, whole tree at ${wholeTree}`);
+  check("a full path can't be finished before level 10", onePath >= 10, `level ${onePath}`);
+  check("a second full path is a ~level-20 milestone", twoPaths >= 18, `level ${twoPaths}`);
+  check("finishing the whole tree is a level-45+ goal", wholeTree >= 45, `level ${wholeTree}`);
+
+  // ...and getting to level 10 is real mileage, not ten minutes. Cumulative XP, then a
+  // rough floor count at the floor-1 kill rate (≈120 xp/floor before the clear cache).
+  let xpTo10 = 0;
+  for (let l = 1; l < 10; l++) xpTo10 += xpForLevel(l);
+  console.log(`  cumulative XP to level 10: ${xpTo10} (~${Math.round(xpTo10 / 260)} early floors)`);
+  check("reaching level 10 is a multi-floor investment", xpTo10 >= 3200, `${xpTo10} xp`);
 }
 
 console.log("\n=== per-class saves and the shared stash ===");
