@@ -9,7 +9,9 @@
  * (and `id` values are frozen for save compatibility — `GameState.planetProgress` is
  * keyed by them) but every player-facing string is a Reliquary **sector**: six regions,
  * one per damage element, from `game_story_worldbuilding.md` → "Reliquary Sectors" and
- * art-style-guide §8.2. A full rename of the type/loop is a follow-up.
+ * art-style-guide §8.2. `MODES.planet.name`/`.short` (`data/modes.ts`) carry the same
+ * rename now — "Reliquary Expedition" / "Reliquary" — so a run into a sector reads
+ * consistently everywhere the delve and the rifts already do.
  *
  * Mechanically a sector run is still shaped exactly like a rift — a fixed run of floors
  * ending in a boss, tiers that reopen the same sector harder. Each sector owns a full

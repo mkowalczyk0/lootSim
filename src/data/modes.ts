@@ -23,6 +23,11 @@
  * progress orphaned under a dead `hoard` key while the ladder it reads reset to tier 1.
  * A rename worth no player's rift progress. If it ever does change, it needs a
  * `SAVE_VERSION` bump that migrates both records, not a find-and-replace.
+ *
+ * The same rule protects `"planet"`: `data/planets.ts` already renamed every
+ * player-facing string in the sector system to the Ashen Reliquary, and this mode's own
+ * `name`/`short` (now "Reliquary Expedition" / "Reliquary") were the last loose thread —
+ * but the id stays `planet` for exactly the reason `hoard` did.
  */
 
 import { challengerMultiplier } from "./challenger";
@@ -116,14 +121,17 @@ export const MODES: Record<RunModeId, RunMode> = {
     coinMult: 2.8, keyMult: 2.4, gemMult: 1.9, xpMult: 0.9, unlockDepth: 3,
   },
   /**
-   * The generic mechanical shell every planet expedition shares — rift-shaped, and a
-   * step easier than the abyss, because a planet pays in materials rather than rarity.
-   * A specific planet's own depth curve, boss and material payout ride along on
-   * `RunConfig.planet` instead of here; unlocking is per-planet (`planetUnlocked` in
+   * The generic mechanical shell every Reliquary expedition shares — rift-shaped, and a
+   * step easier than the abyss, because a sector pays in materials rather than rarity.
+   * A specific sector's own depth curve, boss and material payout ride along on
+   * `RunConfig.planet` instead of here; unlocking is per-sector (`planetUnlocked` in
    * `data/planets.ts`), not gated by this mode's `unlockDepth`.
+   *
+   * Display name is the Reliquary Expedition; the id stays `planet` because it's a save
+   * key (`GameState.riftTiers`, `RunStats.riftsCleared`). See the file header.
    */
   planet: {
-    id: "planet", name: "Planet Expedition", short: "Expedition",
+    id: "planet", name: "Reliquary Expedition", short: "Reliquary",
     blurb: "Fight and mine your way to the boss. This is where materials come from.",
     color: "#4ade80",
     isRift: true, floors: 3,
