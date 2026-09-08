@@ -226,8 +226,14 @@ function playFloor(
 
     // The route only has to be roughly current, same tradeoff the real monster AI
     // already makes — rebuilding a BFS field every tick over a big floor is wasted work.
-    const goalX = target ? target.x : d.portal.x;
-    const goalY = target ? target.y : d.portal.y;
+    // With nothing to chase, head for the way *onward* — the floor's far end. That sweeps
+    // the bot through the room graph and is how it finds the monsters it hasn't met yet.
+    // This used to read `d.portal`, which was the same point back when the entrance
+    // portal wrongly sat at the far end; now that the entrance is (correctly) the spawn,
+    // aiming there would park the bot on its own arrival point and it would never explore.
+    const goal = d.completionPortal ?? d.level.portal;
+    const goalX = target ? target.x : goal.x;
+    const goalY = target ? target.y : goal.y;
     flowTimer -= DT;
     if (flowTimer <= 0 || Math.hypot(goalX - flowGoalX, goalY - flowGoalY) > 50) {
       flow.update(d.level, goalX, goalY);
@@ -2003,23 +2009,13 @@ console.log("\n=== extracting mid-fight ===");
 {
   const state = new GameState();
   const d = new Dungeon(state, delveConfig(3), 99);
-  const input = new FakeInput();
-  const flow = new FlowField(d.level);
-  flow.update(d.level, d.portal.x, d.portal.y);
-  let t = 0;
-  // Walk to the portal without fighting anything — the route has to go around walls
-  // now, not just in a straight line, so this follows the same field a monster would.
-  while (t < 30 && !d.atPortal) {
-    input.beginTick();
-    for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
-    const dir = approachDir(d, flow, d.portal.x, d.portal.y);
-    if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
-    if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
-    d.update(DT, input as unknown as Input);
-    d.drainEvents();
-    t += DT;
-  }
-  check("portal is reachable mid-fight", d.atPortal, `phase=${d.phase} after ${t.toFixed(1)}s`);
+  // No walk needed any more: UAT §6's entrance portal is the spawn, so you arrive
+  // standing in your own early exit. (This used to route a bot across the whole floor to
+  // reach it, which was the bug — the "door you came in" was at the far end. The
+  // route-around-walls coverage that walk provided now lives on the *completion* portal,
+  // which is the far point and is checked for walkability from the spawn below.)
+  check("you arrive standing in the entrance portal", d.atPortal,
+    `phase=${d.phase}, ${Math.hypot(d.avatar.x - d.portal.x, d.avatar.y - d.portal.y).toFixed(1)}u from it`);
   check("cannot descend without clearing", !d.canDescend);
   check("the entrance portal is an early exit while the floor stands", d.canEarlyExtract);
   check("no completion portal until the floor is done", d.completionPortal === null);
@@ -2065,6 +2061,12 @@ console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
     if (cp) {
       const gap = Math.hypot(cp.x - d.portal.x, cp.y - d.portal.y);
       check("it stands somewhere new, not on the entrance", gap > 120, `${gap.toFixed(0)} units away`);
+      // It is the generator's own far point rather than a search result, so "somewhere
+      // new" is guaranteed by construction instead of by 50 random tries with a fallback
+      // that could land back on the entrance.
+      check("the completion portal is the floor's far end, not a random spot",
+        cp.x === d.level.portal.x && cp.y === d.level.portal.y,
+        `portal (${cp.x.toFixed(0)}, ${cp.y.toFixed(0)}) vs far end (${d.level.portal.x.toFixed(0)}, ${d.level.portal.y.toFixed(0)})`);
       check("it is on open floor", !circleHitsWall(d.level, cp.x, cp.y, 14), `(${cp.x.toFixed(0)}, ${cp.y.toFixed(0)})`);
       // Reachability: the same breadth-first field the monsters chase the player with.
       // If it can route from the exit back to where the party spawned, a player can walk it.
@@ -2076,6 +2078,36 @@ console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
       check("standing on the entrance no longer offers a descent",
         !d.canEarlyExtract, `phase=${d.phase}`);
     }
+  }
+
+  // UAT §6 calls the entrance portal "where you came in", so it has to be *at* the
+  // spawn rather than merely somewhere on the same floor. This is the regression test
+  // for a two-portal retrofit bug: it was left reading `level.portal`, which both
+  // generators deliberately place as far from the spawn as the floor reaches (the room
+  // at maximum graph distance, or the opposite end of a boss arena). Measured before the
+  // fix: a median 608 units away on a normal floor and 930 on a boss floor, and not one
+  // floor in 400 where it was inside the 34 units you need to actually use it — so the
+  // early-exit door was unreachable from the place you arrive.
+  {
+    let worstGap = 0;
+    let standingIn = 0;
+    let floors = 0;
+    // Multiples of five are boss floors, which generate as one arena instead of a room
+    // graph — the bug was worst there, so both shapes are covered.
+    for (const depth of [3, 5, 7, 12, 15, 18, 20]) {
+      for (let s = 0; s < 6; s++) {
+        const d = new Dungeon(geared(24, 8100 + s, 20), delveConfig(depth), 33_000 + depth * 97 + s);
+        floors++;
+        worstGap = Math.max(worstGap, Math.hypot(d.portal.x - d.level.start.x, d.portal.y - d.level.start.y));
+        if (d.canEarlyExtract) standingIn++;
+      }
+    }
+    check("the entrance portal sits on the spawn, on every floor shape",
+      worstGap < 1, `worst ${worstGap.toFixed(1)}u off across ${floors} floors`);
+    // The behaviour that actually matters: arriving means standing in your own exit, so
+    // bailing out is available from the moment you land (it costs you nothing yet).
+    check("so a player begins the floor standing in the entrance portal",
+      standingIn === floors, `${standingIn}/${floors} floors`);
   }
 
   // The elite requirement has to be completable — the director forces the last of them
@@ -2593,7 +2625,9 @@ console.log("\n=== multiplayer ===");
       const target = host.enemies.filter((e) => e.state !== "spawning")
         .sort((a, b) => Math.hypot(a.x - hero.avatar.x, a.y - hero.avatar.y)
           - Math.hypot(b.x - hero.avatar.x, b.y - hero.avatar.y))[0];
-      const goal = target ?? host.portal;
+      // Same as the solo bot: with no target, explore toward the floor's far end rather
+      // than toward the entrance, which is now the spawn they're already standing on.
+      const goal = target ?? host.completionPortal ?? host.level.portal;
       if (repath) routes[i]!.update(host.level, goal.x, goal.y);
       const step = routes[i]!.direction(host.level, hero.avatar.x, hero.avatar.y);
       const angle = step
