@@ -376,12 +376,16 @@ export class TownUI {
 
     const count = this.rowCount();
 
-    // Stash and Hero are real 2-D grids: W/A/S/D walk them in both axes and A/D are
-    // spent on nothing but movement. Every other tab keeps the flat-list model —
-    // up/down walk the cursor, left/right adjust whatever that tab adjusts.
-    if (this.tab === "Stash" || this.tab === "Hero") {
+    // Stash, Hero and Reforge (Craft's other screen) are real 2-D grids: W/A/S/D walk
+    // them in both axes and A/D are spent on nothing but movement. Every other tab keeps
+    // the flat-list model — up/down walk the cursor, left/right adjust whatever that tab
+    // adjusts.
+    const reforgeGrid = this.tab === "Craft" && this.forgeMode === "reforge";
+    if (this.tab === "Stash" || this.tab === "Hero" || reforgeGrid) {
       const walk = (dx: number, dy: number) => {
-        const moved = this.tab === "Stash" ? this.navStash(dx, dy) : this.navHero(dx, dy);
+        const moved = this.tab === "Stash" ? this.navStash(dx, dy)
+          : reforgeGrid ? this.navReforge(dx, dy)
+          : this.navHero(dx, dy);
         if (moved) { this.resetArmed = false; dirty = true; }
       };
       if (input.wasPressedOrRepeated("up")) walk(0, -1);
@@ -499,7 +503,7 @@ export class TownUI {
       this.party.setDepth(this.party.depth + dir);
       return true;
     }
-    if (this.tab === "Craft") {
+    if (this.tab === "Craft" && this.forgeMode === "craft") {
       const options: (Element | null)[] = [null, ...MAGIC_ELEMENTS];
       const i = options.indexOf(this.craftEssence);
       this.craftEssence = options[(i + dir + options.length) % options.length] ?? null;
@@ -546,8 +550,10 @@ export class TownUI {
     return true;
   }
 
-  /** How many columns the stash card grid is actually laid out in right now. The grid
-   *  is `auto-fill`, so this is read back off the DOM rather than assumed. */
+  /** How many columns the currently-shown card grid is actually laid out in right now
+   *  (Stash's or Reforge's — they share the `.stash-grid` class and only one is ever on
+   *  screen at a time). The grid is `auto-fill`, so this is read back off the DOM rather
+   *  than assumed. */
   private stashColumns(): number {
     const grid = this.root.querySelector<HTMLElement>(".stash-grid");
     if (grid) {
@@ -575,6 +581,24 @@ export class TownUI {
     let next = this.cursor;
     if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
     else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /**
+   * 2-D movement across the Reforge card grid — the same column-stepping Stash uses,
+   * minus the rarity-filter bar Reforge doesn't have, so "up" from the top row simply
+   * stays put instead of walking onto a bar that isn't there.
+   */
+  private navReforge(dx: number, dy: number): boolean {
+    const n = this.reforgeCandidates().length;
+    if (n === 0) return false;
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0 && this.cursor >= cols) next = this.cursor - cols;
     else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
     if (next === this.cursor) return false;
     this.cursor = next;
