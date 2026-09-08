@@ -40,6 +40,14 @@ export const LANCER_MOMENTUM: ResourceSpec = {
   ui: "bar",
   decayPerSec: 12,
   decayDelay: 1.5,
+  // A stationary Lancer used to bleed to zero in 9.7 s and then have *nothing* castable
+  // until they moved again, which is what the owner saw as "the skill does nothing on the
+  // first press" — the press was refused for cost, and the only feedback is a small
+  // floater. 10 is exactly the two cheapest skills (Vaulting Spear 8, Impaling Thrust 10),
+  // so standing still still costs you the 90-threshold speed bonus and both big spenders
+  // (Crescent Sweep 20, Redline Charge 35) — the class's whole "keep moving" bargain is
+  // intact. It just can no longer end with the Lancer unable to act at all.
+  decayFloor: 10,
   generation: [
     { on: "move", amount: 1.5, perUnit: "distance" },
     { on: "dashStart", amount: 10 },

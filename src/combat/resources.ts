@@ -101,6 +101,12 @@ export interface ResourceSpec {
   decayPerSec?: number;
   /** Seconds without a generation event before `decayPerSec` kicks in (out-of-combat bleed). */
   decayDelay?: number;
+  /**
+   * Decay stops here instead of at zero, so a decaying pool can never leave its class
+   * unable to act. A pool already *below* its floor is left alone — the floor clamps the
+   * bleed, it never tops anything up, so `start: "empty"` still means empty.
+   */
+  decayFloor?: number;
   generation?: readonly ResourceGenRule[];
   thresholds?: readonly ResourceThreshold[];
   overflow?: OverflowRule;
@@ -273,7 +279,10 @@ export class ResourcePool {
     if (this.spec.decayPerSec) {
       const delay = this.spec.decayDelay ?? 0;
       if (this.sinceGen >= delay) {
-        this.value = Math.max(0, this.value - this.spec.decayPerSec * dt);
+        const floor = this.spec.decayFloor ?? 0;
+        if (this.value > floor) {
+          this.value = Math.max(floor, this.value - this.spec.decayPerSec * dt);
+        }
         if (this.spec.temporary && this.value <= 0) this.spent = true;
       }
     }

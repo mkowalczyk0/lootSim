@@ -428,7 +428,7 @@ minute** across all four builds.
 and the original triage called it a harness artifact because "the driver only strafes a
 40 px orbit." That diagnosis of the *cause* was right and the inference was backwards: a
 40 px orbit accumulates almost no net distance, so the arena starved a rule that the real
-game floods. Comet Charge is supposed to be the Lancer's identity moment; at one cast per
+game floods. Meteor Lance is supposed to be the Lancer's identity moment; at one cast per
 1.2 s it is the Lancer's basic attack.
 
 **Proposed change** (`src/progression/lancer.ts`): `on: "move"` amount `0.6 → 0.03`
@@ -874,6 +874,191 @@ joins `corpseCreated`, `enterCombat` and `leaveCombat` as event types declared i
 
 ---
 
+## Cluster 9 — the `0a6e2d6` family, swept across all 21 classes — **APPLIED**
+
+`0a6e2d6` ("Stage 11: fix abilities whose targeting mode never filled a target list")
+found four abilities by hand. Hand-finding does not scale to 210, and the Lancer's
+blocked-lane ultimate showed the family is wider than targeting — an ability can resolve
+its targets perfectly and still spend its cost for no observable effect. `npm run
+deadpaths` (`tools/deadpaths.ts`) is the instrument for both halves, and it is now part of
+`npm test` (6.7 s).
+
+### Pass 1 — static: a step that reads a target list nothing filled
+
+`selectActorIds` resolves `to: "allTargets" | "target"` — and most steps' *omitted* `to` —
+out of `ctx.targets.actorIds`. Five targeting modes never put an actor in that list:
+`point`, `direction`, `corpse`, `zone`, `temporalAnchor`. A step reading it under one of
+those is dead whatever the numbers on it say. Nesting is walked, so a step buried in a
+`delay` / `reactive` / `random` / `onExpire` branch is caught too.
+
+One finding, and it is the same bug `0a6e2d6` fixed four times:
+
+| Ability | Was | Now |
+| --- | --- | --- |
+| `magician.gravity_well` | `targeting: "point"`, `{ kind: "pull", to: "allTargets" }` — **0 targets, no haul** | `targeting: "radius"`, `shape: { radius: 100 }` — **6 targets, +12.1u hauled inward** |
+
+The haul *is* the ability ("a pit of collapsing space that hauls everything toward its
+centre"); the void puddle is the follow-through. Measured with monsters ringed 70u around a
+well placed 200u away along a verified-clear lane: mean radial change went from **-1.4u**
+(they walked *away*, toward the caster) to **+12.1u**. `force: 160` is untouched — this
+restores authored intent, it does not retune anything.
+
+`to: "enemies"` would have been the wrong fix and is worth recording as a trap: that
+selector measures from the **caster**, not from the resolved point, so a well placed 260
+units away would have hauled in whatever was standing next to the Magician.
+`0a6e2d6`'s own commit message describes the Monk fix as landing "around the landing" —
+`selectActorIds` centres it on the caster, so that ability is worth a second look.
+`targeting: "radius"` is the mode that actually fills the list from around the aim point,
+*and* still returns that point, so the zone lands exactly where it always did.
+
+### Pass 2 — live: cast all 210 abilities and diff against a no-cast control
+
+Every ability of every class, cast once in an arena built to be maximally favourable —
+40 monsters at five radii in eight directions, corpses underfoot, a real `castInputFor`
+aim — with every observable sampled *continuously* and diffed against a control run of the
+same scenario on the same seed.
+
+**Result: 0 dead, 9 inert-with-a-stated-reason.** Getting to a trustworthy zero took four
+corrections to the instrument, each of which had produced a false accusation:
+
+| The instrument said | Why it was wrong |
+| --- | --- |
+| 24 abilities dead | It never observed `resource`, `stance`, `taunt` or terrain deltas at all. |
+| Crossguard dead | It sampled only after 150 ticks. A 1.6 s ward and a 1 s self-buff are long gone by then — peaks, not end state. |
+| 4 `resource` grants dead | It primed every pool to **max**, so `pool.add(25)` was a no-op. Pools now sit at half, with only the charged pool topped up. |
+| Reinforced Barricade *working* | Drift counted the ability's own **cost** as an effect. Drift is now attributed only to the pools the ability's own data says it moves. |
+
+The last one cuts both ways and is the reason to keep the two passes separate: Gravity Well
+reads "ok" in pass 2 all along, because its zone lands and ticks damage — only the static
+pass could see that the pull addressed nobody.
+
+### Not mine to fix — engine seams, flagged rather than guessed at
+
+Every one of these is correctly-authored data blocked by a stub in `src/game/`. The tool
+reports them every run and deliberately does **not** fail on them.
+
+| Seam | Blocks | Reach |
+| --- | --- | --- |
+| `Dungeon.spawnTerrain()` returns -1 (documented: "lands with the ability cutover") | `necromancer.ossuary_wall` and `engineer.reinforced_barricade` do **nothing at all**; nine more abilities lose a component | 11 `terrain` steps across 8 classes |
+| `Dungeon.markOf()` is a stub — `markTargets` is read and never written | `warlock.soul_detonation` is **entirely dead** (both its targeting *and* its spread read the mark); `duelist.countermark`'s reactive damage never lands | 3 abilities + 1 Duelist hybrid mutation |
+| `setThreat()` early-returns on any op but `taunt` | `threat` ops `drop` / `generate` are silently dropped | assassin, juggernaut ×2 + a foundation node, lancer hybrid, warden |
+| `moveActor` drops `MoveRequest.leaveAnchor` | "dash out and come back" dashes again | 6 abilities (already on the backlog) |
+| `shieldActor` is `Math.max`, hero-only | a shield smaller than a standing ward does nothing; a shield aimed at an ally minion does nothing | every `shield` step |
+
+`warlock.soul_detonation` wants a design call, not a guess: its description is "centred on
+the **most-cursed** enemy", and there is no targeting mode for "most status stacks".
+Re-pointing it at `highestThreatEnemy` would land it on an arbitrary enemy, because
+`threatToward` is a stub too and returns 0 for everything.
+
+### Guarded
+
+`npm run deadpaths` exits non-zero on a blind target list or an inert ability with no
+staged precondition to excuse it, and is wired into `npm test`. A new ability can no longer
+ship with the `0a6e2d6` bug in it. Engine-stub findings stay advisory — failing on those
+would make the guard useless until the seams are written.
+
+---
+
+## Cluster 10 — the Lancer's two live-play bugs — **APPLIED**
+
+Reported by the owner from real play, relayed through `lootsim-7c`: the Lancer's ultimate
+"activates but doesn't move the character", and its other skills "seem to do nothing on
+the first press and only fire on a second". Two unrelated bugs, neither of them Cluster 8.
+
+**Cluster 8 was ruled out with evidence, not reasoning.** A probe driving the real
+`castSkill` / `useUltimate` path was run against HEAD and against `56e6dcb~1` in a
+throwaway worktree: output identical except one line, and the ultimate moved *further*
+after Cluster 8. Every Lancer ability the owner can press reports `followUp=none` and
+`pending=0`, so the Cluster 8 code path is never entered. Both bugs trace to `cb4170f`
+("Stages 5-10: wire the 21-class progression system into the live game").
+
+### Bug A — a lane charge that had nowhere to go still cost a full meter
+
+`lancer.meteor_lance` is `{ kind: "move", style: "charge", distance: 600 }` along the
+facing. `leapTo` walks the lane in 12-unit steps and stops at the first wall, so a
+*partly* blocked lane already gave you as much of the charge as fits — that part was
+never broken. The bug was the fully-blocked case: the ultimate spent the whole meter,
+dealt its damage, and left you standing exactly where you were.
+
+Fixed by refusing the cast *before* the meter is spent (`Dungeon.laneCharge`), which is
+the only non-exploitable shape: refunding *after* the effects ran would let a player park
+against a wall and farm the damage for free. The lane scan is extracted into `leapScan`
+so the gate and the actual leap cannot disagree about the geometry. "Essentially nothing"
+is **one hero body diameter** — a charge that cannot clear its own footprint. Partly
+blocked lanes are deliberately untouched.
+
+480 (position, direction) pairs across 12 depth-9 floors, full meter, monster 120u down
+the lane:
+
+| | pairs | meter spent | mean move | mean dmg |
+| --- | --- | --- | --- | --- |
+| blocked lane, **before** | 36 (7.5%) | **36/36** | 6.0u | 367 |
+| blocked lane, **after** | 36 (7.5%) | **0/36** | 0.0u | 0 |
+| clear lane, before | 444 (92.5%) | 444/444 | 176.8u | 445 |
+| clear lane, after | 444 (92.5%) | 444/444 | 176.8u | 445 |
+
+The clear-lane rows are identical, which is the point. Note the blocked case did previously
+deal 367 damage — so this is not a pure win handed to the player, it removes damage they
+used to get. It is still strictly better for them: they keep a full meter and can take two
+steps for the full 445 and a real charge.
+
+The gate applies to all five `style: "charge"` abilities in the roster — `lancer`
+(Meteor Lance, Redline Charge), `juggernaut`, `paladin` (Aegis Rush), `warden` — because
+all five have the same bug. Skills get a "no room" floater; the ultimate gets
+"no room to charge".
+
+**`npm run builds` cannot measure this, and the byte-identical ledger is expected.** The
+harness bot presses `special` unconditionally on every tick the meter is full, with no
+line-of-sight or target check, so a refusal is simply retried a fraction of a second later
+once its facing rotates — and the Lancer bot moves at 341–420 u/s. The bug only bites a
+press that *cannot* be retried immediately: a human, aiming deliberately, backed against a
+wall. Hence the direct probe above and the assertions below.
+
+### Bug B — a stationary Lancer could not pay for anything
+
+`LANCER_MOMENTUM` is `start: "empty"`, `decayPerSec: 12`, `decayDelay: 1.5`, and its four
+skills cost 8 / 10 / 20 / 35. Standing still:
+
+| t | 0s | 3s | 6s | 9s | 10s | 15s |
+| --- | --- | --- | --- | --- | --- | --- |
+| momentum, before | 100 | 82 | 46 | 10 | **0** | **0** |
+| payable skills, before | 4/4 | 4/4 | 4/4 | 1/4 | **0/4** | **0/4** |
+| momentum, after | 100 | 82 | 46 | 10 | **10** | **10** |
+| payable skills, after | 4/4 | 4/4 | 4/4 | 2/4 | **2/4** | **2/4** |
+
+At 9.7 s a stationary Lancer had *nothing* castable, permanently, until they moved. Every
+press was refused for cost, and the only feedback is a small "no resource" floater — which
+is exactly why it read as "the skill does nothing on the first press", and why a fraction
+of a second of movement made the second press work.
+
+`decayDelay` and `decayPerSec` were the only two knobs on the pool and both merely move
+the cliff later, so this adds a generic `ResourceSpec.decayFloor`: decay stops there
+instead of at zero, and a pool already *below* its floor is left alone, so `start:
+"empty"` still means empty. `LANCER_MOMENTUM` gets `decayFloor: 10` — exactly the two
+cheapest skills. Standing still still costs the 90-threshold speed bonus and both big
+spenders (Crescent Sweep 20, Redline Charge 35), so the class's "keep moving" bargain is
+intact; it just can no longer end with the Lancer unable to act at all. No other class
+sets the field, so no other class moves.
+
+### Guarded
+
+Seven assertions in `npm run rules`: the blocked charge keeps its meter and does not move;
+a *verified-clear* lane still spends the meter and still charges (432u) — that second half
+is the one that matters, since "no room" must never become a way to refuse a charge that
+had room; and after 15 s stationary, momentum sits at its floor with at least one skill
+payable and at least one still priced above it.
+
+### Also found
+
+CLAUDE.md's class table calls the Lancer's ultimate **Comet Charge**. That string exists
+nowhere in `src/` — `src/data/classes.ts` records that the `ultimate` field moved onto
+`PilotClass`, and the ability has been `Meteor Lance` since the progression cutover
+(`docs/classes_refactor.md` §"Ultimate: Meteor Lance"). The whole five-class table is
+stale in the same way, so it wants a documentation pass and an owner call on which name
+is canonical — not a one-line edit from me.
+
+---
+
 ## Backlog (evidence gathered, proposals pending)
 
 - ~~**Instrument the generation events**~~ — **DONE**, and it changed the answer. The
@@ -903,6 +1088,11 @@ joins `corpseCreated`, `enterCombat` and `leaveCombat` as event types declared i
 - ~~**Build-differentiation harness**~~ — **DONE**, `tools/builds.ts` / `npm run builds`.
   It produced Clusters 5–7 and the Cluster 2 correction. Still to do on the harness itself:
   the generation-event counters above, and folding it into `npm test` once §35 passes.
+- **Five engine seams that dead-end authored data** (Cluster 9) — `spawnTerrain`,
+  `markOf`, `setThreat`'s non-taunt ops, `leaveAnchor`, and `shieldActor`'s hero-only
+  `Math.max`. Between them they fully kill three abilities and partially kill roughly
+  twenty. All are `src/game/` work, so all are flagged rather than fixed; `npm run
+  deadpaths` reports them on every run.
 - **Raid-scale (10–20 p) hazard constraints** — consolidate the scattered §4 notes into
   one section: redirect `fraction` cap + total-redirect clamp per hit; party-wide
   `guardsDeath` single-source + decay; zone-merge total-radius cap (`mergeable` threaded
