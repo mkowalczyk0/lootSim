@@ -48,6 +48,7 @@ startup, not hot-reloaded.
 
 ## Generation budget
 
-The PixelLab trial is 40 generations total. Don't spend them on throwaways — each test
-should target a real style-guide deliverable (§18 backlog in the style guide). Check
-what's left any time by asking for the PixelLab balance.
+The account has since moved off the 40-generation trial onto a paid tier (check
+`get_balance` for the current cycle's count and reset date). Don't spend generations on
+throwaways regardless of how many are left — each test should target a real
+style-guide deliverable (§18 backlog in the style guide).

@@ -126,11 +126,18 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "icon.necklace": { id: "icon.necklace", w: 28, h: 29, worldScale: 0.50, feet: 0.12 },
 
   // --- named items (UAT §28 step 3/4) --- one row per `NamedItemDef.art`, by convention
-  // `named.<def id>`, PNG under `src/render/atlas/named/`. A definition may name an id that
-  // has no row here yet: `itemIcon` / `pickupSprite` fall back to the type icon tinted by
-  // rarity, so art can land after the item does. Sizes follow the icon rows above — the
-  // UI normalises by width through pixelImageFit, so `worldScale` is only the floor size.
-  // (No rows yet: every shipped named item is on the fallback. Add art here + a PNG.)
+  // `named.<def id>`, PNG under `src/render/atlas/items/named/` (style guide §12.3). A
+  // definition may name an id that has no row here yet: `itemIcon` / `pickupSprite` fall
+  // back to the type icon tinted by rarity, so art can land after the item does. Sizes
+  // follow the icon rows above — the UI normalises by width through pixelImageFit, so
+  // `worldScale` is only the floor size. `feet` mirrors the sibling type icon's, since a
+  // dropped named item sits on the ground the same way its ordinary counterpart does.
+  //
+  // Three sample icons only (docs/item-art-inventory.md) — the owner has not signed off
+  // on the rest, so the other 8 named items stay on the fallback deliberately.
+  "named.proof-of-the-whole": { id: "named.proof-of-the-whole", w: 26, h: 38, worldScale: 0.50, feet: 0.12 },
+  "named.the-first-seal":     { id: "named.the-first-seal",     w: 40, h: 39, worldScale: 0.48, feet: 0.12 },
+  "named.threshold-brand":    { id: "named.threshold-brand",    w: 44, h: 42, worldScale: 0.41, feet: 0.10 },
 
   // --- relics and artifacts (UAT §19) --- one row per `RelicDef.art`, by convention
   // `relic.<def id>`, PNG under `src/render/atlas/relics/`. Same fallback contract as

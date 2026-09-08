@@ -198,7 +198,7 @@ section("4. art exists or falls back, never crashes");
   for (const def of NAMED_ITEMS) {
     if (!def.art) { check(`${def.id}: no art id — draws as its type`, true); continue; }
     const row = ATLAS[def.art];
-    const png = existsSync(`src/render/atlas/named/${def.art}.png`);
+    const png = existsSync(`src/render/atlas/items/named/${def.art}.png`);
     if (row) {
       check(`${def.id}: art "${def.art}" has a manifest row AND a PNG on disk`, png);
     } else {
