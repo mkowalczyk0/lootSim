@@ -109,9 +109,10 @@ portal; a **Star Map terminal** configures a planet expedition and spawns a port
 it rather than diving immediately; **the Forge** is where materials get crafted into
 gear; **the Quartermaster** is the door into everything that's still a DOM screen —
 stash, equipment, skills, the tree, style, capsules, records, settings. A **Comms Relay**
-terminal is where a co-op room is opened or joined, and a **Party Portal** appears beside
-it for as long as you're in one — walking into that portal is how you ready up. `Esc`
-backs out of any of those all the way to the ship, the same key that pauses a dive.
+terminal is where a co-op room is opened or joined; once in a room, whichever portal the
+host walks into and confirms — the Delve, a rift, the Reliquary — becomes the party's
+ready spot for as long as that plan stands. `Esc` backs out of any of those all the way
+to the ship, the same key that pauses a dive.
 
 `src/ui/town.ts`'s `TownUI` still owns every one of those DOM screens exactly as before
 — the original call that menu-heavy UI belongs in DOM, not canvas, hasn't changed. What
@@ -177,12 +178,26 @@ four-letter room code, with **nothing to install and nothing to configure**.
 - **The relay is dumb.** Rooms, codes, peers, bytes. It never looks inside a game
   message. Every rule lives on the host, and there's no host migration — the host
   leaving closes the room.
-- **The host's browser is the simulation.** Clients send buttons pressed and draw the
-  snapshots that come back, with a little local prediction of their own position.
+- **The host's browser is the simulation.** Clients send buttons pressed (plus an input
+  sequence number and an aim point) and draw the snapshots that come back. A client
+  reconciles its own position by replaying unacknowledged inputs against the host's last
+  confirmed position rather than blending toward it, and predicts its own dash — the
+  fix for a Sept 2026 finding that the old 25%-blend-with-no-reconciliation left a
+  walking client permanently a quarter of an RTT behind the host, tugged back every
+  snapshot. Everything that isn't the local hero (monsters, allies, summons, projectiles)
+  interpolates every tick between snapshots rather than sitting still between them.
 - **The level is never sent.** `generateLevel` is deterministic, so a `start` message
   carries a seed and a flattened `RunConfig` and every browser builds the identical
-  floor. A snapshot is only what moves — heroes as objects, everything else as flat
-  number arrays. A busy floor costs about 40 kB/s per player.
+  floor. A snapshot is only what moves — heroes as objects (now including status
+  ailments and a departed flag), minions, corpses and monster affixes, everything else as
+  flat number arrays. A busy floor costs a bit over 40 kB/s per player.
+- **A disconnected player can't wedge the run.** A departed hero is excluded from the
+  portal count, the revive loop and the wipe check rather than sitting there as a
+  targetable, unrevivable body; the run's roster freezes for the whole run the moment it
+  starts, so someone joining the room mid-run waits for the next one instead of being
+  yanked into a floor they never readied for, and a client that isn't on that roster
+  refuses to substitute the host's hero for its own. The host leaving resolves the floor
+  as an early extraction (`EARLY_EXTRACT_KEEP`) for whoever's left, not a full wipe.
 
 The shape of the party inside the simulation is load-bearing:
 
@@ -206,8 +221,11 @@ The shape of the party inside the simulation is load-bearing:
 - **The host calls it at the portal.** Descending needs the whole party in the
   completion portal; extracting and bailing out early are the host's call alone.
 
-Multiplayer runs the **Delve** only, at a depth the host picks. Rifts, planets and the
-Challenger dial stay solo for now.
+**The host can pick any portal, not just the Delve.** Walking into the Delve, a rift, or
+the Reliquary Portal and confirming it there sets the party's plan (a `RunConfigWire`)
+and turns that same station into everyone's ready spot — the Comms Relay itself no
+longer picks a depth, it just opens and joins rooms. The Challenger dial still applies
+uniformly; in co-op it's the host's tier.
 
 ### Challenger: a difficulty dial the player owns
 
@@ -630,9 +648,10 @@ in now. What's still genuinely open:
   `floorQuotaMet()` is where a second kind of objective would hook in.
 - **The early-extraction penalty is a flat number** (`EARLY_EXTRACT_KEEP`) — bailing at
   90/92 kills costs exactly as much as bailing on the first wave.
-- **Multiplayer is delve-only, and deliberately basic** — no chat, no host migration, no
-  reconnect, no joining a run in progress. Scope left out on purpose — ask before
-  building any of it.
+- **Multiplayer is still deliberately basic** — the delve/rift/planet flow all work now,
+  but there's no chat, no host migration, no reconnect (a departed player is out for the
+  rest of the run), and no joining a run already in progress. Scope left out on purpose —
+  ask before building any of it.
 - **Party balance is a guess, not a measurement.** `partyScale` was reasoned about and
   checked by the smoke test, never by four people actually playing.
 - **Planet floor pacing wants a real balance pass** — bigger and slower than an
