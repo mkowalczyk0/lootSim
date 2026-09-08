@@ -29,6 +29,7 @@ import { EQUIP_SLOTS, ITEM_TYPES, isWeaponType, slotForType, type ItemType } fro
 import { NAMED_ITEMS } from "../src/data/named";
 import { RARITIES, type Rarity } from "../src/data/rarity";
 import { WEAPON_FAMILIES } from "../src/data/weapons";
+import { ATLAS } from "../src/render/atlas/manifest";
 import {
   ITEM_FALLBACK_SPRITE, RARITY_WASH, chooseItemArt, type ArtAvailability, type ItemArtChoice,
 } from "../src/render/itemart";
@@ -156,9 +157,13 @@ console.log("\n=== authoring art changes the picture everywhere at once ===");
   });
   check(`all ${declared.length} named items with an art id honour it, and degrade without it`,
     wrong.length === 0, wrong.map((d) => d.id).join(", "));
-  // Nothing is drawing named art today — worth stating rather than implying.
-  console.log(`       · ${declared.length} named items declare art; no PNGs exist yet, so every one`
-    + " is on the documented type-icon fallback");
+  // How many of those art ids actually have a manifest row (and so a real PNG) today —
+  // worth stating rather than implying, the same reason the line existed when the answer
+  // was zero. See docs/item-art-inventory.md: three samples only, pending owner sign-off.
+  const authored = declared.filter((d) => d.art! in ATLAS);
+  console.log(`       · ${declared.length} named items declare art; ${authored.length} `
+    + `(${authored.map((d) => d.id).join(", ")}) have a PNG, the rest are on the `
+    + "documented type-icon fallback");
 }
 
 // --- 3. §12's slots -------------------------------------------------------

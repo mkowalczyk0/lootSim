@@ -14,7 +14,7 @@
  * would be the only runtime dependency in the entire project.
  */
 import { deflateSync } from "node:zlib";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
   ICON_ARMOR, ICON_CAPSULE, ICON_COIN, ICON_GEM, ICON_GLOVES, ICON_KEY, ICON_NECKLACE,
@@ -26,9 +26,14 @@ import {
 import {
   COSMETICS_BY_ID, defaultAppearance, type Appearance,
 } from "../src/data/cosmetics";
+import { NAMED_ITEMS } from "../src/data/named";
+import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
+import { RARITY_WASH } from "../src/render/itemart";
+import { ATLAS } from "../src/render/atlas/manifest";
+import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 1000;
+const H = 1720;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -109,6 +114,33 @@ LOOKS.forEach((a, i) => {
 });
 y += CHAR_H * SCALE + 26;
 
+/**
+ * Blits a decoded real PNG (not a procedural grid) with proper alpha compositing, since
+ * an authored generation has anti-aliased edges a string-grid sprite never does. This is
+ * what lets the sheet finally show what the game actually draws for a migrated sprite,
+ * rather than the procedural predecessor it replaced (§17.5's documented gap).
+ */
+function blitPng(png: DecodedPng, ox: number, oy: number, s: number): void {
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const i = (y * png.width + x) * 4;
+      const a = png.rgba[i + 3]! / 255;
+      if (a === 0) continue;
+      const r = png.rgba[i]!, g = png.rgba[i + 1]!, b = png.rgba[i + 2]!;
+      for (let dy = 0; dy < s; dy++) {
+        for (let dx = 0; dx < s; dx++) {
+          const px2 = ox + x * s + dx, py2 = oy + y * s + dy;
+          if (px2 < 0 || py2 < 0 || px2 >= W || py2 >= H) continue;
+          const bi = (py2 * W + px2) * 3;
+          buf[bi] = Math.round(r * a + buf[bi]! * (1 - a));
+          buf[bi + 1] = Math.round(g * a + buf[bi + 1]! * (1 - a));
+          buf[bi + 2] = Math.round(b * a + buf[bi + 2]! * (1 - a));
+        }
+      }
+    }
+  }
+}
+
 function strip(entries: readonly (readonly [Grid, Palette])[], boxed: boolean, gap = 16): void {
   let x = 16;
   let tallest = 0;
@@ -119,6 +151,21 @@ function strip(entries: readonly (readonly [Grid, Palette])[], boxed: boolean, g
     blit(grid, pal, x, y, SCALE);
     x += w + gap;
     tallest = Math.max(tallest, grid.length * SCALE);
+  }
+  y += tallest + gap + 10;
+}
+
+/** `strip`'s counterpart for decoded real PNGs — one row per call, no auto-wrap mid-row
+ * (the caller picks a scale that fits), so a row of rarities stays visually one line. */
+function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean, gap = 12): void {
+  let x = 16;
+  let tallest = 0;
+  for (const png of entries) {
+    const w = png.width * scale;
+    if (boxed) frame(x - 3, y - 3, w + 6, png.height * scale + 6);
+    blitPng(png, x, y, scale);
+    x += w + gap;
+    tallest = Math.max(tallest, png.height * scale);
   }
   y += tallest + gap + 10;
 }
@@ -155,6 +202,43 @@ strip(
     .map((c) => [COSMETIC_ART[c.art!]!.grid, cosmeticPalette(c)] as const),
   false, 10,
 );
+
+// --- real pipeline icons, washed by every rarity (item-art prep pass) -----
+//
+// Everything above this line is the procedural render/pixels.ts grids — what the game
+// drew before the Aseprite/PixelLab migration, and for several of these ids (the five
+// equipment icons below) not what it draws today. `npm run itemart` proves the *wash
+// constant* can't fork again (RARITY_WASH, one number, one call site); it can't show you
+// the wash, because it never touches a canvas. This is the "look at it" counterpart —
+// one row per equipment icon, its real committed PNG decoded (not re-derived) and washed
+// toward all eight rarities with the exact `tintedCanvas` math (`pngdecode.ts#washPng`),
+// so a fork back to two different constants (the bug this file's own §11 note describes)
+// would be visible here as two different-looking rows rather than just a passing number.
+{
+  const ICON_PNGS: Record<string, string> = {
+    armor: "icons/icon.armor.png", shield: "icons/icon.shield.png", ring: "icons/icon.ring.png",
+    gloves: "icons/icon.gloves.png", necklace: "icons/icon.necklace.png",
+  };
+  for (const path of Object.values(ICON_PNGS)) {
+    const raw = decodePng(readFileSync(`src/render/atlas/${path}`));
+    stripPng(RARITIES.map((r) => washPng(raw, RARITY_COLORS[r], RARITY_WASH)), 3, true, 10);
+  }
+}
+
+// --- named-item icons: authored art, no wash (item-art prep pass) ---------
+//
+// A named item's identity is baked once and worn forever, so unlike the generic icons
+// above it never goes through `washPng` — this row is exactly the PNG the game loads.
+// Only the three samples from docs/item-art-inventory.md have one; the rest of
+// `NAMED_ITEMS` stay off this row until the owner has looked at these and signed off on
+// authoring the remaining eight.
+{
+  const authored = NAMED_ITEMS.filter((d) => d.art && d.art in ATLAS);
+  stripPng(
+    authored.map((d) => decodePng(readFileSync(`src/render/atlas/items/named/${d.art}.png`))),
+    3, true, 14,
+  );
+}
 
 // --- PNG ------------------------------------------------------------------
 
