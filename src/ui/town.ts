@@ -164,7 +164,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"
 }
 
 // "planet" is rift-shaped internally (fixed floors, a boss, tier scaling) but it isn't
-// a selectable rift flavor — it's the mechanical shell every planet expedition borrows.
+// a selectable rift flavor — it's the mechanical shell every Reliquary expedition borrows.
 // The Rifts screen only ever shows the two the player actually picks between.
 // The planet shell and the daily Vigil are rift-*shaped* but have their own screens.
 const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet" && m !== "vigil");
