@@ -1277,7 +1277,11 @@ export class TownUI {
                 <span class="name">Room code</span>
                 ${p.isHost ? '<span class="badge boss">HOST</span>' : ""}
               </div>
-              <div class="row-side">${k(this.state.settings, "confirm")} copies it</div>
+              <div class="row-side ${p.hostRunning && !p.running ? "warn" : ""}">
+                ${p.hostRunning && !p.running
+                  ? "the party is on a floor right now — you'll dive with them on their next run"
+                  : `${k(this.state.settings, "confirm")} copies it`}
+              </div>
             </div>`);
           break;
         case "depth": {

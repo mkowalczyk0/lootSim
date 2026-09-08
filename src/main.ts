@@ -72,23 +72,28 @@ party.onStart = (config, seed, heroes) => {
   party.attach(dungeon!);
 };
 
-party.onEnd = (how) => {
+party.onEnd = (how, early) => {
   const d = dungeon;
   if (!d) return;
-  if (how === "wipe") {
-    state.save();
-    returnToTown();
-    flash("The party went down. Everything you were carrying stayed on the floor.");
-    return;
-  }
   const coins = d.loot.coins;
   const items = d.loot.items.length;
-  // An extraction with the floor's quota still unmet is an early one, and it pays the
-  // penalty (UAT §6). The phase is host-authoritative and already in every client's
-  // last snapshot, so nobody needed a new run-end reason on the wire to know which
-  // kind of extraction this was.
-  const early = how === "extract" && d.phase !== "cleared";
-  if (early) d.earlyExtractLoot();
+  const plural = `${items} item${items === 1 ? "" : "s"}`;
+  // The host leaving takes the floor with it (UAT §1 D2). A floor already cleared banks
+  // in full, one already lost stays lost, and anything in between is an early
+  // extraction — the same 15% sliver as bailing out, nothing new to balance.
+  const lost = how === "wipe" || (how === "hostLeft" && d.phase === "dead");
+  if (lost) {
+    state.save();
+    returnToTown();
+    flash(how === "hostLeft"
+      ? "The host left after the party fell. Nothing came back with you."
+      : "The party went down. Everything you were carrying stayed on the floor.");
+    return;
+  }
+  // Whether an extraction was the penalty kind is the host's word on the wire, not an
+  // inference from whatever phase the last snapshot happened to carry.
+  const isEarly = how === "hostLeft" ? d.phase !== "cleared" : how === "extract" && early;
+  if (isEarly) d.earlyExtractLoot();
   else d.bankLoot();
   state.save();
   if (how === "descend") {
@@ -98,11 +103,17 @@ party.onEnd = (how) => {
     return;
   }
   returnToTown();
+  if (how === "hostLeft") {
+    flash(isEarly
+      ? `The host left mid-floor. You got out with a sliver of the coin — ${plural} stayed behind.`
+      : `The host left, but the floor was already cleared — banked ${formatNumber(coins)} coins and ${plural}.`,
+      isEarly ? "#f87171" : undefined);
+    return;
+  }
   flash(
-    early
-      ? `Bailed out early — ${items} item${items === 1 ? "" : "s"} left on the floor, `
-        + `most of the coin with them.`
-      : `Extracted with ${formatNumber(coins)} coins and ${items} items.`,
+    isEarly
+      ? `Bailed out early — ${plural} left on the floor, most of the coin with them.`
+      : `Extracted with ${formatNumber(coins)} coins and ${plural}.`,
   );
 };
 
@@ -117,6 +128,10 @@ function enterHub(): void {
   canvas.hidden = false;
   lootBanner.clear();
   town.hide();
+  // Every town screen exits through here, so this is where a room learns about a
+  // re-gear in the Quartermaster or a run's worth of banked loot (UAT §1 C5) — the host
+  // builds everyone's character from their last hello. A no-op outside a room.
+  party.sendHello();
 }
 
 /** Opened by walking up to a hub station; `tab` is which one, `riftMode` pins a
@@ -152,9 +167,6 @@ function returnToTown(): void {
   party.detach();
   state.player.fullHeal();
   state.save();
-  // Back on the ship with whatever the run left you holding — the rest of the room
-  // needs the new numbers, since the host builds everyone's character from these.
-  party.sendHello();
   enterHub();
 }
 
@@ -437,9 +449,10 @@ function handleRunDecisions(d: Dungeon): void {
   if (d.atCompletionPortal) {
     if (input.wasPressed("confirm")) {
       const config = d.config;
-      // Nobody gets dragged down a floor while they're still picking up the last room.
-      if (d.isParty && d.partyAtCompletionPortal < d.heroes.length) {
-        flash(`Waiting for the party — ${d.partyAtCompletionPortal}/${d.heroes.length} in the portal.`);
+      // Nobody gets dragged down a floor while they're still picking up the last room —
+      // nobody still *here*, that is; a dropped connection doesn't get a vote (A1).
+      if (d.isParty && d.partyAtCompletionPortal < d.partySize) {
+        flash(`Waiting for the party — ${d.partyAtCompletionPortal}/${d.partySize} in the portal.`);
         return;
       }
       d.bankLoot();
@@ -495,7 +508,7 @@ function handleRunDecisions(d: Dungeon): void {
         return;
       }
       earlyExtractArmedAt = 0;
-      if (d.isParty) party.endRun("extract");
+      if (d.isParty) party.endRun("extract", true);
       const kept = d.earlyExtractLoot();
       state.save();
       returnToTown();

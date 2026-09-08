@@ -63,17 +63,21 @@ export class Hud {
       const pct = clamp(hero.player.health / Math.max(1, hero.player.maxHealth), 0, 1);
       ctx.fillStyle = "#1a1d26";
       ctx.fillRect(x, y + 12, w, 8);
-      ctx.fillStyle = hero.downed ? "#ef4444" : pct > 0.35 ? "#4ade80" : "#fbbf24";
-      ctx.fillRect(x, y + 12, w * (hero.downed ? hero.reviveProgress / REVIVE_TIME : pct), 8);
+      // Somebody whose browser left is greyed out, not red: there's nothing to go and do.
+      ctx.fillStyle = hero.departed ? "#434c5e" : hero.downed ? "#ef4444" : pct > 0.35 ? "#4ade80" : "#fbbf24";
+      ctx.fillRect(x, y + 12, w * (hero.departed ? 1 : hero.downed ? hero.reviveProgress / REVIVE_TIME : pct), 8);
 
       ctx.font = `bold 11px ${MONO}`;
-      ctx.fillStyle = hero.downed ? "#ef4444" : hero.player.heroClass.color;
+      ctx.fillStyle = hero.departed ? "#5a6270" : hero.downed ? "#ef4444" : hero.player.heroClass.color;
       ctx.textAlign = "left";
       ctx.fillText(hero.name.toUpperCase(), x, y);
       ctx.font = `10px ${MONO}`;
       ctx.fillStyle = "#9aa4b2";
       ctx.textAlign = "right";
-      ctx.fillText(hero.downed ? "DOWN — go get them" : `${Math.round(hero.player.health)}`, x + w, y);
+      ctx.fillText(
+        hero.departed ? "left the room" : hero.downed ? "DOWN — go get them" : `${Math.round(hero.player.health)}`,
+        x + w, y,
+      );
       ctx.textAlign = "left";
       y += 42;
     }
@@ -526,9 +530,9 @@ export class Hud {
     } else if (atExit) {
       title = "COMPLETION PORTAL";
       titleColor = "#7dd3fc";
-      if (d.isParty && d.partyAtCompletionPortal < d.heroes.length) {
+      if (d.isParty && d.partyAtCompletionPortal < d.partySize) {
         lines.push({
-          text: `Waiting for the party — ${d.partyAtCompletionPortal}/${d.heroes.length} in the portal`,
+          text: `Waiting for the party — ${d.partyAtCompletionPortal}/${d.partySize} in the portal`,
           color: "#fbbf24",
         });
       } else {

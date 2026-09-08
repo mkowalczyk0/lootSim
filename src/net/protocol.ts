@@ -105,8 +105,10 @@ export type PartyMessage =
   | { k: "hello"; hero: HeroWire }
   /** Where you are on the ship, and whether you're standing in the party portal. */
   | { k: "hub"; x: number; y: number; facing: number; ready: boolean }
-  /** Host only: what the party is about to dive into, for everyone else's lobby. */
-  | { k: "plan"; depth: number; players: number }
+  /** Host only: what the party is about to dive into, for everyone else's lobby.
+   *  `running` says a floor is under way — somebody who joins mid-run waits on the ship
+   *  for the next run rather than being dropped into the next floor (UAT §1 A2). */
+  | { k: "plan"; depth: number; players: number; running?: boolean }
   /** Host only: everyone into the portal, here is the floor. */
   | { k: "start"; seed: number; config: RunConfigWire; heroes: HeroWire[] }
   /** Client → host, every tick. */
@@ -117,8 +119,10 @@ export type PartyMessage =
   | { k: "fx"; e: unknown[] }
   /** Host → one: an item you picked up, and XP you earned. Reliable, unlike a snapshot. */
   | { k: "got"; item?: unknown; xp?: number }
-  /** Host → all: the floor is over. `descend` is always followed by a fresh `start`. */
-  | { k: "end"; how: "extract" | "descend" | "wipe" };
+  /** Host → all: the floor is over. `descend` is always followed by a fresh `start`.
+   *  `early` is the host's word that an extraction was the penalty kind (UAT §6) — a
+   *  client banks or forfeits on this flag, never on what its last snapshot implied. */
+  | { k: "end"; how: "extract" | "descend" | "wipe"; early?: boolean };
 
 // --- snapshot --------------------------------------------------------------
 //
@@ -151,6 +155,8 @@ export interface HeroSnap {
   readonly pot: number;
   /** Dead and waiting for a revive. */
   readonly down: boolean;
+  /** Their browser left the room: drawn faded, never revived, out of every count. */
+  readonly gn?: boolean;
   /** Seconds of revive progress somebody has put in, 0..REVIVE_TIME. */
   readonly rev: number;
   /** Unbanked loot: coins, gems, xp, kills, item count. */

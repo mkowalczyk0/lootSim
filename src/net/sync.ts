@@ -209,6 +209,7 @@ function encodeHero(hero: Hero): HeroSnap {
     cd: hero.skillCooldowns.map(r2),
     pot: hero.potions,
     down: hero.downed,
+    ...(hero.departed ? { gn: true } : {}),
     rev: r2(hero.reviveProgress),
     lt: [
       hero.loot.coins, hero.loot.gems, hero.loot.xp, hero.loot.kills, hero.loot.items.length,
@@ -309,6 +310,7 @@ function applyHero(d: Dungeon, hero: Hero, h: HeroSnap): void {
   hero.specialCharge = h.ch;
   hero.potions = h.pot;
   hero.downed = h.down;
+  hero.departed = h.gn ?? false;
   hero.reviveProgress = h.rev;
   for (let i = 0; i < hero.skillCooldowns.length; i++) hero.skillCooldowns[i] = h.cd[i] ?? 0;
 

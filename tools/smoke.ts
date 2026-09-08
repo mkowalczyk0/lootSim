@@ -42,7 +42,9 @@ import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
 import { Rng } from "../src/core/rng";
 import { applySnapshot, configFromWire, configToWire, encodeSnapshot } from "../src/net/sync";
-import { isRoomCode, normalizeRoomCode, randomRoomCode } from "../src/net/protocol";
+import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage } from "../src/net/protocol";
+import { Party } from "../src/net/party";
+import { playerToJSON } from "../src/game/state";
 
 class FakeInput {
   private down = new Set<Action>();
@@ -2342,6 +2344,205 @@ console.log("\n=== multiplayer ===");
   idle.beginTick();
   rescue.update(DT, idle as unknown as AvatarInput);
   check("a party still standing keeps the floor alive", rescue.phase !== "dead");
+
+  // 6. A dropped connection can't hold the run hostage (UAT §1 A1). The body stays, but
+  // it is out of every count: no revive, no descend gate, no aggro — and if it was the
+  // last one standing besides you, the floor is lost rather than stuck.
+  {
+    const gone = new Dungeon(geared(14, 8804, 16, "lancer"), delveConfig(3, 0, 2), {
+      seed: 7, role: "host", heroes: setups,
+    });
+    const stayed = gone.heroes[0]!;
+    const left = gone.heroes[1]!;
+    gone.dropHero(left);
+    check("a departed hero is out of the descend count", gone.partySize === 1 && left.downed && left.departed);
+    gone.completionPortal = { x: stayed.avatar.x, y: stayed.avatar.y };
+    left.avatar.x = stayed.avatar.x;
+    left.avatar.y = stayed.avatar.y;
+    check("…even with its body lying in the portal",
+      gone.partyAtCompletionPortal === 1 && gone.partyAtCompletionPortal >= gone.partySize);
+    gone.completionPortal = null;
+    check("monsters don't chase a body that left", gone.nearestHero(left.avatar.x, left.avatar.y) === stayed);
+    const over = new FakeInput();
+    for (let i = 0; i < 240; i++) {
+      over.beginTick();
+      stayed.avatar.x = left.avatar.x;
+      stayed.avatar.y = left.avatar.y;
+      gone.update(DT, over as unknown as AvatarInput);
+      gone.drainEvents();
+    }
+    check("standing over a departed hero doesn't revive it", left.downed && left.departed && left.reviveProgress === 0);
+    // Clearing the floor picks up the downed — not the departed.
+    gone.killsSoFar = gone.killsRequired;
+    gone.elitesKilled = gone.elitesRequired;
+    gone.wave = gone.profile.waves;
+    gone.enemies.length = 0;
+    over.beginTick();
+    gone.update(DT, over as unknown as AvatarInput);
+    check("clearing the floor doesn't stand a departed hero back up",
+      gone.phase === "cleared" && left.downed && left.departed, gone.phase);
+    // The snapshot carries the flag, so a client draws them as gone rather than as
+    // somebody to go and rescue.
+    const mirror = new Dungeon(geared(14, 8802, 16, "magician"), delveConfig(3, 0, 2), {
+      seed: 7, role: "client", heroes: setups.map((setup, i) => ({ ...setup, local: i === 1 })),
+    });
+    applySnapshot(mirror, JSON.parse(JSON.stringify(encodeSnapshot(gone))));
+    check("a client learns who left from the snapshot", mirror.heroes[1]!.departed && !mirror.heroes[0]!.departed);
+
+    const limbo = new Dungeon(geared(14, 8805, 16, "lancer"), delveConfig(3, 0, 2), {
+      seed: 8, role: "host", heroes: setups,
+    });
+    limbo.heroes[0]!.downed = true;
+    limbo.heroes[0]!.player.health = 0;
+    check("one down and one connected is still a floor", limbo.phase === "fighting");
+    limbo.dropHero(limbo.heroes[1]!);
+    check("the last one standing leaving is a wipe, not a limbo", limbo.phase === "dead");
+
+    // And the backstop under all of it: a party floor with no hero of our own refuses to
+    // build, rather than quietly driving (and banking for) the host's character (A2).
+    let refused = false;
+    try {
+      new Dungeon(geared(14, 8802, 16, "magician"), delveConfig(3, 0, 2), {
+        seed: 7, role: "client", heroes: setups.map((setup) => ({ ...setup, local: false })),
+      });
+    } catch {
+      refused = true;
+    }
+    check("a client floor without our own hero refuses to build", refused);
+  }
+
+  // 7. The run's roster is frozen when it starts (UAT §1 A2). The party layer is driven
+  // here with a stubbed relay: `Party` never opens a socket until asked, so its message
+  // handler can be fed directly and its sends captured.
+  {
+    type Sent = { msg: PartyMessage; to?: string };
+    const wire = (state: GameState, id: string): HeroWire => ({
+      id, name: id, classId: state.activeClassId,
+      player: playerToJSON(state.player) as unknown as Record<string, unknown>,
+      appearance: state.appearance as unknown as Record<string, unknown>, potions: 3,
+    });
+    const rig = (state: GameState, id: string, host: boolean) => {
+      const party = new Party(state);
+      const sent: Sent[] = [];
+      const net = party.net;
+      net.send = (msg, to) => { sent.push({ msg, to }); };
+      net.status = "connected";
+      net.code = "ABCD";
+      net.id = id;
+      net.isHost = host;
+      net.hostId = host ? id : "p1";
+      const notices: string[] = [];
+      party.onNotice = (text) => notices.push(text);
+      const starts: { ids: string[]; localIndex: number }[] = [];
+      party.onStart = (_config, _seed, heroes) => {
+        starts.push({ ids: heroes.map((h) => h.netId), localIndex: heroes.findIndex((h) => h.local) });
+      };
+      const ends: { how: string; early: boolean }[] = [];
+      party.onEnd = (how, early) => ends.push({ how, early });
+      return { party, net, sent, notices, starts, ends };
+    };
+    const startsSent = (sent: Sent[]) => sent.filter((s): s is Sent & { msg: Extract<PartyMessage, { k: "start" }> } => s.msg.k === "start");
+
+    const hostState = geared(14, 8806, 16, "swordsman");
+    const host = rig(hostState, "p1", true);
+    host.net.peers = [{ id: "p2", name: "Cousin" }];
+    host.net.onChange();
+    host.net.onMessage("p2", { k: "hello", hero: wire(geared(14, 8807, 16, "magician"), "p2") });
+    host.party.startFloor(delveConfig(2, 0, 2));
+    let starts = startsSent(host.sent);
+    check("the host starts a run with everybody who said hello",
+      host.starts[0]?.ids.join() === "p1,p2" && starts.length === 1 && starts[0]!.to === "p2",
+      JSON.stringify(host.starts[0]));
+
+    // Somebody joins mid-run. They get the plan (and that a floor is under way), a hello
+    // is fine, but the next floor is still the original roster's.
+    host.sent.length = 0;
+    host.net.peers.push({ id: "p3", name: "Latecomer" });
+    host.net.onChange();
+    const planToNewcomer = host.sent.find((s) => s.msg.k === "plan" && s.to === "p3")?.msg as Extract<PartyMessage, { k: "plan" }> | undefined;
+    check("a mid-run arrival is told a floor is under way", planToNewcomer?.running === true);
+    host.net.onMessage("p3", { k: "hello", hero: wire(geared(14, 8808, 16, "lancer"), "p3") });
+    host.sent.length = 0;
+    host.party.endRun("descend");
+    host.party.descend(delveConfig(2, 0, 2));
+    starts = startsSent(host.sent);
+    check("descending keeps the roster the run started with",
+      host.starts[1]?.ids.join() === "p1,p2" && starts.every((s) => s.to === "p2"),
+      JSON.stringify(host.starts[1]));
+    check("…and the newcomer is never sent that floor", !starts.some((s) => s.to === "p3"));
+    // If the original mate drops mid-run, the next floor is just the host.
+    host.net.peers = host.net.peers.filter((p) => p.id !== "p2");
+    host.net.onChange();
+    host.party.endRun("descend");
+    host.party.descend(delveConfig(3, 0, 2));
+    check("a dropped mate isn't carried into the next floor", host.starts[2]?.ids.join() === "p1", JSON.stringify(host.starts[2]));
+    // A finished run frees the roster: the next one takes whoever's ready.
+    host.sent.length = 0;
+    host.party.endRun("extract", true);
+    const end = host.sent.find((s) => s.msg.k === "end")?.msg as Extract<PartyMessage, { k: "end" }> | undefined;
+    check("an early bail-out says so on the wire", end?.how === "extract" && end.early === true);
+    host.party.startFloor(delveConfig(2, 0, 2));
+    check("the next run takes the newcomer", host.starts[3]?.ids.join() === "p1,p3", JSON.stringify(host.starts[3]));
+
+    // The client's own guarantee: a start without us in it is ignored outright.
+    const clientState = geared(14, 8808, 16, "lancer");
+    const client = rig(clientState, "p3", false);
+    client.net.peers = [{ id: "p1", name: "Host" }, { id: "p2", name: "Cousin" }];
+    client.net.onChange();
+    const cfg = configToWire(delveConfig(2, 0, 2));
+    const others = [wire(hostState, "p1"), wire(geared(14, 8807, 16, "magician"), "p2")];
+    client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: others });
+    check("a client ignores a start it isn't part of", client.starts.length === 0 && !client.party.running);
+    client.net.onMessage("p1", { k: "plan", depth: 2, players: 3, running: true });
+    check("…and is told to wait for the next run", client.notices.some((n) => /next run/.test(n)) && client.party.hostRunning);
+    client.net.onMessage("p1", { k: "end", how: "descend" });
+    check("a floor it wasn't on ending is none of its business", client.ends.length === 0 && !client.party.running);
+    client.net.onMessage("p1", { k: "start", seed: 1, config: cfg, heroes: [...others, wire(clientState, "p3")] });
+    check("a start that includes it is adopted, with itself as the local hero",
+      client.starts.length === 1 && client.starts[0]!.localIndex === 2 && client.party.running);
+    client.net.onMessage("p1", { k: "end", how: "extract", early: true });
+    check("the early flag arrives with the end", client.ends[0]?.how === "extract" && client.ends[0]?.early === true);
+
+    // The host's browser going away mid-floor is an early extraction, not a wipe (D2).
+    client.net.onMessage("p1", { k: "start", seed: 2, config: cfg, heroes: [...others, wire(clientState, "p3")] });
+    client.net.onClosed("The host left.");
+    check("the host leaving ends the floor as an early extraction",
+      client.ends[1]?.how === "hostLeft" && client.ends[1]?.early === true && !client.party.running);
+  }
+
+  // 8. Procedural generation is deterministic across the wire (UAT §1 C6): a client
+  // rebuilding a floor from the seed and the flattened config gets the identical level
+  // — every wall, trap, prop and node, not just the wall count — for every run mode.
+  {
+    const fingerprint = (d: Dungeon) => JSON.stringify({
+      size: [d.level.width, d.level.height, d.level.cols, d.level.rows],
+      layout: d.level.layout, label: d.level.label, rooms: d.level.rooms, seed: d.level.seed,
+      start: d.level.start, portal: d.level.portal,
+      walls: d.level.walls, traps: d.level.traps, props: d.level.props, nodes: d.level.resourceNodes,
+      blocked: Array.from(d.level.blocked).reduce((h, v, i) => (h * 31 + v * (i + 1)) % 2147483647, 7),
+      quota: [d.killsRequired, d.elitesRequired],
+    });
+    const hostSide = geared(14, 8809, 16, "swordsman");
+    const clientSide = geared(14, 8810, 16, "magician");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostSide.player, appearance: hostSide.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: clientSide.player, appearance: clientSide.appearance, potions: 5, local: false },
+    ];
+    const cases: [string, RunConfig][] = [
+      ["a delve floor", delveConfig(8, 0, 2)],
+      ["a boss floor", delveConfig(10, 0, 2)],
+      ["a rift floor", { ...riftConfig("abyss", 2, 1, 0), players: 2 }],
+      ["a planet floor", { ...planetConfig(PLANETS[0]!, 1, 1, 0), players: 2 }],
+    ];
+    for (const [label, config] of cases) {
+      const h = new Dungeon(hostSide, config, { seed: 31337, role: "host", heroes: pair });
+      const c = new Dungeon(clientSide, configFromWire(configToWire(config)), {
+        seed: 31337, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+      });
+      check(`${label} is identical on both ends of the wire`, fingerprint(h) === fingerprint(c),
+        `${h.level.walls.length} walls, ${h.level.traps.length} traps, quota ${h.killsRequired}/${h.elitesRequired}`);
+    }
+  }
 
   // 5. Room codes: four letters, no lookalikes, and paste-and-pray survives.
   const codes = new Set<string>();

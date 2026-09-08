@@ -265,6 +265,13 @@ export class Hero {
   /** Out of health, waiting for an ally. In a solo run this is simply "dead". */
   downed = false;
   reviveProgress = 0;
+  /**
+   * Their browser left the room mid-run (UAT §1 A1). The body stays on the floor so the
+   * party keeps its bearings, but it is out of every count that could hold the run
+   * hostage: it can't be revived, doesn't gate the descend, isn't targeted, and doesn't
+   * keep a wipe from being a wipe. Nothing brings it back — there is no reconnect.
+   */
+  departed = false;
   /** XP earned since the host last told this hero's own browser about it. */
   xpPending = 0;
   /** Items picked up since the host last told this hero's own browser about them. */
@@ -482,7 +489,14 @@ export class Dungeon implements CombatHost, RuleHost {
       hero.flow.update(this.level, spot.x, spot.y);
       this.heroes.push(hero);
     }
-    this.localHero = this.heroes.find((h) => h.local) ?? this.heroes[0]!;
+    // A party floor with no hero of our own in it is a bug upstream, never something to
+    // paper over: falling back to `heroes[0]` would have this browser driving — and, as
+    // a client, banking the mirrored loot of — the *host's* character (UAT §1 A2).
+    const local = this.heroes.find((h) => h.local);
+    if (!local && this.role !== "solo") {
+      throw new Error("a party floor was built without the hero this browser drives");
+    }
+    this.localHero = local ?? this.heroes[0]!;
     for (const hero of this.heroes) {
       runBuildGrants(
         this.bus, hero.player.build, this, hero.rt, hero.index,
@@ -965,7 +979,7 @@ export class Dungeon implements CombatHost, RuleHost {
       this.completionPortal = this.pickCompletionSpot();
       // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
       for (const hero of this.heroes) {
-        if (hero.downed) this.reviveHero(hero);
+        if (hero.downed && !hero.departed) this.reviveHero(hero);
       }
       this.dropClearCache();
       this.events.push({ kind: "cleared" });
@@ -1040,7 +1054,7 @@ export class Dungeon implements CombatHost, RuleHost {
   private updateRevives(dt: number): void {
     if (!this.isParty) return;
     for (const hero of this.heroes) {
-      if (!hero.downed) continue;
+      if (!hero.downed || hero.departed) continue;
       const helper = this.heroes.some(
         (other) => other.alive && dist(other.avatar.x, other.avatar.y, hero.avatar.x, hero.avatar.y) <= REVIVE_RANGE,
       );
@@ -1091,15 +1105,37 @@ export class Dungeon implements CombatHost, RuleHost {
   /** How many of the party are standing in the entrance portal. */
   get partyAtPortal(): number {
     return this.heroes.filter(
-      (h) => dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
+      (h) => !h.departed && dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
   }
 
   /** How many of the party are standing in the completion portal — descending needs
-   *  everybody, and the HUD counts them out loud. */
+   *  everybody still here (`partySize`), and the HUD counts them out loud. */
   get partyAtCompletionPortal(): number {
     const p = this.completionPortal;
     if (!p) return 0;
-    return this.heroes.filter((h) => dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
+    return this.heroes.filter((h) => !h.departed && dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
+  }
+
+  /** Heroes still in the run — everybody, minus anyone whose browser has left. This is
+   *  the number a descend waits for, so a dropped connection can't hold the floor. */
+  get partySize(): number {
+    return this.heroes.filter((h) => !h.departed).length;
+  }
+
+  /**
+   * A remote player's connection is gone for good (UAT §1 A1). Their body stays where it
+   * fell, downed, but out of every count: no revive, no descend gate, no aggro. If that
+   * leaves nobody standing, the floor is lost the same as if they'd died.
+   */
+  dropHero(hero: Hero): void {
+    if (hero.departed) return;
+    hero.departed = true;
+    hero.downed = true;
+    hero.reviveProgress = 0;
+    hero.input = null;
+    hero.avatar.vx = 0;
+    hero.avatar.vy = 0;
+    if (this.heroes.every((h) => h.downed)) this.phase = "dead";
   }
 
   private updateSpawning(dt: number): void {
