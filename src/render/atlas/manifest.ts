@@ -88,6 +88,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "prop.crystal":  { id: "prop.crystal",  w: 24, h: 36, worldScale: 0.44, feet: 0.05 },
   "prop.rock":     { id: "prop.rock",     w: 35, h: 26, worldScale: 0.46, feet: 0.06 },
 
+  // --- Delve dungeon dressing (§5) --- big set-piece props that sell the Nine
+  // Circles: broken funerary statuary, wall braziers, bone altars, hung gibbets.
+  // Authored near-monochrome grimdark; `drawProps` gives each a light per-circle
+  // wall-colour wash so the same set reads limbo-grey or heresy-red in place.
+  // worldScale lands each on a deliberate world height (statue taller than the
+  // hero's ~32, altar a low wide slab); feet ≈ 0 — trimmed to the base.
+  "prop.delve-statue":      { id: "prop.delve-statue",      w: 58, h: 93, worldScale: 0.40, feet: 0.03 },
+  "prop.delve-brazier":     { id: "prop.delve-brazier",     w: 28, h: 48, worldScale: 0.55, feet: 0.03 },
+  "prop.delve-altar":       { id: "prop.delve-altar",       w: 77, h: 74, worldScale: 0.42, feet: 0.05 },
+  "prop.delve-gibbet":      { id: "prop.delve-gibbet",      w: 35, h: 87, worldScale: 0.42, feet: 0.03 },
+  "prop.delve-sarcophagus": { id: "prop.delve-sarcophagus", w: 90, h: 66, worldScale: 0.40, feet: 0.06 },
+  "prop.delve-skulls":      { id: "prop.delve-skulls",      w: 80, h: 50, worldScale: 0.42, feet: 0.06 },
+
   // --- item / drop icons (§12) --- drawn through pickupSprite at `worldScale` (fixed
   // 1.4 before). Legacy icon grids ~8–12 wide. In UI they flow through pixelImageFit,
   // which normalises by width, so worldScale here is only the in-world drop size.

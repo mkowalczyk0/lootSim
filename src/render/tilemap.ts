@@ -8,11 +8,11 @@
  * generator produced, so it changes nothing about the simulation and stays in
  * sync across a co-op party for free.
  *
- * `Level.open` — the flood fill of everything walkable from the spawn — is the
- * floor mask. Everything else (wall interiors, the sealed-off slots the room
- * walk never reached, the dead band around the arena) reads as solid rock, which
- * is exactly the worldbuilding's "sealed off as solid rock rather than an
- * unexplained gap in the floor."
+ * The rock mask is the level's **raw wall rectangles** — the exact footprint the
+ * old per-frame `drawWalls` pass painted — not the `blocked` nav grid, which is
+ * inflated by a body radius so the player can't clip a corner. Stamping the
+ * inflated grid made every corridor read a tile narrower than it plays; the raw
+ * rects keep the walkable space looking as wide as it actually is.
  */
 
 import type { LoadedTileset } from "./atlas/index";
@@ -30,13 +30,29 @@ export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: Lo
   // size can't line up with it cell-for-cell, so bail rather than draw it askew.
   if (T !== 16) return false;
 
-  const { cols, rows, open } = level;
+  const { cols, rows, width, height, walls } = level;
   const sheet = ts.canvas;
 
-  // cell(cx, cy): 1 where solid rock, 0 where walkable floor. Out of range = rock.
+  // Rasterise the raw wall rects (and the level border) to the 16-unit grid once.
+  // A cell counts as rock if its centre sits inside a wall rect — no body-radius
+  // inflation, so the stone lines up with what you could see before, not with the
+  // slightly-fatter collision volume.
+  const rock = new Uint8Array(cols * rows);
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const x = cx * T + T / 2;
+      const y = cy * T + T / 2;
+      if (x < 3 || y < 3 || x > width - 3 || y > height - 3) { rock[cy * cols + cx] = 1; continue; }
+      for (const w of walls) {
+        if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) { rock[cy * cols + cx] = 1; break; }
+      }
+    }
+  }
+
+  // cell(cx, cy): 1 where solid rock, 0 where floor. Out of range = rock.
   const solid = (cx: number, cy: number): number => {
     if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return 1;
-    return open[cy * cols + cx] === 1 ? 0 : 1;
+    return rock[cy * cols + cx];
   };
 
   ctx.imageSmoothingEnabled = false;
