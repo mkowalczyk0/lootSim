@@ -49,18 +49,20 @@ export const HUB_PLAYER_RADIUS = 9;
 /** How close counts as "at" a station — generous, since there's nothing to dodge here. */
 const INTERACT_RANGE = 34;
 
-// Positions are tuned against the Citadel deck art (render/atlas/scenes/hub.citadel-deck):
-// the Delve and the two rifts are portal pads on the open flagstone, the Abyssal Rift
-// sits in the deck's central archway, and the four relic stations tuck against the walls
-// clear of the deck's own rubble. See render/hub.ts for how each is drawn.
+// Positions are tuned against the Citadel deck art (render/atlas/scenes/hub.citadel-deck),
+// where PixelLab painted the four relic stations directly into the hall: the Comms shrine
+// on the left wall, the Quartermaster's rack and the Reliquary Gate on the right, the
+// Forge in the bottom-right corner. The Abyssal Rift sits in the central archway and the
+// Delve and Hoard rifts fall on the two glowing cracks torn into the flagstone. Each
+// coordinate is the centre of its painted structure. See render/hub.ts for how each draws.
 const FIXED_STATIONS: readonly HubStation[] = [
-  { kind: "dive", label: "The Delve", x: 120, y: 150, radius: 24 },
-  { kind: "abyss", label: "Abyssal Rift", x: 320, y: 62, radius: 24 },
-  { kind: "hoard", label: "Hoard Rift", x: 420, y: 150, radius: 24 },
-  { kind: "starmap", label: "Reliquary Gate", x: 587, y: 200, radius: 20 },
-  { kind: "forge", label: "The Forge", x: 580, y: 393, radius: 20 },
-  { kind: "quartermaster", label: "Quartermaster", x: 425, y: 283, radius: 20 },
-  { kind: "comms", label: "Comms Relay", x: 213, y: 200, radius: 20 },
+  { kind: "dive", label: "The Delve", x: 200, y: 300, radius: 24 },
+  { kind: "abyss", label: "Abyssal Rift", x: 322, y: 50, radius: 24 },
+  { kind: "hoard", label: "Hoard Rift", x: 424, y: 150, radius: 24 },
+  { kind: "starmap", label: "Reliquary Gate", x: 548, y: 212, radius: 20 },
+  { kind: "forge", label: "The Forge", x: 508, y: 372, radius: 20 },
+  { kind: "quartermaster", label: "Quartermaster", x: 430, y: 214, radius: 20 },
+  { kind: "comms", label: "Comms Relay", x: 95, y: 236, radius: 20 },
 ];
 
 /** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
