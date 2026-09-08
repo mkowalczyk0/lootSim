@@ -21,12 +21,8 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
-<<<<<<< HEAD
-                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+forge+deadpaths+smoke
-=======
-                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+
-                  # forge+previews+itemart+deadpaths+smoke
->>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
+                  # currently markers+check+vocab+prog+classes+roster+rules+universal+named+
+                  # legends+forge+previews+itemart+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
@@ -34,17 +30,16 @@ npm run roster    # full class-roster + anti-overlap audit (tools/roster.ts)
 npm run universal # sanity + balance checks on the Universal Skill Tree (tools/universal.ts)
 npm run legends   # the Proving (class completion) + the only structural audit of the
                   # boss rules in the repo (tools/legends.ts) — part of npm test
-<<<<<<< HEAD
 npm run forge     # the Forge workbench, Ash and multi-item recipes (tools/forge.ts) —
                   # asserts the crafting economy as comparisons; part of npm test
 npm run named     # named-item definitions, acquisition table, save/wire, live passives
                   # (tools/named.ts) — part of npm test
-=======
 npm run previews  # drop previews (tools/previews.ts) — proves a preview lists exactly
                   # what the real roll can produce; part of npm test
 npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
                   # everywhere" as a property; part of npm test
->>>>>>> 95a5a91 (Endgame drop previews, and the Proving's own relic (UAT §20 + §13))
+npm run markers   # refuses to let a committed conflict marker survive (grep, no build) —
+                  # runs first in npm test; added after two merges shipped live markers
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
