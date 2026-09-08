@@ -21,7 +21,7 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
-                  # currently check+vocab+prog+classes+roster+rules+universal+legends+deadpaths+smoke
+                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
