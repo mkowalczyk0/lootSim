@@ -579,11 +579,18 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   monster archived under `art/monsters/rotations/`.
 - `hero.legend-base` → the composed player, **while no cosmetic layer (hat/ears/face/back)
   is worn** — a decorated character still gets the procedural stack until the cosmetic
-  layers get their own art pass. 8 PixelLab rotations are archived under
+  layers get their own art pass. **v2 redraw (Sept 2026):** the plain low-res hero read
+  as out of place next to the redrawn bosses, so it was regenerated at boss-level detail
+  and fidelity (39×68, painterly plate/leather/cloak, still a plain calm face per §1.3 —
+  no hot accent, no sharp brows). World footprint unchanged (`worldScale` 0.471 lands the
+  same ~32-unit height the v1 sprite had). 8 PixelLab rotations re-archived under
   `art/characters/` for the eventual animation runtime; only `south` is wired.
-- All six weapon families (`ATLAS_WEAPONS` in `manifest.ts`, PNGs under `atlas/weapons/`).
-  Authored greyscale +x; `weaponSprite` tints the loaded PNG toward the rarity colour at
-  draw time. A cosmetic weapon **skin** still falls back to the procedural grid.
+- **All fourteen weapon families** (`ATLAS_WEAPONS` in `manifest.ts`, PNGs under
+  `atlas/weapons/`) — the original six plus hammer, bow, whip, claws, chakram, scythe,
+  rapier and fists. Authored greyscale +x with a named grip; `weaponSprite` tints the
+  loaded PNG toward the rarity colour at draw time. A cosmetic weapon **skin** still
+  falls back to the procedural grid. whip / scythe / rapier want an Aseprite tidy-up
+  pass (the extend-along-a-line families are the hardest for PixelLab to keep crisp).
 
 - **All six dungeon props** (`torch`/`bones`/`mushroom`/`crystal`/`rock`/`chest`) and
   **all ten drop icons** (`coin`/`key`/`potion`/`gem`/`capsule` + the five gear-slot
