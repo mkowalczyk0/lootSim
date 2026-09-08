@@ -181,8 +181,17 @@ export const MAGICIAN_GRAVITY_WELL: Ability = {
   tags: ["zone", "arcane", "crowdControl"],
   costs: [{ resource: "mana", amount: 20 }],
   cooldown: 12,
-  targeting: "point",
+  // The haul is the whole ability — the puddle of void damage is the follow-through. As
+  // `targeting: "point"` it never happened: `resolveTargets` fills no actor list for a
+  // point, so the `pull` step's `to: "allTargets"` addressed nobody and the well only
+  // ever ticked damage with a coin-flip root. `"radius"` fills the list from around the
+  // *aim point* and still returns that point, so the zone lands exactly where it always
+  // did; `shape.radius` matches the zone's own 100 so the set hauled in is precisely the
+  // set the well covers. `to: "enemies"` would have been the wrong fix — that selector
+  // measures from the caster, not from a well placed 260 units away.
+  targeting: "radius",
   range: 260,
+  shape: { radius: 100 },
   effects: [
     { kind: "pull", force: 160, to: "allTargets" },
     { kind: "zone", zone: { radius: 100, duration: 4, tickInterval: 0.5, follows: false, mergeable: false, damage: { base: 0.35, scale: "spell", type: "void", channel: "periodic" }, status: { id: "rooted", chance: 0.5 } } },

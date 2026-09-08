@@ -874,6 +874,91 @@ joins `corpseCreated`, `enterCombat` and `leaveCombat` as event types declared i
 
 ---
 
+## Cluster 9 — the `0a6e2d6` family, swept across all 21 classes — **APPLIED**
+
+`0a6e2d6` ("Stage 11: fix abilities whose targeting mode never filled a target list")
+found four abilities by hand. Hand-finding does not scale to 210, and the Lancer's
+blocked-lane ultimate showed the family is wider than targeting — an ability can resolve
+its targets perfectly and still spend its cost for no observable effect. `npm run
+deadpaths` (`tools/deadpaths.ts`) is the instrument for both halves, and it is now part of
+`npm test` (6.7 s).
+
+### Pass 1 — static: a step that reads a target list nothing filled
+
+`selectActorIds` resolves `to: "allTargets" | "target"` — and most steps' *omitted* `to` —
+out of `ctx.targets.actorIds`. Five targeting modes never put an actor in that list:
+`point`, `direction`, `corpse`, `zone`, `temporalAnchor`. A step reading it under one of
+those is dead whatever the numbers on it say. Nesting is walked, so a step buried in a
+`delay` / `reactive` / `random` / `onExpire` branch is caught too.
+
+One finding, and it is the same bug `0a6e2d6` fixed four times:
+
+| Ability | Was | Now |
+| --- | --- | --- |
+| `magician.gravity_well` | `targeting: "point"`, `{ kind: "pull", to: "allTargets" }` — **0 targets, no haul** | `targeting: "radius"`, `shape: { radius: 100 }` — **6 targets, +12.1u hauled inward** |
+
+The haul *is* the ability ("a pit of collapsing space that hauls everything toward its
+centre"); the void puddle is the follow-through. Measured with monsters ringed 70u around a
+well placed 200u away along a verified-clear lane: mean radial change went from **-1.4u**
+(they walked *away*, toward the caster) to **+12.1u**. `force: 160` is untouched — this
+restores authored intent, it does not retune anything.
+
+`to: "enemies"` would have been the wrong fix and is worth recording as a trap: that
+selector measures from the **caster**, not from the resolved point, so a well placed 260
+units away would have hauled in whatever was standing next to the Magician.
+`0a6e2d6`'s own commit message describes the Monk fix as landing "around the landing" —
+`selectActorIds` centres it on the caster, so that ability is worth a second look.
+`targeting: "radius"` is the mode that actually fills the list from around the aim point,
+*and* still returns that point, so the zone lands exactly where it always did.
+
+### Pass 2 — live: cast all 210 abilities and diff against a no-cast control
+
+Every ability of every class, cast once in an arena built to be maximally favourable —
+40 monsters at five radii in eight directions, corpses underfoot, a real `castInputFor`
+aim — with every observable sampled *continuously* and diffed against a control run of the
+same scenario on the same seed.
+
+**Result: 0 dead, 9 inert-with-a-stated-reason.** Getting to a trustworthy zero took four
+corrections to the instrument, each of which had produced a false accusation:
+
+| The instrument said | Why it was wrong |
+| --- | --- |
+| 24 abilities dead | It never observed `resource`, `stance`, `taunt` or terrain deltas at all. |
+| Crossguard dead | It sampled only after 150 ticks. A 1.6 s ward and a 1 s self-buff are long gone by then — peaks, not end state. |
+| 4 `resource` grants dead | It primed every pool to **max**, so `pool.add(25)` was a no-op. Pools now sit at half, with only the charged pool topped up. |
+| Reinforced Barricade *working* | Drift counted the ability's own **cost** as an effect. Drift is now attributed only to the pools the ability's own data says it moves. |
+
+The last one cuts both ways and is the reason to keep the two passes separate: Gravity Well
+reads "ok" in pass 2 all along, because its zone lands and ticks damage — only the static
+pass could see that the pull addressed nobody.
+
+### Not mine to fix — engine seams, flagged rather than guessed at
+
+Every one of these is correctly-authored data blocked by a stub in `src/game/`. The tool
+reports them every run and deliberately does **not** fail on them.
+
+| Seam | Blocks | Reach |
+| --- | --- | --- |
+| `Dungeon.spawnTerrain()` returns -1 (documented: "lands with the ability cutover") | `necromancer.ossuary_wall` and `engineer.reinforced_barricade` do **nothing at all**; nine more abilities lose a component | 11 `terrain` steps across 8 classes |
+| `Dungeon.markOf()` is a stub — `markTargets` is read and never written | `warlock.soul_detonation` is **entirely dead** (both its targeting *and* its spread read the mark); `duelist.countermark`'s reactive damage never lands | 3 abilities + 1 Duelist hybrid mutation |
+| `setThreat()` early-returns on any op but `taunt` | `threat` ops `drop` / `generate` are silently dropped | assassin, juggernaut ×2 + a foundation node, lancer hybrid, warden |
+| `moveActor` drops `MoveRequest.leaveAnchor` | "dash out and come back" dashes again | 6 abilities (already on the backlog) |
+| `shieldActor` is `Math.max`, hero-only | a shield smaller than a standing ward does nothing; a shield aimed at an ally minion does nothing | every `shield` step |
+
+`warlock.soul_detonation` wants a design call, not a guess: its description is "centred on
+the **most-cursed** enemy", and there is no targeting mode for "most status stacks".
+Re-pointing it at `highestThreatEnemy` would land it on an arbitrary enemy, because
+`threatToward` is a stub too and returns 0 for everything.
+
+### Guarded
+
+`npm run deadpaths` exits non-zero on a blind target list or an inert ability with no
+staged precondition to excuse it, and is wired into `npm test`. A new ability can no longer
+ship with the `0a6e2d6` bug in it. Engine-stub findings stay advisory — failing on those
+would make the guard useless until the seams are written.
+
+---
+
 ## Backlog (evidence gathered, proposals pending)
 
 - ~~**Instrument the generation events**~~ — **DONE**, and it changed the answer. The
@@ -903,6 +988,11 @@ joins `corpseCreated`, `enterCombat` and `leaveCombat` as event types declared i
 - ~~**Build-differentiation harness**~~ — **DONE**, `tools/builds.ts` / `npm run builds`.
   It produced Clusters 5–7 and the Cluster 2 correction. Still to do on the harness itself:
   the generation-event counters above, and folding it into `npm test` once §35 passes.
+- **Five engine seams that dead-end authored data** (Cluster 9) — `spawnTerrain`,
+  `markOf`, `setThreat`'s non-taunt ops, `leaveAnchor`, and `shieldActor`'s hero-only
+  `Math.max`. Between them they fully kill three abilities and partially kill roughly
+  twenty. All are `src/game/` work, so all are flagged rather than fixed; `npm run
+  deadpaths` reports them on every run.
 - **Raid-scale (10–20 p) hazard constraints** — consolidate the scattered §4 notes into
   one section: redirect `fraction` cap + total-redirect clamp per hit; party-wide
   `guardsDeath` single-source + decay; zone-merge total-radius cap (`mergeable` threaded
