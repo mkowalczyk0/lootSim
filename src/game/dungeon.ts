@@ -435,7 +435,19 @@ export class Dungeon implements CombatHost, RuleHost {
   readonly state: GameState;
   /** One route map per hero: a monster follows the one belonging to whoever it wants. */
   private flowTimer = 0;
-  /** Position of the extraction portal. Live all floor; descent needs a clear. */
+  /**
+   * The **entrance** portal: where the party came in, and the early-extract door. Live
+   * all floor; descending needs a clear and the *completion* portal.
+   *
+   * It sits on `level.start`, which is literally where the heroes are placed — UAT §6
+   * calls this "where you came in", so standing on your own arrival point has to be
+   * enough to bail out. It used to be `level.portal` instead, which both generators
+   * deliberately place as far from the spawn as the floor reaches (that was correct when
+   * there was one portal and it was the exit you walked *to*, before §6 split the two);
+   * the result was an entrance portal a median 600-900 units from the entrance, never
+   * once within the 34-unit range you need to use it. `level.portal` is now the
+   * completion portal's home instead — see `pickCompletionSpot`.
+   */
   readonly portal: { x: number; y: number };
   elapsed = 0;
 
@@ -524,7 +536,7 @@ export class Dungeon implements CombatHost, RuleHost {
       );
       runReactiveWindows(this.bus, this, hero.rt, hero.index);
     }
-    this.portal = this.level.portal;
+    this.portal = this.level.start;
     this.startNextWave();
   }
 
@@ -1003,8 +1015,8 @@ export class Dungeon implements CombatHost, RuleHost {
 
     if (this.phase === "fighting" && this.floorQuotaMet()) {
       this.phase = "cleared";
-      // The clear spawns a fresh portal at a new spot — that's the way on from here.
-      // The entrance portal stays where it is, now purely an early-exit.
+      // The clear opens the portal at the far end of the floor — that's the way on from
+      // here. The entrance portal stays on the spawn, now purely an early-exit.
       this.completionPortal = this.pickCompletionSpot();
       // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
       for (const hero of this.heroes) {
@@ -1026,28 +1038,31 @@ export class Dungeon implements CombatHost, RuleHost {
       && this.wave >= this.profile.waves;
   }
 
-  /** A fresh spot for the completion portal: on open floor, well clear of the entrance
-   *  portal and not on top of the party. Drawn from the side stream so it never shifts
-   *  the spawn/loot sequence. */
+  /**
+   * Where the completion portal opens: `level.portal`, the far end of the floor.
+   *
+   * The generator already builds that point to be exactly what this needs, which is why
+   * it's worth reusing rather than searching for a new one. It is the room at maximum
+   * graph distance from the spawn ("as far from the start as the graph actually
+   * reaches"), it is *guaranteed* walkable from the spawn — connected by construction,
+   * flood-filled to check, and a corridor carved as a last resort if a layout ever seals
+   * itself — it has `CLEAR_RADIUS` of wall-free space around it, and hazard placement
+   * already keeps 110 units clear of it.
+   *
+   * This replaced a 50-try `randomOpenPoint` search off `affixRng`. That search wasn't
+   * broken, but it was random by design and read as such: the owner's report was that the
+   * completion portal lands "kind of random". It also had a fallback chain ending in
+   * `this.portal`, so a floor where both searches failed opened its completion portal on
+   * top of the entrance. Deterministic and legible beats random here — the way onward is
+   * the far end of the dungeon you just fought through.
+   *
+   * Note this is *not* "where the last monster died": the walk to a new place is the
+   * point (UAT §6 — the clear cache drops here, so the reward lands where finishing
+   * sends you), and the old search deliberately pushed 150 units away from the player
+   * for that reason.
+   */
   private pickCompletionSpot(): { x: number; y: number } {
-    const a = this.localHero.avatar;
-    const hazards = this.level.traps.map((t) => ({ x: t.x, y: t.y, d: t.radius + 20 }));
-    return (
-      randomOpenPoint(this.level, this.affixRng, {
-        clearance: 1,
-        away: [
-          { x: this.portal.x, y: this.portal.y, d: 280 },
-          { x: a.x, y: a.y, d: 150 },
-          ...hazards,
-        ],
-        tries: 50,
-      }) ??
-      randomOpenPoint(this.level, this.affixRng, {
-        away: [{ x: this.portal.x, y: this.portal.y, d: 120 }],
-        tries: 30,
-      }) ??
-      this.portal
-    );
+    return this.level.portal;
   }
 
   /**
