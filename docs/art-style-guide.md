@@ -660,9 +660,42 @@ hand-arted 16px stone.
 - **Boss floors** inherit their depth's tileset automatically (a boss arena is still a
   `Level` with a `biome`), and that's fine — the single big room just gets stamped with
   the same stone.
+- **The walls render at their true footprint.** `tilemap.ts` stamps the raw wall
+  rectangles, not the body-radius-inflated `blocked` nav grid — the inflated grid made
+  every corridor look a tile narrower than it plays. Behind the stamp is the biome tint
+  (not flat black) under a faint vignette, so a room reads as low-lit, not as a solid
+  block someone carved a path through.
+
+### 17.7b Floor dressing (selling the theme)
+
+A stamped floor is the surface, not the scene. Each realm gets **heavy set pieces**
+scattered on top by `dressFloor` in `level.ts` — a second pass, separate from the small
+`biome.props` litter, pulling from a per-realm mix in `DRESSING` (keyed by
+`BiomeStyle.name`).
+
+- **Generate with PixelLab `create_map_object`** (basic mode, `high top-down`,
+  `single color outline`, `basic shading`, `medium detail`) — near-monochrome grimdark,
+  authored 50–110px, one hot accent at most (a candle flame, dried blood). Process with
+  the alpha-cut + despeckle + trim step, commit under `art/props/prop.<realm>-<name>.png`
+  and `src/render/atlas/props/…`, add an `ATLAS` row (`worldScale` lands the piece on a
+  deliberate world height — a statue taller than the hero's ~32, an altar a low slab).
+- **Wire it** — add the `PropKind` in `data/biomes.ts`, map it to its atlas id in
+  `PROP_ATLAS` (`render/draw.ts`), give it a `PROP_SPRITES` procedural stand-in for the
+  frame before the PNG loads, and list it in `DRESSING` (`level.ts`). `drawProps` blits
+  the PNG with a `tintedCanvas(…, biome.wallSide, ~0.42)` wash, so **one grimdark set
+  themes itself per circle** and PixelLab's too-pale bone gets pulled down. Anything that
+  doesn't resolve to a loaded PNG is silently skipped — the set can land incrementally.
+- **Never touch the generator rng.** `dressFloor` draws from its own
+  `new Rng(level.seed ^ constant)`. The dive rng is shared with combat — perturbing its
+  draw count shifts every spawn and telegraph on the floor and fails the smoke test.
+- Delve set: statue, brazier (wall), altar, gibbet, sarcophagus, skull heap. Reliquary
+  set: fallen giant's hand, war grave, funerary urn, toppled winged pillar. A prop that
+  reads as a **loot chest** at zoom (the reliquary "casket") stays out of rotation.
 
 Backlog for the suite is §18 chunk 11, pulled forward: the 6 Delve circles first (start
-`tiles.delve-limbo`), then `tiles.abyss`, then the 6 Reliquary sectors.
+`tiles.delve-limbo`), then `tiles.abyss`, then the 6 Reliquary sectors. `tiles.delve-limbo`
+was reworked dark (black basalt floor, pale bone-rubble walls) after the first pass read
+too bright — "dark is better" for the whole suite; the other circles are next.
 
 ---
 
