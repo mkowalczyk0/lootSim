@@ -90,6 +90,32 @@ export class AbilityRuntime {
     return this.cooldowns.get(abilityId) ?? 0;
   }
 
+  /** Ability ids currently on cooldown. For rule handlers that refund by predicate. */
+  cooldownIds(): string[] {
+    return [...this.cooldowns.keys()];
+  }
+
+  /** Clear one ability's cooldown outright — a keystone "refreshes X". */
+  clearCooldown(abilityId: string): void {
+    this.cooldowns.delete(abilityId);
+  }
+
+  /** Shave `seconds` off one ability's cooldown; clears it if that takes it to zero. */
+  reduceCooldown(abilityId: string, seconds: number): void {
+    const cur = this.cooldowns.get(abilityId);
+    if (cur === undefined) return;
+    const next = cur - seconds;
+    if (next <= 0) this.cooldowns.delete(abilityId);
+    else this.cooldowns.set(abilityId, next);
+  }
+
+  /** Shave `seconds` off every cooldown whose id passes `pred` (default: all). */
+  reduceCooldowns(seconds: number, pred: (abilityId: string) => boolean = () => true): void {
+    for (const id of [...this.cooldowns.keys()]) {
+      if (pred(id)) this.reduceCooldown(id, seconds);
+    }
+  }
+
   ready(ability: Ability): boolean {
     if ((this.cooldowns.get(ability.id) ?? 0) > 0) {
       if (ability.charges) return (this.charges.get(ability.id) ?? ability.charges.max) > 0;

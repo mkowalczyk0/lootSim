@@ -33,6 +33,10 @@ import {
   type TerrainRequest, type ZoneRequest, type MinionCommand,
 } from "../combat/index";
 import { applyRuleFx, runBuildGrants, type BuildRuleContext } from "./abilities";
+import {
+  HeroRuleState, rulesOnAvoid, rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesTick,
+  type RuleHost,
+} from "./rules";
 
 /** Fraction of a ward's pool that also counts as flat resistance while it holds — was
  *  `data/skills.ts` before the ability cutover. */
@@ -266,6 +270,8 @@ export class Hero {
   flow: FlowField | null = null;
   /** Recent positions, newest first — for abilities that snap back to where you were. */
   readonly posHistory: { x: number; y: number }[] = [];
+  /** Keystone / hybrid / archetype rule bookkeeping — primed strikes, aura timers, … */
+  readonly ruleState = new HeroRuleState();
   /**
    * The world point this hero is aiming at this tick — the cursor, in mouse-aim mode.
    * Null when only a facing is known (keyboard scheme, a remote player), in which case a
@@ -320,7 +326,7 @@ export interface DungeonOptions {
  * Pure simulation — it never touches the DOM or the canvas. Anything the renderer
  * needs to react to is pushed onto `events` and drained once per frame.
  */
-export class Dungeon implements CombatHost {
+export class Dungeon implements CombatHost, RuleHost {
   /** How this floor was configured: mode, rift tier, position in the run. */
   readonly config: RunConfig;
   readonly profile: DepthProfile;
@@ -772,6 +778,7 @@ export class Dungeon implements CombatHost {
       this.updateResourceNodes(hero, source);
     }
     for (const hero of this.heroes) this.updateHeroStatuses(hero, dt);
+    for (const hero of this.heroes) if (!hero.downed) rulesTick(this, hero, dt);
     this.updateRevives(dt);
     this.updateFlow(dt);
     this.updateTraps(dt);
@@ -1397,8 +1404,15 @@ export class Dungeon implements CombatHost {
     const p = hero.player;
     const step = ability.effects[0];
     const knock = knockOverride ?? (step?.kind === "damage" ? step.damage.knockback : undefined);
-    const crit = this.rng.chance(p.critChance);
-    const rolled = amount * (crit ? p.critMultiplier : 1) * this.rng.range(0.92, 1.08);
+    const rr = rulesOnHit(this, hero, e, {
+      isBasic: true,
+      isCrit: false,
+      movedRecently: Math.hypot(hero.avatar.vx, hero.avatar.vy) > 24,
+      outOfReach: dist(hero.avatar.x, hero.avatar.y, e.x, e.y) > 96,
+    });
+    // Roll unconditionally so a rule-forced crit never shifts the RNG stream.
+    const crit = this.rng.chance(p.critChance) || rr.forceCrit;
+    const rolled = amount * rr.damageMult * (crit ? p.critMultiplier : 1) * this.rng.range(0.92, 1.08);
     let dealt = this.damageEnemy(e, rolled, angle, "physical", {
       crit,
       knock: knock === undefined ? undefined : knock * (crit ? 1.5 : 1),
@@ -1516,6 +1530,7 @@ export class Dungeon implements CombatHost {
       kind: "cast", x: a.x, y: a.y - 34, label: ability.name, color: hero.player.heroClass.color,
     });
     applyRuleFx(this.ruleContext(hero), ability);
+    rulesOnCast(this, hero, ability);
   }
 
   /**
@@ -2076,6 +2091,7 @@ export class Dungeon implements CombatHost {
       }
     }
     this.fireTriggers(source, "onKill", e.x, e.y);
+    rulesOnKill(this, source, e);
     source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
 
@@ -2394,7 +2410,12 @@ export class Dungeon implements CombatHost {
     const rolled = this.rollAvoidance(hero, amount);
     if (rolled === null) return; // evaded outright
     if (rolled < amount) ailment *= 0.5; // a blocked hit is less likely to land its rider
-    this.applyPlayerDamage(hero, rolled, element, ailment);
+    // Keystone / hybrid damage-taken rules (Soul Skin, Immovable, One Opponent, …).
+    const final = hero.player.build.rules.size > 0
+      ? rulesOnDamageTaken(this, hero, rolled)
+      : rolled;
+    if (final <= 0) return;
+    this.applyPlayerDamage(hero, final, element, ailment);
   }
 
   /**
@@ -2417,6 +2438,7 @@ export class Dungeon implements CombatHost {
     if (evade > 0 && this.defenseRng.chance(evade)) {
       hero.resources.broadcast({ type: "dodge", ...evtBase });
       this.events.push({ kind: "pickup", x: a.x, y: a.y - 24, label: "dodge", color: "#c4b5fd" });
+      rulesOnAvoid(this, hero, "dodge");
       return null;
     }
 
@@ -2425,6 +2447,7 @@ export class Dungeon implements CombatHost {
       const turned = amount * (1 - BLOCK_MITIGATION);
       hero.resources.broadcast({ type: "block", damage: turned, ...evtBase });
       this.events.push({ kind: "pickup", x: a.x, y: a.y - 24, label: "block", color: "#93c5fd" });
+      rulesOnAvoid(this, hero, "block");
       return amount - turned;
     }
 
@@ -2893,6 +2916,59 @@ export class Dungeon implements CombatHost {
     return 0;
   }
 
+  // --- RuleHost: the seam the keystone/hybrid/archetype rules talk to --------
+  // (`emit` and `now` are already defined above for the renderer / CombatHost.)
+
+  shake(amount: number): void {
+    this.events.push({ kind: "shake", amount });
+  }
+
+  enemiesAround(x: number, y: number, radius: number): Enemy[] {
+    return this.enemies
+      .filter((e) => e.health > 0 && e.state !== "spawning" && dist(e.x, e.y, x, y) <= radius + e.radius)
+      .sort((p, q) => dist(p.x, p.y, x, y) - dist(q.x, q.y, x, y));
+  }
+
+  hitEnemy(
+    hero: Hero, e: Enemy, amount: number, element: Element = "physical",
+    opts: { crit?: boolean; ailment?: number; knockAngle?: number; fromUltimate?: boolean } = {},
+  ): number {
+    const angle = opts.knockAngle ?? Math.atan2(e.y - hero.avatar.y, e.x - hero.avatar.x);
+    return this.damageEnemy(e, amount, angle, element, {
+      crit: opts.crit, ailment: opts.ailment, source: hero, fromUltimate: opts.fromUltimate ?? false,
+    });
+  }
+
+  afflict(hero: Hero, e: Enemy, statusId: string, opts: { stacks?: number; duration?: number } = {}): void {
+    e.sc.apply(statusId, {
+      sourceActorId: hero.index, chance: 1, roll: () => this.rng.next(),
+      stacks: opts.stacks, durationMult: opts.duration ? opts.duration / 4 : undefined,
+      potency: this.ailmentPotency(hero),
+    });
+  }
+
+  healHero(hero: Hero, amount: number): void {
+    hero.player.heal(amount);
+  }
+
+  shieldHero(hero: Hero, amount: number): void {
+    hero.ward = Math.max(hero.ward, amount);
+    hero.wardTimer = Math.max(hero.wardTimer, 6);
+  }
+
+  alliesOf(hero: Hero): Hero[] {
+    return this.heroes.filter((h) => h !== hero && !h.downed);
+  }
+
+  lowestAlly(hero: Hero): Hero {
+    let best = hero;
+    for (const h of this.heroes) {
+      if (h.downed) continue;
+      if (h.player.health / h.player.maxHealth < best.player.health / best.player.maxHealth) best = h;
+    }
+    return best;
+  }
+
   // --- effects -----------------------------------------------------------
 
   dealDamage(targetId: number, packet: DamagePacket): number {
@@ -2908,8 +2984,23 @@ export class Dungeon implements CombatHost {
       const angle = source
         ? Math.atan2(enemy.y - source.avatar.y, enemy.x - source.avatar.x)
         : this.rng.angle();
-      const dealt = this.damageEnemy(enemy, packet.amount, angle, packet.type, {
-        crit: packet.crit,
+      // Direct skill/ultimate hits (not DoT/periodic ticks) run through the same
+      // keystone/hybrid rule pass basic attacks do — a primed strike, a forced crit.
+      let amount = packet.amount;
+      let crit = packet.crit;
+      if (source && source.player.build.rules.size > 0
+          && (packet.channel === "direct" || packet.channel === "ultimate")) {
+        const rr = rulesOnHit(this, source, enemy, {
+          isBasic: false,
+          isCrit: !!packet.crit,
+          movedRecently: Math.hypot(source.avatar.vx, source.avatar.vy) > 24,
+          outOfReach: dist(source.avatar.x, source.avatar.y, enemy.x, enemy.y) > 96,
+        });
+        amount *= rr.damageMult;
+        crit = crit || rr.forceCrit;
+      }
+      const dealt = this.damageEnemy(enemy, amount, angle, packet.type, {
+        crit,
         knock: packet.knockback,
         raw: packet.raw,
         source,
