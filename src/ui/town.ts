@@ -25,6 +25,9 @@ import {
 } from "../data/named";
 import type { NodeEffect } from "../progression/nodes";
 import {
+  RELICS, RELIC_BY_ID, RELIC_SLOTS, RELIC_TIER_INFO, relicSourceLines, relicsOfTier, type RelicDef,
+} from "../data/relics";
+import {
   MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
@@ -74,7 +77,7 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, weaponSprite } from "../render/sprites";
+import { chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, relicArt, relicArtKey, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
 import { pixelImage, pixelImageBody, pixelImageFit } from "./pixelimage";
 import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
@@ -120,9 +123,7 @@ const FUTURE_SLOTS: readonly { readonly label: string; readonly glyph: string }[
   { label: "helmet", glyph: "⌂" },
   { label: "boots", glyph: "⊻" },
   { label: "off-hand", glyph: "◇" },
-  { label: "relic", glyph: "✧" },
-  { label: "relic", glyph: "✧" },
-  { label: "relic", glyph: "✧" },
+  // The three relic slots §12 also promised went live with UAT §19 (`relicSlot`).
 ];
 
 /**
@@ -194,7 +195,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
-    case "Hero": return `${sel} / ${adj} pick a slot · ${e} unequip`;
+    case "Hero": return `${sel} pick a slot · ${e} unequip · on a relic slot, ${adj} browses your collection and ${e} sockets or removes`;
     case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
     case "Universal": return `${sel} walk a path · ${adj} switch path · ${e} spend a point · ${q} refund it all — shared by every class`;
@@ -241,6 +242,8 @@ export class TownUI {
   private forgeAffix = 0;
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
+  /** Which owned relic the Hero screen's relic slot has highlighted (UAT §19). */
+  private relicPick = 0;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
   /** The same, for the universal tree's six paths. Its own field, since the two screens
@@ -315,6 +318,12 @@ export class TownUI {
       const affixEl = target.closest<HTMLElement>("[data-forge-affix]");
       if (affixEl) {
         this.forgeAffix = Number(affixEl.dataset.forgeAffix);
+        this.render();
+        return;
+      }
+      const relicEl = target.closest<HTMLElement>("[data-relic]");
+      if (relicEl && this.tab === "Hero" && this.cursor >= EQUIP_SLOTS.length) {
+        this.socketRelicInto(this.cursor - EQUIP_SLOTS.length, relicEl.dataset.relic!);
         this.render();
         return;
       }
@@ -577,7 +586,7 @@ export class TownUI {
       case "Party": return this.partyRows().length;
       case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
-      case "Hero": return EQUIP_SLOTS.length;
+      case "Hero": return EQUIP_SLOTS.length + RELIC_SLOTS;
       case "Skills": return SKILL_SLOTS;
       case "Tree": return TREE_PATH_DEPTH;
       // Row 0 is the shared root, which sits above the columns and is reachable by
@@ -653,6 +662,12 @@ export class TownUI {
       if (this.keybindRowAction(this.cursor)) return false; // rebind is E; A/D do nothing here
       if (this.cursor < SETTING_SPECS.length) return this.toggleSetting(this.cursor);
       return false;
+    }
+    if (this.tab === "Hero" && this.cursor >= EQUIP_SLOTS.length) {
+      const n = this.relicCandidates().length;
+      if (n === 0) return false;
+      this.relicPick = (this.relicPick + dir + n) % n;
+      return true;
     }
     if (this.tab === "Stash") {
       // The ◀ ▶ chips in the aside still adjust the rarity filter for the mouse; the
@@ -1011,6 +1026,19 @@ export class TownUI {
         break;
       }
       case "Hero": {
+        const relicSlot = this.cursor - EQUIP_SLOTS.length;
+        if (relicSlot >= 0) {
+          const worn = this.state.player.relics[relicSlot];
+          if (worn) {
+            this.state.unsocketRelic(relicSlot);
+            this.notify(`Took off ${RELIC_BY_ID[worn]?.name ?? worn}`);
+          } else {
+            const pick = this.relicCandidates()[this.relicPick];
+            if (pick) this.socketRelicInto(relicSlot, pick.id);
+            else this.notify("Nothing to socket yet. Relics are found, not made.", "#9aa4b2");
+          }
+          break;
+        }
         const slot = EQUIP_SLOTS[this.cursor]!;
         if (this.state.unequipToInventory(slot)) this.notify(`Unequipped ${slot}`);
         break;
@@ -2560,6 +2588,94 @@ export class TownUI {
       </div>`;
   }
 
+  /** The relics this account owns, artifacts after relics, in registry order — the socket list. */
+  private relicCandidates(): RelicDef[] {
+    const owned = new Set(this.state.relics);
+    return RELICS.filter((d) => owned.has(d.id));
+  }
+
+  private socketRelicInto(slot: number, id: string): void {
+    const res = this.state.socketRelic(slot, id);
+    const def = RELIC_BY_ID[id];
+    if (res.ok) {
+      this.notify(`Socketed ${def?.name ?? id}`, def ? RELIC_TIER_INFO[def.tier].color : undefined);
+      this.state.save();
+    } else {
+      this.notify(res.reason, "#ef4444");
+    }
+  }
+
+  /** One of the three relic slots on the paper-doll (UAT §19 / §12). */
+  private relicSlot(i: number): string {
+    const index = EQUIP_SLOTS.length + i;
+    const id = this.state.player.relics[i] ?? null;
+    const def = id ? RELIC_BY_ID[id] : undefined;
+    const color = def ? RELIC_TIER_INFO[def.tier].color : "var(--line)";
+    const art = def
+      ? `<img src="${pixelImageFit(relicArt(def), 72, relicArtKey(def))}" alt="">`
+      : `<span class="ds-empty">✦</span>`;
+    const tip = def ? `${def.name} — ${RELIC_TIER_INFO[def.tier].label}\n${def.description}` : "relic slot — empty";
+    return `
+      <div class="doll-slot ${index === this.cursor ? "on" : ""} ${def ? "filled" : ""}" data-index="${index}"
+           style="--r:${color}" title="${escapeHtml(tip)}">
+        <span class="ds-label">${def ? RELIC_TIER_INFO[def.tier].label.toLowerCase() : "relic"}</span>
+        <div class="ds-art">${art}</div>
+        <span class="ds-name" style="color:${def ? color : "#5a6270"}">${def ? escapeHtml(def.name) : "empty"}</span>
+      </div>`;
+  }
+
+  /** A relic's lore card: flavour, tier, what it does, where it comes from. */
+  private renderRelicLore(def: RelicDef): string {
+    const dctx: DescribeCtx = {
+      abilityName: (id) => ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === id)?.name,
+    };
+    const lines = describeEffects(def.effects, dctx).map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+    const sources = relicSourceLines(def).map((l) => `<li class="muted">${escapeHtml(l)}</li>`).join("");
+    const info = RELIC_TIER_INFO[def.tier];
+    return `
+      <div class="cmp-hero" style="--r:${info.color}">
+        <div class="cmp-art"><img src="${pixelImageFit(relicArt(def), 96, relicArtKey(def))}" alt=""></div>
+        <div>
+          <h3 style="color:${info.color};margin:0">${escapeHtml(def.name)}</h3>
+          <p class="muted" style="margin:2px 0 0">${info.label}</p>
+        </div>
+      </div>
+      <p class="muted" style="font-style:italic;margin:4px 0">${escapeHtml(def.flavor)}</p>
+      <p style="margin:0 0 4px">${escapeHtml(def.description)}</p>
+      ${lines ? `<ul class="pulls">${lines}</ul>` : ""}
+      <ul class="pulls">${sources}</ul>`;
+  }
+
+  /**
+   * The side panel for a relic slot: what's in it, and the collection to fill it from.
+   * Every candidate is a clickable row; the keyboard walks them with the adjust keys.
+   */
+  private renderRelicPanel(slot: number): string {
+    const p = this.state.player;
+    const e = k(this.state.settings, "confirm");
+    const adj = `${k(this.state.settings, "left")} / ${k(this.state.settings, "right")}`;
+    const worn = p.relics[slot] ? RELIC_BY_ID[p.relics[slot]!] : undefined;
+    const candidates = this.relicCandidates();
+    if (this.relicPick >= candidates.length) this.relicPick = 0;
+    const list = candidates.length === 0
+      ? `<p class="muted">You own none yet. Artifacts come out of the Abyssal Rift; Relics from a Legend's Proving, the bottom of the Delve and the Abyss's deepest tiers.</p>`
+      : `<ul class="pulls">${candidates.map((d, i) => {
+          const wornElsewhere = p.relics.indexOf(d.id);
+          const blocker = wornElsewhere === slot ? "in this slot" : p.relicBlocker(slot, d.id);
+          const info = RELIC_TIER_INFO[d.tier];
+          return `<li data-relic="${d.id}" style="cursor:pointer;${i === this.relicPick ? "background:var(--panel)" : ""}">
+            <b style="color:${blocker && wornElsewhere !== slot ? "#5a6270" : info.color}">${i === this.relicPick ? "▸ " : ""}${escapeHtml(d.name)}</b>
+            <span class="muted">${info.label.toLowerCase()}${blocker ? ` · ${escapeHtml(blocker)}` : ""}</span>
+            <em>${escapeHtml(d.description)}</em></li>`;
+        }).join("")}</ul>`;
+    const wornBlock = worn
+      ? `${this.renderRelicLore(worn)}<p class="muted">[${e}] takes it off.</p>`
+      : `<h3>Relic slot ${slot + 1}</h3><p class="muted">Empty. ${adj} to browse what you own, [${e}] to socket the highlighted one, or click it.</p>`;
+    return `${wornBlock}
+      <h3>Your collection <span class="muted">${this.state.relics.length} / ${RELICS.length}</span></h3>
+      ${list}`;
+  }
+
   private renderHero(): string {
     const p = this.state.player;
     const cls = p.heroClass;
@@ -2589,14 +2705,18 @@ export class TownUI {
         </div>
         <div class="doll-locked">
           ${FUTURE_SLOTS.map((f) => this.lockedSlot(f.label, f.glyph)).join("")}
+          ${Array.from({ length: RELIC_SLOTS }, (_, i) => this.relicSlot(i)).join("")}
         </div>
       </div>`;
 
+    const relicSlot = this.cursor - EQUIP_SLOTS.length;
     const selSlot = EQUIP_SLOTS[this.cursor];
     const selItem = selSlot ? p.equipment[selSlot] : undefined;
-    const selPanel = selItem
-      ? this.renderEquipped(selItem)
-      : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
+    const selPanel = relicSlot >= 0
+      ? this.renderRelicPanel(relicSlot)
+      : selItem
+        ? this.renderEquipped(selItem)
+        : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
          Open the Stash to fill it — ${k(this.state.settings, "confirm")} on a slot takes the piece off.</p>`;
 
     const s = p.stats;
@@ -3435,6 +3555,15 @@ export class TownUI {
         <span class="muted">${n > 0 ? `found ×${n}` : "not yet"}</span>
         <em>${escapeHtml(namedSourceLines(def).join(" · "))}</em></li>`;
     }).join("");
+    // UAT §19 rule 4: every relic and artifact, owned or not, with where it drops — the
+    // other half of the §20 seed. Owned ones read in their tier colour, the rest in grey.
+    const relicRows = (tier: RelicDef["tier"]): string => relicsOfTier(tier).map((def) => {
+      const owned = this.state.ownsRelic(def.id);
+      const n = st.relicsFound[def.id] ?? 0;
+      return `<li><b style="color:${owned ? RELIC_TIER_INFO[def.tier].color : "#5a6270"}">${escapeHtml(def.name)}</b>
+        <span class="muted">${owned ? (n > 1 ? `found ×${n}` : "found") : "not yet"}</span>
+        <em>${escapeHtml(relicSourceLines(def).join(" · "))}</em></li>`;
+    }).join("");
     // UAT §13: which Legends are Complete. Only the finished ones are listed — a wall of
     // twenty-one "not yet" rows would say less than the count already does.
     const complete = CLASS_IDS.filter((id) => this.state.players[id].legendComplete);
@@ -3467,6 +3596,10 @@ export class TownUI {
         <table class="cmp">${rifts}</table>
         <h3>Named items <span class="muted">${Object.keys(st.namedFound).filter((id) => id in NAMED_BY_ID).length} / ${NAMED_ITEMS.length}</span></h3>
         <ul class="pulls">${named}</ul>
+        <h3>Relics <span class="muted">${relicsOfTier("relic").filter((d) => this.state.ownsRelic(d.id)).length} / ${relicsOfTier("relic").length}</span></h3>
+        <ul class="pulls">${relicRows("relic")}</ul>
+        <h3>Artifacts <span class="muted">${relicsOfTier("artifact").filter((d) => this.state.ownsRelic(d.id)).length} / ${relicsOfTier("artifact").length}</span></h3>
+        <ul class="pulls">${relicRows("artifact")}</ul>
         <h3>Legends</h3>
         ${legends}
         <h3>Rarities found</h3>

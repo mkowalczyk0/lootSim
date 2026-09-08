@@ -7,6 +7,7 @@ import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
 import { RARITY_COLORS } from "./data/rarity";
+import { RELIC_BY_ID, RELIC_TIER_INFO } from "./data/relics";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
 import { Hub } from "./game/hub";
 import { Party } from "./net/party";
@@ -430,6 +431,21 @@ function start(state: GameState, who: AccountInfo): void {
             fx.addShake(p.shake === 2 ? 18 : 10);
             lootBanner.show(ev.item);
           }
+          break;
+        }
+        case "relic": {
+          // A relic or artifact (UAT §19) is the rarest thing on the floor and always takes
+          // the screen — for the hero who found it. Allies see the flash and the name.
+          const def = RELIC_BY_ID[ev.id];
+          if (!def) break;
+          const color = RELIC_TIER_INFO[def.tier].color;
+          fx.text(ev.x, ev.y, def.name, color, 12);
+          fx.ring(ev.x, ev.y, 140, color, 5);
+          fx.ring(ev.x, ev.y, 80, "#ffffff", 2);
+          fx.burst(ev.x, ev.y, color, 50, 320);
+          fx.sparkle(ev.x, ev.y, "#ffffff", 30, 260);
+          fx.addShake(18);
+          if (ev.owner === d.localHero.index) lootBanner.showRelic(def);
           break;
         }
         case "levelUp":

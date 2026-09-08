@@ -29,8 +29,10 @@ import { EQUIP_SLOTS, ITEM_TYPES, isWeaponType, slotForType, type ItemType } fro
 import { NAMED_ITEMS } from "../src/data/named";
 import { RARITIES, type Rarity } from "../src/data/rarity";
 import { WEAPON_FAMILIES } from "../src/data/weapons";
+import { RELICS, RELIC_SLOTS } from "../src/data/relics";
 import {
-  ITEM_FALLBACK_SPRITE, RARITY_WASH, chooseItemArt, type ArtAvailability, type ItemArtChoice,
+  ITEM_FALLBACK_SPRITE, RARITY_WASH, RELIC_FALLBACK_SPRITE, chooseItemArt, chooseRelicArt,
+  type ArtAvailability, type ItemArtChoice,
 } from "../src/render/itemart";
 
 let failures = 0;
@@ -177,14 +179,42 @@ console.log("\n=== §12: every slot is accounted for ===");
     homeless.join(", "));
 
   // §12 names these as coming later. Asserted against the spec's own list so that turning
-  // one on means moving it, not quietly dropping it off the character sheet.
-  const promised = ["helmet", "boots", "off-hand", "relic", "relic", "relic"];
+  // one on means moving it, not quietly dropping it off the character sheet. The three
+  // relic slots §12 also listed went live with UAT §19 — they are `Player.relics`, not
+  // `EquipSlot`s, and `tools/relics.ts` owns them.
+  const promised = ["helmet", "boots", "off-hand"];
   const live = EQUIP_SLOTS as readonly string[];
   const collide = promised.filter((f) => live.includes(f));
   check("the future slots §12 promises are not yet live slots", collide.length === 0,
     collide.join(", "));
-  console.log(`       · live: ${EQUIP_SLOTS.join(", ")}`);
+  check(`§12's three relic slots are live (${RELIC_SLOTS})`, RELIC_SLOTS === 3);
+  console.log(`       · live: ${EQUIP_SLOTS.join(", ")} + ${RELIC_SLOTS} relic slots`);
   console.log(`       · promised by §12: ${promised.join(", ")}`);
+}
+
+// --- 4. a relic is one picture too ------------------------------------------
+
+console.log("\n=== a relic looks the same on the floor, in a slot and on the banner ===");
+{
+  // The baked atlas has the relic glyph even when no PNG art is loaded — that is the
+  // fallback's whole premise, so the stub says so.
+  const GLYPH_ONLY: ArtAvailability = { hasAtlas: () => false, hasSprite: (n) => n === RELIC_FALLBACK_SPRITE || NO_ART.hasSprite(n) };
+  const GLYPH_AND_ART: ArtAvailability = { hasAtlas: () => true, hasSprite: GLYPH_ONLY.hasSprite };
+  for (const def of RELICS) {
+    const bare = chooseRelicArt(def, GLYPH_ONLY);
+    check(`${def.id}: with no art it is the relic glyph washed at the one wash`,
+      bare.kind === "icon" && bare.sprite === RELIC_FALLBACK_SPRITE && bare.wash === RARITY_WASH && bare.rarity === def.rarity);
+    if (def.art) {
+      const drawn = chooseRelicArt(def, GLYPH_AND_ART);
+      check(`${def.id}: with its art loaded it is its art`, drawn.kind === "atlas" && drawn.id === def.art);
+    }
+  }
+  const authored = { art: "relic.some-future-relic", rarity: "unspoken" as Rarity };
+  check("an authored art id whose PNG is missing falls through to the glyph, never a hole",
+    chooseRelicArt(authored, GLYPH_ONLY).kind === "icon" && chooseRelicArt(authored, GLYPH_AND_ART).kind === "atlas");
+  check("with nothing baked at all it still lands on the item fallback sprite",
+    (chooseRelicArt(authored, NOTHING) as { sprite: string }).sprite === ITEM_FALLBACK_SPRITE);
+  check("every shipped relic is on the fallback today — the art pass hasn't happened", RELICS.every((d) => !d.art));
 }
 
 console.log(`\n${failures === 0 ? "ALL ITEM-ART CHECKS PASSED" : `${failures} ITEM-ART CHECK(S) FAILED`}\n`);

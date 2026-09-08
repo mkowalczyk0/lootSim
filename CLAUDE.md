@@ -22,7 +22,7 @@ npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
                   # currently markers+check+vocab+prog+classes+roster+rules+universal+named+
-                  # legends+forge+previews+itemart+deadpaths+smoke
+                  # legends+forge+previews+itemart+relics+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
@@ -38,6 +38,8 @@ npm run previews  # drop previews (tools/previews.ts) — proves a preview lists
                   # what the real roll can produce; part of npm test
 npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
                   # everywhere" as a property; part of npm test
+npm run relics    # relics and artifacts: the roster, rule 3 as a test, the drop table,
+                  # slots, save/wire, live drop sites (tools/relics.ts) — part of npm test
 npm run markers   # refuses to let a committed conflict marker survive (grep, no build) —
                   # runs first in npm test; added after two merges shipped live markers
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
@@ -503,12 +505,13 @@ patches — into the class `ResolvedBuild` through the same fold a tree node use
 never asks "is this named"**. If you find yourself writing a `switch` on an item id,
 you've taken the wrong turn: extend the effect vocabulary in `src/combat/` instead.
 
-- **Acquisition is the table.** A definition names its sources (`boss` by `BossSpec.id`,
-  `chest` by tier, `clearCache`, `worldDrop`, `craft` with an exact recipe); the existing
-  roll sites read it (`Dungeon.dropNamed`, `GameState.openChests`, `GameState.craftNamed`)
-  and no boss, chest or forge code ever names an item. `namedDropChance` scales odds
-  gently with `danger` — the §16 hook. `namedForSource` is the pure read the §20 drop
-  previews will build on; the Records tab's list is its seed.
+- **Acquisition is the table** — `src/data/drops.ts`, shared with relics. A definition
+  names its sources (`boss` by `BossSpec.id`, `chest` by tier, `clearCache`, `worldDrop`,
+  `craft` with an exact recipe); the existing roll sites read it
+  (`Dungeon.dropFromTables`, `GameState.openChests`, `GameState.craftNamed`) and no boss,
+  chest or forge code ever names an item. `dropChance` scales odds gently with `danger` —
+  the §16 hook. `namedForSource` / `namedMatchesFor` are the typed reads;
+  `dropsForSource` in `data/drop-preview.ts` is the composed one the §20 previews ask.
 - **Two lifetimes, on purpose — read docs/named-items.md before tuning one.** Baked
   stats are frozen into copies already dropped; `effects`/`grant`/`trigger` are looked up
   live by id and a retune reaches every copy ever forged.
@@ -521,6 +524,40 @@ you've taken the wrong turn: extend the effect vocabulary in `src/combat/` inste
 - **Art** is `def.art` → an `ATLAS` row `named.<id>` + PNG; missing art draws the type
   icon tinted by rarity, never a broken screen. Every shipped item is on the fallback
   until the art pass.
+
+### Relics and artifacts: a tree node you wear, no item under it
+
+`src/data/relics.ts` (UAT §19), design record `docs/relics.md`. A `RelicDef` is an id,
+two lines of prose, a list of `NodeEffect`s — the class tree's **full** vocabulary, `mods`
+included, because a relic has no affix list to carry a stat — and a list of sources.
+`Player.build` folds a worn relic through the same `foldEffects` a tree node uses, and
+**the simulation never asks "is this a relic"**. Two tiers, kept distinct on purpose:
+**artifacts** (18, present as divine, Abyssal Rift and only the Abyssal Rift, "my build is
+better at what it does") and **relics** (12, present as unspoken, the Proving by the
+Legend's element / the Nameless at depth 25+ / the depth-30 Delve cache / Abyss tier 8+,
+"this changes how my build works").
+
+- **Rule 3 is a test, not a promise.** Every relic-tier definition must carry an effect
+  beyond `mods`; the honestly-flagged `statStick` definitions may be at most a fifth of the
+  roster. If a tenth relic is turning into a bigger number, the vocabulary in
+  `src/combat/` is what to extend — once, for the tree and both tables.
+- **Three slots, one relic.** `RELIC_SLOTS = 3` on `Player.relics` (per class, on the
+  co-op wire via `playerToJSON`), out of the account-wide `GameState.relics`. At most
+  `MAX_RELICS_WORN = 1` is relic-tier; artifacts fill the rest, so they never go dead. One
+  constant, owner-overturnable. No level gate, like the universal tree.
+- **Acquisition is the shared table** (`data/drops.ts`, see Named items). No `proving`
+  kind: a Proving kill is a `boss` query with a `legend-<class>` id, and
+  `provingSourcesOf(element)` is sugar that builds boss sources. `raid` / `tower` are
+  reserved kinds no site emits yet — the §15/§21 seam — and `relicProblems` refuses a
+  definition hiding behind one. Drops are physical pickups lost on death and bail-out;
+  the local roll skips what the account owns; a co-op dupe is a counter, never power.
+- **`dashCharges`** is the one vocabulary extension: a whole extra dodge as a mod key, the
+  dash a charge stock on the avatar. It landed as its own commit with co-op prediction
+  coverage in the smoke test; don't fold changes to `moveHero` / `predictStep` /
+  `Avatar.dashStock` into an unrelated commit.
+- `npm run relics` (`tools/relics.ts`, in `npm test`) asserts all five §19 rules, the slot
+  rule, the two-tier split, and — as a direct comparison — that a worn relic moves the
+  sheet while a worn cosmetic still doesn't.
 
 ### Elemental damage, ailments and resistance
 

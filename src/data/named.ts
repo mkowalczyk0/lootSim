@@ -36,18 +36,20 @@ import type { SkillTag } from "../combat/tags";
 import type { CombatEventType } from "../combat/triggers";
 import type { SkillMutation } from "../progression/mutations";
 import type { ResourceRulePatch } from "../progression/nodes";
-import { BOSSES } from "./bosses";
-import { CHEST_TIERS, chestName, type ChestTier } from "./chests";
 import { CLASS_IDS } from "./classes";
-import { DELVE_BOTTOM, legendName } from "./legends";
+import {
+  bossDisplayName, dropChance, forSource, foundSourceLines, foundSourceProblems, rollTable,
+  type CraftSource, type DropQuery, type DropSource,
+} from "./drops";
+import { DELVE_BOTTOM } from "./legends";
 import { ELEMENTS, type Element } from "./elements";
 import type { ItemType, TriggerSpec } from "./items";
-import { requirementLabel, type ItemRequirement } from "./crafting";
-import { MATERIAL_NAMES, type MaterialBag } from "./materials";
-import { MODES, RUN_MODES, type RunModeId } from "./modes";
+import { requirementLabel } from "./crafting";
+import { MATERIAL_NAMES } from "./materials";
 import { MOD_KEYS, type ModKey } from "./mods";
-import { PLANETS } from "./planets";
 import { RARITIES, type Rarity } from "./rarity";
+
+export { bossDisplayName };
 
 // --- the schema ------------------------------------------------------------
 
@@ -98,29 +100,14 @@ export type NamedEffect =
   | { readonly kind: "rule"; readonly rule: string; readonly note?: string };
 
 /**
- * Where a named item comes from. Every roll site reads this table; nothing else in the
- * game names an item. `chance` is per qualifying event (a boss kill, a chest pull, a
- * floor clear, a monster kill) before `namedDropChance` scales it by danger.
+ * Where a named item comes from — the shared drop table's vocabulary (`data/drops.ts`),
+ * which relics read too. Every roll site reads this table; nothing else in the game
+ * names an item. `chance` is per qualifying event (a boss kill, a chest pull, a floor
+ * clear, a monster kill) before `dropChance` scales it by danger. `craft` is the one
+ * source a relic may not have: forged on demand for materials, coins and stash items
+ * (UAT §25, §24).
  */
-export type NamedSource =
-  /** Drops when this boss dies — `BossSpec.id`, or `planet-<planetId>` for a sector boss. */
-  | { readonly kind: "boss"; readonly bossId: string; readonly chance: number }
-  /** Rolls out of a chest of this tier, alongside the ordinary pull. */
-  | { readonly kind: "chest"; readonly tier: ChestTier; readonly chance: number }
-  /** Lands in the clear cache of a floor at least this deep, optionally in one mode only. */
-  | { readonly kind: "clearCache"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
-  /** Any wave monster at least this deep. Elites triple the odds. */
-  | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number }
-  /**
-   * Forged on demand for these materials and coins (UAT §25 named crafting), plus any
-   * `items` consumed from the stash (UAT §24 — "boss drop + materials + N items = named").
-   */
-  | {
-      readonly kind: "craft";
-      readonly materials: Partial<MaterialBag>;
-      readonly coins: number;
-      readonly items?: readonly ItemRequirement[];
-    };
+export type NamedSource = DropSource;
 
 export interface NamedItemDef {
   /** Stable kebab-case id. It is persisted on every copy — never rename one that shipped. */
@@ -484,39 +471,21 @@ export function isNamedId(id: unknown): id is string {
 
 // --- acquisition ---------------------------------------------------------------
 
-/**
- * What a roll site is asking about. Mirrors `NamedSource` minus the numbers: a boss
- * died, a chest opened, a floor cleared, a monster fell.
- */
-export type NamedDropQuery =
-  | { readonly kind: "boss"; readonly bossId: string }
-  | { readonly kind: "chest"; readonly tier: ChestTier }
-  | { readonly kind: "clearCache"; readonly depth: number; readonly mode: RunModeId }
-  | { readonly kind: "worldDrop"; readonly depth: number; readonly elite: boolean };
+/** What a roll site is asking about — the shared query (`data/drops.ts`). */
+export type NamedDropQuery = DropQuery;
 
-/** The UAT §16 hook: harder content pays better odds. Gentle, capped, one place. */
-export function namedDropChance(base: number, danger = 1): number {
-  const mult = Math.min(2.5, 1 + Math.log2(Math.max(1, danger)) * 0.35);
-  return Math.min(1, base * mult);
-}
-
-/** True when `src` is a thing `q` could pay out. */
-function sourceMatches(src: NamedSource, q: NamedDropQuery): boolean {
-  switch (q.kind) {
-    case "boss": return src.kind === "boss" && src.bossId === q.bossId;
-    case "chest": return src.kind === "chest" && src.tier === q.tier;
-    case "clearCache":
-      return src.kind === "clearCache" && q.depth >= src.minDepth && (src.mode === undefined || src.mode === q.mode);
-    case "worldDrop": return src.kind === "worldDrop" && q.depth >= src.minDepth;
-  }
-}
+/** The UAT §16 hook: harder content pays better odds. One function, shared with relics. */
+export const namedDropChance = dropChance;
 
 /**
  * Every named item this event could pay out — the pure read a drop preview wants
- * ("this boss can drop these"), with no dice involved.
+ * ("this boss can drop these"), with no dice involved. Definitions only; see
+ * `namedMatchesFor` for the source each one matched through.
  */
 export function namedForSource(q: NamedDropQuery): NamedItemDef[] {
-  return NAMED_ITEMS.filter((d) => d.sources.some((s) => sourceMatches(s, q)));
+  const seen = new Set<NamedItemDef>();
+  for (const m of forSource(NAMED_ITEMS, q)) seen.add(m.def);
+  return [...seen];
 }
 
 /**
@@ -525,18 +494,12 @@ export function namedForSource(q: NamedDropQuery): NamedItemDef[] {
  *
  * The drop preview (UAT §20) needs more than the list: it needs the `chance` to quote and
  * the source to describe. Exported here rather than reimplemented there so that
- * `sourceMatches` stays the only thing in the game that decides whether a source answers
- * an event. A preview with its own matcher is a second drop table waiting to disagree
- * with this one.
+ * `sourceMatches` (`data/drops.ts`, shared with relics) stays the only thing in the game
+ * that decides whether a source answers an event. A preview with its own matcher is a
+ * second drop table waiting to disagree with this one.
  */
 export function namedMatchesFor(q: NamedDropQuery): { def: NamedItemDef; src: NamedSource }[] {
-  const out: { def: NamedItemDef; src: NamedSource }[] = [];
-  for (const def of NAMED_ITEMS) {
-    for (const src of def.sources) {
-      if (src.kind !== "craft" && sourceMatches(src, q)) out.push({ def, src });
-    }
-  }
-  return out;
+  return forSource(NAMED_ITEMS, q);
 }
 
 /** Every named item with a forge recipe, in registry order. */
@@ -544,67 +507,33 @@ export function craftableNamed(): NamedItemDef[] {
   return NAMED_ITEMS.filter((d) => d.sources.some((s) => s.kind === "craft"));
 }
 
-export function craftRecipeFor(def: NamedItemDef): Extract<NamedSource, { kind: "craft" }> | null {
-  return def.sources.find((s): s is Extract<NamedSource, { kind: "craft" }> => s.kind === "craft") ?? null;
+export function craftRecipeFor(def: NamedItemDef): CraftSource | null {
+  return def.sources.find((s): s is CraftSource => s.kind === "craft") ?? null;
 }
 
 /**
- * Rolls the table for one event. Each matching source is an independent roll, so a
- * definition listed under two sources gets two shots; an elite triples a world-drop
- * source's odds, and `danger` (rift tier × Challenger) lifts every chance through
- * `namedDropChance`. Returns the definitions that hit — the caller forges them.
+ * Rolls the table for one event — `rollTable` over the registry (`data/drops.ts`): each
+ * matching source is an independent roll, an elite triples a world-drop source's odds,
+ * `danger` lifts every chance. Returns the definitions that hit — the caller forges them.
  */
 export function rollNamedDrops(
   q: NamedDropQuery, rng: { chance(p: number): boolean }, danger = 1,
 ): NamedItemDef[] {
-  const out: NamedItemDef[] = [];
-  for (const def of NAMED_ITEMS) {
-    for (const src of def.sources) {
-      if (!sourceMatches(src, q) || src.kind === "craft") continue;
-      let base = src.chance;
-      if (q.kind === "worldDrop" && q.elite) base *= 3;
-      if (rng.chance(namedDropChance(base, danger))) {
-        out.push(def);
-        break;
-      }
-    }
-  }
-  return out;
+  return rollTable(NAMED_ITEMS, q, rng, danger);
 }
 
 // --- reading a definition ---------------------------------------------------------
 
-/** Display name for a boss id, delve or planet. Falls back to the id so a typo is visible. */
-export function bossDisplayName(bossId: string): string {
-  const delve = BOSSES.find((b) => b.id === bossId);
-  if (delve) return delve.name;
-  const planet = PLANETS.find((p) => `planet-${p.id}` === bossId);
-  if (planet) return planet.bossName;
-  // A Proving (UAT §13): `legend-<classId>`, generated rather than authored, so it is
-  // resolved rather than listed. Without this the source line would print the raw id.
-  const legend = CLASS_IDS.find((id) => `legend-${id}` === bossId);
-  return legend ? legendName(legend) : bossId;
-}
-
 /** "Drops from the Warden of the First Seal (12%)" — one line per source, for tooltips and previews. */
 export function namedSourceLines(def: NamedItemDef): string[] {
-  return def.sources.map((s) => {
-    const pct = (c: number) => `${Math.round(c * 1000) / 10}%`;
-    switch (s.kind) {
-      case "boss": return `Drops from ${bossDisplayName(s.bossId)} (${pct(s.chance)})`;
-      case "chest": return `Found in ${chestName(s.tier)} chests (${pct(s.chance)} per pull)`;
-      case "clearCache":
-        return `In the clear cache from depth ${s.minDepth}${s.mode ? ` in the ${MODES[s.mode].name}` : ""} (${pct(s.chance)})`;
-      case "worldDrop": return `Dropped by monsters from depth ${s.minDepth} (${pct(s.chance)} per kill, elites triple)`;
-      case "craft": {
-        const mats = (Object.entries(s.materials) as [Element, number][])
-          .filter(([, n]) => n > 0)
-          .map(([e, n]) => `${n} ${MATERIAL_NAMES[e]}`);
-        const parts = (s.items ?? []).map((r) => requirementLabel(r, (id) => NAMED_BY_ID[id]?.name ?? id));
-        return `Forged for ${[...parts, ...mats, `${s.coins.toLocaleString()} coins`].join(", ")}`;
-      }
-    }
+  const crafts = def.sources.filter((s): s is CraftSource => s.kind === "craft").map((s) => {
+    const mats = (Object.entries(s.materials) as [Element, number][])
+      .filter(([, n]) => n > 0)
+      .map(([e, n]) => `${n} ${MATERIAL_NAMES[e]}`);
+    const parts = (s.items ?? []).map((r) => requirementLabel(r, (id) => NAMED_BY_ID[id]?.name ?? id));
+    return `Forged for ${[...parts, ...mats, `${s.coins.toLocaleString()} coins`].join(", ")}`;
   });
+  return [...foundSourceLines(def.sources), ...crafts];
 }
 
 // --- validation (the `npm run named` gate reads this) -------------------------------------
@@ -640,24 +569,11 @@ export function namedProblems(def: NamedItemDef): string[] {
   }
 
   for (const s of def.sources) {
+    if (s.kind !== "craft") {
+      out.push(...foundSourceProblems(s));
+      continue;
+    }
     switch (s.kind) {
-      case "boss":
-        if (bossDisplayName(s.bossId) === s.bossId) out.push(`boss source "${s.bossId}" names no boss`);
-        if (!(s.chance > 0 && s.chance <= 1)) out.push(`boss chance ${s.chance} is not in (0, 1]`);
-        break;
-      case "chest":
-        if (!(CHEST_TIERS as readonly string[]).includes(s.tier)) out.push(`chest source "${s.tier}" names no chest tier`);
-        if (!(s.chance > 0 && s.chance <= 1)) out.push(`chest chance ${s.chance} is not in (0, 1]`);
-        break;
-      case "clearCache":
-        if (s.mode !== undefined && !(RUN_MODES as readonly string[]).includes(s.mode)) out.push(`clear-cache mode "${s.mode}" is not a run mode`);
-        if (!(s.minDepth >= 1)) out.push("clear-cache minDepth must be >= 1");
-        if (!(s.chance > 0 && s.chance <= 1)) out.push(`clear-cache chance ${s.chance} is not in (0, 1]`);
-        break;
-      case "worldDrop":
-        if (!(s.minDepth >= 1)) out.push("world-drop minDepth must be >= 1");
-        if (!(s.chance > 0 && s.chance <= 1)) out.push(`world-drop chance ${s.chance} is not in (0, 1]`);
-        break;
       case "craft": {
         const entries = Object.entries(s.materials) as [string, number][];
         if (entries.every(([, n]) => !(n > 0)) && !(s.coins > 0) && !(s.items?.length)) out.push("craft recipe costs nothing");

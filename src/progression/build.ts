@@ -26,8 +26,9 @@ import { evaluateUnlocks, type PathUnlockDef } from "./unlocks";
 export interface GrantedEffect {
   on: { tag?: string; event?: string };
   effects: readonly EffectStep[];
-  /** Which layer granted it, for tooltips. `gear` is a worn named item (`data/named.ts`). */
-  from: "node" | "hybrid" | "mythic" | "gear";
+  /** Which layer granted it, for tooltips. `gear` is a worn named item (`data/named.ts`);
+   *  `relic` a worn relic or artifact (`data/relics.ts`). */
+  from: "node" | "hybrid" | "mythic" | "gear" | "relic";
 }
 
 export interface ResolvedBuild {

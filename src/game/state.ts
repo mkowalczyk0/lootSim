@@ -21,6 +21,7 @@ import { emptyMaterials, type MaterialBag } from "../data/materials";
 import {
   NAMED_BY_ID, craftRecipeFor, isNamedId, rollNamedDrops, type NamedItemDef,
 } from "../data/named";
+import { isRelicId, normalizeRelicLoadout } from "../data/relics";
 import {
   ASCEND_COMPONENTS, forgeOpCost, itemMeetsRequirement, type ForgeOp, type ItemRequirement,
 } from "../data/crafting";
@@ -64,6 +65,8 @@ export interface RunStats {
   /** Items broken down at the Forge, and the Ash they returned (UAT §24/§27). */
   itemsSalvaged: number;
   ashEarned: number;
+  /** Times each relic or artifact was banked, by id (UAT §19). Above one means a co-op duplicate. */
+  relicsFound: Record<string, number>;
 }
 
 function freshStats(): RunStats {
@@ -86,6 +89,7 @@ function freshStats(): RunStats {
     namedFound: {},
     itemsSalvaged: 0,
     ashEarned: 0,
+    relicsFound: {},
   };
 }
 
@@ -163,6 +167,12 @@ export class GameState {
    * coins and materials.
    */
   ash = 0;
+  /**
+   * Every relic and artifact this account has banked (UAT §19), by `data/relics.ts` id —
+   * account-wide like the wardrobe, because a relic is progression the whole account
+   * earned. Which three a character *wears* is `Player.relics`.
+   */
+  relics: string[] = [];
   /**
    * The player's own difficulty dial — zero is plain. Set at a portal or the star map
    * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
@@ -390,6 +400,42 @@ export class GameState {
   }
 
   /** Records that a copy of `id` was minted. The dungeon calls this for the local hero's drops. */
+  ownsRelic(id: string): boolean {
+    return this.relics.includes(id);
+  }
+
+  /**
+   * Banks relics found on a floor into the collection. Called from `Dungeon.bank`, so it
+   * costs exactly what every other floor reward costs — dying on the way out loses it. A
+   * duplicate (only possible from a co-op host rolling blind) bumps the counter and adds
+   * nothing: the collection is a set. Returns the ids that were new.
+   */
+  bankRelics(ids: readonly string[]): string[] {
+    const fresh: string[] = [];
+    for (const id of ids) {
+      if (!isRelicId(id)) continue;
+      this.stats.relicsFound[id] = (this.stats.relicsFound[id] ?? 0) + 1;
+      if (!this.relics.includes(id)) {
+        this.relics.push(id);
+        fresh.push(id);
+      }
+    }
+    return fresh;
+  }
+
+  /** Puts an owned relic in one of the active character's slots. False with the reason otherwise. */
+  socketRelic(slot: number, id: string): { ok: true; replaced: string | null } | { ok: false; reason: string } {
+    if (!this.ownsRelic(id)) return { ok: false, reason: "You don't have that one yet." };
+    const blocker = this.player.relicBlocker(slot, id);
+    if (blocker) return { ok: false, reason: blocker };
+    const replaced = this.player.socketRelic(slot, id);
+    return { ok: true, replaced: replaced ?? null };
+  }
+
+  unsocketRelic(slot: number): string | null {
+    return this.player.unsocketRelic(slot);
+  }
+
   noteNamed(id: string): void {
     this.stats.namedFound[id] = (this.stats.namedFound[id] ?? 0) + 1;
   }
@@ -778,6 +824,7 @@ export class GameState {
       weekly: this.weekly,
       materials: this.materials,
       ash: this.ash,
+      relics: this.relics,
       challengerTier: this.challengerTier,
       stats: this.stats,
       inventory: this.inventory,
@@ -826,6 +873,11 @@ export class GameState {
       state.gems = Number(d.gems ?? 0);
       // Version 19 added Ash; an older save has simply never salvaged anything.
       state.ash = Math.max(0, Math.floor(Number(d.ash ?? 0)) || 0);
+      // Version 22 added relics; an older save owns none. A retired id is dropped rather
+      // than kept as a ghost the Hero screen can't draw.
+      state.relics = Array.isArray(d.relics)
+        ? [...new Set((d.relics as unknown[]).filter(isRelicId))]
+        : [];
       state.cosmetics = normalizeOwned(d.cosmetics);
       state.appearance = normalizeAppearance(d.appearance);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
@@ -924,6 +976,10 @@ export function playerToJSON(p: Player) {
     // v1: the Proving is solo, and the flag grants nothing a simulation could act on.
     legendComplete: p.legendComplete,
     equipment: p.equipment,
+    // The three relic slots (UAT §19). On the wire for the same reason the tree is: a
+    // host rebuilds this hero's build from this blob, and a relic left behind here would
+    // mean the host simulating a weaker character than the one on the player's screen.
+    relics: p.relics,
   };
 }
 
@@ -975,6 +1031,8 @@ function applyPlayerJSON(
     : [];
   // A save from before v17 has no Proving, so no class can have completed one.
   p.legendComplete = raw.legendComplete === true;
+  // A save from before v22 wears no relics; anything else is brought back to legal.
+  p.relics = normalizeRelicLoadout(raw.relics);
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {

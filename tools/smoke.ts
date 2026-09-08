@@ -4063,6 +4063,118 @@ console.log("\n=== multiplayer ===");
     check("a dash in a dropped packet fires late rather than never", flood.wasPressed("dash"));
   }
 
+  // 11. Dash charges (UAT §19's "gain an additional Dodge" — `dashCharges`). The dash
+  // became a charge stock, and the one thing that must not regress is B2 above: a client
+  // predicts its own dash and is reconciled by replay. So the same host/client rig runs
+  // again with the client wearing +1 charge, and asserts three things directly — the
+  // second dash is predicted the instant it's pressed and the host agrees; a third press
+  // with the stock empty is predicted by NEITHER end; and the reconciliation never has to
+  // move the client, dashes included. A solo control run pins the default: one charge is
+  // exactly the old single cooldown.
+  {
+    const withCharge = (state: GameState): void => {
+      const ring = rollItem({ rarity: "epic", type: "ring", ilvl: 14, rng: new Rng(0xda5) });
+      state.player.equip({ ...ring, mods: [{ id: "smoke:dashCharges", key: "dashCharges", value: 1 }] });
+    };
+    const LAG = 4;
+    const hostS = geared(14, 8815, 16, "swordsman");
+    const cliS = geared(14, 8816, 16, "lancer");
+    withCharge(cliS);
+    check("a +1 dashCharges affix reads as two dashes on the sheet",
+      cliS.player.dashCharges === 2 && hostS.player.dashCharges === 1);
+    const pair = [
+      { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+    ];
+    const cfg = delveConfig(2, 0, 2);
+    const h = new Dungeon(hostS, cfg, { seed: 778, role: "host", heroes: pair });
+    const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 778, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    const remote = new NetInput();
+    h.heroes[1]!.input = remote as unknown as AvatarInput;
+    const log = new InputLog();
+    const hostInput = new FakeInput();
+    const cliInput = new FakeInput();
+    const toHost: { due: number; packet: ReturnType<typeof packInput> }[] = [];
+    const toClient: { due: number; snap: Snapshot }[] = [];
+    const corrections: number[] = [];
+    const me = c.localHero.avatar;
+    const them = h.heroes[1]!.avatar;
+    // Dash starts seen on each end, by tick. The first two presses (120, 132) come 12
+    // ticks apart — the first dash is over (DASH_TIME is ~8 ticks) but its 45-tick
+    // cooldown is not, so only a second charge can pay for it. The third (140) finds the
+    // stock empty on both ends.
+    const clientStarts: number[] = [];
+    const hostStarts: number[] = [];
+    let cWasDashing = false;
+    let hWasDashing = false;
+    cliInput.hold("right", true);
+    for (let tick = 0; tick < 240; tick++) {
+      hostInput.beginTick();
+      cliInput.beginTick();
+      if (tick === 120 || tick === 132 || tick === 140) cliInput.press("dash");
+
+      c.update(DT, cliInput as unknown as AvatarInput);
+      if (me.dashTimer > 0 && !cWasDashing) clientStarts.push(tick);
+      cWasDashing = me.dashTimer > 0;
+      const seq = log.record(cliInput.moveVector(), cliInput.wasPressed("dash"));
+      toHost.push({ due: tick + LAG, packet: packInput(cliInput as unknown as AvatarInput, me.x, me.y, seq) });
+
+      while (toHost.length > 0 && toHost[0]!.due <= tick) remote.receive(toHost.shift()!.packet);
+      remote.beginTick();
+      h.update(DT, hostInput as unknown as AvatarInput);
+      if (them.dashTimer > 0 && !hWasDashing) hostStarts.push(tick);
+      hWasDashing = them.dashTimer > 0;
+      h.enemies.length = 0;
+      h.drainEvents();
+      if (tick % 3 === 0) toClient.push({ due: tick + LAG, snap: JSON.parse(JSON.stringify(encodeSnapshot(h))) as Snapshot });
+
+      while (toClient.length > 0 && toClient[0]!.due <= tick) {
+        const wasX = me.x;
+        const wasY = me.y;
+        applySnapshot(c, toClient.shift()!.snap, undefined, log);
+        if (tick > 30) corrections.push(Math.hypot(me.x - wasX, me.y - wasY));
+      }
+    }
+    corrections.sort((a, b) => a - b);
+    const worst = corrections[corrections.length - 1] ?? Infinity;
+    check("a client with two charges predicts both dashes the tick it presses them",
+      clientStarts.length === 2 && clientStarts[0] === 120 && clientStarts[1] === 132, clientStarts.join());
+    check("…and the host runs the same two dashes, LAG ticks later",
+      hostStarts.length === 2 && hostStarts[0] === 120 + LAG && hostStarts[1] === 132 + LAG, hostStarts.join());
+    check("…and neither end dashes on the third press — the stock was empty",
+      !clientStarts.includes(140) && !hostStarts.includes(140 + LAG));
+    check("…and the double dash never had to be corrected by the host", worst < 1.5,
+      `worst ${worst.toFixed(2)}px over ${corrections.length} snapshots`);
+
+    // The solo control: default one charge, the second press inside the cooldown is a
+    // no-op, exactly as before; with the ring on, it isn't.
+    const dashesIn = (state: GameState): number => {
+      const d = new Dungeon(state, delveConfig(2), { seed: 779 });
+      const input = new FakeInput();
+      const a = d.avatar;
+      let starts = 0;
+      let was = false;
+      input.hold("right", true);
+      for (let tick = 0; tick < 60; tick++) {
+        input.beginTick();
+        if (tick === 10 || tick === 22) input.press("dash");
+        d.update(DT, input as unknown as AvatarInput);
+        if (a.dashTimer > 0 && !was) starts++;
+        was = a.dashTimer > 0;
+      }
+      return starts;
+    };
+    const plain = geared(14, 8817, 16, "swordsman");
+    const charged = geared(14, 8817, 16, "swordsman");
+    withCharge(charged);
+    const plainDashes = dashesIn(plain);
+    const chargedDashes = dashesIn(charged);
+    check("one charge is the old single cooldown; a second charge is a second dash",
+      plainDashes === 1 && chargedDashes === 2, `${plainDashes} vs ${chargedDashes}`);
+  }
+
   // 5. Room codes: four letters, no lookalikes, and paste-and-pray survives.
   const codes = new Set<string>();
   for (let i = 0; i < 400; i++) codes.add(randomRoomCode());

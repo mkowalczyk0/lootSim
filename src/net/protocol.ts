@@ -123,7 +123,7 @@ export type PartyMessage =
   /** Host → all (or one, when it's personal): renderer events. */
   | { k: "fx"; e: unknown[] }
   /** Host → one: an item you picked up, and XP you earned. Reliable, unlike a snapshot. */
-  | { k: "got"; item?: unknown; xp?: number }
+  | { k: "got"; item?: unknown; xp?: number; relic?: string }
   /** Host → all: the floor is over. `descend` is always followed by a fresh `start`.
    *  `early` is the host's word that an extraction was the penalty kind (UAT §6) — a
    *  client banks or forfeits on this flag, never on what its last snapshot implied. */
@@ -154,6 +154,9 @@ export interface HeroSnap {
   /** Dash cooldown and current velocity — what a client needs to replay its own
    *  unacknowledged inputs from this exact state (UAT §1 B2). */
   readonly dc: number;
+  /** Dashes in hand (`Avatar.dashStock`). A client with two charges has to replay its
+   *  second dash from the host's count, not from a guess. */
+  readonly ds: number;
   readonly vx: number;
   readonly vy: number;
   /** Sequence number of the last `in` packet the host consumed for this hero. Only

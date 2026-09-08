@@ -200,7 +200,9 @@ like a fallback.
 - **Raid-tier drop variants, "number of possible drops", special variants (§16).**
   `namedDropChance(base, danger)` is the one hook; a raid system plugs its tier into
   `danger` and gets scaling odds for free. Anything richer is Chunk 10's.
-- **The §20 drop preview UI.** `namedForSource(query)` is the pure read ("this boss can
+- **The §20 drop preview UI.** (Since UAT §19 the table machinery lives in
+  `src/data/drops.ts`, shared with relics, and `dropsForSource` in `data/drop-preview.ts`
+  is the composed read every activity preview should ask.) `namedForSource(query)` is the pure read ("this boss can
   drop these"); the Records tab's list is the seed. The per-activity preview screens are
   still open.
 - **Named-item art.** Every shipped item names `named.<id>` and is on the fallback until

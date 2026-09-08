@@ -21,6 +21,7 @@ import { playerFromJSON, playerToJSON } from "../game/state";
 import { normalizeAppearance, type Appearance } from "../data/cosmetics";
 import { isClassId, DEFAULT_CLASS } from "../data/classes";
 import type { Item } from "../game/item";
+import { isRelicId } from "../data/relics";
 import { NetClient } from "./client";
 import {
   SNAPSHOT_HZ, normalizeRoomCode,
@@ -410,13 +411,16 @@ export class Party {
       const hero = d.heroes[slot];
       if (!hero) continue;
       for (const item of hero.itemsPending) this.send({ k: "got", item }, member.id);
+      for (const relic of hero.relicsPending) this.send({ k: "got", relic }, member.id);
       if (hero.xpPending > 0) this.send({ k: "got", xp: hero.xpPending }, member.id);
       hero.itemsPending.length = 0;
+      hero.relicsPending.length = 0;
       hero.xpPending = 0;
     }
     this.fxBuffer.length = 0;
     // The host's own pending lists were applied as they happened — it *is* the simulation.
     d.localHero.itemsPending.length = 0;
+    d.localHero.relicsPending.length = 0;
     d.localHero.xpPending = 0;
 
     this.send({ k: "snap", s: encodeSnapshot(d) });
@@ -494,6 +498,9 @@ export class Party {
         const d = this.dungeon;
         if (!d) return;
         if (msg.item) d.localHero.loot.items.push(msg.item as Item);
+        // A relic is an id, not an object; the host rolled it blind against a collection
+        // it can't see, so a duplicate is possible here and is only ever a counter.
+        if (msg.relic && isRelicId(msg.relic)) d.localHero.loot.relics.push(msg.relic);
         // XP is applied to the real save as it's earned, the same as a solo dive — it's
         // the one thing dying doesn't take away, so it can't wait for a bank.
         if (msg.xp) {

@@ -75,3 +75,21 @@ export function chooseItemArt(
   const name = has.hasSprite(type) ? type : ITEM_FALLBACK_SPRITE;
   return { kind: "icon", sprite: name, rarity, wash: RARITY_WASH };
 }
+
+/** The sprite a relic with no art of its own falls back to (`data/relics.ts`). */
+export const RELIC_FALLBACK_SPRITE = "gem";
+
+/**
+ * The same decision for a relic or artifact. A relic is not an item — no type, no weapon
+ * family — so its ladder is two rungs: its own atlas art, else the relic glyph washed
+ * toward the rarity its tier presents as, at the one `RARITY_WASH` every item uses. It
+ * goes through the same `ItemArtChoice` so `sprites.ts` executes it with the same code
+ * and the §11 property ("one thing, one picture") covers relics for free.
+ */
+export function chooseRelicArt(
+  def: { readonly art?: string; readonly rarity: Rarity }, has: ArtAvailability,
+): ItemArtChoice {
+  if (def.art && has.hasAtlas(def.art)) return { kind: "atlas", id: def.art };
+  const name = has.hasSprite(RELIC_FALLBACK_SPRITE) ? RELIC_FALLBACK_SPRITE : ITEM_FALLBACK_SPRITE;
+  return { kind: "icon", sprite: name, rarity: def.rarity, wash: RARITY_WASH };
+}
