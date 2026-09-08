@@ -112,6 +112,12 @@ export interface Enemy extends Body {
   stuckTimer: number;
   /** Which way this one sidesteps when blocked, so a crowd splits around a pillar. */
   dodgeDir: number;
+  /** Cadence clock for an archetype's special behaviour (UAT §2) — a charger's next
+   *  rush, a summoner's next call, a leech's next pulse. Unused by plain melee/ranged. */
+  behaviorTimer: number;
+  /** A charger's dash velocity while it is mid-rush; both zero at rest. */
+  chargeVx: number;
+  chargeVy: number;
   /** What its hits are made of. */
   element: Element;
   resists: Resists;
@@ -124,6 +130,9 @@ export interface Enemy extends Body {
   boss: BossState | null;
   /** True for anything a boss summoned, so adds can be cleaned up and counted. */
   summoned: boolean;
+  /** True only for a wave-director spawn, which is what the floor-clear quota counts
+   *  (UAT §5) — never a summon, a Splitting monster's shards, or a boss add. */
+  fromWave: boolean;
   /** Modular traits riding on this monster (UAT §3) — empty for most. */
   affixes: MonsterAffix[];
   /** Runtime bookkeeping for the affixes: periodic-behaviour timers, the regen ward

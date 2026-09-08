@@ -60,7 +60,14 @@ rest of `game/`. It also decodes every committed floor tileset (`tools/png.ts`, 
 dependency-free PNG reader), runs it through the same grade the renderer applies
 (`render/grade.ts`) and fails if floor and wall stop being separable, if either is
 brighter than the Citadel deck, or if a tile is busier than the deck — see
-`docs/art-style-guide.md` §17.7.
+`docs/art-style-guide.md` §17.7. Two seams exist purely for it — `Dungeon.spawnArchetypeAt`
+and `Dungeon.sealWaves` — which stage a controlled encounter so each monster behaviour can
+be walked in isolation; the wave director never calls either.
+
+It also proves out the floor objective (UAT §5/§6): that the quota is derived rather than
+hand-set, that an elite requirement is always completable, that clearing opens a
+completion portal somewhere new *and walkable from the spawn*, and that bailing out early
+really does forfeit the items while a clean extract keeps the lot.
 
 Co-op is in there too, and for the same reason: a party floor is a normal floor with more
 than one `Hero` on it, so the test plays one with two bots, checks XP is shared while loot
@@ -72,10 +79,11 @@ forgotten in `net/sync.ts`.
 ## The game loop (this is the design; respect it)
 
 Pick a class → the ship → walk to a portal or a terminal → **dive** → fight waves of
-auto-spawning monsters → collect loot → either **extract** at the portal (banks
-everything) or **die** (lose unbanked loot, keep the XP) → back at the ship: open
-chests, equip upgrades, spend tree points, pick skills, sell junk, craft, deck out the
-wardrobe → dive again.
+auto-spawning monsters → collect loot → **fill the floor's kill quota** → leave through
+the **completion portal** it opens (banks everything), or **bail out** through the
+entrance portal (keeps a sliver of the coin, forfeits the items), or **die** (lose all
+unbanked loot, keep the XP) → back at the ship: open chests, equip upgrades, spend tree
+points, pick skills, sell junk, craft, deck out the wardrobe → dive again.
 
 Depth is the difficulty dial. Each depth scales enemy HP, damage, count and speed, tightens
 their attack telegraphs, adds hazards, and shifts the loot rarity weights upward. Clearing a
@@ -83,6 +91,40 @@ floor offers **descend** (deeper, richer, more dangerous) or **extract** (bank i
 depth is a raid boss floor.
 
 Risk/reward is the point: unbanked loot is lost on death. Never make death free.
+
+### The floor objective and the two portals
+
+`src/game/dungeon.ts` (`killsRequired` / `killsSoFar` / `elitesRequired` / `elitesKilled`,
+`floorQuotaMet`, `completionPortal`, `earlyExtractLoot`). A floor is finished by
+**clearing it**, not by reaching an exit — UAT §5/§6.
+
+- **The objective is a kill quota**, shown in the HUD as `Monsters 34/92 · Elites 1/2`.
+  `killsRequired` is every monster the wave director will spawn (`enemiesPerWave × waves`)
+  and `elitesRequired` is 0–1 by default and more under Challenger, always clamped to
+  `eliteCapForFloor()` so it can never ask for elites the floor can't make. If the last
+  wave is running out of bodies with elites still owed, the director **forces** them, so
+  the objective is never stuck behind a bad roll. A boss floor's quota is its boss.
+- **Only the wave director's own monsters count** (`Enemy.fromWave`). A summoner's chaff
+  and a Splitting monster's shards can neither pad the objective nor hold it open — which
+  also means a floor can clear with stragglers still chasing you.
+- **Two portals.** The *entrance* portal is where you came in; it stays all floor, it
+  never descends, and it is drawn dim amber rather than blue. The *completion* portal
+  spawns at a fresh spot the instant the quota is met (`pickCompletionSpot`, drawn from
+  `affixRng` so it never shifts the spawn/loot sequence), and it is the way onward. The
+  clear cache drops around it, not the entrance — the reward lands where finishing sends
+  you.
+- **Bailing out is expensive** (`EARLY_EXTRACT_KEEP` in `data/modes.ts`, 15%). Leaving
+  through the entrance with the quota unmet forfeits **every** unbanked item, key and
+  material, keeps a sliver of the coins and gems, and never touches XP. It asks twice and
+  spells out the cost first. The point is that you can never dip out of a dangerous floor
+  still holding the valuable loot — **don't soften this**; it's the whole risk/reward
+  decision the floor exists to create.
+- **Co-op stays host-authoritative and the wire barely moved.** The snapshot gained
+  exactly two counters (`kq`, `ek`) and the completion portal's position (`cp`); both
+  ends *derive* `killsRequired`/`elitesRequired` from the `RunConfig` they already share.
+  An early extraction needed no new run-end reason either — a client already knows the
+  phase, so `party.onEnd("extract")` with the floor unfinished is self-evidently the
+  penalty kind.
 
 ### The ship: portals instead of menus
 
@@ -208,8 +250,10 @@ The shape of the party inside the simulation is the load-bearing part:
   couple of seconds revives them, and clearing the floor picks everybody up. The run only
   ends when the last one falls. Solo, "downed" and "dead" are the same tick, so nothing
   about a single-player death changed.
-- **The host calls it at the portal.** Descending needs the whole party standing in it;
-  extracting is the host's alone, since it's the safe option and it banks everyone.
+- **The host calls it at the portal.** Descending needs the whole party standing in the
+  *completion* portal; extracting is the host's alone, since it's the safe option and it
+  banks everyone. Bailing out early is the host's call too, and it charges every player
+  the same penalty against their own save.
 
 Multiplayer runs the **Delve** only, at a depth the host picks. Rifts, planets and the
 Challenger dial are untouched by it and stay solo for now.
@@ -465,8 +509,9 @@ mechanics have stopped being mechanics.
 
 The economy is deliberately slow. Coins per kill, per-kill gear drops, key drops and the
 vendor's `SELL_RATE` were all cut hard, and most of a floor's actual pay comes from the
-**clear cache** dropped at the portal when the last wave dies — a reward you only get by
-finishing, and still lose by dying on the way out.
+**clear cache** dropped around the completion portal when the quota is met — a reward you
+only get by finishing, still lose by dying on the way out, and can't carry through the
+entrance portal either.
 
 ### The look: simple pixel art, menacing monsters, a plain hero
 
@@ -703,6 +748,13 @@ Anything else — combat, adventures, stats, zones — was replaced and is fair 
 The rifts, the cosmetics, the ship hub, planets, the forge and co-op multiplayer are all
 in now. What's still genuinely open:
 
+- **The floor objective is one shape only.** It's "kill the quota, kill the elites";
+  UAT §5 floats additional completion mechanics (stopping a ritual, and similar) for
+  higher difficulties, and none of that exists. `floorQuotaMet()` is the single place
+  a second kind of objective would hook in.
+- **The early-extraction penalty is one flat number** (`EARLY_EXTRACT_KEEP`). It doesn't
+  scale with how far through the floor you were, which would be a reasonable ask — bailing
+  at 90/92 kills costs exactly as much as bailing on the first wave.
 - **Multiplayer is delve-only, and deliberately basic.** Rifts, planets and Challenger
   are single-player; there's no chat, no host migration, no reconnect (a dropped player
   stays on the floor as a body until the run ends), and no way to join a run already in

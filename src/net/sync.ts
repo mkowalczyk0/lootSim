@@ -150,6 +150,11 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
     ph: d.phase === "fighting" ? 0 : d.phase === "cleared" ? 1 : 2,
     wv: d.wave,
     left: d.enemiesRemaining,
+    kq: d.killsSoFar,
+    ek: d.elitesKilled,
+    ...(d.completionPortal
+      ? { cp: [Math.round(d.completionPortal.x), Math.round(d.completionPortal.y)] as [number, number] }
+      : {}),
     h: d.heroes.map(encodeHero),
     e: d.enemies.map(encodeEnemy),
     p: d.projectiles.map((p) => [
@@ -242,6 +247,12 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
   d.phase = s.ph === 0 ? "fighting" : s.ph === 1 ? "cleared" : "dead";
   d.wave = s.wv;
   d.remoteRemaining = s.left;
+  // The clear objective and the completion portal are the host's to decide; a client
+  // only mirrors them so its HUD can count the quota and its player can walk to the
+  // exit. `killsRequired` / `elitesRequired` are already identical on both ends.
+  d.killsSoFar = s.kq ?? 0;
+  d.elitesKilled = s.ek ?? 0;
+  d.completionPortal = s.cp ? { x: s.cp[0], y: s.cp[1] } : null;
 
   for (const h of s.h) {
     const hero = d.heroes[h.i];
@@ -336,11 +347,13 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
         trapCooldown: 0, stuckTimer: 0, dodgeDir: 1,
+        behaviorTimer: 0, chargeVx: 0, chargeVy: 0,
         element, resists: {} as Enemy["resists"],
         sc: new StatusContainer(1_000_000 + id!),
-        knockResist: 1, boss: null, summoned: false,
+        knockResist: 1, boss: null, summoned: false, fromWave: false,
         // Affix and elite-slam mechanics are host-authoritative — the client mirrors the
         // resulting HP/damage numbers and never runs a behaviour itself, so these are inert.
+        // `fromWave` likewise: the quota is counted on the host and arrives as a number.
         attackCooldown: archetype.attackCooldown,
         eliteCast: 0,
         affixes: [], affixState: { timers: {}, ward: 0, noSplit: false },

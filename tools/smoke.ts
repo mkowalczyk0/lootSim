@@ -19,13 +19,14 @@ import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
 import { affixCountFor, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
-import { MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
 import { CLASS_BY_ID, buildProgressionTree } from "../src/progression/index";
 import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
+import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
 import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, HAIR_STYLES,
   cosmeticProblems,
@@ -625,6 +626,176 @@ console.log("\n=== elements, ailments and mana ===");
   for (let i = 0; i < 600; i++) deep.update(DT, new FakeInput() as unknown as Input);
   for (const e of deep.enemies) { total++; if (e.element !== "physical") infused++; }
   check("deep floors are elemental", total === 0 || infused > 0, `${infused}/${total} infused`);
+}
+
+console.log("\n=== monster variety — six new archetype roles (UAT §2) ===");
+{
+  const NEW_KINDS: EnemyKind[] = ["charger", "bomber", "shieldbearer", "summoner", "sniper", "leech"];
+
+  // Data: every new kind carries its own behaviour tag, sits below a grunt's spawn
+  // weight (it's a spice, not the staple), and is gated to a depth where the player
+  // has the kit to answer it.
+  const behaviours = new Set<EnemyBehavior>();
+  for (const kind of NEW_KINDS) {
+    const a = ARCHETYPES[kind];
+    behaviours.add(a.behavior);
+    check(`${kind}: behaviour-tagged, depth-gated, rarer than a grunt`,
+      a.behavior === kind && a.minDepth >= 5 && a.weight > 0 && a.weight < ARCHETYPES.grunt.weight,
+      `behavior=${a.behavior} minDepth=${a.minDepth} weight=${a.weight}`);
+  }
+  check("the six roles are mechanically distinct, not six reskins", behaviours.size === 6,
+    `${behaviours.size} distinct behaviours`);
+
+  // A sealed floor (no wave director) with one monster of `kind` at ~260 units, and a
+  // geared hero. `mode` is how the hero engages: close and swing, or hold the range so
+  // a ranged role gets to do its thing.
+  const walk = (kind: EnemyKind, seconds: number, mode: "melee" | "kite" | "watch") => {
+    const state = geared(28, 4200 + kind.charCodeAt(0), 26);
+    const d = new Dungeon(state, delveConfig(16, 1), 55_000 + kind.charCodeAt(0));
+    d.sealWaves();
+    d.enemies.length = 0;
+    const mob = d.spawnArchetypeAt(kind, d.avatar.x + 190, d.avatar.y);
+    const input = new FakeInput();
+    let sawCharge = false;
+    let maxWindup = 0;
+    let sawSummon = false;
+    let fastBolt = false;
+    let poolOnDeath = false;
+
+    for (let i = 0; i < seconds * 60 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      const gap = Math.hypot(mob.x - d.avatar.x, mob.y - d.avatar.y);
+      if (mode === "melee") {
+        input.hold("right", mob.x > d.avatar.x + 6);
+        input.hold("left", mob.x < d.avatar.x - 6);
+        input.hold("down", mob.y > d.avatar.y + 6);
+        input.hold("up", mob.y < d.avatar.y - 6);
+        input.press("attack");
+      } else if (mode === "kite" && gap < 170) {
+        // Back off to keep the role at the mid-range it wants to operate from — don't
+        // swing, so a stray ranged weapon can't kill it before it acts.
+        input.hold("left", mob.x > d.avatar.x);
+        input.hold("right", mob.x < d.avatar.x);
+      }
+
+      const groundBefore = d.ground.length;
+      const mobAlive = mob.health > 0;
+      d.update(DT, input as unknown as Input);
+
+      if (Math.abs(mob.chargeVx) + Math.abs(mob.chargeVy) > 1) sawCharge = true;
+      maxWindup = Math.max(maxWindup, mob.windup);
+      if (d.enemies.some((e) => e.summoned)) sawSummon = true;
+      if (d.projectiles.some((p) => !p.friendly && Math.hypot(p.vx, p.vy) > 300)) fastBolt = true;
+      if (mobAlive && mob.health <= 0 && d.ground.length > groundBefore) poolOnDeath = true;
+    }
+    return { d, mob, sawCharge, maxWindup, sawSummon, fastBolt, poolOnDeath };
+  };
+
+  // Charger: after a wind-up it commits to a straight-line dash — its charge velocity
+  // goes non-zero, which nothing else in the roster does.
+  const charger = walk("charger", 20, "kite");
+  check("a charger winds up and dashes a straight line",
+    charger.sawCharge && charger.maxWindup > 0, `charged=${charger.sawCharge} windup ${charger.maxWindup.toFixed(2)}s`);
+
+  // Bomber: goes off however it dies — a blast pool where it fell.
+  const bomber = walk("bomber", 12, "melee");
+  check("a bomber detonates on death and leaves a pool",
+    bomber.poolOnDeath || bomber.d.ground.length > 0, `${bomber.d.ground.length} pools`);
+
+  // Summoner: feeds the floor extra bodies on a timer while it hangs back.
+  const summoner = walk("summoner", 18, "watch");
+  check("a summoner spawns chaff", summoner.sawSummon);
+
+  // Sniper: a fast bolt off a long telegraph — the wind-up dwarfs a melee mob's ~0.3s.
+  const sniper = walk("sniper", 16, "watch");
+  check("a sniper telegraphs long and shoots fast",
+    sniper.maxWindup > 0.9 && sniper.fastBolt,
+    `windup ${sniper.maxWindup.toFixed(2)}s, fast bolt ${sniper.fastBolt}`);
+
+  // Leech: heals a wounded ally back up over time. No hero input at all — the pulse is
+  // on its own clock, and a geared hero shrugs off a lone grunt for the fifteen seconds
+  // it takes to watch a couple of pulses land.
+  {
+    const d = new Dungeon(geared(28, 8123, 26), delveConfig(16, 1), 60_600);
+    d.sealWaves();
+    d.enemies.length = 0;
+    const leech = d.spawnArchetypeAt("leech", d.avatar.x + 200, d.avatar.y);
+    const ally = d.spawnArchetypeAt("brute", d.avatar.x + 260, d.avatar.y);
+    ally.health = ally.maxHealth * 0.3;
+    let healed = false;
+    let prev = ally.health;
+    const input = new FakeInput();
+    for (let i = 0; i < 60 * 16 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      d.update(DT, input as unknown as Input);
+      if (ally.health > prev + 0.01 && ally.health <= ally.maxHealth) healed = true;
+      prev = ally.health;
+    }
+    check("a leech heals wounded allies", healed);
+  }
+
+  // Shieldbearer: a frontal hit is bounced hard. Every swing the bot lands is a frontal
+  // one, so the average damage number on a shieldbearer should come in well under the
+  // same hero's average on a plain grunt.
+  const avgFrontHit = (kind: EnemyKind) => {
+    const state = geared(28, 9001, 26);
+    const d = new Dungeon(state, delveConfig(16, 1), 71_000 + kind.charCodeAt(0));
+    d.sealWaves();
+    d.enemies.length = 0;
+    const mob = d.spawnArchetypeAt(kind, d.avatar.x + 34, d.avatar.y);
+    const input = new FakeInput();
+    let total = 0;
+    let hits = 0;
+    for (let i = 0; i < 60 * 10 && mob.health > 0; i++) {
+      input.beginTick();
+      input.hold("right", mob.x > d.avatar.x + 4);
+      input.hold("left", mob.x < d.avatar.x - 4);
+      input.press("attack");
+      d.update(DT, input as unknown as Input);
+      for (const ev of d.drainEvents()) {
+        if (ev.kind === "damage" && !ev.onPlayer) { total += ev.amount; hits++; }
+      }
+    }
+    return hits > 0 ? total / hits : 0;
+  };
+  const onShield = avgFrontHit("shieldbearer");
+  const onGrunt = avgFrontHit("grunt");
+  check("a shieldbearer bounces a frontal hit", onShield > 0 && onShield < onGrunt * 0.7,
+    `${onShield.toFixed(0)} vs ${onGrunt.toFixed(0)} on a grunt`);
+
+  // Nothing any of the six does throws over a full clear of a floor made of them.
+  {
+    const d = new Dungeon(geared(30, 606, 28), delveConfig(15, 1), 40_404);
+    d.sealWaves();
+    d.enemies.length = 0;
+    for (const kind of NEW_KINDS) {
+      const ang = (NEW_KINDS.indexOf(kind) / NEW_KINDS.length) * Math.PI * 2;
+      d.spawnArchetypeAt(kind, d.avatar.x + Math.cos(ang) * 160, d.avatar.y + Math.sin(ang) * 160);
+    }
+    const input = new FakeInput();
+    let potionCd = 0;
+    for (let i = 0; i < 60 * 120 && d.phase === "fighting"; i++) {
+      input.beginTick();
+      const near = d.enemies.filter((e) => e.state !== "spawning")
+        .sort((a, b) => Math.hypot(a.x - d.avatar.x, a.y - d.avatar.y) - Math.hypot(b.x - d.avatar.x, b.y - d.avatar.y))[0];
+      if (near) {
+        input.hold("left", near.x < d.avatar.x - 8);
+        input.hold("right", near.x > d.avatar.x + 8);
+        input.hold("up", near.y < d.avatar.y - 8);
+        input.hold("down", near.y > d.avatar.y + 8);
+        input.press("attack");
+        input.press("dash");
+      }
+      potionCd -= DT;
+      if (d.localHero.player.health < d.localHero.player.maxHealth * 0.5 && potionCd <= 0) {
+        input.press("potion");
+        potionCd = 2;
+      }
+      d.update(DT, input as unknown as Input);
+    }
+    check("a floor made of the new roles clears without throwing",
+      d.phase === "cleared", `phase=${d.phase}`);
+  }
 }
 
 console.log("\n=== monster affixes (UAT §3 — a modular trait system) ===");
@@ -1407,9 +1578,163 @@ console.log("\n=== extracting mid-fight ===");
   }
   check("portal is reachable mid-fight", d.atPortal, `phase=${d.phase} after ${t.toFixed(1)}s`);
   check("cannot descend without clearing", !d.canDescend);
+  check("the entrance portal is an early exit while the floor stands", d.canEarlyExtract);
+  check("no completion portal until the floor is done", d.completionPortal === null);
   const before = state.coins;
   d.bankLoot();
   check("extracting mid-fight banks what you carried", state.coins >= before);
+}
+
+console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
+{
+  // The quota is derived, not hand-set: every monster the director will spawn, plus a
+  // difficulty-scaled elite count that can never exceed what the floor can produce.
+  {
+    const plain = new Dungeon(geared(12, 31), delveConfig(12), 4001);
+    check("an ordinary floor asks for every monster on it",
+      plain.killsRequired === plain.profile.enemiesPerWave * plain.profile.waves,
+      `${plain.killsRequired} = ${plain.profile.enemiesPerWave} x ${plain.profile.waves}`);
+    check("a shallow floor asks for no elites",
+      new Dungeon(geared(3, 32), delveConfig(2), 4002).elitesRequired === 0);
+    const boss = new Dungeon(geared(10, 33), delveConfig(5), 4003);
+    check("a boss floor's quota is the boss",
+      boss.profile.isBoss && boss.killsRequired === 1 && boss.elitesRequired === 0,
+      `kills=${boss.killsRequired} elites=${boss.elitesRequired}`);
+    // Challenger asks for more elites, and never more than the floor can make.
+    const hard = new Dungeon(geared(20, 34), delveConfig(14, 10), 4004);
+    check("Challenger raises the elite requirement",
+      hard.elitesRequired >= 1, `${hard.elitesRequired} elites at tier 10`);
+  }
+
+  // A real clear: the quota fills, a completion portal appears somewhere else on the
+  // floor, and it is somewhere you can actually walk to.
+  {
+    const state = geared(26, 5150, 24);
+    const r = playFloor(state, delveConfig(12), 400, 6161, 0.85);
+    const d = r.d;
+    check("a floor clears by filling its kill quota", d.phase === "cleared",
+      `${d.killsSoFar}/${d.killsRequired} kills, phase=${d.phase}`);
+    check("the quota was actually met, not bypassed",
+      d.killsSoFar >= d.killsRequired && d.elitesKilled >= d.elitesRequired,
+      `${d.killsSoFar}/${d.killsRequired} kills, ${d.elitesKilled}/${d.elitesRequired} elites`);
+    const cp = d.completionPortal;
+    check("clearing spawns a completion portal", cp !== null);
+    if (cp) {
+      const gap = Math.hypot(cp.x - d.portal.x, cp.y - d.portal.y);
+      check("it stands somewhere new, not on the entrance", gap > 120, `${gap.toFixed(0)} units away`);
+      check("it is on open floor", !circleHitsWall(d.level, cp.x, cp.y, 14), `(${cp.x.toFixed(0)}, ${cp.y.toFixed(0)})`);
+      // Reachability: the same breadth-first field the monsters chase the player with.
+      // If it can route from the exit back to where the party spawned, a player can walk it.
+      const flow = new FlowField(d.level);
+      flow.update(d.level, cp.x, cp.y);
+      const routed = flow.direction(d.level, d.level.start.x, d.level.start.y) !== null
+        || Math.hypot(cp.x - d.level.start.x, cp.y - d.level.start.y) < 40;
+      check("the completion portal is walkable from the spawn", routed);
+      check("standing on the entrance no longer offers a descent",
+        !d.canEarlyExtract, `phase=${d.phase}`);
+    }
+  }
+
+  // The elite requirement has to be completable — the director forces the last of them
+  // out on the closing wave rather than leaving the objective stuck behind a bad roll.
+  {
+    let checked = 0;
+    let stuck = 0;
+    for (const seed of [7001, 7002, 7003, 7004, 7005, 7006]) {
+      const state = geared(30, seed, 26);
+      const r = playFloor(state, delveConfig(14, 8), 500, seed, 0.9);
+      if (r.d.elitesRequired === 0) continue;
+      checked++;
+      if (r.d.phase === "cleared" && r.d.elitesKilled < r.d.elitesRequired) stuck++;
+    }
+    check("an elite requirement is always completable", checked > 0 && stuck === 0,
+      `${checked} Challenger floors, ${stuck} cleared without the elites`);
+  }
+
+  // The penalty exit. Everything physical stays on the floor; a thin slice of the
+  // currency survives; XP was already granted and is never clawed back.
+  {
+    const state = geared(14, 8200, 10);
+    const d = new Dungeon(state, delveConfig(9), 8201);
+    const rng = new Rng(4);
+    d.loot.coins = 1000;
+    d.loot.gems = 200;
+    d.loot.keys.basic = 4;
+    d.loot.materials.fire = 30;
+    d.loot.xp = 555;
+    for (let i = 0; i < 3; i++) {
+      d.loot.items.push(rollItem({ rarity: "epic", type: "sword", ilvl: 9, rng }));
+    }
+    const coinsBefore = state.coins;
+    const gemsBefore = state.gems;
+    const bagBefore = state.inventory.length;
+    const keysBefore = state.keys.basic;
+    const fireBefore = state.materials.fire;
+    const xpBefore = state.player.xp;
+    const kept = d.earlyExtractLoot();
+
+    check("bailing early forfeits every unbanked item",
+      state.inventory.length === bagBefore && kept.itemsLost === 3,
+      `bag ${bagBefore} -> ${state.inventory.length}, ${kept.itemsLost} lost`);
+    check("bailing early forfeits keys and materials",
+      state.keys.basic === keysBefore && state.materials.fire === fireBefore);
+    check("bailing early keeps only a slice of the coins",
+      state.coins === coinsBefore + Math.floor(1000 * EARLY_EXTRACT_KEEP),
+      `+${state.coins - coinsBefore} of 1000`);
+    check("bailing early keeps only a slice of the gems",
+      state.gems === gemsBefore + Math.floor(200 * EARLY_EXTRACT_KEEP),
+      `+${state.gems - gemsBefore} of 200`);
+    check("bailing early never touches the XP you earned", state.player.xp === xpBefore);
+    check("the penalty is a real penalty, not a rounding error",
+      EARLY_EXTRACT_KEEP <= 0.25, `keeps ${(EARLY_EXTRACT_KEEP * 100).toFixed(0)}%`);
+  }
+
+  // Bailing out forfeits the floor's *progression* too, which is also what stops a
+  // player unlocking a depth by diving to it and walking straight back out.
+  {
+    const fresh = new GameState(4242);
+    const unlockedBefore = fresh.maxUnlockedDepth;
+    const recordBefore = fresh.stats.deepestDepth;
+    const runsBefore = fresh.stats.runsCompleted;
+    const bail = new Dungeon(fresh, delveConfig(fresh.maxUnlockedDepth), 8400);
+    bail.loot.coins = 500;
+    bail.earlyExtractLoot();
+    check("bailing early unlocks no new depth", fresh.maxUnlockedDepth === unlockedBefore,
+      `${unlockedBefore} -> ${fresh.maxUnlockedDepth}`);
+    check("bailing early sets no depth record", fresh.stats.deepestDepth === recordBefore,
+      `${recordBefore} -> ${fresh.stats.deepestDepth}`);
+    check("bailing early doesn't count as a run completed",
+      fresh.stats.runsCompleted === runsBefore);
+    check("bailing early still banks the coins it let you keep", fresh.coins > 0, `${fresh.coins}c`);
+
+    // Clearing the same floor properly does credit it.
+    const clean = new GameState(4243);
+    const before = clean.maxUnlockedDepth;
+    const done = new Dungeon(clean, delveConfig(before), 8401);
+    done.bankLoot();
+    check("clearing a floor unlocks the next depth", clean.maxUnlockedDepth > before,
+      `${before} -> ${clean.maxUnlockedDepth}`);
+  }
+
+  // …and the contrast: a clean extract off a cleared floor keeps the lot.
+  {
+    const state = geared(26, 8300, 24);
+    const r = playFloor(state, delveConfig(11), 400, 8301, 0.9);
+    if (r.d.phase === "cleared") {
+      const rng = new Rng(5);
+      r.d.loot.items.push(rollItem({ rarity: "legendary", type: "armor", ilvl: 11, rng }));
+      const bagBefore = state.inventory.length;
+      const coinsBefore = state.coins;
+      const carried = r.d.loot.coins;
+      r.d.bankLoot();
+      check("extracting a cleared floor keeps every item",
+        state.inventory.length > bagBefore, `bag ${bagBefore} -> ${state.inventory.length}`);
+      check("extracting a cleared floor keeps every coin",
+        state.coins === coinsBefore + carried, `+${state.coins - coinsBefore} of ${carried}`);
+    } else {
+      check("extracting a cleared floor keeps every item", false, `floor ended ${r.d.phase}`);
+    }
+  }
 }
 
 console.log("\n=== generated floors ===");
@@ -1801,6 +2126,29 @@ console.log("\n=== multiplayer ===");
     `${client.localHero.player.health} vs ${host.heroes[1]!.player.health.toFixed(0)}`);
   check("a client can bank what the host says it earned",
     client.localHero.loot.coins === host.heroes[1]!.loot.coins);
+
+  // The floor objective is the host's to count (UAT §5) — a client mirrors the two
+  // numbers and derives the two requirements from the config it already had, so its
+  // HUD reads the same objective without the wire carrying it.
+  check("a client reads the clear objective off the host",
+    client.killsSoFar === host.killsSoFar && client.elitesKilled === host.elitesKilled,
+    `${client.killsSoFar}/${client.killsRequired} vs ${host.killsSoFar}/${host.killsRequired}`);
+  check("both ends derive the same requirement without sending it",
+    client.killsRequired === host.killsRequired && client.elitesRequired === host.elitesRequired,
+    `${client.killsRequired}/${client.elitesRequired} vs ${host.killsRequired}/${host.elitesRequired}`);
+  {
+    // And once the host opens the completion portal, the client learns where it is —
+    // otherwise a client could never walk to the exit.
+    host.completionPortal = { x: 321, y: 654 };
+    const cleared = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    applySnapshot(client, cleared);
+    check("a completion portal crosses the wire",
+      client.completionPortal?.x === 321 && client.completionPortal?.y === 654,
+      JSON.stringify(client.completionPortal));
+    host.completionPortal = null;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("and goes away again with it", client.completionPortal === null);
+  }
   console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
     + ` with ${busiest.monsters} monsters on screen`
     + ` — ${((busiest.bytes * 20) / 1024).toFixed(0)}kB/s per player at ${20} snapshots a second`);

@@ -1,4 +1,7 @@
-node_modules/
+# No trailing slash on purpose: a worktree may have node_modules as a *symlink* to a
+# sibling checkout's copy rather than a real directory, and `node_modules/` matches
+# directories only — which left the symlink showing up as an untracked file forever.
+node_modules
 dist/
 .DS_Store
 .aider*

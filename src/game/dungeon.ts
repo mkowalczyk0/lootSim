@@ -22,7 +22,7 @@ import type { TriggerKind, TriggerSpec } from "../data/items";
 import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/depth";
 import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
-import { delveConfig, type RunConfig } from "../data/modes";
+import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
 import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
@@ -387,6 +387,15 @@ export class Dungeon implements CombatHost, RuleHost {
    *  (UAT §4) and the counts feed the floor-clear objective (UAT §5). */
   private elitesSpawned = 0;
   elitesKilled = 0;
+  /** The floor-clear quota (UAT §5): kill this many wave-director monsters, and
+   *  `elitesRequired` elites, and the floor is done. Boss floors: the boss is the quota.
+   *  Both are deterministic from the profile, so a co-op client computes the same pair. */
+  killsRequired: number;
+  killsSoFar = 0;
+  elitesRequired: number;
+  /** Spawned at a fresh spot the instant the quota is met — the primary exit after a
+   *  clear. `null` until then; the entrance `portal` stays put as the early-exit. */
+  completionPortal: { x: number; y: number } | null = null;
   /** Enemies still owed by the current wave. */
   private queued = 0;
   private waveGap = 0.6;
@@ -420,6 +429,20 @@ export class Dungeon implements CombatHost, RuleHost {
     this.state = state;
     this.config = typeof depth === "number" ? delveConfig(depth) : depth;
     this.profile = profileFor(this.config.depth, this.config);
+    // The floor-clear quota (UAT §5). A boss floor is its boss; everything else is
+    // "every monster the director will spawn" plus a difficulty-scaled elite count,
+    // clamped to what the floor can actually produce so it can never be unclearable.
+    if (this.profile.isBoss) {
+      this.killsRequired = 1;
+      this.elitesRequired = 0;
+    } else {
+      this.killsRequired = Math.max(1, this.profile.enemiesPerWave * this.profile.waves);
+      this.elitesRequired = clamp(
+        this.config.danger >= 1.6 ? 1 + Math.floor(this.config.danger - 1.6) : this.profile.depth >= 8 ? 1 : 0,
+        0,
+        this.eliteCapForFloor(),
+      );
+    }
     this.rng = new Rng(seed);
     this.defenseRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
     this.affixRng = new Rng((seed ^ 0x85ebca6b) >>> 0);
@@ -586,10 +609,17 @@ export class Dungeon implements CombatHost, RuleHost {
     // floor's budget is spent. Later waves are likelier to carry the elite, so it lands
     // as an escalation rather than in the opening trickle.
     let elite: Rarity | null = null;
-    if (this.elitesSpawned < this.eliteCapForFloor()) {
+    // The floor owes `elitesRequired` elites for its clear objective (UAT §5). Normally
+    // they come off the same capped roll as before; if the last wave is running out of
+    // bodies with elites still owed, the next spawns are forced to carry them so the
+    // objective is always completable.
+    const eliteDebt = this.elitesRequired - this.elitesSpawned;
+    const forceElite = eliteDebt > 0 && this.wave >= this.profile.waves && this.queued <= eliteDebt;
+    if (forceElite || this.elitesSpawned < this.eliteCapForFloor()) {
       const waveProgress = this.wave / Math.max(1, this.profile.waves);
       const chance = clamp(0.03 + waveProgress * 0.05 + (this.config.danger - 1) * 0.02, 0, 0.4);
-      if (this.rng.chance(chance)) {
+      const rolled = this.rng.chance(chance);
+      if (forceElite || rolled) {
         const maxTier = clamp(1 + Math.floor(this.profile.depth / 3), 1, RARITIES.length - 1);
         elite = RARITIES[this.rng.int(1, maxTier)]!;
         this.elitesSpawned++;
@@ -597,7 +627,7 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     // The discount is for chaff only — an elite in the swarm is still the real threat.
     this.enemies.push(
-      this.makeEnemy(archetype, at.x, at.y, { elite, healthMult: elite ? 1 : WAVE_HEALTH_MULT }),
+      this.makeEnemy(archetype, at.x, at.y, { elite, fromWave: true, healthMult: elite ? 1 : WAVE_HEALTH_MULT }),
     );
   }
 
@@ -672,7 +702,13 @@ export class Dungeon implements CombatHost, RuleHost {
     archetype: EnemyArchetype,
     x: number,
     y: number,
-    opts: { elite?: Rarity | null; summoned?: boolean; healthMult?: number; noAffixes?: boolean } = {},
+    opts: {
+      elite?: Rarity | null; summoned?: boolean; healthMult?: number;
+      noAffixes?: boolean;
+      /** Counts toward the floor-clear quota (UAT §5) — set only for wave-director
+       *  spawns, never a summon, a split or a boss add. */
+      fromWave?: boolean;
+    } = {},
   ): Enemy {
     const elite = opts.elite ?? null;
     // A mini-boss, not a fat mob (UAT §4). The health lasts through a rotation of the
@@ -737,16 +773,61 @@ export class Dungeon implements CombatHost, RuleHost {
       trapCooldown: 0,
       stuckTimer: 0,
       dodgeDir: this.rng.chance(0.5) ? 1 : -1,
+      // Off the affix stream so adding archetype behaviours doesn't shift the main
+      // sequence, and only drawn for the roles that actually use it — a floor of plain
+      // melee/ranged monsters stays byte-identical to before the archetype roster grew,
+      // so it doesn't quietly reshuffle every affix roll on a shallow floor.
+      behaviorTimer:
+        archetype.behavior === "melee" || archetype.behavior === "ranged"
+          ? 0
+          : this.affixRng.range(1.5, 4),
+      chargeVx: 0,
+      chargeVy: 0,
       element,
       resists,
       sc: new StatusContainer(Dungeon.ENEMY_ID_BASE + this.nextEnemyId - 1),
       knockResist: elite ? 0.35 : 1,
       boss: null,
       summoned: opts.summoned ?? false,
+      fromWave: opts.fromWave ?? false,
       affixes,
       affixState: { timers: {}, ward: 0, noSplit: opts.noAffixes === true },
       damageTakenMult: aff.damageTakenMult,
     };
+  }
+
+  /**
+   * A test seam (headless smoke only): drop one monster of a named kind at a point and
+   * return it, bypassing the wave director. Used to walk each archetype behaviour (UAT
+   * §2) in isolation. Not part of normal gameplay — the wave director never calls this.
+   */
+  spawnArchetypeAt(kind: EnemyKind, x: number, y: number, opts?: { noAffixes?: boolean }): Enemy {
+    const e = this.makeEnemy(ARCHETYPES[kind], x, y, {
+      noAffixes: opts?.noAffixes ?? true,
+      fromWave: true,
+    });
+    e.state = "active";
+    e.spawnTimer = 0;
+    this.enemies.push(e);
+    // On a sealed floor the staged monsters *are* the clear objective, so each one
+    // placed raises the quota by one and killing them all still ends the floor.
+    this.killsRequired++;
+    return e;
+  }
+
+  /**
+   * A test seam (headless smoke only): stop the wave director and hand the floor's
+   * clear objective over to whatever `spawnArchetypeAt` places next. No further waves
+   * are queued, and the floor is treated as its last, so it clears the moment the
+   * staged encounter is dead. See the Item D archetype walk in `tools/smoke.ts`.
+   */
+  sealWaves(): void {
+    this.queued = 0;
+    this.wave = this.profile.waves;
+    this.spawnTimer = Number.POSITIVE_INFINITY;
+    this.killsRequired = 0;
+    this.killsSoFar = 0;
+    this.elitesRequired = 0;
   }
 
   /** Deep floors infuse their monsters with the local element; elites roll their own. */
@@ -867,8 +948,11 @@ export class Dungeon implements CombatHost, RuleHost {
     // Potions live on the save in a solo dive, exactly as they always did.
     if (this.role === "solo") this.state.potions = this.localHero.potions;
 
-    if (this.phase === "fighting" && this.enemiesRemaining === 0 && this.wave >= this.profile.waves) {
+    if (this.phase === "fighting" && this.floorQuotaMet()) {
       this.phase = "cleared";
+      // The clear spawns a fresh portal at a new spot — that's the way on from here.
+      // The entrance portal stays where it is, now purely an early-exit.
+      this.completionPortal = this.pickCompletionSpot();
       // Clearing the floor picks everybody up. Nobody sits out the walk to the portal.
       for (const hero of this.heroes) {
         if (hero.downed) this.reviveHero(hero);
@@ -876,6 +960,41 @@ export class Dungeon implements CombatHost, RuleHost {
       this.dropClearCache();
       this.events.push({ kind: "cleared" });
     }
+  }
+
+  /**
+   * The floor's win condition (UAT §5): the kill quota met and the elite quota met.
+   * Summoner chaff and Splitting shards left alive don't hold the floor hostage — only
+   * the director's own roster counts (see `killsSoFar` in `killEnemy`).
+   */
+  floorQuotaMet(): boolean {
+    return this.killsSoFar >= this.killsRequired
+      && this.elitesKilled >= this.elitesRequired
+      && this.wave >= this.profile.waves;
+  }
+
+  /** A fresh spot for the completion portal: on open floor, well clear of the entrance
+   *  portal and not on top of the party. Drawn from the side stream so it never shifts
+   *  the spawn/loot sequence. */
+  private pickCompletionSpot(): { x: number; y: number } {
+    const a = this.localHero.avatar;
+    const hazards = this.level.traps.map((t) => ({ x: t.x, y: t.y, d: t.radius + 20 }));
+    return (
+      randomOpenPoint(this.level, this.affixRng, {
+        clearance: 1,
+        away: [
+          { x: this.portal.x, y: this.portal.y, d: 280 },
+          { x: a.x, y: a.y, d: 150 },
+          ...hazards,
+        ],
+        tries: 50,
+      }) ??
+      randomOpenPoint(this.level, this.affixRng, {
+        away: [{ x: this.portal.x, y: this.portal.y, d: 120 }],
+        tries: 30,
+      }) ??
+      this.portal
+    );
   }
 
   /**
@@ -959,10 +1078,18 @@ export class Dungeon implements CombatHost, RuleHost {
     return (alive.length > 0 ? this.rng.pick(alive) : this.localHero).avatar;
   }
 
-  /** How many of the party are standing in the portal. The HUD counts them out loud. */
+  /** How many of the party are standing in the entrance portal. */
   get partyAtPortal(): number {
     return this.heroes.filter(
       (h) => dist(h.avatar.x, h.avatar.y, this.portal.x, this.portal.y) < 34).length;
+  }
+
+  /** How many of the party are standing in the completion portal — descending needs
+   *  everybody, and the HUD counts them out loud. */
+  get partyAtCompletionPortal(): number {
+    const p = this.completionPortal;
+    if (!p) return 0;
+    return this.heroes.filter((h) => dist(h.avatar.x, h.avatar.y, p.x, p.y) < 34).length;
   }
 
   private updateSpawning(dt: number): void {
@@ -2085,9 +2212,16 @@ export class Dungeon implements CombatHost, RuleHost {
     // spec's "damage resistance" affix, kept off the resist channel so physical is not
     // exempt from it the way it is from elemental resist.
     const amplified = amount * e.sc.incomingDamageMultiplier() * e.damageTakenMult;
-    const mitigated = opts.raw
+    let mitigated = opts.raw
       ? amount * e.damageTakenMult
       : mitigateWithResists(amplified, element, e.resists);
+    // A shieldbearer bounces most of a hit that lands on its front — you have to get
+    // around it or break its guard (a stagger from heavy knockback), never trade with it.
+    if (e.archetype.behavior === "shieldbearer" && !opts.raw && e.state === "active") {
+      const fromAttacker = knockAngle + Math.PI;
+      const diff = Math.abs(((fromAttacker - e.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      if (diff < 1.15) mitigated *= 0.4;
+    }
     let dealt = Math.max(1, Math.round(mitigated));
     // A Warded affix's regenerating shield is eaten before health.
     if (e.affixState.ward > 0) {
@@ -2167,6 +2301,11 @@ export class Dungeon implements CombatHost, RuleHost {
     if (!e.boss) this.addCorpse(e.x, e.y);
 
     source.loot.kills++;
+    // Floor-clear quota (UAT §5). Only the wave director's own roster counts, so a
+    // summoner's chaff or a Splitting monster's shards can neither pad the objective
+    // nor hold it open; a boss floor is satisfied outright by its boss.
+    if (e.boss) this.killsSoFar = this.killsRequired;
+    else if (e.fromWave) this.killsSoFar++;
     if (source.local) this.state.stats.enemiesKilled++;
     // Kill / death events for granted effects and gear triggers. The killing blow's own
     // contribution to the meter is credited by `creditResourcesForHit` at the hit that
@@ -2188,6 +2327,18 @@ export class Dungeon implements CombatHost, RuleHost {
     this.fireTriggers(source, "onKill", e.x, e.y);
     rulesOnKill(this, source, e);
     if (e.affixes.length > 0) this.affixOnDeath(e, source);
+    // A bomber goes off no matter how it dies (UAT §2) — the blast, and a pool where it fell.
+    if (e.archetype.behavior === "bomber" && !e.summoned) {
+      const el: Element = e.element === "physical" ? "fire" : e.element;
+      this.affixBurst(e.x, e.y, 55, e.damage * 0.7, el);
+      this.ground.push({
+        x: e.x, y: e.y, px: e.x, py: e.y, radius: 40,
+        element: el, damage: Math.max(2, e.damage * 0.15),
+        remaining: 2.5, tickTimer: 0.5, hitsPlayer: true, hitsEnemies: false,
+        color: ELEMENT_COLORS[el],
+      });
+      this.events.push({ kind: "shake", amount: 5 });
+    }
     source.player.restoreMana(source.player.maxMana * MANA_ON_KILL * (e.boss ? 8 : e.elite ? 3 : 1));
     this.events.push({ kind: "death", x: e.x, y: e.y, elite: e.elite });
 
@@ -2273,7 +2424,9 @@ export class Dungeon implements CombatHost, RuleHost {
    * and it's still lost if you die on the way to the exit.
    */
   private dropClearCache(): void {
-    const { x, y } = this.portal;
+    // Around the completion portal, not the entrance — the cache is the reward for
+    // finishing, so it lands where finishing sends you.
+    const { x, y } = this.completionPortal ?? this.portal;
     const quantity = this.profile.quantity;
     // The last floor of a rift pays for the whole rift, which is what makes bailing
     // out of one at floor three hurt.
@@ -2375,7 +2528,11 @@ export class Dungeon implements CombatHost, RuleHost {
       const a = target.avatar;
       const d = dist(e.x, e.y, a.x, a.y);
       const toPlayer = Math.atan2(a.y - e.y, a.x - e.x);
-      e.facing = toPlayer;
+      // A charger locks its facing when it commits — the wind-up and the dash both go
+      // where it was pointing, not where you dodged to.
+      const facingLocked = e.archetype.behavior === "charger"
+        && (e.windup > 0 || e.chargeVx !== 0 || e.chargeVy !== 0);
+      if (!facingLocked) e.facing = toPlayer;
 
       // The boss brain owns its own movement whenever it's casting or charging.
       const bossBusy = e.boss ? updateBoss(this, e, dt) : false;
@@ -2384,9 +2541,13 @@ export class Dungeon implements CombatHost, RuleHost {
       // shot and everything else takes the long way around, instead of standing there.
       const hasLos = !lineBlocked(this.level, e.x, e.y, a.x, a.y);
 
+      // Archetype behaviour (UAT §2): a summoner's call, a leech's pulse, a charger
+      // lining up its rush. Returns true when it has taken over this enemy's turn.
+      const behaviourBusy = this.tickArchetypeBehavior(e, dt, target, d, hasLos);
+
       // Ranged types hold a standoff distance; melee types close.
       let moveAngle = toPlayer;
-      let move = !bossBusy;
+      let move = !bossBusy && !behaviourBusy;
       if (e.archetype.ranged && hasLos) {
         if (d < e.archetype.standoff * 0.75) moveAngle = toPlayer + Math.PI;
         else if (d < e.archetype.standoff * 1.15) move = false;
@@ -2404,6 +2565,21 @@ export class Dungeon implements CombatHost, RuleHost {
       e.trapCooldown = Math.max(0, e.trapCooldown - dt);
 
       if (e.sc.disables().move) move = false;
+
+      // A charger mid-rush travels on its stored velocity, not the flow field — a
+      // straight line you step out of, with a hard stop and a long recovery after.
+      if (e.chargeVx !== 0 || e.chargeVy !== 0) {
+        e.x += e.chargeVx * dt;
+        e.y += e.chargeVy * dt;
+        if (d <= e.radius + a.radius + 6) {
+          this.hurtPlayer(target, e.damage * 1.0, e.element, AILMENT_CHANCE);
+          e.chargeVx = 0; e.chargeVy = 0;
+          e.behaviorTimer = this.affixRng.range(3, 4.5);
+        }
+        e.chargeVx = approach(e.chargeVx, 0, 620 * dt);
+        e.chargeVy = approach(e.chargeVy, 0, 620 * dt);
+        move = false;
+      }
 
       if (move) {
         const speed = e.speed * this.mireSlowAt(e.x, e.y) * e.sc.slowMultiplier();
@@ -2439,10 +2615,14 @@ export class Dungeon implements CombatHost, RuleHost {
       }
 
       // A boss's auto-attack is the least of your problems, but standing in melee of
-      // one should still cost something.
+      // one should still cost something. A bomber has no ordinary attack — it detonates
+      // (handled in its behaviour tick); a sniper's wind-up is long enough to run from.
       e.attackTimer -= dt;
-      if (!bossBusy && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
-        e.windup = (e.archetype.ranged ? 0.35 : 0.28) * this.profile.telegraph;
+      const canAutoAttack = !bossBusy && !behaviourBusy && e.chargeVx === 0 && e.chargeVy === 0
+        && e.archetype.behavior !== "bomber";
+      if (canAutoAttack && e.attackTimer <= 0 && e.windup <= 0 && d <= e.archetype.attackRange && hasLos) {
+        const windBase = e.archetype.behavior === "sniper" ? 1.85 : e.archetype.ranged ? 0.35 : 0.28;
+        e.windup = windBase * this.profile.telegraph;
         e.attackTimer = e.attackCooldown * this.profile.aggression;
       }
     }
@@ -2477,9 +2657,25 @@ export class Dungeon implements CombatHost, RuleHost {
   private resolveEnemyAttack(e: Enemy): void {
     const target = this.nearestHero(e.x, e.y);
     const a = target.avatar;
+
+    // A charger's wind-up ends in a dash along the direction it locked, not a swing.
+    if (e.archetype.behavior === "charger") {
+      const sp = 500;
+      e.chargeVx = Math.cos(e.facing) * sp;
+      e.chargeVy = Math.sin(e.facing) * sp;
+      return;
+    }
+    // A bomber's wind-up ends in it going off. The blast itself lives in `killEnemy`
+    // (a bomber "explodes on death" however it dies) — here we just kill it.
+    if (e.archetype.behavior === "bomber") {
+      if (e.health > 0) this.killEnemy(e, this.nearestHero(e.x, e.y));
+      return;
+    }
+
     if (e.archetype.ranged) {
       const angle = Math.atan2(a.y - e.y, a.x - e.x);
-      this.spawnEnemyBolt(e.x, e.y, angle, 210, e.damage, e.element, AILMENT_CHANCE);
+      const speed = e.archetype.behavior === "sniper" ? 360 : 210;
+      this.spawnEnemyBolt(e.x, e.y, angle, speed, e.damage, e.element, AILMENT_CHANCE);
       if (e.affixes.length > 0) this.affixOnHitHero(e, target);
       return;
     }
@@ -2513,6 +2709,76 @@ export class Dungeon implements CombatHost, RuleHost {
       followId: e.id,
     });
     this.events.push({ kind: "shake", amount: 5 });
+  }
+
+  /**
+   * The per-archetype AI branch (UAT §2). Runs once a frame for the roles that do more
+   * than walk-and-swing. Returns true when the behaviour has claimed this enemy's turn,
+   * so the generic movement in `updateEnemies` stands down for the frame.
+   */
+  private tickArchetypeBehavior(e: Enemy, dt: number, target: Hero, d: number, hasLos: boolean): boolean {
+    const a = target.avatar;
+    switch (e.archetype.behavior) {
+      case "charger": {
+        if (e.chargeVx !== 0 || e.chargeVy !== 0) return true; // mid-rush, handled by movement
+        if (e.windup > 0) return true;                          // winding up the rush
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        if (!hasLos || d < 80 || d > 400) { e.behaviorTimer = 0.4; return false; }
+        // Lock onto where the player is now and flash red — the tell is the still,
+        // facing body, and the dash that follows goes exactly where it was pointing.
+        e.facing = Math.atan2(a.y - e.y, a.x - e.x);
+        e.windup = 0.62 * this.profile.telegraph;
+        e.behaviorTimer = this.affixRng.range(4, 6);
+        return true;
+      }
+      case "bomber": {
+        if (e.windup > 0) return true;
+        if (d <= e.radius + a.radius + 16 && hasLos) {
+          e.facing = Math.atan2(a.y - e.y, a.x - e.x);
+          e.windup = 0.7 * this.profile.telegraph;
+          return true;
+        }
+        return false; // still rushing in
+      }
+      case "summoner": {
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        e.behaviorTimer = this.affixRng.range(6, 9);
+        if (this.enemies.length < this.profile.maxAlive + 4) {
+          const ang = this.affixRng.angle();
+          const spot = resolveCircle(
+            this.level,
+            clamp(e.x + Math.cos(ang) * 40, 40, this.width - 40),
+            clamp(e.y + Math.sin(ang) * 40, 40, this.height - 40),
+            ARCHETYPES.swarmer.radius,
+          );
+          this.enemies.push(
+            this.makeEnemy(ARCHETYPES.swarmer, spot.x, spot.y, { summoned: true, healthMult: 0.6 }),
+          );
+          this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
+        }
+        return false; // it still kites and shoots
+      }
+      case "leech": {
+        e.behaviorTimer -= dt;
+        if (e.behaviorTimer > 0) return false;
+        e.behaviorTimer = this.affixRng.range(4, 5.5);
+        let healed = false;
+        for (const other of this.enemies) {
+          if (other === e || other.boss || other.health <= 0 || other.health >= other.maxHealth) continue;
+          if (dist(e.x, e.y, other.x, other.y) > 150) continue;
+          other.health = Math.min(other.maxHealth, other.health + other.maxHealth * 0.03);
+          healed = true;
+        }
+        if (healed) this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
+        return false;
+      }
+      default:
+        // melee / ranged / shieldbearer / sniper — nothing timed; shieldbearer's block
+        // is in `damageEnemy`, the sniper's long wind-up is in the attack trigger.
+        return false;
+    }
   }
 
   // --- monster affixes (UAT §3) ------------------------------------------
@@ -3011,12 +3277,25 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   /**
-   * The portal is live for the whole floor, not just after a clear. Being able to run
-   * for the exit mid-wave is what makes the "lose everything on death" rule fair: a
-   * bad dive costs you the rest of the floor, not the entire run.
+   * The entrance portal is live for the whole floor, not just after a clear. Being able
+   * to run for the exit mid-wave is what makes the "lose everything on death" rule
+   * fair: a bad dive costs you the rest of the floor, not the entire run. Since UAT §6
+   * it is *only* an exit — it charges a hefty toll before the clear (see
+   * `earlyExtractLoot`) and it never descends.
    */
   get atPortal(): boolean {
     return this.phase !== "dead" && dist(this.avatar.x, this.avatar.y, this.portal.x, this.portal.y) < 34;
+  }
+
+  /** Standing in the completion portal, which only exists once the quota is met. */
+  get atCompletionPortal(): boolean {
+    const p = this.completionPortal;
+    return p !== null && this.phase !== "dead" && dist(this.avatar.x, this.avatar.y, p.x, p.y) < 34;
+  }
+
+  /** Bailing out through the entrance before the floor is done — the penalty exit. */
+  get canEarlyExtract(): boolean {
+    return this.phase === "fighting" && this.atPortal;
   }
 
   /** Descending is the reward for clearing; you can't skip a floor by running past it. */
@@ -3043,6 +3322,15 @@ export class Dungeon implements CombatHost, RuleHost {
    * save, and the host's copy of a friend's character is never written anywhere.
    */
   bankLoot(): void {
+    this.bank(true);
+  }
+
+  /** `credit` is whether the floor counts as *done* — the depth record, the next
+   *  unlocked delve depth and the rift/planet tier all hang off it. An early
+   *  extraction banks its scraps without it (UAT §6: leaving early forfeits the
+   *  floor's progression as well as its loot), which is also what stops a player
+   *  unlocking depth 30 by diving to 29 and immediately walking back out. */
+  private bank(credit: boolean): void {
     this.state.potions = this.localHero.potions;
     this.state.addCoins(this.loot.coins);
     this.state.addGems(this.loot.gems);
@@ -3051,13 +3339,39 @@ export class Dungeon implements CombatHost, RuleHost {
       if (this.loot.materials[e] > 0) this.state.addMaterials(e, this.loot.materials[e]);
     }
     this.state.addToInventory(this.loot.items);
-    this.state.recordDepth(this.profile.depth, this.config);
-    this.state.stats.runsCompleted++;
+    if (credit) {
+      this.state.recordDepth(this.profile.depth, this.config);
+      this.state.stats.runsCompleted++;
+    }
     this.loot.coins = 0;
     this.loot.gems = 0;
     this.loot.items = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
+  }
+
+  /**
+   * The penalty exit (UAT §6): out through the entrance portal with the floor's quota
+   * unmet. Nothing physical leaves with you — every unbanked item, key and unit of
+   * material is forfeit — and only a thin slice of the coins and gems survives. XP is
+   * untouched, since it was granted as it was earned and death doesn't take it either.
+   *
+   * The floor's *progression* is forfeit with it — no depth record, no newly unlocked
+   * delve depth, no rift tier — because none of that was earned.
+   *
+   * The point is that you can never dip out of a dangerous floor still holding the
+   * valuable loot: the decision has to be "risk finishing, or lose the drops".
+   */
+  earlyExtractLoot(): { coins: number; gems: number; itemsLost: number } {
+    const itemsLost = this.loot.items.length;
+    this.loot.items = [];
+    this.loot.keys = emptyKeys();
+    this.loot.materials = emptyMaterials();
+    this.loot.coins = Math.floor(this.loot.coins * EARLY_EXTRACT_KEEP);
+    this.loot.gems = Math.floor(this.loot.gems * EARLY_EXTRACT_KEEP);
+    const kept = { coins: this.loot.coins, gems: this.loot.gems, itemsLost };
+    this.bank(false);
+    return kept;
   }
 
   drainEvents(): RunEvent[] {

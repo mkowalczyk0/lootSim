@@ -955,6 +955,55 @@ html, body {
   font-size: 13px;
 }
 
+/* The rarity-filter bar: a sticky strip of pills across the top of the card grid.
+   W from the top card row moves keyboard focus onto it (`.on`); A/D there cycle the
+   filter; a pill also takes a direct click. Filtering used to sit on A/D globally,
+   which stole those keys from grid navigation. */
+.stash-filter {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: -12px;
+  margin: -12px -12px 4px;
+  padding: 9px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 2;
+}
+
+.stash-filter.on {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sf-pill {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--r, var(--line)) 45%, var(--line));
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sf-pill:hover { border-color: var(--r, var(--accent)); color: var(--r, var(--accent)); }
+
+.sf-pill.sel {
+  color: var(--r, var(--accent));
+  border-color: var(--r, var(--accent));
+  background: color-mix(in srgb, var(--r, var(--accent)) 16%, transparent);
+}
+
+.stash-none {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 34px 12px;
+}
+
 .item-card {
   position: relative;
   display: flex;

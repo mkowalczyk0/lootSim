@@ -168,6 +168,17 @@ export interface Snapshot {
   readonly ph: number;
   readonly wv: number;
   readonly left: number;
+  /**
+   * The floor-clear objective (UAT §5), host-authoritative: monsters killed toward the
+   * quota, and elites killed. The *requirements* are not sent — they're derived from the
+   * `RunConfig` every browser already has, so both ends compute the same pair. This and
+   * `cp` are the only things the two-portal floor adds to the wire.
+   */
+  readonly kq: number;
+  readonly ek: number;
+  /** The completion portal's position once the floor is cleared: `[x, y]`. Absent while
+   *  the floor is still being fought, because it doesn't exist yet. */
+  readonly cp?: [number, number];
   readonly h: HeroSnap[];
   /** [id, kindIndex, x, y, facing, radius, hp, maxHp, eliteIndex, state, spawnTimer,
    *   windup, hitFlash, elementIndex, isBoss, statusBits] */
