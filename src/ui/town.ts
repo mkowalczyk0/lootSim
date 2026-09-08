@@ -22,7 +22,7 @@ import {
 } from "../data/modes";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import { trapsFor } from "../data/traps";
-import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine } from "../data/items";
+import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
 import { WEAPONS } from "../data/weapons";
@@ -50,7 +50,7 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroComposite, weaponSprite } from "../render/sprites";
+import { chestIcon, cosmeticPreview, heroComposite, itemIcon, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
 import { pixelImage, pixelImageFit } from "./pixelimage";
 
@@ -69,6 +69,11 @@ export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY",
+};
+
+/** The glyph an empty paper-doll slot shows in place of an item icon. */
+const SLOT_GLYPH: Record<EquipSlot, string> = {
+  weapon: "⚔", armor: "🛡", shield: "◈", ring: "◍", gloves: "✋", necklace: "❈",
 };
 
 /**
@@ -1014,7 +1019,8 @@ export class TownUI {
 
     // Keep the highlighted row on screen when the list is longer than the panel — Chests
     // scrolls horizontally instead, hence "nearest" on both axes.
-    this.root.querySelector<HTMLElement>(".row.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    this.root.querySelector<HTMLElement>(".row.on, .item-card.on, .doll-slot.on")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (this.tab === "Party") this.bindPartyFields();
   }
 
@@ -1542,38 +1548,45 @@ export class TownUI {
 
   private renderStash(): string {
     const items = this.filteredStash();
+    const filterChips = `<h3>Filter: <b>${this.rarityFilter}</b>
+        <span class="chip" data-action="left">◀</span>
+        <span class="chip" data-action="right">▶</span></h3>`;
     if (items.length === 0) {
-      return `<div class="list empty">Nothing here. Filter: <b>${this.rarityFilter}</b> (A / D)</div>
-        <aside class="side"><h3>Stash</h3><p class="muted">Kill things. Open chests.</p></aside>`;
+      return `<div class="stash-grid empty">Nothing here. Filter: <b>${this.rarityFilter}</b> (A / D)</div>
+        <aside class="side">${filterChips}<p class="muted">Kill things. Open chests.</p></aside>`;
     }
 
-    const rows = items.slice(0, 300).map((it, i) => {
+    const cls = this.state.heroClass;
+    const cards = items.slice(0, 300).map((it, i) => {
       const worn = this.state.player.equipment[it.slot];
-      const cls = this.state.heroClass;
       const delta = worn ? itemScore(it, cls) - itemScore(worn, cls) : itemScore(it, cls);
-      const mark = delta > 0 ? '<span class="up">▲</span>' : delta < 0 ? '<span class="down">▼</span>' : "";
-      const dot = it.grant || it.trigger
-        ? `<span class="dot" style="background:${it.trigger ? "#ff1493" : "#7dd3fc"}"></span>`
-        : "";
+      const mark = worn && delta > 0
+        ? '<span class="ic-mark up">▲</span>'
+        : worn && delta < 0 ? '<span class="ic-mark down">▼</span>' : "";
+      const dots = [
+        it.grant ? '<span class="dot" style="background:#7dd3fc" title="grants a skill"></span>' : "",
+        it.trigger ? '<span class="dot" style="background:#ff1493" title="triggered effect"></span>' : "",
+      ].join("");
       const locked = !this.state.player.canEquip(it);
+      const icon = pixelImageFit(itemIcon(it.type, it.rarity), 64, `item:${it.type}:${it.rarity}`);
+      const tip = `${it.name} — ${rarityLabel(it.rarity)} ${it.type} · ilvl ${it.ilvl}\n`
+        + `${statLine(it)}\nsells for ${formatNumber(sellPrice(it))}c`;
       return `
-        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
-          <div class="row-main">
-            ${mark}${dot}
-            <span class="name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
-            <span class="badge">${it.slot}</span>
-            ${locked ? `<span class="badge warn">req lv ${requiredLevel(it)}</span>` : ""}
-          </div>
-          <div class="row-side">${escapeHtml(statLine(it))} · ilvl ${it.ilvl} · sells ${formatNumber(sellPrice(it))}c</div>
+        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+             style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(tip)}">
+          ${mark}
+          ${locked ? `<span class="ic-lock">lv ${requiredLevel(it)}</span>` : ""}
+          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
+          <span class="ic-slot">${it.slot}</span>
+          ${dots ? `<div class="ic-dots">${dots}</div>` : ""}
         </div>`;
     }).join("");
 
     const sel = items[this.cursor];
-    return `<div class="list">${rows}</div>
+    return `<div class="stash-grid">${cards}</div>
       <aside class="side">
-        <h3>Filter: <b>${this.rarityFilter}</b>
-          <span class="chip" data-action="left">◀</span>
-          <span class="chip" data-action="right">▶</span></h3>
+        ${filterChips}
         ${sel ? this.renderCompare(sel) : ""}
         <p>
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · sell selected</span>
@@ -1623,33 +1636,136 @@ export class TownUI {
          ${escapeHtml(this.state.heroClass.name)} is only ${this.state.player.level}.</p>`
       : "";
 
+    const icon = pixelImageFit(itemIcon(item.type, item.rarity), 96, `item:${item.type}:${item.rarity}`);
+    const cmpHead = worn
+      ? `<tr class="cmp-head"><td></td><td>this</td><td>vs equipped</td></tr>`
+      : `<tr class="cmp-head"><td></td><td>this</td><td>gain</td></tr>`;
     return `
-      <h3 style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</h3>
-      <p class="muted">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}
-        · vs ${worn ? escapeHtml(worn.name) : "nothing equipped"}</p>
+      <div class="cmp-hero" style="--r:${RARITY_COLORS[item.rarity]}">
+        <div class="cmp-art"><img src="${icon}" alt=""></div>
+        <div>
+          <h3 style="color:${RARITY_COLORS[item.rarity]};margin:0">${escapeHtml(item.name)}</h3>
+          <p class="muted" style="margin:2px 0 0">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}
+            · vs ${worn ? escapeHtml(worn.name) : "nothing equipped"}</p>
+        </div>
+      </div>
       ${reqLine}
       ${weaponLine}
-      <table class="cmp">${rows}</table>
+      <table class="cmp wide">${cmpHead}${rows}</table>
       ${grant}${trigger}`;
+  }
+
+  /** The piece in a Hero slot, shown flat — no comparison, since it's what you're wearing. */
+  private renderEquipped(item: Item): string {
+    const mods = itemMods(item);
+    const rows = MOD_KEYS.filter((key) => (mods[key] ?? 0) !== 0)
+      .map((key) => `<tr><td>${escapeHtml(shortLabel(key))}</td><td>${fmtMod(key, mods[key] ?? 0)}</td></tr>`)
+      .join("");
+    const icon = pixelImageFit(itemIcon(item.type, item.rarity), 96, `item:${item.type}:${item.rarity}`);
+    const weapon = item.family ? WEAPONS[item.family] : null;
+    const affine = item.family ? this.state.heroClass.affinity.includes(item.family) : false;
+    const weaponLine = weapon
+      ? `<p style="color:${affine ? this.state.heroClass.color : "#9aa4b2"}">
+          <b>${escapeHtml(weapon.name)}</b> — ${escapeHtml(weapon.blurb)}
+          ${affine ? "<br><em>Your class was built for this.</em>" : ""}</p>`
+      : "";
+    const grantAbility = item.grant
+      ? CLASS_BY_ID[item.grant.split(".")[0]!]?.abilities.find((a) => a.id === item.grant)
+        ?? ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === item.grant)
+      : undefined;
+    const grant = grantAbility
+      ? `<p style="color:#7dd3fc">Grants <b>${escapeHtml(grantAbility.name)}</b>
+         on [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}].</p>`
+      : "";
+    const trigger = item.trigger
+      ? `<p style="color:${ELEMENT_COLORS[item.trigger.element]}">${escapeHtml(triggerLine(item.trigger))}</p>`
+      : "";
+    return `
+      <div class="cmp-hero" style="--r:${RARITY_COLORS[item.rarity]}">
+        <div class="cmp-art"><img src="${icon}" alt=""></div>
+        <div>
+          <h3 style="color:${RARITY_COLORS[item.rarity]};margin:0">${escapeHtml(item.name)}</h3>
+          <p class="muted" style="margin:2px 0 0">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}</p>
+        </div>
+      </div>
+      ${weaponLine}
+      <table class="cmp wide">${rows}</table>
+      ${grant}${trigger}
+      <p class="muted">[${k(this.state.settings, "confirm")}] takes it off · pick a replacement in the Stash.</p>`;
+  }
+
+  /** One equipment slot on the paper-doll — the real, equippable kind. */
+  private dollSlot(slot: EquipSlot): string {
+    const p = this.state.player;
+    const cls = p.heroClass;
+    const i = EQUIP_SLOTS.indexOf(slot);
+    const it = p.equipment[slot];
+    const affine = it?.family ? cls.affinity.includes(it.family) : false;
+    const art = it
+      ? `<img src="${pixelImageFit(itemIcon(it.type, it.rarity), 72, `item:${it.type}:${it.rarity}`)}" alt="">`
+      : `<span class="ds-empty">${SLOT_GLYPH[slot]}</span>`;
+    const tip = it ? `${it.name} — ${rarityLabel(it.rarity)}\n${statLine(it)}` : `${slot} — empty`;
+    return `
+      <div class="doll-slot ${i === this.cursor ? "on" : ""} ${it ? "filled" : ""}" data-index="${i}"
+           style="--r:${it ? RARITY_COLORS[it.rarity] : "var(--line)"}" title="${escapeHtml(tip)}">
+        <span class="ds-label">${slot}${affine ? ' <em class="ds-aff">✦</em>' : ""}</span>
+        <div class="ds-art">${art}</div>
+        <span class="ds-name" style="color:${it ? RARITY_COLORS[it.rarity] : "#5a6270"}">${it ? escapeHtml(it.name) : "empty"}</span>
+      </div>`;
+  }
+
+  /** A slot the layout shows but the game doesn't have yet (UAT §12). Inert — no data-index. */
+  private lockedSlot(label: string): string {
+    return `
+      <div class="doll-slot locked" title="${label} — a future update">
+        <span class="ds-label">${label}</span>
+        <div class="ds-art"><span class="ds-empty">+</span></div>
+        <span class="ds-name muted">soon</span>
+      </div>`;
   }
 
   private renderHero(): string {
     const p = this.state.player;
     const cls = p.heroClass;
-    const rows = EQUIP_SLOTS.map((slot, i) => {
-      const it = p.equipment[slot];
-      const affine = it?.family ? cls.affinity.includes(it.family) : false;
-      return `
-        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
-          <div class="row-main">
-            <span class="slot">${slot}</span>
-            <span class="name" style="color:${it ? RARITY_COLORS[it.rarity] : "#5a6270"}">
-              ${it ? escapeHtml(it.name) : "— empty —"}</span>
-            ${affine ? `<span class="badge" style="color:${cls.color};border-color:${cls.color}">affinity</span>` : ""}
-          </div>
-          <div class="row-side">${it ? escapeHtml(statLine(it)) : ""}</div>
-        </div>`;
-    }).join("");
+    const a = this.state.appearance;
+    const portrait = pixelImage(heroComposite(a), 8);
+    const xpPct = p.xpNeeded > 0 ? Math.max(0, Math.min(100, (p.xp / p.xpNeeded) * 100)) : 0;
+
+    const doll = `
+      <div class="doll">
+        <div class="doll-col">
+          ${this.dollSlot("weapon")}
+          ${this.dollSlot("armor")}
+          ${this.dollSlot("shield")}
+        </div>
+        <div class="doll-centre">
+          <div class="doll-portrait"><img src="${portrait}" alt="your character"></div>
+          <h3 style="color:${cls.color};margin:0">${escapeHtml(cls.name)}</h3>
+          <p class="muted" style="margin:2px 0 8px">level ${p.level}</p>
+          <div class="xp-track" title="${p.xp} / ${p.xpNeeded} XP"><span style="width:${xpPct}%"></span></div>
+          <p class="muted" style="margin:6px 0 0">${p.treePoints} unspent tree point${p.treePoints === 1 ? "" : "s"}</p>
+        </div>
+        <div class="doll-col">
+          ${this.dollSlot("gloves")}
+          ${this.dollSlot("ring")}
+          ${this.dollSlot("necklace")}
+        </div>
+        <div class="doll-locked">
+          ${this.lockedSlot("helmet")}
+          ${this.lockedSlot("boots")}
+          ${this.lockedSlot("off-hand")}
+          ${this.lockedSlot("relic")}
+          ${this.lockedSlot("relic")}
+          ${this.lockedSlot("relic")}
+        </div>
+      </div>`;
+
+    const selSlot = EQUIP_SLOTS[this.cursor];
+    const selItem = selSlot ? p.equipment[selSlot] : undefined;
+    const selPanel = selItem
+      ? this.renderEquipped(selItem)
+      : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
+         Open the Stash to fill it — ${k(this.state.settings, "confirm")} on a slot takes the piece off.</p>`;
 
     const s = p.stats;
     const statRows = STAT_KEYS.map((k) => `<tr><td>${STAT_LABELS[k]}</td><td>${s[k]}</td></tr>`).join("");
@@ -1678,10 +1794,10 @@ export class TownUI {
     const ult = p.ultimateAbility;
     const granted = p.grantedAbilityId ? p.abilityById(p.grantedAbilityId) : undefined;
 
-    return `<div class="list">${rows}</div>
+    return `${doll}
       <aside class="side">
-        <h3 style="color:${cls.color}">${escapeHtml(cls.name)} · level ${p.level}</h3>
-        <p class="muted">${p.xp} / ${p.xpNeeded} XP · ${p.treePoints} unspent tree points</p>
+        ${selPanel}
+        <h3 style="color:${cls.color}">Character sheet</h3>
         <table class="cmp">${statRows}</table>
         <p class="muted">Damage reduction ${(p.damageReduction * 100).toFixed(0)}% ·
         ${p.attackCooldown.toFixed(2)}s per swing · crit ${(p.critChance * 100).toFixed(0)}%

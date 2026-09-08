@@ -925,3 +925,245 @@ html, body {
   .loot, .loot .fx-rays, .loot .fx-wash, .loot-stage,
   .loot-art, .loot-name, .loot-line, .loot-hint { animation: none !important; }
 }
+
+/* --- Stash: an item-card grid (UAT §11) -------------------------------- */
+/* The list of names became a grid of cards, each showing the real item icon the
+   chest slot machine shows — `itemIcon()`, one sprite, so the same drop looks the
+   same everywhere. Rarity drives the frame colour and an inset glow; the upgrade
+   arrow, the level-lock and the grant/trigger dots are all corner badges now. */
+
+.stash-grid {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px;
+  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 10px;
+  align-content: start;
+}
+
+.stash-grid.empty {
+  display: grid;
+  place-items: center;
+  grid-template-columns: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.item-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--r, #232936) 55%, var(--line));
+  border-radius: 7px;
+  background: var(--panel-2);
+  box-shadow: inset 0 -18px 22px -20px var(--r, transparent);
+  cursor: pointer;
+}
+
+.item-card:hover { border-color: var(--r, var(--accent)); }
+
+.item-card.on {
+  border-color: var(--r, var(--accent));
+  box-shadow: 0 0 0 1px var(--r, var(--accent)), 0 0 20px -6px var(--r, var(--accent));
+  background: var(--panel);
+}
+
+.item-card .ic-art {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.item-card .ic-art img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+
+.item-card .ic-name {
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
+  max-height: 2.5em;
+  overflow: hidden;
+}
+
+.item-card .ic-slot {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.item-card .ic-mark { position: absolute; top: 5px; right: 6px; font-size: 11px; }
+
+.item-card .ic-lock {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, var(--panel));
+  border-radius: 2px;
+  padding: 0 3px;
+}
+
+.item-card .ic-dots { position: absolute; bottom: 7px; right: 7px; display: flex; gap: 3px; }
+
+/* The compare panel's header — the item's own icon beside its name. */
+.cmp-hero { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+
+.cmp-hero .cmp-art {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--r, var(--line));
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.cmp-hero .cmp-art img { max-width: 46px; max-height: 46px; image-rendering: pixelated; }
+
+.cmp tr.cmp-head td {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* --- Hero: the paper-doll (UAT §12) ---------------------------------- */
+/* The character in the middle, the six real equipment slots flanking it, and the
+   slots the game doesn't have yet (helmet, boots, off-hand, three relics) shown
+   greyed below so the layout already reads as the finished RPG sheet. */
+
+.doll {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 22px 18px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "left centre right" "locked locked locked";
+  gap: 18px 22px;
+  align-content: start;
+  justify-items: center;
+}
+
+.doll-col { display: flex; flex-direction: column; gap: 14px; }
+.doll-col:first-of-type { grid-area: left; }
+.doll-col:last-of-type { grid-area: right; }
+
+.doll-centre {
+  grid-area: centre;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+
+.doll-portrait {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px 22px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.doll-portrait img { image-rendering: pixelated; display: block; }
+
+.xp-track {
+  width: 100%;
+  max-width: 220px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.xp-track span { display: block; height: 100%; background: var(--accent); }
+
+.doll-locked {
+  grid-area: locked;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  width: 100%;
+}
+
+.doll-slot {
+  width: 104px;
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: 1px solid var(--r, var(--line));
+  border-radius: 7px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.doll-slot:hover { border-color: var(--accent); }
+
+.doll-slot.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 18px -6px var(--accent);
+  background: var(--panel);
+}
+
+.doll-slot.filled { box-shadow: inset 0 -16px 20px -18px var(--r, transparent); }
+.doll-slot.filled.on { box-shadow: 0 0 0 1px var(--accent), 0 0 18px -6px var(--accent); }
+
+.doll-slot.locked { opacity: 0.4; cursor: default; }
+.doll-slot.locked:hover { border-color: var(--line); }
+
+.doll-slot .ds-label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.doll-slot .ds-aff { color: var(--gold); font-style: normal; }
+
+.doll-slot .ds-art {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doll-slot .ds-art img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+.doll-slot .ds-empty { font-size: 22px; opacity: 0.5; }
+
+.doll-slot .ds-name {
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  max-height: 2.4em;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .doll {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "left right" "centre centre" "locked locked";
+  }
+}
