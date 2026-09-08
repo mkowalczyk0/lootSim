@@ -25,6 +25,13 @@ export const LAYOUT_LABELS: Record<LayoutKind, string> = {
 
 export interface BiomeStyle {
   readonly name: string;
+  /**
+   * A corner Wang tileset id (`render/atlas/manifest.ts` → `TILESETS`) for the
+   * floor. When set and loaded, the renderer stamps the floor and walls from it
+   * instead of the flat `bakeFloor` fill. Optional and degrading — an unset or
+   * not-yet-loaded tileset just falls back to `tint` / `wall` below.
+   */
+  readonly tileset?: string;
   /** Floor base color. */
   readonly tint: string;
   /** Scattered tiles drawn over the base, for texture. */
@@ -48,6 +55,7 @@ export interface BiomeStyle {
 export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Training Grounds",
+    tileset: "tiles.delve-limbo",
     tint: "#2c3040", floorAlt: "#333849", wall: "#4a5165", wallSide: "#272c39",
     accent: "#7dd3fc",
     props: ["torch", "rock"],

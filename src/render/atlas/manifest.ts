@@ -154,6 +154,37 @@ export interface AtlasScene {
   readonly h: number;
 }
 
+// --- tilesets ---------------------------------------------------------------
+
+/**
+ * A PixelLab top-down corner Wang tileset — 16 tiles on a 4x4 sheet describing
+ * every way a floor terrain (`lower`) and a wall mass (`upper`) can meet at the
+ * four corners of a cell. `render/tilemap.ts` stamps a level's wall grid with it
+ * by dual-grid autotiling, so a procedurally generated floor gets real
+ * hand-arted stone instead of the flat `bakeFloor` fill.
+ *
+ * The PNG (`<id>.png`) is committed under `atlas/tilesets/`; the sheet layout is
+ * baked to `<id>.json` (one `[x, y]` per corner mask) by `npm run tileset`,
+ * because PixelLab's sheet order is arbitrary and only the metadata says which
+ * tile is which. A biome names its tileset by id in `data/biomes.ts` /
+ * `data/planets.ts`; an unlisted or unloaded tileset falls back to `bakeFloor`.
+ */
+export interface AtlasTileset {
+  readonly id: string;
+  /** Sheet size in px — 64x64 for a standard 16-tile set. */
+  readonly w: number;
+  readonly h: number;
+  /** Edge length of one tile in px (and in world units — tiles draw 1:1). */
+  readonly tile: number;
+}
+
+export const TILESETS: Record<string, AtlasTileset> = {
+  // §5 The Descent — Circle I, Limbo: drained-to-ash flagstone, ruined classical
+  // masonry, no fire. Also the shallow Delve's default until each circle has its
+  // own set.
+  "tiles.delve-limbo": { id: "tiles.delve-limbo", w: 64, h: 64, tile: 16 },
+};
+
 export const SCENES: Record<string, AtlasScene> = {
   // §4 The Citadel of the Threshold — the hub deck, drawn scaled to HUB_WIDTH x HUB_HEIGHT
   // (640x460, same 1.39 aspect). The whole hall *and its stations* are baked into this

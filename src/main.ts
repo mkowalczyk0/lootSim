@@ -2,7 +2,7 @@ import { GameLoop } from "./core/loop";
 import { Input } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
-import { type RunConfig, type RunModeId } from "./data/modes";
+import { delveConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { RARITY_COLORS } from "./data/rarity";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
@@ -538,7 +538,14 @@ applySettings();
 preloadArt()
   .catch((err) => console.error(err))
   .finally(() => {
-    enterHub();
+    // Dev-only shortcut for art review: `?dive=8` (optionally `&seed=123`) drops
+    // straight onto a Delve floor at that depth instead of walking the hub.
+    const devDive = import.meta.env.DEV ? new URLSearchParams(location.search).get("dive") : null;
+    if (devDive) {
+      enterDungeon(delveConfig(Math.max(1, Number(devDive) || 1), state.challengerTier));
+    } else {
+      enterHub();
+    }
     new GameLoop(update, render).start();
   });
 

@@ -8,6 +8,8 @@ import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
 import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
+import { atlasTileset } from "./atlas/index";
+import { paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
   tinted, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
@@ -82,6 +84,9 @@ export class WorldRenderer {
   /** The floor is static for the life of a level, so it's painted once and blitted. */
   private floorCanvas: HTMLCanvasElement | null = null;
   private floorFor: Level | null = null;
+  /** True when this floor's walls are baked into `floorCanvas` by a tileset — the
+   *  per-frame `drawWalls` pass is then skipped, since there's nothing left for it. */
+  private floorTiled = false;
   /** Aura motes are emitted from the render loop, so they need their own clock. */
   private auraClock = 0;
   private lastElapsed = 0;
@@ -138,7 +143,7 @@ export class WorldRenderer {
     this.drawGround(ctx, dungeon);
     this.drawTraps(ctx, dungeon);
     this.drawTelegraphs(ctx, dungeon);
-    this.drawWalls(ctx, dungeon.level);
+    if (!this.floorTiled) this.drawWalls(ctx, dungeon.level);
     this.drawProps(ctx, dungeon.level);
     this.drawResourceNodes(ctx, dungeon);
     this.drawPortal(ctx, dungeon);
@@ -174,7 +179,9 @@ export class WorldRenderer {
 
   private drawFloor(ctx: CanvasRenderingContext2D, d: Dungeon): void {
     if (this.floorFor !== d.level || !this.floorCanvas) {
-      this.floorCanvas = bakeFloor(d.level);
+      const baked = bakeFloor(d.level);
+      this.floorCanvas = baked.canvas;
+      this.floorTiled = baked.tiled;
       this.floorFor = d.level;
     }
     const floor = this.floorCanvas;
@@ -719,16 +726,41 @@ export function drawPortalGlyph(
 }
 
 /**
- * Paints the floor of a level once into an offscreen canvas: base color, a scatter of
- * darker tiles for texture, and the arena border. It never changes during a run, so
- * there's no reason to redraw a few hundred rectangles every frame.
+ * Paints the whole floor of a level once into an offscreen canvas. It never changes
+ * during a run, so there's no reason to redraw it every frame.
+ *
+ * Two ways it can go: if the biome names a tileset and that tileset has loaded, the
+ * floor *and its walls* are stamped from real hand-arted stone by `paintTilemap`
+ * (`tiled: true`, and the per-frame `drawWalls` is then skipped). Otherwise it falls
+ * back to the flat bake — base colour, a scatter of darker tiles for texture, a border —
+ * and `drawWalls` paints the wall boxes on top as before.
  */
-function bakeFloor(level: Level): HTMLCanvasElement {
+function bakeFloor(level: Level): { canvas: HTMLCanvasElement; tiled: boolean } {
   const { width, height, biome } = level;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
+
+  const ts = biome.tileset ? atlasTileset(biome.tileset) : null;
+  if (ts) {
+    // A dark ground behind the stamp, so any half-transparent tile edge reads as
+    // shadow between stones rather than a hole to the void.
+    ctx.fillStyle = "#0c0a12";
+    ctx.fillRect(0, 0, width, height);
+    if (paintTilemap(ctx, level, ts)) {
+      // A soft inner vignette, so a big floor still feels enclosed by low light.
+      const vg = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.35,
+        width / 2, height / 2, Math.max(width, height) * 0.62,
+      );
+      vg.addColorStop(0, "rgba(0,0,0,0)");
+      vg.addColorStop(1, "rgba(0,0,0,0.32)");
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, width, height);
+      return { canvas, tiled: true };
+    }
+  }
 
   ctx.fillStyle = biome.tint;
   ctx.fillRect(0, 0, width, height);
@@ -774,7 +806,7 @@ function bakeFloor(level: Level): HTMLCanvasElement {
   ctx.strokeStyle = biome.wall;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, width - 2, height - 2);
-  return canvas;
+  return { canvas, tiled: false };
 }
 
 /**

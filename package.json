@@ -17,7 +17,8 @@
     "test": "npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run smoke",
     "arena": "esbuild tools/arena.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/arena.mjs --log-level=error && node node_modules/.cache/arena.mjs",
     "art": "esbuild tools/artsheet.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/artsheet.mjs --log-level=error && node node_modules/.cache/artsheet.mjs",
-    "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs"
+    "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs",
+    "tileset": "esbuild tools/tileset.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/tileset.mjs --log-level=error && node node_modules/.cache/tileset.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

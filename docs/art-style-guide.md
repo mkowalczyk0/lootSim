@@ -625,6 +625,44 @@ fallback and is what `npm run art` / the smoke grid-walk still exercise.
 `realm.category.name[.variant]` — `hell6.monster.false-angel`, `reliquary.node.void`,
 `boss.tyrant-first-heavens.phase2`, `weapon.sword.base`, `item.named.tempest-reaver`,
 `affix.glyph.chain-lightning`, `tower.enemy.throne`. Lowercase, kebab within a segment.
+Tilesets are `tiles.<place>` — `tiles.delve-limbo`, `tiles.reliquary-cinder`, `tiles.abyss`.
+
+### 17.7 Environment tilesets (the floors)
+
+Every floor in the game is a **procedurally generated room graph** (`game/level.ts`) —
+that does not change and should not. What changed is how it's *painted*: instead of
+`bakeFloor`'s flat tinted rectangle and `drawWalls`' grey boxes, a biome names a
+**corner Wang tileset** and the renderer stamps the floor and its walls from real
+hand-arted 16px stone.
+
+- **Generate with PixelLab `create_topdown_tileset`** — a 16-tile corner set,
+  `lower_description` = the floor, `upper_description` = the wall / rubble mass,
+  `transition_description` = the crumbled edge between them. `view: "high top-down"`
+  always (it must sit flat under a top-down camera). 16px tiles, `transition_size` 0
+  (a 25-tile transition sheet is a *cliff* set — not supported by the runtime yet).
+- **Bake the sheet layout** — `npm run tileset -- art/tilesets/<id>.raw.json` reads the
+  PixelLab metadata and writes `src/render/atlas/tilesets/<id>.json` (one `[x,y]` per
+  corner mask). PixelLab's sheet order is arbitrary; only the metadata says which tile
+  is which, so never eyeball it. Commit the PNG **and** the JSON next to each other.
+- **Wire it** — add a row to `TILESETS` in `render/atlas/manifest.ts`, then set
+  `tileset: "tiles.<id>"` on the `BiomeStyle` in `data/biomes.ts` (Delve) or
+  `data/planets.ts` (Reliquary sectors). It is opt-in and degrades: an unlisted or
+  not-yet-loaded tileset just falls back to the flat bake, so nothing breaks half-done.
+- **Contrast is a gameplay requirement.** Floor and wall must be instantly separable at
+  speed — the player reads *walkable vs. not* from this before anything else. A moody
+  low-contrast set that looks right in a 64px preview but turns to mush at game zoom is
+  wrong. Push the wall mass light *or* dark, but push it clear of the floor.
+- **Palette** still comes from §2 / §2.4 — ash + bone + `ink` seams for the Delve's
+  shallow circles, each circle shifting off the Hell base per §5; the six Reliquary
+  sectors are warm-ash `#33241d` pulled toward their element per §8.2; the Abyss is
+  `#0e0b14` null-black with one wrong colour per §7. The **one hot accent** rule does
+  **not** apply to a tileset — a floor has no eye. Keep it all low and dirty.
+- **Boss floors** inherit their depth's tileset automatically (a boss arena is still a
+  `Level` with a `biome`), and that's fine — the single big room just gets stamped with
+  the same stone.
+
+Backlog for the suite is §18 chunk 11, pulled forward: the 6 Delve circles first (start
+`tiles.delve-limbo`), then `tiles.abyss`, then the 6 Reliquary sectors.
 
 ---
 
