@@ -76,10 +76,41 @@ console.log("\n=== ordinary difficulty is exactly unchanged ===");
   check("a plain Delve floor's drops are untouched at every depth", moved.length === 0,
     moved.map((d) => `depth ${d}`).join(", "));
 
-  // `namedDropChance` moved house; it must not have changed value.
-  const same = [1, 1.5, 2, 4, 8, 32, 1000].every(
-    (d) => Math.abs(namedDropChance(0.1, d) - Math.min(1, 0.1 * rewardCurve(d).dropChance)) < 1e-12);
-  check("named drop odds are the same formula, just living in one place", same);
+  /**
+   * Named-item odds, pinned as **values** rather than as an agreement.
+   *
+   * This check used to assert that `namedDropChance` returned the same number as
+   * `Math.min(1, base * rewardCurve(d).dropChance)`, which was a real guard for exactly as
+   * long as `named.ts` held its own copy of that formula. It doesn't any more: the relics
+   * merge moved the odds into `drops.ts` as `dropChance`, that now delegates to the curve,
+   * and `named.ts` re-exports it as a bare alias — so the old check compared a function to
+   * itself and could not fail.
+   *
+   * The lesson generalises past this one line, which is why it's written down here:
+   * **"these two things agree" stops meaning anything the moment they become one thing.**
+   * An agreement check is only alive while there are two implementations, and
+   * consolidation — the good outcome — is precisely what empties it out silently. When you
+   * merge two copies of a rule into one, the test that compared them needs converting into
+   * a test of what the survivor computes.
+   *
+   * So: the actual numbers, on the ladder a player walks. A `PER_DOUBLING.dropChance`
+   * retune now has to come here and be deliberate about it.
+   */
+  const odds: readonly (readonly [number, number])[] = [
+    [1, 0.1],      // ordinary difficulty: exactly the base, no lift at all
+    [2, 0.135],    // one doubling  → +35%
+    [4, 0.17],     // two           → +70%
+    [8, 0.205],    // three         → +105%
+    [16, 0.24],    // four          → +140%
+    [64, 0.25],    // capped at 2.5x, and stays there however deep it goes
+    [1e6, 0.25],
+  ];
+  const drift = odds.filter(([d, want]) => Math.abs(namedDropChance(0.1, d) - want) > 1e-12);
+  check("a named item's odds are the pinned numbers at every rung", drift.length === 0,
+    drift.map(([d, want]) => `danger ${d}: ${namedDropChance(0.1, d)} != ${want}`).join(", "));
+  // A base that would exceed certainty is clamped, not multiplied past 1.
+  check("…and odds never exceed certainty", namedDropChance(0.9, 1e6) === 1,
+    String(namedDropChance(0.9, 1e6)));
 }
 
 // --- 2. capped, and the §9 cap is not routed around -----------------------
