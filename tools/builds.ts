@@ -42,6 +42,9 @@ import { CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progress
 import type { PathUnlockDef } from "../src/progression/unlocks";
 import { KEYSTONE_COST_V2 } from "../src/progression/nodes";
 import type { Ability, EffectStep } from "../src/combat/ability";
+import { ResourceSet, type ResourceEvent, type ResourceGenRule } from "../src/combat/resources";
+import { isUltimateSourced } from "../src/combat/damage";
+import { hasAnyTag, type SkillTag } from "../src/combat/tags";
 import { Rng } from "../src/core/rng";
 
 const DT = 1 / 60;
@@ -372,12 +375,132 @@ interface Sample {
   casts: [number, number, number];
 }
 
-function playFloor(build: Build, floorSeed: number): Sample {
+// --- generation-event instrumentation -------------------------------------------------
+//
+// Eight classes never fill their ultimate meter on a real floor. "Add points to the rule"
+// is the wrong first move, because a rule can read as inert for three unrelated reasons
+// and only one of them is a numbers problem:
+//
+//   1. the rule's `on:` event is one the simulation never broadcasts at all,
+//   2. it is broadcast, but the rule's `requireTags` never match what arrives,
+//   3. it fires exactly as designed and the amount is simply too small.
+//
+// So measure first. This wraps `ResourceSet.broadcast` for the watched hero and re-walks
+// the meter's own generation rules against every event, using the same three primitives
+// the pool itself uses (`isUltimateSourced`, `hasAnyTag`, and a copy of `ruleAmount`) so
+// the verdict can't drift from the real gate. Nothing in `src/` is touched — the harness
+// is an observer, and a measurement tool that needs a debug hook in the simulation to
+// work would be a change to the thing being measured.
+//
+// Points are reported as **offered**, i.e. before the pool clips at max: a rule offering
+// zero is the finding, and a rule offering plenty into a full bar is not a bug.
+
+interface MeterTrace {
+  /** Every `ResourceEvent` the simulation broadcast at this hero, by type. */
+  events: Map<string, number>;
+  /** Meter points each generation rule offered, keyed by rule label. */
+  offered: Map<string, number>;
+  /** How many matching events each rule refused, keyed by `label ← reason`. */
+  refused: Map<string, number>;
+  /** Tag sets actually seen on events a `requireTags` rule turned down. */
+  seenTags: Map<string, Set<string>>;
+  seconds: number;
+  /**
+   * Floors pooled into this trace. The meter starts empty on every floor, so a rule's
+   * offer has to be read **per floor** — pooling four builds × three floors and printing
+   * "5.3 bars offered" next to "never fills" is a contradiction, not a diagnosis.
+   */
+  floors: number;
+}
+
+function newTrace(): MeterTrace {
+  return {
+    events: new Map(), offered: new Map(), refused: new Map(), seenTags: new Map(),
+    seconds: 0, floors: 0,
+  };
+}
+
+function bump(m: Map<string, number>, key: string, by = 1): void {
+  m.set(key, (m.get(key) ?? 0) + by);
+}
+
+/** A rule's identity in the report — its `on`, its amount, its scaling and its tag gate. */
+function ruleLabel(rule: ResourceGenRule): string {
+  const per = rule.perUnit ? ` ×${rule.perUnit}` : "";
+  const tags = rule.requireTags ? ` [${rule.requireTags.join("/")}]` : "";
+  const ult = rule.allowFromUltimate ? " +ult" : "";
+  return `on ${rule.on} ${rule.amount}${per}${tags}${ult}`;
+}
+
+/** A copy of `ResourcePool.ruleAmount`, which is private. Keep the two in step. */
+function offeredBy(rule: ResourceGenRule, evt: ResourceEvent): number {
+  switch (rule.perUnit) {
+    case "damage":
+      return rule.amount * (evt.damage ?? evt.packet?.amount ?? 0);
+    case "maxHealthFraction":
+      return rule.amount * ((evt.damage ?? 0) / Math.max(1, evt.maxHealth ?? 1));
+    case "manaFraction":
+      return rule.amount * ((evt.manaSpent ?? 0) / Math.max(1, evt.maxMana ?? 1));
+    case "distance":
+      return rule.amount * (evt.distance ?? 0);
+    default:
+      return rule.amount;
+  }
+}
+
+let watched: ResourceSet | null = null;
+let trace: MeterTrace | null = null;
+
+const rawBroadcast = ResourceSet.prototype.broadcast;
+ResourceSet.prototype.broadcast = function (this: ResourceSet, evt, ctx) {
+  if (trace !== null && this === watched) observe(trace, this, evt);
+  return rawBroadcast.call(this, evt, ctx);
+};
+
+function observe(tr: MeterTrace, set: ResourceSet, evt: ResourceEvent): void {
+  bump(tr.events, evt.type);
+  const rules = set.ultimateMeter()?.spec.generation;
+  if (!rules) return;
+  const ult = evt.packet ? isUltimateSourced(evt.packet) : evt.fromUltimate === true;
+  for (const rule of rules) {
+    if (rule.on !== evt.type) continue;
+    const label = ruleLabel(rule);
+    if (ult && !rule.allowFromUltimate) {
+      bump(tr.refused, `${label} ← ultimate-sourced`);
+      continue;
+    }
+    if (rule.requireTags) {
+      const tags: readonly SkillTag[] | undefined = evt.packet?.source.tags ?? evt.tags;
+      if (!hasAnyTag(tags, rule.requireTags)) {
+        bump(tr.refused, `${label} ← tags`);
+        let seen = tr.seenTags.get(label);
+        if (!seen) tr.seenTags.set(label, (seen = new Set()));
+        if (seen.size < 8) seen.add(tags && tags.length > 0 ? tags.join("/") : "(untagged)");
+        continue;
+      }
+    }
+    bump(tr.offered, label, offeredBy(rule, evt));
+  }
+}
+
+/** Rules whose `on:` event never reached the hero at all — case 1 above. */
+function silentRules(classId: ClassId, tr: MeterTrace): string[] {
+  const rules = CLASS_BY_ID[classId]?.resources.find((r) => r.isUltimateMeter)?.generation ?? [];
+  const out: string[] = [];
+  for (const rule of rules) {
+    if ((tr.events.get(rule.on) ?? 0) === 0) out.push(ruleLabel(rule));
+  }
+  return out;
+}
+
+function playFloor(build: Build, floorSeed: number, tr: MeterTrace | null = null): Sample {
   const state = geared(build);
   equipForBuild(state, build);
   const d = new Dungeon(state, delveConfig(DEPTH), floorSeed);
   const input = new BotInput();
   const hero = d.localHero;
+  watched = hero.resources;
+  trace = tr;
   const flow = new FlowField(d.level);
   let flowTimer = 0;
   let flowGoalX = d.avatar.x;
@@ -504,6 +627,13 @@ function playFloor(build: Build, floorSeed: number): Sample {
     t += DT;
   }
 
+  if (tr) {
+    tr.seconds += t;
+    tr.floors++;
+  }
+  watched = null;
+  trace = null;
+
   return {
     cleared: d.phase !== "fighting" && d.phase !== "dead",
     seconds: t,
@@ -517,7 +647,7 @@ function playFloor(build: Build, floorSeed: number): Sample {
  * same seeded gear roll, so the only thing that varies is the floor — no XP or loot drift
  * inside a measurement.
  */
-function playBuild(build: Build): Fingerprint {
+function playBuild(build: Build, tr: MeterTrace | null = null): Fingerprint {
   const probe = geared(build);
   const skills = equipForBuild(probe, build);
 
@@ -529,7 +659,7 @@ function playBuild(build: Build): Fingerprint {
   let clears = 0;
   const firsts: number[] = [];
   for (let f = 0; f < FLOORS; f++) {
-    const s = playFloor(build, SEED + f * 7919);
+    const s = playFloor(build, SEED + f * 7919, tr);
     if (s.cleared) clears++;
     if (s.meterFirst !== null) firsts.push(s.meterFirst);
     acc.seconds += s.seconds;
@@ -642,17 +772,21 @@ console.log(
 );
 
 const results = new Map<ClassId, { build: Build; fp: Fingerprint }[]>();
+/** One trace per class, pooled over every build of it — see the instrumentation note. */
+const traces = new Map<ClassId, MeterTrace>();
 
 for (const classId of classes) {
   const builds = buildsFor(classId);
   const rows: { build: Build; fp: Fingerprint }[] = [];
   const budget = treePointsFor(LEVEL);
+  const tr = newTrace();
+  traces.set(classId, tr);
   for (const build of builds) {
     if (build.points > budget) {
       console.log(` skip   ${classId} / ${build.name}: needs ${build.points} points, L${LEVEL} has ${budget}`);
       continue;
     }
-    const fp = playBuild(build);
+    const fp = playBuild(build, tr);
     rows.push({ build, fp });
     const tag = `${classId} / ${build.name}${build.tier === "mythic" ? " ★" : ""}`;
     console.log(
@@ -719,6 +853,69 @@ for (const classId of classes) {
     "—".padStart(8) +
     `${first} / ${perMin.toFixed(1)}`.padStart(32),
   );
+}
+
+// --- why a meter never fills: the generation-rule ledger --------------------------------
+//
+// Printed only for a class no build of which ever reached a full meter, so it stays a
+// diagnosis of the open problem rather than 21 classes of noise. Set BUILDS_GEN=1 to see
+// it for every class (useful when checking that a fix moved the right rule).
+
+const genAll = process.env.BUILDS_GEN === "1";
+const stuck = classes.filter((c) => {
+  const rows = results.get(c) ?? [];
+  return rows.length > 0 && rows.every((r) => r.fp.meterFirst === null);
+});
+const genFor = genAll ? classes : stuck;
+
+if (genFor.length > 0) {
+  console.log(
+    genAll
+      ? "\n=== meter generation ledger — every class ==="
+      : `\n=== why the meter never fills — ${stuck.length} class(es) ===`,
+  );
+  for (const classId of genFor) {
+    const tr = traces.get(classId);
+    if (!tr || tr.seconds <= 0) continue;
+    const meter = CLASS_BY_ID[classId]?.resources.find((r) => r.isUltimateMeter);
+    if (!meter) continue;
+    const need = meter.max;
+    const floors = Math.max(tr.floors, 1);
+    console.log(
+      `\n${classId} — "${meter.label}", max ${need}, ` +
+      `per floor over ${floors} floors averaging ${(tr.seconds / floors).toFixed(0)}s`,
+    );
+    const silent = new Set(silentRules(classId, tr));
+    for (const rule of meter.generation ?? []) {
+      const label = ruleLabel(rule);
+      const got = (tr.offered.get(label) ?? 0) / floors;
+      const perBar = got > 0 ? `${(got / need).toFixed(2)} bars` : "—";
+      const refusedUlt = tr.refused.get(`${label} ← ultimate-sourced`) ?? 0;
+      const refusedTags = tr.refused.get(`${label} ← tags`) ?? 0;
+      const why = silent.has(label)
+        ? `NO "${rule.on}" EVENT — the simulation never broadcasts it`
+        : refusedTags > 0 && got === 0
+          ? `tags never matched (${refusedTags} events, saw ${[...(tr.seenTags.get(label) ?? [])].join(", ")})`
+          : refusedUlt > 0 && got === 0
+            ? `every match was ultimate-sourced (${refusedUlt}) — THE ULTIMATE RULE`
+            : refusedTags > 0
+              ? `${refusedTags} more refused on tags`
+              : "";
+      console.log(
+        `  ${label.padEnd(40)} ${got.toFixed(0).padStart(8)} pts  ${perBar.padStart(10)}` +
+        (why ? `   ${why}` : ""),
+      );
+    }
+    if (meter.regenPerSec) {
+      const regen = (meter.regenPerSec * tr.seconds) / floors;
+      console.log(`  ${"regenPerSec".padEnd(40)} ${regen.toFixed(0).padStart(8)} pts  ${(regen / need).toFixed(2).padStart(4)} bars`);
+    }
+    if (meter.decayPerSec) console.log(`  ${`decayPerSec ${meter.decayPerSec} after ${meter.decayDelay ?? 0}s`.padEnd(40)} — drains the bar back down`);
+    const seen = [...tr.events.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}×${(v / floors).toFixed(0)}`);
+    console.log(`  events per floor: ${seen.join(", ")}`);
+  }
 }
 
 console.log(
