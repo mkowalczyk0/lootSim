@@ -30,6 +30,8 @@ export interface RuleHost {
   shake(amount: number): void;
   /** Enemies within `radius` of a point, nearest first. */
   enemiesAround(x: number, y: number, radius: number): Enemy[];
+  /** The hero's own ground zones — damage pools and benefit circles they placed. */
+  zonesOwnedBy(hero: Hero): ZoneView[];
   /** Deal a hit to one enemy, credited to `hero` (kill/among/meter all flow to them). */
   hitEnemy(
     hero: Hero, e: Enemy, amount: number, element: Element,
@@ -48,6 +50,16 @@ export interface RuleHost {
 
 const AURA_TICK = 0.5;
 
+/** A read-only snapshot of one of a hero's ground zones, for the zone keystones (B-5). */
+export interface ZoneView {
+  x: number;
+  y: number;
+  radius: number;
+  element: Element;
+  /** True for a heal / shield / haste circle; false for a damage pool. */
+  benefit: boolean;
+}
+
 /** One hero's mutable rule bookkeeping. Reset per floor with the Hero. */
 export class HeroRuleState {
   /** Ability ids used since the last repeat, newest last — for "distinct skill" rules. */
@@ -64,6 +76,9 @@ export class HeroRuleState {
   readonly gates = new Map<string, number>();
   /** Last skill element seen, for Spellblade "sword copies last spell". */
   lastSkillElement: Element | null = null;
+  /** Mythic Archetype "the ultimate becomes a state" — which rule, and when the window shuts. */
+  mythicRule: string | null = null;
+  mythicUntil = 0;
 
   /** True and clears the gate if `seconds` have passed since it last fired. */
   gateReady(host: RuleHost, rule: string, seconds: number): boolean {
@@ -139,6 +154,39 @@ const LINK_RULES: LinkRule[] = [
 ];
 const LINK_SPREAD_CAP = 6;
 
+/**
+ * Execute-threshold keystones (B-2): while the struck enemy is under `frac` of its max
+ * health and `test` holds, the hit is inflated to finish it. The sim has no instant-kill
+ * primitive — `executeMissingHealth` only adds missing-health damage on abilities that
+ * carry it — so a rule "every shot executes the wounded" is expressed here as a damage
+ * multiplier big enough to carry through resists and mitigation.
+ */
+interface ExecuteRule {
+  rule: string;
+  frac: number;
+  test: (e: Enemy) => boolean;
+  /** Throttle (seconds) for "once per encounter" clauses; 0 = every qualifying hit. */
+  gate?: number;
+}
+const EXECUTE_RULES: ExecuteRule[] = [
+  // Ranger "Cull the Weak" — chilled / quarried enemies are executed by every shot.
+  { rule: "ranger.ch.cull_the_weak", frac: 0.30, test: (e) => isChilled(e) || e.sc.has("quarry") },
+  // Ranger "Perfect Shot" — a Deadeye shot executes the low (the full-stack gate is dropped).
+  { rule: "ranger.de.perfect_shot", frac: 0.30, test: () => true },
+  // Reaper "Final Sentence" — the execute window rises to 40% on a branded target.
+  { rule: "reaper.ex.final_sentence", frac: 0.40, test: isMarked },
+  // Assassin "Death Spiral" — bleeding + poisoned + marked: every hit is an Execution.
+  { rule: "assassin.bh.death_spiral", frac: 0.50, test: (e) => e.sc.has("bleed") && e.sc.has("poison") && isMarked(e) },
+  // Assassin "Critical Weakness" — an exposed Contract target, once per encounter.
+  { rule: "assassin.sb.critical_weakness", frac: 0.25, test: (e) => e.sc.has("exposed") && isMarked(e), gate: 25 },
+  // Warden "Apex Predator" — the Warden and pack execute entangled enemies.
+  { rule: "warden.hm.apex_predator", frac: 0.25, test: (e) => e.sc.has("entangled") || e.sc.has("rooted") },
+  // Corsair "Bounty Hunter" — hooked / bountied targets are executed on a line.
+  { rule: "corsair.hybrid.bounty_hunter", frac: 0.25, test: (e) => e.sc.has("bounty") },
+  // Paladin "Holy Execution" — a Judged target that drops low is struck down.
+  { rule: "paladin.hybrid.holy_execution", frac: 0.25, test: (e) => e.sc.has("judged") },
+];
+
 /** Hard crowd control "Adamant Form" locks out while Flow is high. */
 const ADAMANT_CC = ["stunned", "rooted", "freeze", "silenced", "taunted"] as const;
 
@@ -149,6 +197,36 @@ function soulPool(hero: Hero) {
 /** Monk / Warden "Flow" is a stacking buff status, not a pool — 0..8. */
 function flowStacks(hero: Hero): number {
   return hero.sc.stacksOf("flow");
+}
+
+/**
+ * Mythic Archetype persistent-state (B-6). Each of these ultimates has a "stops being a
+ * cooldown, becomes a state" clause the `mutations` can't express — a window after the
+ * cast during which some rule holds. The window length per rule; the conditional part
+ * (free casts, no-death, an execute floor, a standing aura) is checked in the hooks.
+ * `berserker.mythic.blood_god` is not here — it is health-gated, not timed.
+ */
+const MYTHIC_WINDOW: Record<string, number> = {
+  "juggernaut.mythic.the_keep": 12,
+  "monk.mythic.infinite_motion": 5,
+  "reaper.mythic.the_final_harvest": 9,
+  "stormcaller.mythic.stormlord": 6,
+  "warden.mythic.the_wildwood": 20,
+  "paladin.mythic.saint_of_the_last_stand": 9,
+  "assassin.mythic.the_perfect_contract": 9,
+  "magician.mythic.singularity": 7,
+  "alchemist.mythic.the_reaction": 10,
+  "shaman.mythic.hollow_king": 12,
+};
+
+function mythicOn(st: HeroRuleState, host: RuleHost, rule: string): boolean {
+  return st.mythicRule === rule && host.now() < st.mythicUntil;
+}
+
+/** Damage multiplier that carries `e`'s remaining health through resists + mitigation. */
+function inflateToKill(e: Enemy, projected: number): number {
+  const needed = (e.health + 1) * 1.6;
+  return projected > 0 && projected < needed ? needed / projected : 1;
 }
 
 /** Prime the next hit if nothing stronger is already queued. */
@@ -213,6 +291,24 @@ export function rulesOnCast(host: RuleHost, hero: Hero, ability: Ability): void 
     hero.rt.clearCooldown(ability.id);
   }
 
+  // Mythic "becomes a state" — free casts inside the window.
+  if (mythicOn(st, host, "monk.mythic.infinite_motion") && ability.tags.includes("melee")) {
+    hero.rt.clearCooldown(ability.id);
+  }
+  if (mythicOn(st, host, "warden.mythic.the_wildwood") && ability.tags.includes("nature")) {
+    hero.rt.clearCooldown(ability.id);
+  }
+
+  // Shaman "Great Ritual" (B-5) — once a ritual zone is down, every skill you cast fires
+  // a burst out of every zone you hold.
+  if (has(rules, "shaman.rt.great_ritual")) {
+    for (const z of host.zonesOwnedBy(hero)) {
+      for (const e of host.enemiesAround(z.x, z.y, z.radius + 30)) {
+        host.hitEnemy(hero, e, hero.player.spellDamage * 0.4, z.element);
+      }
+    }
+  }
+
   // Bard "Improvise" — a song not used recently grants a personal burst (approximated
   // as a primed strike so it reads without a full buff-status).
   if (has(rules, "bard.vt.improvise") && !st.recentSkills.slice(0, -1).includes(ability.id)) {
@@ -258,9 +354,55 @@ export function rulesOnHit(
     e.windup = 0;
     if (e.state === "windup") e.state = "active";
   }
+  // Stormcaller "Outer Bands" (B-5) — attacks landed outside your own eye zone are
+  // empowered (the eye trades safety for reach; you give up the safety).
+  if (has(rules, "stormcaller.eye.outer_bands")) {
+    const zones = host.zonesOwnedBy(hero);
+    const inside = zones.some((z) => Math.hypot(hero.avatar.x - z.x, hero.avatar.y - z.y) <= z.radius);
+    if (zones.length > 0 && !inside) damageMult *= 1.25;
+  }
+
   // Corsair "Six Shooter" — every sixth pistol shot crits and reloads.
   if (!ctx.isBasic && has(rules, "corsair.gs.six_shooter") && ctx.isCrit === false) {
     if (st.bump("corsair.gs.six_shooter") % 6 === 0) forceCrit = true;
+  }
+
+  // Execute-threshold keystones (B-2) — finish a wounded, correctly-afflicted target.
+  if (ctx.amount && e.maxHealth > 0) {
+    const frac = e.health / e.maxHealth;
+    let execute = false;
+    for (const x of EXECUTE_RULES) {
+      if (!has(rules, x.rule) || frac > x.frac || !x.test(e)) continue;
+      if (x.gate && !st.gateReady(host, x.rule, x.gate)) continue;
+      execute = true;
+      break;
+    }
+    // Mythic execute floors — Reaper's basic scythe under half, Assassin's rolling contract.
+    if (mythicOn(st, host, "reaper.mythic.the_final_harvest") && frac <= 0.5) execute = true;
+    if (mythicOn(st, host, "assassin.mythic.the_perfect_contract") && isMarked(e) && frac <= 0.35) execute = true;
+    if (execute) {
+      damageMult *= inflateToKill(e, ctx.amount * damageMult);
+      forceCrit = true;
+      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 30, color: hero.player.heroClass.color });
+    }
+  }
+
+  // Duelist "Thousand Cuts" (B-1) — a hit on a heavily-bleeding target cashes in the
+  // whole wound at once: every remaining bleed tick is dealt now, then the stack is
+  // spent back down. Bounded by how much bleed the target has actually accrued.
+  if (has(rules, "duelist.bm.thousand_cuts") && e.sc.stacksOf("bleed") >= 5) {
+    const bleed = e.sc.get("bleed")!;
+    const burst = bleed.tickDamage * bleed.stacks * Math.min(bleed.remaining, 4);
+    if (burst > 0) {
+      host.hitEnemy(hero, e, burst, "physical", { crit: ctx.isCrit });
+      bleed.remaining = Math.min(bleed.remaining, 1);
+      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 24, color: hero.player.heroClass.color });
+    }
+  }
+
+  // Monk "Infinite Motion" — every landed hit keeps the do-not-stop window alive.
+  if (mythicOn(st, host, "monk.mythic.infinite_motion")) {
+    st.mythicUntil = Math.max(st.mythicUntil, host.now() + 2);
   }
 
   // Damage-link keystones (B-1) — a hit on a linked enemy bleeds onto every other one.
@@ -320,6 +462,19 @@ export function rulesOnKill(host: RuleHost, hero: Hero, e: Enemy): void {
   if (has(rules, "berserker.predator.carnage_engine") || has(rules, "berserker.hybrid.butchers_rhythm")) {
     hero.rt.reduceCooldowns(1.5);
   }
+  // Reaper "The Final Harvest" — each kill during the state extends it and pays a Soul.
+  if (mythicOn(st, host, "reaper.mythic.the_final_harvest")) {
+    st.mythicUntil += 1.5;
+    const souls = soulPool(hero);
+    if (souls) souls.value = Math.min(souls.max, souls.value + 1);
+  }
+  // Assassin "The Perfect Contract" — a kill re-locks the Contract onto the next target.
+  if (mythicOn(st, host, "assassin.mythic.the_perfect_contract")) {
+    st.mythicUntil += 1.5;
+    for (const near of host.enemiesAround(e.x, e.y, 420).slice(0, 1)) {
+      host.afflict(hero, near, "mark", { duration: 12 });
+    }
+  }
   host.emit({ kind: "trail", x: a.x, y: a.y, color: hero.player.heroClass.color });
 }
 
@@ -366,6 +521,14 @@ export function rulesOnDamageTaken(host: RuleHost, hero: Hero, amount: number, f
   if (has(rules, "duelist.bd.one_opponent") && !(fromEnemy && isMarked(fromEnemy))) {
     if (host.enemiesAround(hero.avatar.x, hero.avatar.y, 1200).some(isMarked)) out *= 0.15;
   }
+  // Mythic "cannot die" states — Juggernaut's walking Citadel, Paladin's Last Light.
+  if (
+    out >= p.health &&
+    (mythicOn(st, host, "juggernaut.mythic.the_keep") ||
+      mythicOn(st, host, "paladin.mythic.saint_of_the_last_stand"))
+  ) {
+    out = Math.max(0, p.health - 1);
+  }
   return out;
 }
 
@@ -401,6 +564,24 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
     for (const id of ADAMANT_CC) {
       if (locked) hero.sc.grantImmunity(id);
       else hero.sc.clearImmunity(id);
+    }
+  }
+
+  // Duelist "Red Contract" (B-1) — bleeds on your duel target cannot run out while it
+  // stays marked. Warlock "Total Corruption" (B-1) — a hex that reaches 3 stacks stops
+  // decaying and sits as a permanent wound. Both hold the status timer full while the
+  // hero is engaged; the enemy scan is already bounded by its radius.
+  if (has(rules, "duelist.hybrid.red_contract") || has(rules, "warlock.co.total_corruption")) {
+    for (const e of host.enemiesAround(a.x, a.y, 900)) {
+      if (has(rules, "duelist.hybrid.red_contract") && isMarked(e)) {
+        const bleed = e.sc.get("bleed");
+        if (bleed) bleed.remaining = Math.max(bleed.remaining, 4);
+      }
+      if (has(rules, "warlock.co.total_corruption")) {
+        const hex = e.sc.get("hex");
+        // The "counts double for detonations" half waits on a detonation seam (B-4).
+        if (hex && hex.stacks >= 3) hex.remaining = Math.max(hex.remaining, 9);
+      }
     }
   }
 
@@ -445,4 +626,114 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
   auraTick("berserker.marauder.world_eater", () => {
     for (const e of host.enemiesAround(a.x, a.y, 70)) host.hitEnemy(hero, e, p.attackDamage * 0.2, "physical");
   });
+
+  // --- Zone keystones (B-5) — read the hero's own ground zones each aura tick ---------
+  // Alchemist "Conflagration" — where two of your fire pools overlap, the overlap ignites.
+  auraTick("alchemist.py.conflagration", () => {
+    const fire = host.zonesOwnedBy(hero).filter((z) => z.element === "fire");
+    for (let i = 0; i < fire.length; i++) {
+      for (let j = i + 1; j < fire.length; j++) {
+        const z1 = fire[i]!;
+        const z2 = fire[j]!;
+        if (Math.hypot(z1.x - z2.x, z1.y - z2.y) > z1.radius + z2.radius) continue;
+        const mx = (z1.x + z2.x) / 2;
+        const my = (z1.y + z2.y) / 2;
+        for (const e of host.enemiesAround(mx, my, Math.min(z1.radius, z2.radius) + 20)) {
+          host.hitEnemy(hero, e, p.spellDamage * 0.6, "fire");
+          host.afflict(hero, e, "burn", { duration: 3 });
+        }
+        host.emit({ kind: "boom", x: mx, y: my, radius: 40, color: "#ff7a3c" });
+      }
+    }
+  });
+  // Warden "Briarheart" — every zone you hold pulses a thorn nova; more up, harder bite.
+  auraTick("warden.tk.briarheart", () => {
+    const zones = host.zonesOwnedBy(hero);
+    if (zones.length === 0) return;
+    const scale = 0.2 + 0.1 * Math.min(zones.length, 4);
+    for (const z of zones) {
+      for (const e of host.enemiesAround(z.x, z.y, z.radius + 24)) {
+        host.hitEnemy(hero, e, p.attackDamage * scale, "physical");
+      }
+    }
+  });
+  // Warden "Worldroot" — your healing zones are one zone: in any is in all of them.
+  auraTick("warden.vd.worldroot", () => {
+    const benefit = host.zonesOwnedBy(hero).filter((z) => z.benefit);
+    if (benefit.length < 2) return;
+    const near = (z: ZoneView): boolean => Math.hypot(a.x - z.x, a.y - z.y) <= z.radius + a.radius;
+    if (!benefit.some(near)) return;
+    // One "you are also standing here" heal for every linked zone you are NOT in.
+    for (const z of benefit) {
+      if (!near(z)) host.healHero(hero, p.maxHealth * 0.02);
+    }
+  });
+
+  // --- Mythic Archetype persistent-state auras (B-6) -------------------
+  // Stormcaller "Stormlord" — the eye holds as long as the Stormcaller keeps moving.
+  if (mythicOn(st, host, "stormcaller.mythic.stormlord") && Math.hypot(a.vx, a.vy) > 20) {
+    st.mythicUntil = Math.max(st.mythicUntil, host.now() + 1.5);
+  }
+
+  const mythicAura = (rule: string, run: () => void): void => {
+    if (!mythicOn(st, host, rule)) return;
+    const t = (st.auraTimers.get(rule) ?? 0) - dt;
+    if (t <= 0) {
+      st.auraTimers.set(rule, AURA_TICK);
+      run();
+    } else {
+      st.auraTimers.set(rule, t);
+    }
+  };
+
+  // Juggernaut "The Keep" — the walking Citadel's walls grind everything against them.
+  mythicAura("juggernaut.mythic.the_keep", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 135)) {
+      host.hitEnemy(hero, e, p.attackDamage * 0.35, "physical", { fromUltimate: true });
+    }
+  });
+  // Stormcaller "Stormlord" — Rain, Wind and Thunder run through the eye wall at once.
+  mythicAura("stormcaller.mythic.stormlord", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 155)) {
+      host.hitEnemy(hero, e, p.attackDamage * 0.4, "lightning", { fromUltimate: true });
+      host.afflict(hero, e, "shock", { duration: 3 });
+    }
+  });
+  // Magician "Singularity" — Astral Collapse's impact site stays a folded gravity well.
+  mythicAura("magician.mythic.singularity", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 145)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.3, "void", { fromUltimate: true });
+    }
+  });
+  // Alchemist "The Reaction" — every phase's zone stays and reacts, cycling elements.
+  mythicAura("alchemist.mythic.the_reaction", () => {
+    const els: Element[] = ["fire", "poison", "void", "cold"];
+    const el = els[Math.floor(host.now() / AURA_TICK) % els.length]!;
+    for (const e of host.enemiesAround(a.x, a.y, 150)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.3, el, { fromUltimate: true });
+    }
+  });
+  // Shaman "Hollow King" — the spirit realm stays open; withering pours off it.
+  mythicAura("shaman.mythic.hollow_king", () => {
+    for (const e of host.enemiesAround(a.x, a.y, 190)) {
+      host.hitEnemy(hero, e, p.spellDamage * 0.25, "void", { fromUltimate: true });
+      host.afflict(hero, e, "withering", { duration: 4 });
+    }
+  });
+}
+
+/**
+ * The hero just cast their class ultimate. If the build carries a Mythic Archetype whose
+ * clause turns the ultimate into a lasting state, open that window. `rulesTick` and the
+ * other hooks keep it alive and read it.
+ */
+export function rulesOnUltimate(host: RuleHost, hero: Hero): void {
+  const st = hero.ruleState;
+  for (const rule of hero.player.build.rules) {
+    const w = MYTHIC_WINDOW[rule];
+    if (w === undefined) continue;
+    st.mythicRule = rule;
+    st.mythicUntil = host.now() + w;
+    host.emit({ kind: "boom", x: hero.avatar.x, y: hero.avatar.y, radius: 90, color: hero.player.heroClass.color });
+  }
 }

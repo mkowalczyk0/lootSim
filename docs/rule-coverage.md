@@ -81,23 +81,74 @@ double-count), `assassin.bh.death_spiral` (really a B-2 execute flip).
 Remaining B-3: `shaman.ws.avatar_of_the_hunt`, `warden.be.primal_guardian`,
 `warden.hybrid.elder_form` — all gated on an Aspect/Site ability that isn't a rule.
 
+**Batch 3** — B-2 execute-threshold keystones: **+8 rule ids** (`EXECUTE_RULES` in
+`rules.ts`, resolved inside `rulesOnHit`). The sim has no instant-kill primitive
+(`executeMissingHealth` only *adds* missing-health damage on abilities that carry it), so
+"every shot executes the wounded" is expressed as a damage multiplier scaled up to carry
+the target's remaining health through resists + mitigation (`(health+1) * 1.6`), plus a
+forced crit. Each rule is `{frac, test}`: `ranger.ch.cull_the_weak` (chilled/quarried,
+≤30%), `ranger.de.perfect_shot` (≤30%, the full-Deadeye gate dropped),
+`reaper.ex.final_sentence` (branded, ≤40%), `assassin.bh.death_spiral` (bleed+poison+mark,
+≤50%), `assassin.sb.critical_weakness` (exposed mark, ≤25%, throttled 25 s ≈ once per
+encounter), `warden.hm.apex_predator` (entangled/rooted, ≤25%),
+`corsair.hybrid.bounty_hunter` (bounty, ≤25%), `paladin.hybrid.holy_execution` (judged,
+≤25%). Tested against a quarried low target vs a healthy one.
+
+**Batch 4** — B-6 Mythic Archetype persistent-state: **+10 rule ids**. New
+`rulesOnUltimate` hook (called from `useUltimate`) opens a per-rule window
+(`MYTHIC_WINDOW`, 5–20 s) on `HeroRuleState.mythicRule` / `mythicUntil`; the other hooks
+read `mythicOn(st, host, rule)`:
+- **Free casts inside the window** (`rulesOnCast`): `monk.mythic.infinite_motion` (melee),
+  `warden.mythic.the_wildwood` (nature).
+- **Execute floor** (`rulesOnHit`): `reaper.mythic.the_final_harvest` (≤50%),
+  `assassin.mythic.the_perfect_contract` (marked, ≤35%) — share the B-2 `inflateToKill`.
+- **Cannot die** (`rulesOnDamageTaken`): `juggernaut.mythic.the_keep`,
+  `paladin.mythic.saint_of_the_last_stand`.
+- **Window upkeep**: `infinite_motion` re-armed by any landed hit; `the_final_harvest`
+  and `the_perfect_contract` extended on kill (+ a Soul / a re-lock); `stormlord`
+  re-armed while moving (`rulesTick`).
+- **Standing auras** (`rulesTick`, `fromUltimate: true` so they can't refill the meter):
+  `the_keep`, `stormcaller.mythic.stormlord`, `magician.mythic.singularity`,
+  `alchemist.mythic.the_reaction` (cycling element), `shaman.mythic.hollow_king`.
+
+`berserker.mythic.blood_god` was already wired (health-gated aura, batch 1).
+
+**Batch 5** — B-5 zone keystones + B-1 remainder: **+8 rule ids**. New `GroundZone.owner`
+(the casting hero's index, set on every hero-spawned zone) plus `RuleHost.zonesOwnedBy(hero)`
+give the rule engine a read of "the zones you hold".
+- **Zone keystones** (`rules.ts`): `stormcaller.eye.outer_bands` (`rulesOnHit` — ×1.25
+  while you stand outside your own eye zone, and you hold one); `shaman.rt.great_ritual`
+  (`rulesOnCast` — every skill bursts each zone you own); `alchemist.py.conflagration`
+  (`rulesTick` aura — the overlap of any two of your fire pools ignites);
+  `warden.tk.briarheart` (`rulesTick` aura — each zone pulses a thorn nova, harder with
+  more up); `warden.vd.worldroot` (`rulesTick` aura — standing in any of your benefit
+  zones heals you as if standing in all of them).
+- **B-1 remainder**: `duelist.bm.thousand_cuts` (`rulesOnHit` — a hit on a 5+ stack bleed
+  deals every remaining tick at once, then spends the stack down);
+  `duelist.hybrid.red_contract` (`rulesTick` — a marked target's bleed timer is held
+  full); `warlock.co.total_corruption` (`rulesTick` — a hex that reaches 3 stacks stops
+  decaying; the "double for detonations" half waits on a detonation seam).
+- Still out of B-1: `corsair.cm.harpooner` (Hookshot tether — deferred with B-4).
+
+**Mutation-only Mythics — no engine work, verified against their `mutations`:**
+`lancer.mythic.comet_vanguard`, `swordsman.mythic.sword_saint`,
+`ranger.mythic.winters_quarry`, `duelist.mythic.the_last_word`, `bard.mythic.the_symphony`
+— each ships a `mutate` that already does the mechanical change; the `rule` string is a
+label. **Deferred to B-4** (need the summon layer): `corsair.mythic.dread_admiral`,
+`engineer.mythic.the_foundry`, `trickster.mythic.reality_killer`,
+`necromancer.mythic.soul_legion`, `warlock.mythic.the_reckoning` (mass-Doom detonation).
+
 ## Backlog (ordered)
 
-- **B-2 execute-threshold flips** — `ranger.ch.cull_the_weak`, `ranger.de.perfect_shot`,
-  `reaper.ex.final_sentence`, `assassin.sb.critical_weakness`, `assassin.bh.death_spiral`,
-  `warden.hm.apex_predator`, `corsair.hybrid.bounty_hunter`, `paladin.hybrid.holy_execution`.
-  One seam: `rulesOnHit` returns an `execute` flag when the target is below the rule's
-  threshold and carries the rule's required status; the hit path finishes the enemy.
-- **B-1 remainder** — `warlock.co.total_corruption` (status → permanent), the two Duelist
-  bleed-tick rewrites, `corsair.cm.harpooner` (after Hookshot tether lands in B-4).
-- **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form abilities).
 - **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
-  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`.
-- **B-5 zone keystones** — `alchemist.py.conflagration`, `warden.tk.briarheart`,
-  `warden.vd.worldroot`, `shaman.rt.great_ritual`, `stormcaller.eye.*`.
-- **B-6 Mythic persistent-state** — all 21 archetypes' "stops being a cooldown, becomes
-  a state" clause. Each: extend the ultimate's mutation with `follows`/`duration`, then a
-  rule in `rulesTick` that re-arms it while its condition holds.
+  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`,
+  `corsair.cm.harpooner` (Hookshot tether), plus the 5 summon/detonation Mythics
+  (`dread_admiral`, `the_foundry`, `reality_killer`, `soul_legion`, `the_reckoning`).
+  **Folded into Part 3** — it overlaps the concurrent minion work on `uat/combat-content`
+  and the Part 3 "Necromancer vs Engineer summon scaling" cluster; wiring each summoner's
+  keystones in the same pass that fixes its minion scaling avoids tuning them twice.
+- **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form
+  abilities gated on an Aspect/Site ability that isn't a rule).
 - **D** — the ~20 "pure passive" rules turned out to be mostly *conditional* passives
   (low-health flips, stand-still ramps, in-zone bonuses) rather than flat `mods`, so
   folding them in blind would move the arena numbers under the Part 3 tuning pass (and

@@ -296,6 +296,10 @@ export interface GroundZone extends Body {
   benefit?: "heal" | "shield" | "haste";
   /** Hero index the zone tracks, for a `follows` benefit zone (Bard's march, Shaman's totem). */
   follows?: number;
+  /** Hero index that cast the zone. Set for every hero-spawned zone (damage or benefit),
+   *  so the zone keystones (Conflagration, Briarheart, Worldroot, Great Ritual) can find
+   *  "the zones you own". Absent on boss lingers. */
+  owner?: number;
   /** Status id a zone re-applies to whoever stands in it each tick (a pure status zone). */
   status?: string;
   /**

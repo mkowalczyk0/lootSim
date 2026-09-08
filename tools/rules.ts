@@ -11,10 +11,11 @@
  * Run with `npm run rules`.
  */
 
-import { Dungeon } from "../src/game/dungeon";
+import { Dungeon, type Hero } from "../src/game/dungeon";
+import type { Element } from "../src/data/elements";
 import type { Enemy } from "../src/game/entities";
 import {
-  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesTick,
+  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesOnUltimate, rulesTick,
 } from "../src/game/rules";
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
@@ -32,6 +33,20 @@ function spawn(d: Dungeon, x: number, y: number): Enemy {
   e.spawnTimer = 0;
   d.enemies.push(e);
   return e;
+}
+
+/** Stage a ground zone the hero owns, the way a cast skill would. */
+function zone(
+  d: Dungeon, hero: Hero, x: number, y: number, radius: number,
+  element: Element, benefit?: "heal",
+): void {
+  d.ground.push({
+    x, y, px: x, py: y, radius, element,
+    damage: 0, remaining: 999, tickTimer: 0.5,
+    hitsPlayer: false, hitsEnemies: !benefit, color: "#ffffff",
+    owner: hero.index,
+    ...(benefit ? { benefit } : {}),
+  });
 }
 
 let failures = 0;
@@ -175,6 +190,153 @@ section("stance / form keystones");
   if (souls) souls.value = 20;
   const out = rulesOnDamageTaken(d, hero, hero.player.health + 999);
   check("Deathless Form negates a downing hit and spends Souls", out === 0 && !!souls && souls.value <= 12, `out=${out} souls=${souls?.value}`);
+}
+
+// --- B-2: execute-threshold keystones finish a wounded target ---------
+
+section("execute-threshold keystones");
+{
+  const d = dungeonWith("ranger", ["Cold Hunt"]);
+  const hero = d.localHero;
+  const low = spawn(d, 120, 120);
+  low.health = low.maxHealth * 0.2;
+  low.sc.apply("quarry", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const rr = rulesOnHit(d, hero, low, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 1 });
+  check("Cull the Weak inflates a tiny hit into a kill on a quarried low target", rr.damageMult * 1 >= low.health, `x${rr.damageMult.toFixed(1)} vs ${low.health.toFixed(0)}`);
+  check("Cull the Weak forces the crit", rr.forceCrit);
+}
+{
+  const d = dungeonWith("ranger", ["Cold Hunt"]);
+  const hero = d.localHero;
+  const healthy = spawn(d, 120, 120);
+  healthy.health = healthy.maxHealth * 0.8; // above the 30% window
+  healthy.sc.apply("quarry", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const rr = rulesOnHit(d, hero, healthy, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 100 });
+  check("Cull the Weak leaves a healthy quarry alone", rr.damageMult === 1 && !rr.forceCrit);
+}
+
+// --- B-6: Mythic Archetype "the ultimate becomes a state" ------------
+
+section("Mythic persistent-state windows");
+{
+  const d = dungeonWith("juggernaut", ["Fortress", "Sentinel", "Iron Tyrant"]);
+  const hero = d.localHero;
+  check(
+    "the three required paths unlock juggernaut.mythic.the_keep",
+    hero.player.build.rules.has("juggernaut.mythic.the_keep"),
+    [...hero.player.build.rules].filter((r) => r.includes("mythic")).join(", "),
+  );
+  check("no window before the ultimate", hero.ruleState.mythicUntil === 0);
+  rulesOnUltimate(d, hero);
+  check("casting the ultimate opens the window", hero.ruleState.mythicRule === "juggernaut.mythic.the_keep" && hero.ruleState.mythicUntil > d.now());
+  const out = rulesOnDamageTaken(d, hero, hero.player.health + 999);
+  check("The Keep holds you at 1 HP while the window is open", out === hero.player.health - 1, `${out}`);
+}
+{
+  // A class with no wired Mythic never opens a window.
+  const d = dungeonWith("swordsman", ["Master of Arms"]);
+  const hero = d.localHero;
+  rulesOnUltimate(d, hero);
+  check("a class with no persistent-state Mythic opens no window", hero.ruleState.mythicUntil === 0);
+}
+
+// --- B-1 remainder: bleed cash-in + status permanence --------------------
+
+section("B-1 remainder — Thousand Cuts / Red Contract / Total Corruption");
+{
+  const d = dungeonWith("duelist", ["Bleedmaster"]);
+  const hero = d.localHero;
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  for (let i = 0; i < 6; i++) {
+    e.sc.apply("bleed", { stacks: 1, hitDamage: 40, sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  }
+  const before = e.health;
+  rulesOnHit(d, hero, e, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 10 });
+  check("Thousand Cuts cashes in a 5+ stack bleed as a burst", before - e.health > 40, `${(before - e.health).toFixed(0)}`);
+  check("Thousand Cuts spends the bleed timer down", (e.sc.get("bleed")?.remaining ?? 9) <= 1.01, `${e.sc.get("bleed")?.remaining}`);
+}
+{
+  const d = dungeonWith("duelist", ["Blood Duel", "Bleedmaster"]);
+  const hero = d.localHero;
+  const guarded = hero.player.build.rules.has("duelist.hybrid.red_contract");
+  check("Blood Duel + Bleedmaster unlocks duelist.hybrid.red_contract", guarded);
+  const e = spawn(d, hero.avatar.x + 60, hero.avatar.y);
+  e.sc.apply("mark", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  e.sc.apply("bleed", { stacks: 2, hitDamage: 20, sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const bleed = e.sc.get("bleed")!;
+  bleed.remaining = 0.4;
+  rulesTick(d, hero, 0.016);
+  check("Red Contract keeps a marked target's bleed from expiring", bleed.remaining >= 4, `${bleed.remaining}`);
+}
+{
+  const d = dungeonWith("warlock", ["Corruptor"]);
+  const hero = d.localHero;
+  const e = spawn(d, hero.avatar.x + 60, hero.avatar.y);
+  e.sc.apply("hex", { stacks: 3, hitDamage: 20, sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  const hex = e.sc.get("hex")!;
+  hex.remaining = 0.5;
+  rulesTick(d, hero, 0.016);
+  check("Total Corruption makes a 3-stack hex permanent", hex.remaining >= 9, `${hex.remaining}`);
+}
+
+// --- B-5: zone keystones read the hero's own ground zones ----------------
+
+section("zone keystones");
+{
+  const d = dungeonWith("stormcaller", ["Eye"]);
+  const hero = d.localHero;
+  const e = spawn(d, hero.avatar.x + 300, hero.avatar.y);
+  zone(d, hero, hero.avatar.x + 2000, hero.avatar.y, 100, "lightning");
+  const outside = rulesOnHit(d, hero, e, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 50 });
+  check("Outer Bands empowers a hit made outside your eye zone", outside.damageMult > 1.2, `x${outside.damageMult}`);
+  d.ground.length = 0;
+  zone(d, hero, hero.avatar.x, hero.avatar.y, 200, "lightning");
+  const inside = rulesOnHit(d, hero, e, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 50 });
+  check("Outer Bands gives nothing while you stand in the eye", inside.damageMult === 1, `x${inside.damageMult}`);
+}
+{
+  const d = dungeonWith("shaman", ["Ritualist"]);
+  const hero = d.localHero;
+  const e = spawn(d, 400, 400);
+  zone(d, hero, 400, 400, 120, "fire");
+  const before = e.health;
+  const ab = hero.player.pilotClass!.abilities.find((a) => !a.isUltimate)!;
+  rulesOnCast(d, hero, ab);
+  check("Great Ritual bursts a zone you own on every cast", e.health < before, `${e.health.toFixed(0)} / ${before.toFixed(0)}`);
+}
+{
+  const d = dungeonWith("warden", ["Thornkeeper"]);
+  const hero = d.localHero;
+  const e = spawn(d, 400, 400);
+  zone(d, hero, 400, 400, 100, "nature");
+  const before = e.health;
+  rulesTick(d, hero, 0.016);
+  check("Briarheart pulses a thorn nova from a zone you own", e.health < before, `${e.health.toFixed(0)} / ${before.toFixed(0)}`);
+}
+{
+  const d = dungeonWith("alchemist", ["Pyromancer"]);
+  const hero = d.localHero;
+  const e = spawn(d, 400, 400);
+  zone(d, hero, 360, 400, 80, "fire");
+  zone(d, hero, 440, 400, 80, "fire");
+  const before = e.health;
+  rulesTick(d, hero, 0.016);
+  check("Conflagration detonates where two of your fire pools overlap", e.health < before, `${e.health.toFixed(0)} / ${before.toFixed(0)}`);
+  d.ground.length = 0;
+  zone(d, hero, 400, 400, 80, "fire");
+  e.health = e.maxHealth;
+  rulesTick(d, hero, 0.5);
+  check("Conflagration needs two overlapping zones", e.health === e.maxHealth, `${e.health.toFixed(0)}`);
+}
+{
+  const d = dungeonWith("warden", ["Verdant"]);
+  const hero = d.localHero;
+  hero.player.health = hero.player.maxHealth * 0.5;
+  zone(d, hero, hero.avatar.x, hero.avatar.y, 150, "physical", "heal");
+  zone(d, hero, hero.avatar.x + 5000, hero.avatar.y, 150, "physical", "heal");
+  const before = hero.player.health;
+  rulesTick(d, hero, 0.016);
+  check("Worldroot heals you for the linked zones you are not standing in", hero.player.health > before, `${hero.player.health.toFixed(0)} / ${before.toFixed(0)}`);
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);
