@@ -29,6 +29,35 @@
 
 import type { LoadedTileset } from "./atlas/index";
 import type { Level } from "../game/level";
+import { gradeSheet } from "./grade";
+
+const gradedCache = new Map<string, LoadedTileset>();
+
+/**
+ * The tileset as the floor actually stamps it: the committed sheet run through
+ * the floor grade (`render/grade.ts`) with this biome's tint, so every set lands
+ * in the Citadel deck's muted register whatever PixelLab handed back. Graded once
+ * per (tileset, tint) and cached — the sheet is 64px, so this is nothing, but a
+ * floor is re-baked every time a level starts.
+ */
+export function gradedTileset(id: string, ts: LoadedTileset, tint: string): LoadedTileset {
+  const key = `${id}|${tint}`;
+  const hit = gradedCache.get(key);
+  if (hit) return hit;
+  const { width, height } = ts.canvas;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(ts.canvas, 0, 0);
+  const img = ctx.getImageData(0, 0, width, height);
+  gradeSheet(img.data, width, height, ts.tile, ts.boxes, tint);
+  ctx.putImageData(img, 0, 0);
+  const graded: LoadedTileset = { canvas, tile: ts.tile, boxes: ts.boxes };
+  gradedCache.set(key, graded);
+  return graded;
+}
 
 /** World units a single sheet tile is stamped across — 2× the 16-texel source. */
 const STAMP = 32;

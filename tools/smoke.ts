@@ -31,6 +31,11 @@ import {
   cosmeticProblems,
 } from "../src/data/cosmetics";
 import { BOSS_GRIDS, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems } from "../src/render/pixels";
+import { FLOOR_GRADE, gradeSheet, tileLuminance } from "../src/render/grade";
+import { TILESETS } from "../src/render/atlas/manifest";
+import { BIOMES } from "../src/data/biomes";
+import { decodePng } from "./png";
+import { readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
 import { Rng } from "../src/core/rng";
@@ -1538,6 +1543,65 @@ console.log("\n=== art ===");
   const perSlot = COSMETIC_SLOTS.map((slot) =>
     `${slot}=${COSMETICS.filter((c) => c.slot === slot).length}`).join(" ");
   console.log(`  ${COSMETICS.length} cosmetics — ${perSlot}`);
+}
+
+/**
+ * Every floor tileset, measured the way the game shows it. §17.7 of the art style
+ * guide makes floor/wall contrast a gameplay requirement — walkable vs. solid has
+ * to read before anything else — and the same section wants nothing louder than
+ * the Citadel deck. Both used to be judged by eye in a playtest. Here each
+ * committed sheet is decoded, run through the exact `gradeSheet` the renderer
+ * applies (with the tint of every biome that uses it), and the all-floor and
+ * all-rock tiles are compared: their mean luminance has to sit well apart, and
+ * neither may be brighter than the deck's own pale flagstone. Per-tile spread is
+ * reported too — that's the "too busy" number, and the grade is meant to keep it
+ * in the single digits.
+ */
+console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wrong) ===");
+{
+  const MIN_DELTA = 28;   // floor vs. wall mean luminance, after the grade
+  const MAX_MEAN = 150;   // nothing brighter than the deck's flagstone
+  const MAX_SPREAD = 14;  // internal texture, after the grade
+  const tintsFor = (id: string): string[] => {
+    const tints = BIOMES.filter((b) => b.tileset === id).map((b) => b.tint);
+    for (const p of PLANETS) if (p.biome.tileset === id) tints.push(p.biome.tint);
+    // The Abyss overrides the biome tileset but keeps the depth biome's tint —
+    // so it has to hold up under every Delve tint.
+    if (tints.length === 0) tints.push(...BIOMES.map((b) => b.tint));
+    return tints;
+  };
+  let worstDelta = Infinity, worstSpread = 0, brightest = 0;
+  const bad: string[] = [];
+  for (const id of Object.keys(TILESETS)) {
+    const dir = "src/render/atlas/tilesets";
+    const png = decodePng(readFileSync(`${dir}/${id}.png`));
+    const layout = JSON.parse(readFileSync(`${dir}/${id}.json`, "utf8")) as { tile: number; boxes: [number, number][] };
+    const spec = TILESETS[id]!;
+    check(`${id} is the ${spec.w}x${spec.h} sheet the manifest promises`,
+      png.width === spec.w && png.height === spec.h && layout.tile === spec.tile,
+      `${png.width}x${png.height}, tile ${layout.tile}`);
+    for (const tint of tintsFor(id)) {
+      const data = new Uint8Array(png.data);
+      gradeSheet(data, png.width, png.height, layout.tile, layout.boxes, tint, FLOOR_GRADE);
+      const floor = tileLuminance(data, png.width, layout.tile, layout.boxes[0]!);
+      const rock = tileLuminance(data, png.width, layout.tile, layout.boxes[15]!);
+      const delta = Math.abs(floor.mean - rock.mean);
+      const spread = Math.max(floor.spread, rock.spread);
+      const peak = Math.max(floor.mean, rock.mean);
+      worstDelta = Math.min(worstDelta, delta);
+      worstSpread = Math.max(worstSpread, spread);
+      brightest = Math.max(brightest, peak);
+      if (delta < MIN_DELTA || peak > MAX_MEAN || spread > MAX_SPREAD) {
+        bad.push(`${id}@${tint}: floor L${floor.mean.toFixed(0)}±${floor.spread.toFixed(0)} rock L${rock.mean.toFixed(0)}±${rock.spread.toFixed(0)}`);
+      }
+    }
+  }
+  check(`floor and wall stay at least ${MIN_DELTA} luminance apart after the grade`, worstDelta >= MIN_DELTA,
+    `worst ${worstDelta.toFixed(0)}`);
+  check(`no graded floor or wall is brighter than L${MAX_MEAN}`, brightest <= MAX_MEAN, `brightest ${brightest.toFixed(0)}`);
+  check(`no graded tile is busier than ±${MAX_SPREAD}`, worstSpread <= MAX_SPREAD, `worst ±${worstSpread.toFixed(0)}`);
+  if (bad.length) console.log(`  offenders: ${bad.slice(0, 6).join("; ")}`);
+  console.log(`  ${Object.keys(TILESETS).length} tilesets — worst delta ${worstDelta.toFixed(0)}, brightest L${brightest.toFixed(0)}, busiest ±${worstSpread.toFixed(0)}`);
 }
 
 console.log("\n=== gems and the wardrobe ===");

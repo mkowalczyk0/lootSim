@@ -2,7 +2,7 @@ import { GameLoop } from "./core/loop";
 import { Input } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
-import { delveConfig, type RunConfig, type RunModeId } from "./data/modes";
+import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { RARITY_COLORS } from "./data/rarity";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
@@ -539,14 +539,19 @@ preloadArt()
   .catch((err) => console.error(err))
   .finally(() => {
     // Dev-only shortcut for art review: `?dive=8` drops straight onto a Delve floor
-    // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor, instead of
+    // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor, and
+    // `?rift=abyss&tier=2` (or `hoard`) onto a rift's first floor, instead of
     // walking the hub.
     const params = import.meta.env.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
     const devDive = params.get("dive");
     const devPlanet = params.get("planet");
+    const devRift = params.get("rift");
     if (devPlanet && PLANETS_BY_ID[devPlanet]) {
       const tier = Math.max(1, Number(params.get("tier")) || 1);
       enterDungeon(planetConfig(PLANETS_BY_ID[devPlanet]!, tier, 1, state.challengerTier));
+    } else if (devRift && devRift in MODES && MODES[devRift as RunModeId].isRift) {
+      const tier = Math.max(1, Number(params.get("tier")) || 1);
+      enterDungeon(riftConfig(devRift as RunModeId, tier, 1, state.challengerTier));
     } else if (devDive) {
       enterDungeon(delveConfig(Math.max(1, Number(devDive) || 1), state.challengerTier));
     } else {

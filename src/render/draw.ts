@@ -10,7 +10,7 @@ import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
 import { ATLAS } from "./atlas/manifest";
-import { paintTilemap } from "./tilemap";
+import { gradedTileset, paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
   tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
@@ -848,10 +848,15 @@ function bakeFloor(
   // A run mode (the Abyssal Rift) can override the biome's own tileset; fall back
   // to the biome's if the override isn't loaded.
   const tilesetId = tilesetOverride ?? biome.tileset;
-  const ts = tilesetId
+  const rawTs = tilesetId
     ? atlasTileset(tilesetId) ?? (biome.tileset ? atlasTileset(biome.tileset) : null)
     : null;
-  if (ts) {
+  if (rawTs && tilesetId) {
+    // The sheet is never stamped as committed: it goes through the floor grade
+    // first (flatten, desaturate, biome tint, contrast — `render/grade.ts`), which
+    // is what keeps a dungeon floor in the same calm mid-grey register as the
+    // Citadel deck instead of shouting under everything standing on it.
+    const ts = gradedTileset(tilesetId, rawTs, biome.tint);
     // The biome's own floor tint behind the stamp, so any half-transparent tile
     // edge or unreachable gap reads as dim floor rather than a hole to the void —
     // a flat black ground made every room feel carved out of a solid block.

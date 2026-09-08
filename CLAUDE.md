@@ -56,7 +56,11 @@ to end (kills and a mined node both have to pay in the planet's own material, an
 floor has to spawn that planet's own reskinned encounter), crafts an item against a
 stocked materials bag, checks the Challenger dial actually multiplies danger, and walks
 the hub's station layout headlessly, since `game/hub.ts` is DOM-free exactly like the
-rest of `game/`.
+rest of `game/`. It also decodes every committed floor tileset (`tools/png.ts`, a
+dependency-free PNG reader), runs it through the same grade the renderer applies
+(`render/grade.ts`) and fails if floor and wall stop being separable, if either is
+brighter than the Citadel deck, or if a tile is busier than the deck — see
+`docs/art-style-guide.md` §17.7.
 
 Co-op is in there too, and for the same reason: a party floor is a normal floor with more
 than one `Hero` on it, so the test plays one with two bots, checks XP is shared while loot

@@ -651,7 +651,44 @@ hand-arted 16px stone.
 - **Contrast is a gameplay requirement.** Floor and wall must be instantly separable at
   speed — the player reads *walkable vs. not* from this before anything else. A moody
   low-contrast set that looks right in a 64px preview but turns to mush at game zoom is
-  wrong. Push the wall mass light *or* dark, but push it clear of the floor.
+  wrong. Push the wall mass light *or* dark, but push it clear of the floor. This is now
+  **measured, not eyeballed**: `npm run smoke` decodes every committed sheet, runs it
+  through the same grade the renderer does, and fails if the all-floor and all-rock
+  tiles land closer than 28 luminance apart, if either is brighter than L150, or if a
+  tile's internal spread is over ±14.
+- **Author to the Citadel deck, in prompt and in pitch.** `hub.citadel-deck` is the
+  reference for palette *and* pixel density: calm, muted, mid-grey stone, two or three
+  flat shapes per tile, thin seams, no grain. The prompt recipe that gets there —
+  `detail: "low detail"`, `shading: "flat shading"`, `outline: "selective outline"`,
+  `text_guidance_scale` 9–10, and terrain text along the lines of *"large flat square
+  slabs, matte, only thin darker mortar seams, no cracks, no pebbles, no pattern, heavily
+  desaturated, low contrast"* for the floor and *"plain blocks, two or three big shapes,
+  flat, muted, no bright white, no highlights, low detail"* for the wall. PixelLab
+  biases hard toward a light floor under a dark wall and will quietly ignore "dark
+  floor"; **invert the roles** — make `upper` (the wall) the *lighter* terrain — to get
+  a dark floor. Reroll anything that comes back with a repeating cobble bump, a speckled
+  wall, or stray glyph-like marks on the uniform floor tile: the two uniform tiles are
+  what a whole room is made of.
+- **Every sheet goes through the floor grade** (`render/grade.ts`, applied by
+  `gradedTileset` in `render/tilemap.ts` before stamping): each pixel is flattened toward
+  its terrain's mean colour (55%), desaturated by half, blended 30% toward the biome's
+  `tint`, and highlights above L100 rolled off to 55% slope (a shoulder, not a global
+  contrast cut — a dark floor under a mid-grey wall keeps all of its separation; only
+  a stark white wall comes down). The flatten step is what kills
+  busy internal texture without a blur — a crack or a highlight collapses toward its
+  slab's colour while the floor↔wall edge, a jump between the two means, keeps its
+  contrast. The grade is why a set that comes back a shade loud still ships; it is
+  *not* a licence to skip the prompt recipe above, because the grade cannot remove a
+  pattern, only quieten it.
+- **Pitch and mask.** A 16-texel sheet tile is stamped across a **32-unit** cell — a
+  clean 2× nearest-neighbour blow-up that puts the floor on the same on-screen pixel
+  grid as the deck, the hero and the props (1:1 stamping read finer and "zoomed out"
+  next to everything on it). The rock mask samples the level's **`blocked`** grid at
+  each cell centre — the body-inflated collision volume — so painted stone is always a
+  subset of where the player is already stopped; a raw-wall-rect coverage test at this
+  pitch painted stone over walkable floor. Behind the stamp is the biome tint (not flat
+  black) under a faint vignette, so a room reads as low-lit, not as a solid block someone
+  carved a path through.
 - **Palette** still comes from §2 / §2.4 — ash + bone + `ink` seams for the Delve's
   shallow circles, each circle shifting off the Hell base per §5; the six Reliquary
   sectors are warm-ash `#33241d` pulled toward their element per §8.2; the Abyss is
@@ -660,11 +697,6 @@ hand-arted 16px stone.
 - **Boss floors** inherit their depth's tileset automatically (a boss arena is still a
   `Level` with a `biome`), and that's fine — the single big room just gets stamped with
   the same stone.
-- **The walls render at their true footprint.** `tilemap.ts` stamps the raw wall
-  rectangles, not the body-radius-inflated `blocked` nav grid — the inflated grid made
-  every corridor look a tile narrower than it plays. Behind the stamp is the biome tint
-  (not flat black) under a faint vignette, so a room reads as low-lit, not as a solid
-  block someone carved a path through.
 
 ### 17.7b Floor dressing (selling the theme)
 
