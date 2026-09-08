@@ -81,36 +81,30 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 
 Things the audit turned up that are nobody's assigned ticket and need a design call.
 
-**The endgame sits far beyond the measured frontier.** Measured on master 2026-09-08:
-a sharp bot (dodges 55%) averages **deepest depth 10.3** over 20 dives, best single seed
-16; the reckless bot averages 9.1. The Delve's authored world ends at depth 30 —
-`biomeFor` caps at its last biome, `bossFor` at its last encounter, and that encounter is
-titled "You should not have come this far." So the first real endgame goal (§13/§14, the
-Proving) sits at roughly three times anything the harness has ever reached.
+**Boss encounters and trash floors are on different curves.** Three independent
+measurements today, from three different directions, and together they are a finding
+rather than an artifact:
 
-That is not necessarily wrong — the smoke campaign plays 20 dives on a *fresh* character
-and measures the early curve, not an account with a filled tree, universal allocation,
-crafted gear and rift-farmed drops.
+- Only **3 of 8 classes** could beat depth 30 at level 60 in legendary gear — and that
+  holds for the ordinary depth-30 floor exactly as much as for the new Proving, so it is
+  not the new content. A level-34 Elite-geared character cannot clear depth 30 at all.
+- Characters who clear **trash floors at depth 12–21** comfortably go **0/4 against a
+  boss at any of those same depths**. Against the Delve's own ladder: depth-10 boss
+  2/12, depth-15 boss 0/4, for characters who handle equivalent trash without trouble.
+- The sharp campaign averages deepest depth **11.8** over 20 dives (reckless 9.4), so
+  the frontier a real character reaches sits far below where the authored world ends.
 
-**Partly answered, 2026-09-08, by the §13 work.** `tools/smoke.ts`'s Proving section now
-builds the account-level character that was missing: level 60, class tree filled, universal
-pool spent, thirty Legendary chests worn, gear rolled at the bottom. What it found:
+So the question is not "is the endgame reachable." It is: **bosses and trash scale apart
+across the whole depth range — is that intended, and what level and gear does the curve
+mean for depth 30?** This rhymes with `npm run builds` being red for a known set of
+classes pending owner tuning calls.
 
-- Depth 30 **is** clearable by such a character — 6/6 on the Proving.
-- A level-34 Elite-geared character cannot clear depth 30 in *either* flavour (0/4, boss
-  left above 94%), so the gate is real and steep.
-- **Class power at depth 30 varies enormously.** Sampled across eight classes at level 60
-  with legendary gear, only three could beat depth 30 at all — and that holds for the
-  *ordinary* depth-30 floor as much as for the Proving, so it is a class-balance statement,
-  not an encounter one. It rhymes with `npm run builds` being red for a known set of
-  classes.
-
-So depth 30 is a stretch goal rather than an impossibility, and the remaining open question
-is narrower than it was: **what level and gear does the curve actually intend for depth 30,
-and why can most classes not get there at 60?** Still wants an owner call. Not tuned around
-inside the §13 ticket, deliberately — the fiction and the data both put the bottom at 30,
-and the completion gate is a banked clear, so the feature simply never fires for a character
-that cannot reach it.
+Nobody has been asked to tune around it and nobody should be until the owner sets the
+target. One mode-local workaround exists and is deliberately labelled as one: the
+Convergence draws its boss floor's depth from a separate, shallower band
+(`WEEKLY_BOSS_DEPTH_MIN/MAX`) rather than inheriting a wall it cannot fix. If boss
+difficulty is ever rebalanced globally, that split is the first thing that should
+collapse back into a single band.
 
 **The sharp-vs-reckless margin is thin.** The comparison assertion added after the Sept
 2026 inversion requires `sharp >= reckless + 1`; the live margin is **1.2** (10.3 vs 9.1).
