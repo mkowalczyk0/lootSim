@@ -209,24 +209,110 @@ folds into Cluster 2 below.
 
 ---
 
+## Cluster 2 — bottom-quartile damage with no identity to pay for it: Corsair + Engineer — **PROPOSED, awaiting go-ahead**
+
+Both are last-or-near-last on ST *and* AoE at every level and neither has a defensive /
+support / control census column that spikes to justify sitting there. This is the
+"legible 12-axis spread" failing in the other direction — a tank at the damage floor is
+correct; a skirmisher and a summoner at the damage floor with no compensating axis is not.
+
+B-4 is now wired (Batch 6, `docs/rule-coverage.md`), so the keystones are no longer inert —
+but `tools/arena.ts`'s `geared()` allocates **no tree**, so the 12-axis table measures the
+bare class kit either way. The numbers below are the bare-kit floor the tuning has to lift;
+the keystones then build on top of a kit that isn't starting underwater.
+
+### Corsair — ST 458 (20th of 21), AoE 455 / 76 per-tgt (21st), burst3 1775 (19th)
+
+**Imbalance.** Corsair is a single-target skirmisher — the same profile as Duelist
+(ST 723 / burst 2313 / AoE 716). It sits ~35–40% below Duelist on every damage axis while
+its identity census (`heal 0 / shld 0 / mit 0 / mob 2 / ctrl 1 / sup 2 / sum 1 / exec 0`)
+is *also* thinner than Duelist's (which additionally has the `one_opponent` near-immunity
+keystone). It is strictly dominated: a weaker duelist with a weaker toolkit.
+
+Root causes, all data:
+- Base block (`src/data/classes.ts` `corsair.base`) carries **no crit stat** —
+  `attackSpeed: 0.06, moveSpeed: 0.07, lifeOnHit: 1`. Every other blade skirmisher
+  (duelist, assassin, swordsman) starts with `critChance`/`critDamage`/`attackSpeed`.
+- The two single-target damage skills roll low multipliers:
+  `corsair.boarding_cut` `1.3` + `1.6`-on-hooked, `corsair.ricochet_shot` `1.1`.
+- Four of the ten abilities (`hookshot`, `chain_drag`, `dirty_trick`, `plunder`) deal
+  **zero** damage, so `autoSlotNewAbilities` fills the arena's four skill slots with a
+  lower average damage-per-slot than a class whose kit is mostly attacks.
+
+**Proposed change** (data only — `src/data/classes.ts`, `src/progression/corsair.ts`):
+
+| file · field | before | after | why |
+|---|--:|--:|---|
+| `classes.ts` `corsair.base.attackSpeed` | 0.06 | **0.09** | brings the basic-attack cadence to skirmisher tier |
+| `classes.ts` `corsair.base` add `critChance` | — | **0.06** | a pistol-and-cutlass duelist should crit; matches the archetype |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` base hit | 1.3 | **1.7** | the bread-and-butter melee, and it's gated behind a Hookshot setup |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` hooked bonus | 1.6 | **2.1** | rewards the hook→cut combo the class is built around |
+| `corsair.ts` `CORSAIR_RICOCHET_SHOT` base | 1.1 | **1.5** | the ranged single-target option |
+| `corsair.ts` `CORSAIR_GRAPPLE_SWING` damage | 1.4 | **1.8** | the mobility-attack |
+
+**Left alone on purpose:** `corsair.powder_keg` (2.4) and the AoE column generally — a
+low AoE number *is* the single-target-duelist identity, same call as Duelist (716) and the
+reason not to touch either one's AoE.
+
+**Projected:** ST 458 → ~640–680 (Duelist tier, correct for the shared profile), AoE
+roughly flat (~500), burst3 → ~2200. Identity spread unchanged.
+
+### Engineer — ST 395 (21st), AoE 1384 (21st), burst3 1330 (21st), per-tgt 231
+
+**Imbalance.** Engineer is a summoner (`sum 5`, tied for the roster's highest) and is
+*supposed* to deal little personally — that part is correct and stays. What is not
+correct: it is last on **AoE**, where the other `sum 5` class (Necromancer) sits at 2467,
+and last on burst and per-target too, with only `shld 2` besides `sum 5` to show for it.
+A turret-and-mortar summoner filling a room should read as a mid-pack AoE class; right now
+the constructs simply don't put enough on the floor. It also took the least damage of any
+class (`dmg.in 4031`) — it hangs back correctly, but it's paying the squishy-caster
+durability price of a glass cannon while dealing a tank's damage.
+
+Root causes, all data (the L3→L50 *curve* is healthy at 5.5× — Cluster 3 — so this is an
+absolute-level fix via per-ability numbers and the base block, **not** `MINION_DEFAULT_INHERIT`
+or the attack+spell blend, both of which stay retracted):
+- `engineer.auto_turret` summons **one** turret at `inheritPower 0.6`.
+- `engineer.mortar_pod` zone `base 1.4`, `inheritPower 0.7`.
+- `engineer.shock_mine` `base 1.0`; `engineer.remote_detonation` `2.4` + `2.0`-on-tagged.
+- `classes.ts` `engineer.base.attack` **8** with `growth.attack` **1.9** — lowest base
+  *and* lowest growth on the board, so both the Engineer and everything it builds (turrets
+  inherit owner `attackDamage`) start from the lowest number in the game.
+
+**Proposed change** (data only — `src/data/classes.ts`, `src/progression/engineer.ts`):
+
+| file · field | before | after | why |
+|---|--:|--:|---|
+| `classes.ts` `engineer.base.attack` | 8 | **9** | lifts the Engineer and every construct at once; still bottom-3 |
+| `classes.ts` `engineer.growth.attack` | 1.9 | **2.05** | the construct floor shouldn't fall further behind with level |
+| `engineer.ts` `ENGINEER_AUTO_TURRET` `count` | 1 | **2** | two turrets is the "there is infrastructure doing it instead" fantasy |
+| `engineer.ts` `ENGINEER_AUTO_TURRET` `inheritPower` | 0.6 | **0.72** | per-turret bite |
+| `engineer.ts` `ENGINEER_AUTO_TURRET` `cooldown` | 6 | **7** | pay for the extra body |
+| `engineer.ts` `ENGINEER_MORTAR_POD` zone `base` | 1.4 | **1.9** | the sustained-AoE anchor |
+| `engineer.ts` `ENGINEER_MORTAR_POD` `inheritPower` | 0.7 | **0.8** | — |
+| `engineer.ts` `ENGINEER_SHOCK_MINE` damage `base` | 1.0 | **1.5** | the burst-AoE / CC option |
+| `engineer.ts` `ENGINEER_REMOTE_DETONATION` base | 2.4 | **3.0** | the payoff button |
+| `engineer.ts` `ENGINEER_REMOTE_DETONATION` tagged follow-up | 2.0 | **2.6** | rewards the Tagged setup |
+
+**Left alone on purpose:** personal basic-attack multipliers and every non-construct
+skill — the Engineer *should* stay near the ST floor (a summoner's ST identity). The bump
+routes through the constructs, not the Engineer's own swing.
+
+**Projected:** personal ST 395 → ~470–520 (still bottom-3, correct), AoE 1384 → ~2100–2400
+(Necromancer tier), burst3 → ~1900. `dmg.in` unchanged (no defensive change).
+
+### Verification plan (run after the owner approves, record deltas here)
+
+- `npm run arena` — full 12-axis re-read. Assert: corsair ST lands 600–720 and AoE stays
+  under ~650; engineer AoE lands 2000–2500 and personal ST stays under ~550; **no other
+  class's row moves** (every edit is class-file-local or a per-class `classes.ts` block).
+- `npm test` green (check + vocab + prog + classes + roster + rules + smoke).
+- `npm run smoke` — campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman).
+- `npm run roster` — data-shape + anti-overlap gates still pass.
+
+---
+
 ## Backlog (evidence gathered, proposals pending)
 
-- **Cluster 2 — bottom-quartile damage with no identity to pay for it: Corsair + Engineer.**
-  Both are last-or-near-last on ST *and* AoE at every level and neither has a defensive /
-  support / control column that spikes to justify it:
-  - **Corsair** — ST 458, AoE 455 / 76 per-tgt, census `0/0/0/2/1/2/1/0`. Fantasy is
-    reach + skirmish. Curve is fine (5.3× ST L3→L50); the absolute numbers are just low.
-  - **Engineer** — ST 395, AoE 1384 / 231 per-tgt, census `heal 0 / shld 2 / … / sum 5`.
-    Stage 11 cut its ultimate-generation loop and nothing replaced the output; it now
-    reads as the weakest class on the board. Curve is fine (5.5×).
-  Both were being measured with part of their kit switched off. **B-4 is now wired
-  (Batch 6, `docs/rule-coverage.md`)**: Engineer's `automated_army`, `artillery_platform`,
-  `auto_repair`, `self_repairing_workshop`, `chain_detonation`, `mobile_armory`, the
-  `killbox` / `recursive_explosives` / `field_workshop` hybrids and `the_foundry`;
-  Corsair's `ghost_crew` and `dread_admiral`. Still inert for these two: `corsair.cm.harpooner`
-  (tether primitive, its own follow-up). **Next: re-run `npm run arena` for corsair +
-  engineer with the keystone paths allocated, then propose the numbers pass against the
-  kit that's now online.**
 - **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** `npm run rules` now
   proves ~40 of the wired rules do something; extend it to assert every hybrid/keystone/
   archetype changes a number or an effect list the harness can see. Feeds `npm run
