@@ -24,6 +24,7 @@ import {
 } from "../progression/universal";
 import { itemMods, requiredLevel, zeroStats, type Item, type Stats } from "./item";
 import { NAMED_BY_ID } from "../data/named";
+import { RELIC_SLOTS, relicSocketBlocker, wornRelicEffects } from "../data/relics";
 
 /** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
 const LEVEL_UP_HEAL = 0.6;
@@ -112,6 +113,13 @@ export class Player {
    * The point *pool* it spends is account-wide; see `GameState.universalPoints`.
    */
   universalAllocated: string[] = [];
+  /**
+   * The three relic / artifact slots (UAT §19), by definition id — `data/relics.ts`. Per
+   * character, out of the account-wide collection on `GameState.relics`, and on the
+   * co-op wire with the rest of the sheet so the host computes a remote hero's build
+   * with the relics they're actually wearing. `null` is an empty slot.
+   */
+  relics: (string | null)[] = Array.from({ length: RELIC_SLOTS }, () => null);
   deepestDepth = 0;
   /**
    * The Legend is Complete — this class beat its own Proving at the bottom of the Delve
@@ -187,6 +195,9 @@ export class Player {
       const def = named ? NAMED_BY_ID[named] : undefined;
       if (def?.effects?.length) foldEffects(def.effects as readonly NodeEffect[], "gear", build);
     }
+    // A worn relic is the same thing with no item under it (`data/relics.ts`): its whole
+    // payload is effects, `mods` included, and it folds through the same door.
+    foldEffects(wornRelicEffects(this.relics), "relic", build);
     this.cachedBuild = build;
     return this.cachedBuild;
   }
@@ -674,6 +685,29 @@ export class Player {
     this.refresh();
     this.health = Math.min(this.health, this.maxHealth);
     this.mana = Math.min(this.mana, this.maxMana);
+    return prev;
+  }
+
+  /** Why `id` can't go in relic slot `slot`, or null when it can. The one rule, from `data/relics.ts`. */
+  relicBlocker(slot: number, id: string): string | null {
+    return relicSocketBlocker(this.relics, slot, id);
+  }
+
+  /** Puts a relic in a slot. Returns what was there. Refuses (returns undefined) when the rule says no. */
+  socketRelic(slot: number, id: string): string | null | undefined {
+    if (this.relicBlocker(slot, id) !== null) return undefined;
+    const prev = this.relics[slot] ?? null;
+    this.relics[slot] = id;
+    this.refresh();
+    this.health = Math.min(this.health, this.maxHealth);
+    return prev;
+  }
+
+  unsocketRelic(slot: number): string | null {
+    const prev = this.relics[slot] ?? null;
+    if (slot >= 0 && slot < RELIC_SLOTS) this.relics[slot] = null;
+    this.refresh();
+    this.health = Math.min(this.health, this.maxHealth);
     return prev;
   }
 

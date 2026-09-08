@@ -131,6 +131,11 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // rarity, so art can land after the item does. Sizes follow the icon rows above — the
   // UI normalises by width through pixelImageFit, so `worldScale` is only the floor size.
   // (No rows yet: every shipped named item is on the fallback. Add art here + a PNG.)
+
+  // --- relics and artifacts (UAT §19) --- one row per `RelicDef.art`, by convention
+  // `relic.<def id>`, PNG under `src/render/atlas/relics/`. Same fallback contract as
+  // named items: `relicArt` draws the gem glyph tinted by tier until a row lands here.
+  // (No rows yet.)
 };
 
 /**

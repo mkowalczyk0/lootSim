@@ -123,7 +123,7 @@ export type PartyMessage =
   /** Host → all (or one, when it's personal): renderer events. */
   | { k: "fx"; e: unknown[] }
   /** Host → one: an item you picked up, and XP you earned. Reliable, unlike a snapshot. */
-  | { k: "got"; item?: unknown; xp?: number }
+  | { k: "got"; item?: unknown; xp?: number; relic?: string }
   /** Host → all: the floor is over. `descend` is always followed by a fresh `start`.
    *  `early` is the host's word that an extraction was the penalty kind (UAT §6) — a
    *  client banks or forfeits on this flag, never on what its last snapshot implied. */

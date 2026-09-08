@@ -338,7 +338,7 @@ export interface GroundZone extends Body {
  * `material` only ever drops on a planet expedition — kills and resource nodes both
  * pay in the planet's own element, which is the entire reason to travel there.
  */
-export type PickupKind = "coin" | "key" | "item" | "potion" | "xp" | "gem" | "material";
+export type PickupKind = "coin" | "key" | "item" | "potion" | "xp" | "gem" | "material" | "relic";
 
 export interface Pickup extends Body {
   readonly kind: PickupKind;
@@ -349,6 +349,8 @@ export interface Pickup extends Body {
   rarity: Rarity | null;
   /** Which material this is, for a `material` pickup. Null for everything else. */
   element: Element | null;
+  /** Which relic or artifact this is (`data/relics.ts`), for a `relic` pickup. Null for everything else. */
+  relicId: string | null;
   /** Pop-out velocity so drops scatter instead of stacking on the corpse. */
   vx: number;
   vy: number;

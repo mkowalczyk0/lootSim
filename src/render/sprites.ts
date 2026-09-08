@@ -22,7 +22,7 @@ import {
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
-import { chooseItemArt, type ArtAvailability } from "./itemart";
+import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice } from "./itemart";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
@@ -555,13 +555,20 @@ export function itemSpriteFor(type: ItemType, rarity: Rarity, art: string | null
   // The *decision* is `chooseItemArt` in `render/itemart.ts`, which is pure so the §11
   // property can be asserted from Node. This function only executes it.
   const choice = chooseItemArt(type, rarity, art, ART_AVAILABLE);
+  // `hasAtlas` already said an atlas choice was drawable; if it somehow isn't, fall to the
+  // type rather than returning nothing.
+  return executeArtChoice(choice) ?? itemSpriteFor(type, rarity, null);
+}
+
+/**
+ * Turns an `ItemArtChoice` into pixels — the one executor for every item surface and for
+ * relics. Null only when an atlas choice's image is missing after all; callers fall back.
+ */
+function executeArtChoice(choice: ItemArtChoice): ItemSprite | null {
   switch (choice.kind) {
     case "atlas": {
       const png = atlasCanvas(choice.id);
-      // `hasAtlas` already said this was drawable; if it somehow isn't, fall to the type
-      // rather than returning nothing.
-      if (png) return { canvas: png, worldScale: ATLAS[choice.id]!.worldScale };
-      return itemSpriteFor(type, rarity, null);
+      return png ? { canvas: png, worldScale: ATLAS[choice.id]!.worldScale } : null;
     }
     case "weapon":
       return {
@@ -592,6 +599,28 @@ export function itemArtId(item: { named: string | null }): string | null {
 /** `itemSpriteFor` for an actual item, art included — the call site everything should use. */
 export function itemSprite(item: { type: ItemType; rarity: Rarity; named: string | null }): ItemSprite {
   return itemSpriteFor(item.type, item.rarity, itemArtId(item));
+}
+
+/**
+ * A relic or artifact's picture (`data/relics.ts`). The *decision* is `chooseRelicArt` in
+ * `render/itemart.ts` — its atlas art when a `relic.<id>` row and PNG exist, otherwise the
+ * gem glyph washed toward the rarity its tier presents as — and it is executed by the same
+ * `executeArtChoice` every item surface uses, so a relic can never be a different colour
+ * on the floor than in a slot. Every shipped relic is on the fallback until the art pass.
+ */
+export function relicSprite(def: { art?: string; rarity: Rarity }): ItemSprite {
+  const choice = chooseRelicArt(def, ART_AVAILABLE);
+  return executeArtChoice(choice) ?? executeArtChoice(chooseRelicArt({ rarity: def.rarity }, ART_AVAILABLE))!;
+}
+
+/** `relicSprite`'s canvas alone, for the DOM surfaces that fit it into a box. */
+export function relicArt(def: { art?: string; rarity: Rarity }): HTMLCanvasElement {
+  return relicSprite(def).canvas;
+}
+
+/** Cache key for `pixelImageFit` over `relicArt` — the same inputs, so the same image. */
+export function relicArtKey(def: { id: string; art?: string; rarity: Rarity }): string {
+  return `relic:${def.id}:${def.rarity}:${def.art ?? "-"}`;
 }
 
 /** `itemSprite`'s canvas alone, for the DOM surfaces that fit it into a box. */

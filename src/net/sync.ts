@@ -24,6 +24,7 @@ import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type 
 import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
+import { RELICS } from "../data/relics";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
 import type { Enemy, Minion } from "../game/entities";
@@ -48,7 +49,7 @@ const TICK = 1 / 60;
 const ENEMY_KINDS = Object.keys(ARCHETYPES) as EnemyKind[];
 const STATUS_KINDS = Object.keys(STATUSES) as StatusKind[];
 const SHAPES = ["circle", "donut", "cone", "line", "none"] as const;
-const PICKUP_KINDS = ["coin", "key", "item", "potion", "xp", "gem", "material"] as const;
+const PICKUP_KINDS = ["coin", "key", "item", "potion", "xp", "gem", "material", "relic"] as const;
 
 /** Two decimals is more precision than a 2.2x zoom can show. */
 function r2(n: number): number {
@@ -243,6 +244,9 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       PICKUP_KINDS.indexOf(p.kind), Math.round(p.x), Math.round(p.y), p.value,
       p.rarity ? RARITIES.indexOf(p.rarity) : -1,
       p.element ? ELEMENTS.indexOf(p.element) : -1,
+      // A relic on the floor is its registry index — both ends run the same build, and
+      // the client only needs to draw it; the id itself arrives reliably in `got`.
+      p.relicId ? RELICS.findIndex((r) => r.id === p.relicId) : -1,
     ]),
     tg: d.telegraphs.map((t) => [
       SHAPES.indexOf(t.shape), Math.round(t.x), Math.round(t.y), r2(t.angle),
@@ -576,13 +580,14 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
   }
 
   d.pickups.length = 0;
-  for (const [kindIndex, x, y, value, rarityIndex, elementIndex] of s.k) {
+  for (const [kindIndex, x, y, value, rarityIndex, elementIndex, relicIndex] of s.k) {
     d.pickups.push({
       kind: PICKUP_KINDS[kindIndex!] ?? "coin",
       x: x!, y: y!, px: x!, py: y!, radius: 6,
       value: value!, item: null, keyTier: null,
       rarity: rarityIndex! >= 0 ? RARITIES[rarityIndex!] ?? null : null,
       element: elementIndex! >= 0 ? ELEMENTS[elementIndex!] ?? null : null,
+      relicId: relicIndex !== undefined && relicIndex >= 0 ? RELICS[relicIndex]?.id ?? null : null,
       vx: 0, vy: 0, life: 1, magnet: false,
     });
   }

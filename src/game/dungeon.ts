@@ -60,7 +60,9 @@ import type { Appearance } from "../data/cosmetics";
 import type { AvatarInput } from "../core/input";
 import type { Player } from "./player";
 import { forgeNamedItem, randomItemType, rollItem, type Item } from "./item";
-import { rollNamedDrops, type NamedDropQuery } from "../data/named";
+import { rollNamedDrops } from "../data/named";
+import type { DropQuery } from "../data/drops";
+import { rollRelicDrops } from "../data/relics";
 import {
   circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
   type Level, type ResourceNode, type Trap,
@@ -139,6 +141,8 @@ export interface RunLoot {
   kills: number;
   /** Only ever fills on a planet expedition — kills and resource nodes both pay this. */
   materials: MaterialBag;
+  /** Relics and artifacts found this dive, by id (UAT §19). Banked into the collection, lost like items. */
+  relics: string[];
 }
 
 export type RunEvent =
@@ -152,6 +156,8 @@ export type RunEvent =
    *  party the host stamps it so a legendary banner only takes over the screen of the
    *  person who actually found the thing. */
   | { kind: "loot"; x: number; y: number; item: Item; owner: number }
+  /** A relic or artifact (`data/relics.ts`) — always a screen-taking event, whoever found it. */
+  | { kind: "relic"; x: number; y: number; id: string; owner: number }
   | { kind: "levelUp"; levels: number; owner: number }
   | { kind: "shake"; amount: number }
   | { kind: "nova"; x: number; y: number; radius: number }
@@ -240,7 +246,7 @@ export class Hero {
   /** One more than you equipped, for the slot a piece of gear can grant you. */
   readonly skillCooldowns = [0, 0, 0, 0];
   readonly loot: RunLoot = {
-    coins: 0, gems: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0, materials: emptyMaterials(),
+    coins: 0, gems: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0, materials: emptyMaterials(), relics: [],
   };
   /** Damage the Ward Veil will eat before health does, and how long it holds. */
   ward = 0;
@@ -281,6 +287,8 @@ export class Hero {
   xpPending = 0;
   /** Items picked up since the host last told this hero's own browser about them. */
   readonly itemsPending: Item[] = [];
+  /** Relics picked up since then, by id — same reliable path, same reason. */
+  readonly relicsPending: string[] = [];
   /** Routes monsters to this hero when they can't see them directly. */
   flow: FlowField | null = null;
   /** Recent positions, newest first — for abilities that snap back to where you were. */
@@ -2706,23 +2714,41 @@ export class Dungeon implements CombatHost, RuleHost {
 
     // Named items (UAT §28). A boss rolls its own table, a wave monster the world table;
     // `data/named.ts` owns who drops what and at what odds — this only asks.
-    if (e.boss) this.dropNamed(e.x, e.y, { kind: "boss", bossId: e.boss.spec.id }, source);
-    else if (e.fromWave) {
-      this.dropNamed(e.x, e.y, { kind: "worldDrop", depth: this.profile.depth, elite: e.elite !== null }, source);
+    if (e.boss) {
+      this.dropFromTables(e.x, e.y, {
+        kind: "boss", bossId: e.boss.spec.id,
+        mode: this.config.mode.id, tier: this.config.tier, depth: this.profile.depth,
+      }, source);
+    } else if (e.fromWave) {
+      this.dropFromTables(e.x, e.y, {
+        kind: "worldDrop", depth: this.profile.depth, elite: e.elite !== null, mode: this.config.mode.id,
+      }, source);
     }
   }
 
   /**
-   * Rolls the named-item table for one event and drops whatever hit, forged at this
-   * floor's depth. `danger` (rift tier × Challenger) lifts the odds — UAT §16's "harder
-   * pays better" — through the one helper in `data/named.ts`. Recorded in the account's
-   * records only for the local hero's drops, since every browser keeps its own save.
+   * Rolls every drop table for one event and drops whatever hit. Named items forge at
+   * this floor's depth; relics drop as themselves. `danger` (rift tier × Challenger)
+   * lifts the odds — UAT §16's "harder pays better" — through the one helper in
+   * `data/drops.ts`. Recorded in the account's records only for the local hero's drops,
+   * since every browser keeps its own save.
+   *
+   * The relic roll skips what the local account already owns or is carrying unbanked, so
+   * the chase never hands you a duplicate. For a remote hero the host can't see the
+   * collection and rolls blind; a duplicate that reaches their save is a counter, never
+   * power (`GameState.bankRelics`).
    */
-  private dropNamed(x: number, y: number, q: NamedDropQuery, source: Hero): void {
+  private dropFromTables(x: number, y: number, q: DropQuery, source: Hero): void {
     for (const def of rollNamedDrops(q, this.rng, this.config.danger)) {
       const item = forgeNamedItem(def, this.profile.depth, this.rng);
       if (source.local) this.state.noteNamed(def.id);
       this.dropPickup(x, y, { kind: "item", item, rarity: item.rarity });
+    }
+    const owned = source.local
+      ? new Set([...this.state.relics, ...source.loot.relics])
+      : new Set(source.loot.relics);
+    for (const def of rollRelicDrops(q, this.rng, this.config.danger, owned)) {
+      this.dropPickup(x, y, { kind: "relic", relicId: def.id, rarity: def.rarity });
     }
   }
 
@@ -2756,7 +2782,10 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     // The clear cache has its own named table (UAT §28): a reward that, like the rest of
     // the cache, only exists for finishing the floor.
-    this.dropNamed(x, y, { kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id }, this.localHero);
+    this.dropFromTables(x, y, {
+      kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id,
+      tier: this.config.tier, lastFloor: this.config.lastFloor,
+    }, this.localHero);
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
     if (gems > 0) this.dropPickup(x, y, { kind: "gem", value: gems });
@@ -2801,7 +2830,7 @@ export class Dungeon implements CombatHost, RuleHost {
     x: number, y: number,
     opts: {
       kind: Pickup["kind"]; value?: number; item?: Item; keyTier?: string; rarity?: Rarity;
-      element?: Element;
+      element?: Element; relicId?: string;
     },
   ): void {
     const angle = this.rng.angle();
@@ -2814,6 +2843,7 @@ export class Dungeon implements CombatHost, RuleHost {
       keyTier: opts.keyTier ?? null,
       rarity: opts.rarity ?? null,
       element: opts.element ?? null,
+      relicId: opts.relicId ?? null,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 0,
@@ -3612,6 +3642,13 @@ export class Dungeon implements CombatHost, RuleHost {
           this.events.push({ kind: "loot", x: p.x, y: p.y, item: p.item, owner: hero.index });
         }
         break;
+      case "relic":
+        if (p.relicId) {
+          hero.loot.relics.push(p.relicId);
+          hero.relicsPending.push(p.relicId);
+          this.events.push({ kind: "relic", x: p.x, y: p.y, id: p.relicId, owner: hero.index });
+        }
+        break;
       case "xp":
         break;
     }
@@ -3689,6 +3726,7 @@ export class Dungeon implements CombatHost, RuleHost {
       if (this.loot.materials[e] > 0) this.state.addMaterials(e, this.loot.materials[e]);
     }
     this.state.addToInventory(this.loot.items);
+    this.state.bankRelics(this.loot.relics);
     if (credit) {
       this.state.recordDepth(this.profile.depth, this.config);
       this.state.stats.runsCompleted++;
@@ -3700,6 +3738,7 @@ export class Dungeon implements CombatHost, RuleHost {
     this.loot.coins = 0;
     this.loot.gems = 0;
     this.loot.items = [];
+    this.loot.relics = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
   }
@@ -3717,8 +3756,9 @@ export class Dungeon implements CombatHost, RuleHost {
    * valuable loot: the decision has to be "risk finishing, or lose the drops".
    */
   earlyExtractLoot(): { coins: number; gems: number; itemsLost: number } {
-    const itemsLost = this.loot.items.length;
+    const itemsLost = this.loot.items.length + this.loot.relics.length;
     this.loot.items = [];
+    this.loot.relics = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
     this.loot.coins = Math.floor(this.loot.coins * EARLY_EXTRACT_KEEP);

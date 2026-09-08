@@ -25,8 +25,9 @@
  */
 
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
+import { RELIC_TIER_INFO, type RelicDef } from "../data/relics";
 import { statLine, type Item } from "../game/item";
-import { itemArt, itemArtKey } from "../render/sprites";
+import { itemArt, itemArtKey, relicArt, relicArtKey } from "../render/sprites";
 import { pixelImageFit } from "./pixelimage";
 import { atLeast, CINEMATIC_FLOOR, HALT_FLOOR, PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
@@ -104,22 +105,42 @@ export class LootBanner {
   }
 
   show(item: Item): void {
-    const halt = atLeast(item.rarity, HALT_FLOOR);
+    this.showCard({
+      rarity: item.rarity, color: RARITY_COLORS[item.rarity], name: item.name, line: statLine(item),
+      art: pixelImageFit(itemArt(item), 120, itemArtKey("loot", item)),
+    });
+  }
 
-    this.el.className = `loot ${RARITY_CLASS[item.rarity]}${halt ? " halt" : ""}`;
-    this.el.style.setProperty("--r", RARITY_COLORS[item.rarity]);
+  /** A relic or artifact (UAT §19). Always the full ceremony — its tier presents as divine or unspoken. */
+  showRelic(def: RelicDef): void {
+    this.showCard({
+      rarity: def.rarity, color: RELIC_TIER_INFO[def.tier].color, name: def.name,
+      line: `${RELIC_TIER_INFO[def.tier].label} — ${def.description}`,
+      art: pixelImageFit(relicArt(def), 120, relicArtKey(def)),
+    });
+  }
+
+  /**
+   * The one card. Everything cinematic the game announces — an item, a relic — comes
+   * through here so the halt rule, the fx and the dismiss hint can never disagree.
+   */
+  private showCard(card: { rarity: Rarity; color: string; name: string; line: string; art: string }): void {
+    const halt = atLeast(card.rarity, HALT_FLOOR);
+
+    this.el.className = `loot ${RARITY_CLASS[card.rarity]}${halt ? " halt" : ""}`;
+    this.el.style.setProperty("--r", card.color);
     this.el.hidden = false;
     this.fx.reset();
 
-    this.art.src = pixelImageFit(itemArt(item), 120, itemArtKey("loot", item));
-    this.name.textContent = item.name;
-    this.name.style.color = RARITY_COLORS[item.rarity];
-    this.line.textContent = statLine(item);
+    this.art.src = card.art;
+    this.name.textContent = card.name;
+    this.name.style.color = card.color;
+    this.line.textContent = card.line;
     // Deliberately not a key name: `Input.anyPressed` really does mean *any* bound key,
     // and a click works too, so there's nothing here for a rebind to invalidate.
     this.hint.textContent = halt ? "any key to carry on" : "";
 
-    this.fx.fire(item.rarity);
+    this.fx.fire(card.rarity);
 
     const now = performance.now();
     if (halt) {
@@ -127,7 +148,7 @@ export class LootBanner {
       this.dismissableAt = now + HALT_LOCKOUT;
     } else {
       this.phase = "show";
-      this.endAt = now + BASE_HOLD + PUNCH[item.rarity].hold;
+      this.endAt = now + BASE_HOLD + PUNCH[card.rarity].hold;
     }
     cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(this.tick);

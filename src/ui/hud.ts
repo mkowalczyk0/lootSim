@@ -5,6 +5,7 @@ import { ELEMENT_COLORS } from "../data/elements";
 import { MATERIAL_NAMES } from "../data/materials";
 import { EARLY_EXTRACT_KEEP } from "../data/modes";
 import { RARITY_COLORS } from "../data/rarity";
+import { RELIC_BY_ID, RELIC_TIER_INFO } from "../data/relics";
 import { DEFAULT_KEYBINDS, keyLabel, type RebindableAction, type Settings } from "../data/settings";
 import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon } from "../game/dungeon";
@@ -451,6 +452,14 @@ export class Hud {
       y += 15;
     }
 
+    // Relics first — there are never many, and each is the reason you're still alive.
+    for (const id of d.loot.relics) {
+      const def = RELIC_BY_ID[id];
+      if (!def) continue;
+      ctx.fillStyle = RELIC_TIER_INFO[def.tier].color;
+      ctx.fillText(`✦ ${def.name}`, x, y);
+      y += 14;
+    }
     // Show the last few pickups so a good drop is impossible to miss.
     const recent = d.loot.items.slice(-6).reverse();
     for (const item of recent) {

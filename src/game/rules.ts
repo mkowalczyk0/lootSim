@@ -205,6 +205,10 @@ interface ExecuteRule {
   gate?: number;
 }
 const EXECUTE_RULES: ExecuteRule[] = [
+  // Relic "Rime of the Unfinished Vigil" (`data/relics.ts`) — a chilled or frozen enemy
+  // under a quarter is executed. A relic rule sits in the same table a keystone does;
+  // nothing here knows it came off a relic rather than a tree.
+  { rule: "relic.rime-of-the-unfinished-vigil.shatter", frac: 0.25, test: isChilled },
   // Ranger "Cull the Weak" — chilled / quarried enemies are executed by every shot.
   { rule: "ranger.ch.cull_the_weak", frac: 0.30, test: (e) => isChilled(e) || e.sc.has("quarry") },
   // Ranger "Perfect Shot" — a Deadeye shot executes the low (the full-stack gate is dropped).
