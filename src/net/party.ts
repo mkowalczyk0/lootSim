@@ -90,6 +90,18 @@ export class Party {
   private runRoster: string[] = [];
   /** A client's view of the host: a floor is under way that we may not be part of. */
   hostRunning = false;
+  /**
+   * Readiness is an edge, not a level: standing in the party's portal only counts once
+   * you've been seen *outside* it since the last floor started (or since a portal was
+   * picked). Without this, a run that ended put everybody back on the deck exactly where
+   * they dove from — still inside the portal, every `ready` flag still true from the last
+   * lobby message — and the very next `syncHub` tick started the plan's first floor
+   * again. Extracting from a co-op Delve meant restarting it, forever. The host's own
+   * readiness goes through this latch too: it comes from the hub's geometry, not from a
+   * `members` entry, so resetting the members alone would have left the host able to
+   * trigger the loop by itself.
+   */
+  private armed = false;
   /** Remote controllers, by peer id, for as long as a run lasts. */
   private inputs = new Map<string, NetInput>();
   /** Hero index per peer id, fixed for the whole run. */
@@ -147,6 +159,7 @@ export class Party {
     this.hostRunning = false;
     this.runRoster = [];
     this.plan = null;
+    this.armed = false;
     this.dungeon = null;
     this.members = [];
     this.inputs.clear();
@@ -158,8 +171,17 @@ export class Party {
   setPlan(config: RunConfig, station: HubStationKind): void {
     if (!this.isHost) return;
     this.plan = { config, station };
+    // Picking is a deliberate act made from inside the portal — the host walked in and
+    // confirmed — so it counts as their walk-in. Only a `setPlan` arms the host this way;
+    // the plan re-broadcast that follows a floor ending does not.
+    this.armed = true;
     this.broadcastPlan();
     this.onChange();
+  }
+
+  /** Nobody's last "I'm in the portal" survives a floor: it has to be said again. */
+  private unreadyAll(): void {
+    for (const m of this.members) m.ready = false;
   }
 
   /** Host only: the plan and whether a floor is under way, for one lobby or every lobby. */
@@ -199,6 +221,7 @@ export class Party {
       hub.mates = [];
       hub.partyHost = false;
       hub.partyTarget = null;
+      hub.partyReady = false;
       return;
     }
     hub.partyHost = this.isHost;
@@ -225,16 +248,24 @@ export class Party {
       appearance: m.hero ? (m.hero.appearance as unknown as Appearance) : null,
     }));
 
+    // Stepping out of the portal is what arms the next walk-in; being in it only counts
+    // once armed. What goes on the wire is the latched value, so a host never has to
+    // guess whether a mate's "ready" is a fresh walk-in or where they happened to be
+    // standing when the last floor ended.
+    if (!hub.inPartyPortal) this.armed = true;
+    const ready = hub.inPartyPortal && this.armed;
+    hub.partyReady = ready;
+
     this.hubTimer -= dt;
     if (this.hubTimer <= 0) {
       this.hubTimer = 1 / HUB_SYNC_HZ;
-      this.send({ k: "hub", x: Math.round(hub.x), y: Math.round(hub.y), facing: Number(hub.facing.toFixed(2)), ready: hub.inPartyPortal });
+      this.send({ k: "hub", x: Math.round(hub.x), y: Math.round(hub.y), facing: Number(hub.facing.toFixed(2)), ready });
     }
 
     if (!this.isHost || this.running || !this.plan) return;
     // Everybody in, and there has to be a somebody: a room of one is just a person
     // standing next to a portal, and walking over it by accident shouldn't start a run.
-    if (!hub.inPartyPortal || this.members.length === 0) return;
+    if (!ready || this.members.length === 0) return;
     if (!this.members.every((m) => m.ready && m.hero)) return;
     // The party comes with the run: the roster could have changed since the host picked.
     this.startFloor({ ...this.plan.config, players: this.size });
@@ -259,6 +290,10 @@ export class Party {
       if (m?.hero) heroes.push({ ...m.hero, id: m.id, name: m.name });
     }
     this.running = true;
+    // The walk-in that started this floor is spent. Everybody, host included, has to
+    // leave the portal and come back for the next one.
+    this.armed = false;
+    this.unreadyAll();
     const start: PartyMessage = { k: "start", seed, config: configToWire(config), heroes };
     for (const id of ids) this.send(start, id);
     this.broadcastPlan();
@@ -272,6 +307,9 @@ export class Party {
     if (how !== "descend") {
       this.running = false;
       this.runRoster = [];
+      // Belt and braces with the reset in `startFloor`: the run is over and the deck is
+      // about to be drawn again, and nobody on it has walked into anything yet.
+      this.unreadyAll();
     }
     this.broadcastPlan();
   }
@@ -408,9 +446,14 @@ export class Party {
       }
       case "plan": {
         if (this.isHost) return;
+        const previous = this.plan?.station ?? null;
         this.plan = msg.run
           ? { config: configFromWire(msg.run), station: (msg.station ?? "dive") as HubStationKind }
           : null;
+        // A *new* portal being picked is a fresh event: somebody already standing in it
+        // is in it on purpose. The re-broadcast that follows a floor ending carries the
+        // same station and arms nobody — that's the whole point of the latch.
+        if (this.plan && this.plan.station !== previous) this.armed = true;
         const running = msg.running ?? false;
         if (running && !this.hostRunning && !this.running) {
           this.onNotice("The party is mid-dive — you'll go with them on their next run.", "#fbbf24");
@@ -428,6 +471,8 @@ export class Party {
         if (!msg.heroes.some((h) => h.id === this.net.id)) return;
         this.running = true;
         this.hostRunning = true;
+        this.armed = false;
+        this.unreadyAll();
         this.onStart(configFromWire(msg.config), msg.seed, this.setupsFrom(msg.heroes));
         return;
       }
@@ -462,6 +507,7 @@ export class Party {
         if (this.isHost || !this.running) return;
         this.running = msg.how === "descend";
         this.hostRunning = this.running;
+        if (!this.running) this.unreadyAll();
         this.onEnd(msg.how, msg.early ?? false);
         return;
     }
@@ -481,6 +527,7 @@ export class Party {
     this.hostRunning = false;
     this.runRoster = [];
     this.plan = null;
+    this.armed = false;
     this.onChange();
     this.onNotice(reason, "#ef4444");
     // The host's browser *is* the floor, so the floor is gone with it. That's nobody's

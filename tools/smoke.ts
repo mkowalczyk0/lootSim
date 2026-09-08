@@ -3051,8 +3051,112 @@ console.log("\n=== multiplayer ===");
     check("…as that rift, sized to the party",
       started[0]?.config.mode === "abyss" && started[0].config.tier === 2 && started[0].config.players === 2,
       JSON.stringify(started[0]?.config));
+    // Leaving a floor must land the party on the deck and *leave it there*. Everybody is
+    // still standing exactly where they dove from, and every `ready` the host holds is
+    // from before the floor started — so if readiness were a level rather than an edge,
+    // the very next `syncHub` would start the plan's first floor again (the bug that made
+    // "extract" in co-op mean "restart the Delve, forever"). Both ends of the wire are
+    // driven here: the client says what it says, the host hears exactly that.
+    type HubMsg = Extract<PartyMessage, { k: "hub" }>;
+    const forward = (from: typeof picker, to: typeof watcher) => {
+      for (const s of from.sent) if (s.to === undefined || s.to === to.net.id) to.net.onMessage(from.net.id, s.msg);
+      from.sent.length = 0;
+    };
+    /** Enough hub ticks for one lobby broadcast, and what it said about being ready. */
+    const report = (who: typeof picker, hub: Hub): HubMsg | undefined => {
+      who.sent.length = 0;
+      for (let i = 0; i < 8; i++) who.party.syncHub(hub, DT);
+      return who.sent.filter((s) => s.msg.k === "hub").pop()?.msg as HubMsg | undefined;
+    };
+    const OFF_DECK = { x: HUB_WIDTH / 2, y: HUB_HEIGHT - 40 };
+    const stand = (hub: Hub, at: { x: number; y: number }) => { hub.x = at.x; hub.y = at.y; };
+    /** Everybody steps out and walks back in, client first; returns how many runs that started. */
+    const walkBackIn = (portal: { x: number; y: number }): number => {
+      const before = picker.starts.length;
+      stand(mateHub, OFF_DECK);
+      forward(watcher, picker); // (nothing of note; keeps the mailboxes honest)
+      const out = report(watcher, mateHub);
+      check("a client stepping out of the portal says so", out?.ready === false);
+      stand(mateHub, portal);
+      const back = report(watcher, mateHub);
+      check("…and walking back in re-arms it", back?.ready === true);
+      forward(watcher, picker);
+      // The host is still standing where it dove from and hasn't stepped out yet.
+      report(picker, hostHub);
+      check("a ready mate can't start a run past a host who never left the portal",
+        picker.starts.length === before && !hostHub.partyReady);
+      stand(hostHub, OFF_DECK);
+      report(picker, hostHub);
+      stand(hostHub, portal);
+      report(picker, hostHub);
+      forward(picker, watcher);
+      return picker.starts.length - before;
+    };
+    // The watcher goes onto the floor the picker just started, so it has a floor to end.
+    stand(mateHub, abyss);
+    forward(picker, watcher);
+    check("the client adopted the floor the walk-in started", watcher.party.running && watcher.starts.length === 1);
+    const exits: [how: "extract" | "wipe", early: boolean, label: string][] = [
+      ["extract", false, "a clean extraction"],
+      ["extract", true, "an early bail-out"],
+      ["wipe", false, "a wipe"],
+    ];
+    for (const [how, early, label] of exits) {
+      const before = picker.starts.length;
+      picker.party.endRun(how, early);
+      forward(picker, watcher); // the `end`, then the plan re-broadcast with running=false
+      check(`${label} ends the floor on both ends`, !picker.party.running && !watcher.party.running
+        && watcher.ends[watcher.ends.length - 1]?.how === how);
+      // Nobody has moved. The client's own report from inside the portal is "not ready"…
+      const stale = report(watcher, mateHub);
+      check(`after ${label}, a client still standing in the portal doesn't report ready`, stale?.ready === false, JSON.stringify(stale));
+      forward(watcher, picker);
+      // …and even before that report arrived, the host held nobody as ready.
+      check(`after ${label}, the host holds nobody as ready`, picker.party.members.every((m) => !m.ready));
+      for (let i = 0; i < 30; i++) picker.party.syncHub(hostHub, DT);
+      check(`after ${label}, the party stays on the deck instead of restarting the run`,
+        picker.starts.length === before && !picker.party.running && !hostHub.partyReady,
+        `${picker.starts.length - before} run(s) started off stale readiness`);
+      check(`after ${label}, walking back in deliberately starts the next run`, walkBackIn(abyss) === 1);
+      check("…and the client is on it", watcher.party.running && watcher.starts.length === picker.starts.length);
+    }
+    // Descending is the one end that keeps the run going, and it never touched the deck.
+    {
+      const before = picker.starts.length;
+      picker.party.endRun("descend");
+      forward(picker, watcher);
+      for (let i = 0; i < 30; i++) picker.party.syncHub(hostHub, DT);
+      check("descending never re-reads the deck", picker.starts.length === before && picker.party.running);
+      picker.party.descend(picker.party.plan!.config);
+      forward(picker, watcher);
+      check("…and the next floor follows it", picker.starts.length === before + 1 && watcher.party.running);
+      picker.party.endRun("extract");
+      forward(picker, watcher);
+    }
+    // The same promise holds when the plan is the Delve, from its own portal.
+    {
+      picker.party.setPlan(delveConfig(2, 0, 2), "dive");
+      forward(picker, watcher);
+      const dive = hostHub.stations.find((s) => s.kind === "dive")!;
+      check("picking the Delve makes it the ready spot", picker.party.plan?.station === "dive" && watcher.party.plan?.station === "dive");
+      check("a Delve walk-in starts the Delve", walkBackIn(dive) === 1 && watcher.party.running);
+      const before = picker.starts.length;
+      picker.party.endRun("extract");
+      forward(picker, watcher);
+      report(watcher, mateHub);
+      forward(watcher, picker);
+      for (let i = 0; i < 30; i++) picker.party.syncHub(hostHub, DT);
+      check("extracting from a co-op Delve lands on the deck, not back at the Delve's first floor",
+        picker.starts.length === before && !picker.party.running && !watcher.party.running);
+      // Leave everybody off the portals for what follows.
+      stand(hostHub, OFF_DECK);
+      stand(mateHub, OFF_DECK);
+      report(picker, hostHub);
+      report(watcher, mateHub);
+      forward(picker, watcher);
+      forward(watcher, picker);
+    }
     // A planet plan grows the expedition portal on everybody's deck; another plan takes it away.
-    picker.party.endRun("extract");
     picker.party.setPlan(planetConfig(PLANETS[0]!, 1, 1, 0), "expedition");
     picker.party.syncHub(hostHub, DT);
     check("a planet plan puts the Reliquary Portal on the host's deck",
