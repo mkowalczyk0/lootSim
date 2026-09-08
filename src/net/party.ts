@@ -26,7 +26,7 @@ import {
   SNAPSHOT_HZ, normalizeRoomCode,
   type HeroWire, type PartyMessage, type Snapshot,
 } from "./protocol";
-import { NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "./sync";
+import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "./sync";
 
 /** How often a lobby broadcasts where you're standing on the ship. */
 const HUB_SYNC_HZ = 12;
@@ -84,6 +84,8 @@ export class Party {
   private inputs = new Map<string, NetInput>();
   /** Hero index per peer id, fixed for the whole run. */
   private slots = new Map<string, number>();
+  /** A client's own recent inputs, for reconciliation against the host (UAT §1 B2). */
+  private readonly inputLog = new InputLog();
   private hubTimer = 0;
   private snapTimer = 0;
   /** Renderer events since the last snapshot. Batched to the same cadence so a busy
@@ -253,6 +255,7 @@ export class Party {
     this.inputs.clear();
     this.slots.clear();
     this.fxBuffer.length = 0;
+    this.inputLog.reset();
     for (const hero of dungeon.heroes) {
       if (hero.local || hero.netId === "") continue;
       const input = new NetInput();
@@ -309,7 +312,8 @@ export class Party {
       // Straight to the host: nobody else has anything to do with your buttons, and at
       // sixty packets a second that's the difference between one stream and three.
       const a = d.avatar;
-      this.send({ k: "in", ...packInput(input, a.x, a.y) }, this.net.hostId);
+      const seq = this.inputLog.record(input.moveVector(), input.wasPressed("dash"));
+      this.send({ k: "in", ...packInput(input, a.x, a.y, seq) }, this.net.hostId);
     }
   }
 
@@ -396,7 +400,7 @@ export class Party {
       }
       case "snap": {
         const d = this.dungeon;
-        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.planetNames());
+        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.planetNames(), this.inputLog);
         return;
       }
       case "fx": {

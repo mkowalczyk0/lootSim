@@ -111,8 +111,10 @@ export type PartyMessage =
   | { k: "plan"; depth: number; players: number; running?: boolean }
   /** Host only: everyone into the portal, here is the floor. */
   | { k: "start"; seed: number; config: RunConfigWire; heroes: HeroWire[] }
-  /** Client → host, every tick. */
-  | { k: "in"; move: [number, number]; aim: number | null; press: number }
+  /** Client → host, every tick. `seq` numbers the tick so the host can say which one it
+   *  last consumed (`HeroSnap.ack`) and the client can replay the rest (UAT §1 B2). `ap`
+   *  is the world point being aimed at, for ground-placed abilities in mouse scheme. */
+  | { k: "in"; seq: number; move: [number, number]; aim: number | null; press: number; ap?: [number, number] }
   /** Host → all, `SNAPSHOT_HZ` times a second. */
   | { k: "snap"; s: Snapshot }
   /** Host → all (or one, when it's personal): renderer events. */
@@ -150,6 +152,16 @@ export interface HeroSnap {
   readonly iv: number;
   readonly hf: number;
   readonly bt: number;
+  /** Dash cooldown and current velocity — what a client needs to replay its own
+   *  unacknowledged inputs from this exact state (UAT §1 B2). */
+  readonly dc?: number;
+  readonly vx?: number;
+  readonly vy?: number;
+  /** Sequence number of the last `in` packet the host consumed for this hero. Only
+   *  meaningful to the browser that sent it; 0 for the host's own hero. */
+  readonly ack?: number;
+  /** Status bitmask in `STATUSES` order — what's on this hero (UAT §1 B3). */
+  readonly st?: number;
   /** Skill cooldowns, four of them. */
   readonly cd: number[];
   readonly pot: number;
@@ -189,7 +201,8 @@ export interface Snapshot {
   /** [id, kindIndex, x, y, facing, radius, hp, maxHp, eliteIndex, state, spawnTimer,
    *   windup, hitFlash, elementIndex, isBoss, statusBits] */
   readonly e: number[][];
-  /** [x, y, radius, colorIndex, friendly] */
+  /** [x, y, radius, elementIndex, friendly, vx, vy] — velocity so a client can fly a
+   *  bolt on between snapshots rather than stepping it three ticks at a time. */
   readonly p: number[][];
   /** [kindIndex, x, y, value, rarityIndex, elementIndex] */
   readonly k: number[][];

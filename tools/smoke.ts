@@ -41,8 +41,8 @@ import { readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
 import { Rng } from "../src/core/rng";
-import { applySnapshot, configFromWire, configToWire, encodeSnapshot } from "../src/net/sync";
-import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage } from "../src/net/protocol";
+import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
+import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage, type Snapshot } from "../src/net/protocol";
 import { Party } from "../src/net/party";
 import { playerToJSON } from "../src/game/state";
 
@@ -2542,6 +2542,173 @@ console.log("\n=== multiplayer ===");
       check(`${label} is identical on both ends of the wire`, fingerprint(h) === fingerprint(c),
         `${h.level.walls.length} walls, ${h.level.traps.length} traps, quota ${h.killsRequired}/${h.elitesRequired}`);
     }
+  }
+
+  // 9. What a client sees between snapshots (UAT §1 B1): a body the client already had
+  // slides to where the new snapshot put it over the next few ticks instead of jumping
+  // there and freezing; projectiles fly on; wind-ups keep counting down.
+  {
+    const snap = (d: Dungeon): Snapshot => JSON.parse(JSON.stringify(encodeSnapshot(d))) as Snapshot;
+    const hostS = geared(14, 8811, 16, "swordsman");
+    const cliS = geared(14, 8812, 16, "magician");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+    ];
+    const cfg = delveConfig(4, 0, 2);
+    const h = new Dungeon(hostS, cfg, { seed: 555, role: "host", heroes: pair });
+    const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 555, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    const idle = new FakeInput();
+    for (let i = 0; i < 600 && !h.enemies.some((e) => e.state !== "spawning"); i++) {
+      idle.beginTick();
+      h.update(DT, idle as unknown as AvatarInput);
+      h.drainEvents();
+    }
+    applySnapshot(c, snap(h));
+    const target = h.enemies.find((e) => e.state !== "spawning")!;
+    const mirror = c.enemies.find((e) => e.id === target.id)!;
+    check("a client has the monster in the first place", mirror !== undefined && Math.abs(mirror.x - target.x) < 1);
+    target.x += 30;
+    target.windup = 0.5;
+    const before = mirror.x;
+    applySnapshot(c, snap(h));
+    check("a new snapshot doesn't teleport a monster the client already had", Math.abs(mirror.x - before) < 1);
+    const xs: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      idle.beginTick();
+      c.update(DT, idle as unknown as AvatarInput);
+      xs.push(mirror.x);
+    }
+    const monotone = xs.every((x, i) => i === 0 || x >= xs[i - 1]! - 1e-6);
+    // The wire rounds positions to whole pixels, so "there" is the rounded spot.
+    check("…it slides there over the next ticks", monotone && xs[0]! > before + 1 && Math.abs(xs[3]! - Math.round(target.x)) < 0.01,
+      `${before.toFixed(1)} → ${xs.map((v) => v.toFixed(1)).join(" → ")} (target ${Math.round(target.x)})`);
+    check("…with a fresh previous position every tick for the renderer to lerp from",
+      Math.abs(mirror.px - xs[2]!) < 1e-6);
+    check("a monster's wind-up keeps counting down between snapshots", mirror.windup < 0.5 - DT * 3.5 && mirror.windup > 0.5 - DT * 4.5,
+      mirror.windup.toFixed(3));
+
+    // The host's own hero is a remote body on the client, and slides the same way.
+    const hostAvatar = h.heroes[0]!.avatar;
+    const hostMirror = c.heroes[0]!.avatar;
+    hostAvatar.x += 20;
+    const hb = hostMirror.x;
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    check("an ally slides too, rather than jumping", hostMirror.x > hb + 1 && hostMirror.x < hostAvatar.x - 1,
+      `${hb.toFixed(1)} → ${hostMirror.x.toFixed(1)} → ${hostAvatar.x.toFixed(1)}`);
+
+    // A bolt carries its velocity across and keeps flying until the next snapshot.
+    h.projectiles.push({
+      x: 100, y: 100, px: 100, py: 100, radius: 4, vx: 120, vy: 0, damage: 0, friendly: true, owner: 0,
+      life: 1, color: "#fff", element: "physical", pierce: 0, hits: new Set(), ailment: 0, basic: false,
+    });
+    applySnapshot(c, snap(h));
+    idle.beginTick();
+    c.update(DT, idle as unknown as AvatarInput);
+    const bolt = c.projectiles[c.projectiles.length - 1]!;
+    check("a projectile flies on between snapshots", Math.abs(bolt.x - (100 + 120 * DT)) < 0.01, bolt.x.toFixed(2));
+    h.projectiles.length = 0;
+
+    // A hero's ailments cross the wire (B3), so a client can predict its own slow.
+    h.heroes[1]!.sc.apply("chill", { sourceActorId: -1, chance: 1, roll: () => 0 });
+    applySnapshot(c, snap(h));
+    check("a hero's ailments cross the wire", c.heroes[1]!.sc.list.some((st) => st.id === "chill"));
+    h.heroes[1]!.sc.list.length = 0;
+    applySnapshot(c, snap(h));
+    check("…and clear with it", c.heroes[1]!.sc.list.length === 0);
+  }
+
+  // 10. A client's own character is reconciled, not tugged (UAT §1 B2). Host and client
+  // run in one process with a real delay between them — the client's buttons reach the
+  // host LAG ticks late, the host's snapshots reach the client LAG ticks late — and the
+  // question is how far each snapshot has to *move* the client's own character. The old
+  // 25% blend moved it by a quarter of RTT×speed every time; a replayed prediction
+  // should move it by nothing at all, dash included.
+  {
+    const LAG = 4;
+    const hostS = geared(14, 8813, 16, "swordsman");
+    const cliS = geared(14, 8814, 16, "lancer");
+    const pair = [
+      { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+      { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+    ];
+    const cfg = delveConfig(2, 0, 2);
+    const h = new Dungeon(hostS, cfg, { seed: 777, role: "host", heroes: pair });
+    const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+      seed: 777, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+    });
+    const remote = new NetInput();
+    h.heroes[1]!.input = remote as unknown as AvatarInput;
+    const log = new InputLog();
+    const hostInput = new FakeInput();
+    const cliInput = new FakeInput();
+    const toHost: { due: number; packet: ReturnType<typeof packInput> }[] = [];
+    const toClient: { due: number; snap: Snapshot }[] = [];
+    const corrections: number[] = [];
+    let clientDashed = false;
+    let hostDashed = false;
+    const me = c.localHero.avatar;
+    cliInput.hold("right", true);
+    cliInput.hold("down", true);
+    for (let tick = 0; tick < 300; tick++) {
+      hostInput.beginTick();
+      cliInput.beginTick();
+      if (tick === 120) cliInput.press("dash");
+      if (tick === 180) { cliInput.hold("down", false); cliInput.hold("up", true); }
+      if (tick === 240) { cliInput.hold("right", false); cliInput.hold("left", true); }
+
+      // The client's tick: predict, then send — the order main.ts uses.
+      c.update(DT, cliInput as unknown as AvatarInput);
+      if (me.dashTimer > 0) clientDashed = true;
+      const seq = log.record(cliInput.moveVector(), cliInput.wasPressed("dash"));
+      toHost.push({ due: tick + LAG, packet: packInput(cliInput as unknown as AvatarInput, me.x, me.y, seq) });
+
+      // The host's tick: consume what has arrived, simulate, publish every third tick.
+      while (toHost.length > 0 && toHost[0]!.due <= tick) remote.receive(toHost.shift()!.packet);
+      remote.beginTick();
+      h.update(DT, hostInput as unknown as AvatarInput);
+      if (h.heroes[1]!.avatar.dashTimer > 0) hostDashed = true;
+      h.enemies.length = 0; // movement only — no knockbacks, nothing the client couldn't predict
+      h.drainEvents();
+      if (tick % 3 === 0) toClient.push({ due: tick + LAG, snap: JSON.parse(JSON.stringify(encodeSnapshot(h))) as Snapshot });
+
+      while (toClient.length > 0 && toClient[0]!.due <= tick) {
+        const wasX = me.x;
+        const wasY = me.y;
+        applySnapshot(c, toClient.shift()!.snap, undefined, log);
+        if (tick > 30) corrections.push(Math.hypot(me.x - wasX, me.y - wasY));
+      }
+    }
+    corrections.sort((a, b) => a - b);
+    const median = corrections[Math.floor(corrections.length / 2)] ?? Infinity;
+    const worst = corrections[corrections.length - 1] ?? Infinity;
+    check("a walking client is never tugged back by the host", median < 0.1 && worst < 1.5,
+      `median ${median.toFixed(3)}px, worst ${worst.toFixed(2)}px over ${corrections.length} snapshots at ${LAG * 2} ticks RTT`);
+    check("the client dashed the instant it pressed, and the host agreed", clientDashed && hostDashed);
+    // The uncorrected baseline, for the record: how far ahead a client at this RTT
+    // actually runs, which is what the old blend used to pull it back by a quarter of.
+    const lead = Math.hypot(me.x - h.heroes[1]!.avatar.x, me.y - h.heroes[1]!.avatar.y);
+    console.log(`  the client runs ${lead.toFixed(1)}px ahead of the host at that lag — now replayed, not blended`);
+
+    // B4: a lag spike centres the stick rather than walking somebody into a hazard.
+    const stale = new NetInput();
+    stale.receive({ seq: 1, move: [1, 0], aim: null, press: 0, ap: [10, 20] });
+    stale.beginTick();
+    check("a remote stick holds between packets, and carries its aim point",
+      stale.moveVector().x === 1 && stale.aimPoint()?.x === 10 && stale.aimPoint()?.y === 20);
+    for (let i = 0; i < 6; i++) stale.beginTick();
+    check("…for a few ticks", stale.moveVector().x === 1);
+    for (let i = 0; i < 10; i++) stale.beginTick();
+    check("…but centres itself when the packets stop", stale.moveVector().x === 0);
+    // A dropped packet's buttons survive into the next one rather than vanishing.
+    const flood = new NetInput();
+    for (let i = 1; i <= 9; i++) flood.receive({ seq: i, move: [0, 0], aim: null, press: i === 1 ? 2 : 0 });
+    flood.beginTick();
+    check("a dash in a dropped packet fires late rather than never", flood.wasPressed("dash"));
   }
 
   // 5. Room codes: four letters, no lookalikes, and paste-and-pray survives.
