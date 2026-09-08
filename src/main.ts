@@ -1,5 +1,5 @@
 import { GameLoop } from "./core/loop";
-import { Input } from "./core/input";
+import { Input, isEditableTarget } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
 import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
@@ -598,16 +598,15 @@ function flash(text: string, color?: string): void {
 // character. "focusout" re-enables input once the field loses focus — without it,
 // blurring the field (Escape, Enter, or a click elsewhere) left the keyboard dead,
 // including Escape itself, so there was no way back to the ship.
-function isTextField(t: EventTarget | null): boolean {
-  return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
-}
+// `Input.onKey` also checks the event's own target (UAT §1), so a key typed into a field
+// is never swallowed even if this bookkeeping is a frame behind.
 window.addEventListener("focusin", (e) => {
-  input.setEnabled(!isTextField(e.target));
+  input.setEnabled(!isEditableTarget(e.target));
 });
 window.addEventListener("focusout", () => {
   // The element about to gain focus isn't known yet at "focusout" time, so check on
   // the next tick once `document.activeElement` has actually moved.
-  window.setTimeout(() => input.setEnabled(!isTextField(document.activeElement)), 0);
+  window.setTimeout(() => input.setEnabled(!isEditableTarget(document.activeElement)), 0);
 });
 
 applySettings();

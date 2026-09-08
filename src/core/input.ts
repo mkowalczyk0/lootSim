@@ -75,11 +75,15 @@ export class Input {
     target.addEventListener("keydown", (e) => this.onKey(e as KeyboardEvent, true));
     target.addEventListener("keyup", (e) => this.onKey(e as KeyboardEvent, false));
     // Alt-tabbing away must not leave a movement key — or a mouse button — stuck down.
-    window.addEventListener("blur", () => {
-      this.held.clear();
-      this.mouseHeld.left = false;
-      this.mouseHeld.right = false;
-    });
+    // (Guarded so the class can be built against a fake target from Node — the smoke
+    // test drives `onKey` headlessly to pin the text-field rule below.)
+    if (typeof window !== "undefined") {
+      window.addEventListener("blur", () => {
+        this.held.clear();
+        this.mouseHeld.left = false;
+        this.mouseHeld.right = false;
+      });
+    }
   }
 
   /** Call after `settings.keybinds` changes so the live key→action map picks it up. */
@@ -156,6 +160,15 @@ export class Input {
   // --- keyboard --------------------------------------------------------------
 
   private onKey(e: KeyboardEvent, down: boolean): void {
+    // A key typed into a text field (the Comms Relay's name and room-code boxes) belongs
+    // to the field, full stop. `setEnabled(false)` from main.ts's focusin handler already
+    // stops the key *driving the character*, but until UAT §1 the `preventDefault` below
+    // still ran first and swallowed the character itself — so W/A/S/D, E, Q, J, K, L, M,
+    // N, U, H, I, O and ";" simply couldn't be typed, and with A, D, E, H, J, K, L, M, N,
+    // Q, U and W all in the room-code alphabet most codes were untypeable. Checking the
+    // event's own target, not just the enabled flag, means this holds even if the focus
+    // bookkeeping ever lags a frame behind.
+    if (isEditableTarget(e.target)) return;
     if (down && this.captureCb) {
       e.preventDefault();
       const cb = this.captureCb;
@@ -165,12 +178,13 @@ export class Input {
     }
     const action = this.bindings[e.code];
     if (!action) return;
+    // While the keyboard is handed to something else, the browser keeps its defaults too.
+    if (!this.enabled) return;
     // Any key bound to an action must not also scroll the page, submit a form, navigate
     // back, or otherwise do whatever the browser would do with it by default — and since
     // every key can be rebound to anything now, that has to hold for every key, not just
     // a fixed list of the ones that shipped with a default binding there.
     e.preventDefault();
-    if (!this.enabled) return;
 
     if (down) {
       // Held-key auto-repeat drives menu scrolling but must never auto-fire attacks.
@@ -235,6 +249,24 @@ export class Input {
     const len = Math.hypot(x, y);
     return len === 0 ? { x: 0, y: 0 } : { x: x / len, y: y / len };
   }
+}
+
+/**
+ * Whether a key event was aimed at something that takes typed text. Duck-typed rather
+ * than `instanceof HTMLInputElement` so it can be exercised from Node, where the smoke
+ * test feeds `Input` synthetic events.
+ */
+export function isEditableTarget(t: EventTarget | null): boolean {
+  if (!t || typeof t !== "object") return false;
+  const el = t as { tagName?: unknown; isContentEditable?: unknown; type?: unknown };
+  const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : "";
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") {
+    // Buttons and checkboxes are inputs too, but nobody types into them.
+    const type = typeof el.type === "string" ? el.type.toLowerCase() : "text";
+    return !["button", "checkbox", "radio", "submit", "reset", "range", "color", "file"].includes(type);
+  }
+  return el.isContentEditable === true;
 }
 
 export interface ControlHint {

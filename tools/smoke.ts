@@ -7,7 +7,8 @@
  * boss telegraphs and gets out of them, it casts the skills it has, and it retreats
  * when it's hurt. A bot that can't do those things measures a game nobody is playing.
  */
-import type { Action, AvatarInput, Input } from "../src/core/input";
+import { Input, type Action, type AvatarInput } from "../src/core/input";
+import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, inTelegraph } from "../src/game/dungeon";
 import { Hub, HUB_HEIGHT, HUB_WIDTH } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
@@ -2094,6 +2095,60 @@ console.log("\n=== gems and the wardrobe ===");
   check("cosmetics never touch your numbers", JSON.stringify(dressed.player.mods) === before);
   check("wearing everything fills every slot",
     COSMETIC_SLOTS.every((slot) => dressed.appearance[slot] !== null));
+}
+
+console.log("\n=== controls ===");
+{
+  // UAT §1: typing a name or a room code into the Comms Relay must never be eaten by the
+  // game's own key handling. Before the fix every bound key was `preventDefault`ed before
+  // the enabled check ran, so W/A/S/D, E, Q and most of the room-code alphabet could not
+  // be typed into a field at all. `Input` is DOM-shaped but built here against a fake
+  // target, so this pins the rule headlessly.
+  class FakeTarget {
+    private listeners = new Map<string, ((e: unknown) => void)[]>();
+    addEventListener(type: string, cb: (e: unknown) => void): void {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), cb]);
+    }
+    fire(type: string, e: object): void {
+      for (const cb of this.listeners.get(type) ?? []) cb(e);
+    }
+  }
+  const target = new FakeTarget();
+  const input = new Input(
+    { ...DEFAULT_SETTINGS, keybinds: { ...DEFAULT_KEYBINDS } },
+    target as unknown as EventTarget,
+  );
+  /** Presses `code` at `tagName` (or the bare canvas); returns whether the game claimed it. */
+  const press = (code: string, tagName?: string): boolean => {
+    let prevented = false;
+    const ev = {
+      code, repeat: false,
+      target: tagName ? { tagName } : {},
+      preventDefault: () => { prevented = true; },
+    };
+    target.fire("keydown", ev);
+    target.fire("keyup", ev);
+    return prevented;
+  };
+  check("a bound key on the canvas is the game's", press("KeyW") === true);
+  check("a bound key typed into a text field reaches the field", press("KeyW", "INPUT") === false);
+  check("… and a textarea", press("KeyE", "TEXTAREA") === false);
+  input.setEnabled(false);
+  check("with the keyboard handed to a field, no key is swallowed", press("KeyE") === false);
+  input.setEnabled(true);
+  check("every room-code letter can be typed into the code box",
+    [..."ABCDEFGHJKLMNPQRTUVWXY"].every((c) => press(`Key${c}`, "INPUT") === false));
+  check("every default binding can be typed into a name",
+    REBINDABLE_ACTIONS.every((a) => press(DEFAULT_KEYBINDS[a], "INPUT") === false));
+  check("but a checkbox isn't a place you type",
+    (() => {
+      let prevented = false;
+      target.fire("keydown", {
+        code: "KeyW", repeat: false, target: { tagName: "INPUT", type: "checkbox" },
+        preventDefault: () => { prevented = true; },
+      });
+      return prevented;
+    })());
 }
 
 console.log("\n=== multiplayer ===");
