@@ -357,7 +357,12 @@ html, body {
   margin-bottom: 8px;
   background: rgba(255, 255, 255, 0.015);
   opacity: 0.5;
+  /* Nodes are clickable, not just walkable — the pointer is what says so. */
+  cursor: pointer;
+  user-select: none;
 }
+
+.tree-node:hover { border-color: rgba(255, 255, 255, 0.35); }
 
 /* A branch is walked top to bottom, so the nodes are strung together visibly. */
 .tree-node + .tree-node { position: relative; }

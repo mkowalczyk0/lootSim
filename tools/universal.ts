@@ -201,6 +201,34 @@ console.log("\n=== 4. the root belongs to no path ===");
 }
 
 // =========================================================================
+console.log("\n=== 4b. the grid the tree tab renders is unambiguous ===");
+{
+  // Both input routes address a node by the same `(path, row)` pair: the keyboard walks
+  // the cursor and branch, and a click carries `data-branch`/`data-index` that land in
+  // exactly those two fields. So a duplicated or missing cell would misfire identically
+  // for mouse and keyboard — worth pinning here, where it's pure data, rather than
+  // discovering it by clicking.
+  const cells = new Map<string, string[]>();
+  for (const n of UNIVERSAL_TREE) {
+    const key = `${n.path}:${n.row}`;
+    cells.set(key, [...(cells.get(key) ?? []), n.id]);
+  }
+  const duplicated = [...cells.entries()].filter(([, ids]) => ids.length > 1);
+  check("no two nodes share a grid cell", duplicated.length === 0,
+    duplicated.map(([cell, ids]) => `${cell} → ${ids.join(" + ")}`).join("; "));
+
+  check("the root is the only node outside the six columns",
+    UNIVERSAL_TREE.filter((n) => n.path < 0).length === 1);
+
+  // The tab renders rows 1..depth per column and maps them onto rows 0..depth-1, so a
+  // gap would render a blank cell the cursor could still stop on.
+  const contiguous = Array.from({ length: UNIVERSAL_PATH_COUNT }, (_, p) =>
+    path(p).map((n) => n.row).join(",") === Array.from({ length: UNIVERSAL_PATH_DEPTH }, (_, i) => i).join(","));
+  check("every column's rows are contiguous from 0, so no cell renders blank",
+    contiguous.every(Boolean));
+}
+
+// =========================================================================
 console.log("\n=== 5. an empty tree changes nothing ===");
 {
   const build = resolveUniversalBuild([]);
