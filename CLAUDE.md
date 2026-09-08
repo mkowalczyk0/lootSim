@@ -39,7 +39,7 @@ npm run relay     # the party relay alone, for serving a built dist/
 because `game/` is DOM-free. **Run it after any balance change.** The bot dodges
 telegraphs, casts what it has, and retreats when hurt, so it measures the game a real
 player experiences rather than a synthetic average. It runs sharp-vs-reckless campaigns,
-a raid boss with telegraph-reading on and off, a full Hoard Rift, and validates every
+a raid boss with telegraph-reading on and off, a full Avarice Rift, and validates every
 generated floor (reachable portal, hazard placement, and — since the tile-lattice pass —
 that painted rock is exactly the collision volume, not an approximation of it). It also
 plays co-op end to end with a real host and client in one process, walks every sprite
@@ -104,7 +104,7 @@ Risk/reward is the point: unbanked loot is lost on death. Never make death free.
 `src/game/hub.ts` (simulation) and `src/render/hub.ts` (drawing) are the home base, and
 they're a small explorable canvas scene, not a screen of menu rows. Every non-combat
 system is reached by walking up to a **station** and pressing confirm, Diablo-portal
-style: the Delve, the Abyssal Rift and the Hoard Rift each stand as their own permanent
+style: the Delve, the Abyssal Rift and the Avarice Rift each stand as their own permanent
 portal; a **Star Map terminal** configures a planet expedition and spawns a portal for
 it rather than diving immediately; **the Forge** is where materials get crafted into
 gear; **the Quartermaster** is the door into everything that's still a DOM screen —
@@ -132,7 +132,7 @@ multiplier and the curve does the rest. One curve, several ways of walking up it
   extract after every clear.
 - **Abyssal Rift** — four floors and a boss, opened at a tier you choose. Brutal, and it
   pays in *rarity*: bends the loot table hard toward the top end, gives little else.
-- **Hoard Rift** — three floors and a boss. A step easier, pays in *volume*: coins, keys
+- **Avarice Rift** — three floors and a boss. A step easier, pays in *volume*: coins, keys
   and a pile of drops you'll mostly sell.
 
 A rift's difficulty is **exponential in its tier** (`dangerPerTier ^ (tier - 1)`) rather
@@ -521,7 +521,7 @@ sheet to the same character undressed.
 The economy is separate too: cosmetics are bought with **gems**, which drop, bank and
 are lost on death exactly like coins, spent on nothing else. Coins never become gems and
 gems never become coins; `gemMult` on a `RunMode` is where a mode says how much it pays
-in them, and the Hoard Rift is the one that funds a wardrobe.
+in them, and the Avarice Rift is the one that funds a wardrobe.
 
 - Six slots: hat, ears, face, back, aura, weapon skin. Hairstyle, hair colour, skin
   tone, eye colour and an outfit dye are free — deciding what you look like isn't a
