@@ -654,8 +654,14 @@ export class Dungeon implements CombatHost, RuleHost {
         x: clamp(center.x + Math.cos(angle) * reach, 40, this.width - 40),
         y: clamp(center.y + Math.sin(angle) * reach, 40, this.height - 40),
       });
+      // Decremented per monster, not after the whole burst: `placeMonsterAt`'s forced-elite
+      // check reads `this.queued` to see how many spawns are left to pay off an elite debt,
+      // and a batched decrement left that number frozen at the burst's pre-spawn size for
+      // every monster in it — so a debt bigger than the *last* burst (not the whole wave)
+      // could run out of monsters to force before it was paid off (Nightmare-tier Challenger
+      // raises the debt past what a small last burst can carry).
+      this.queued--;
     }
-    this.queued -= size;
   }
 
   /**

@@ -482,9 +482,23 @@ function campaign(seed: number, dodge: number, dives = 20, log = false) {
   return { state, deepest, deaths, unfinished };
 }
 
+// Twelve seeds each, not five — the same widening the depth-5 boss check and the elite
+// telegraph check already got. A floor's own layout and its monster placements come off
+// the same rng stream a campaign's dives share, so any change to level generation or to
+// what a wave director rolls (an elite requirement, an archetype, an affix) reshuffles
+// every dive from the point it first draws differently — five seeds routinely flipped
+// the sharp/reckless ordering on changes that never touched difficulty at all (the
+// tile-lattice rewrite moved sharp from 11.0 to 10.6 and reckless from 10.0 to 11.0,
+// purely from the shared sequence landing differently, not from anything actually
+// getting harder or easier). Twelve holds the ordering steady across that kind of
+// change; the comparison below is what actually encodes the design promise, once the
+// sample is wide enough for it to mean something.
+const CAMPAIGN_SEEDS = [4242, 991, 7777, 31337, 606, 5150, 20226, 88813, 41029, 63071, 17402, 94651];
+
+let sharpDeepest = 0;
 console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraphs) ===");
 {
-  const runs = [4242, 991, 7777, 31337, 606].map((seed, i) => campaign(seed, 0.55, 20, i === 0));
+  const runs = CAMPAIGN_SEEDS.map((seed, i) => campaign(seed, 0.55, 20, i === 0));
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -493,6 +507,7 @@ console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraph
     );
   }
   const deepest = runs.reduce((a, r) => a + r.deepest, 0) / runs.length;
+  sharpDeepest = deepest;
   const first = runs[0]!.state;
   const worn = Object.values(first.player.equipment).filter(Boolean).length;
   check("skilled play makes real progress", deepest >= 8, `average deepest depth ${deepest.toFixed(1)}`);
@@ -505,7 +520,7 @@ console.log("\n=== a campaign: 20 dives, a sharp player (dodges 55% of telegraph
 
 console.log("\n=== a campaign: 20 dives, a reckless player (never dodges) ===");
 {
-  const runs = [4242, 991, 7777, 31337, 606].map((seed) => campaign(seed, 0, 20));
+  const runs = CAMPAIGN_SEEDS.map((seed) => campaign(seed, 0, 20));
   for (const [i, r] of runs.entries()) {
     console.log(
       `  seed ${i}: reached depth ${r.deepest}, died ${r.deaths} times, ` +
@@ -517,10 +532,17 @@ console.log("\n=== a campaign: 20 dives, a reckless player (never dodges) ===");
   const deaths = runs.reduce((a, r) => a + r.deaths, 0);
   // Standing in the open and trading hits has to cost you. It also has to leave the
   // early floors learnable, or a new character can never get started at all.
-  check("ignoring telegraphs gets you killed", deaths >= 10, `${deaths} deaths across 100 dives`);
+  check("ignoring telegraphs gets you killed", deaths >= 10, `${deaths} deaths across 240 dives`);
   check("the descent still has teeth for a careless player", deepest <= 12,
     `average deepest depth ${deepest.toFixed(1)}`);
   check("the early floors stay learnable", deepest >= 3, `average deepest depth ${deepest.toFixed(1)}`);
+  // The actual design promise (CLAUDE.md: "a bot that never dodges stalls out... one
+  // that dodges half the time reaches the high teens") is a *comparison*, and nothing
+  // above ever checked it — both blocks only bounded their own number in isolation, so
+  // the sharp run could quietly fall at or below the reckless one and every check would
+  // still pass green.
+  check("reading telegraphs reaches meaningfully deeper than ignoring them",
+    sharpDeepest >= deepest + 1, `sharp ${sharpDeepest.toFixed(1)} vs reckless ${deepest.toFixed(1)}`);
 }
 
 /**
