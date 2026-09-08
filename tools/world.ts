@@ -1,0 +1,245 @@
+/**
+ * World structure acceptance test — UAT §23 (and the seam §21 will hang from).
+ *
+ * §23 asks for the world to read as **layers** rather than disconnected content tiers, and
+ * for descending and ascending to be two halves of one war. That is a claim about
+ * structure, so the checks here are structural rather than "the screen said something
+ * plausible":
+ *
+ *   1. **The bands tile the ladder.** Every depth on both axes lands in exactly one layer,
+ *      with no gap and no overlap, and each ladder runs from 1 to infinity. A ladder with
+ *      a hole in it is a floor with no answer to "where am I".
+ *   2. **Every run has a layer.** `layerFor` is walked across all of `RUN_MODES`, so a mode
+ *      added later cannot quietly inherit a default — it has to say where in the world it
+ *      happens.
+ *   3. **The bands sit on the boundaries the game already had.** A layer edge must be a
+ *      depth where `biomeFor` changes too. That is what makes this a *reading* of the
+ *      existing ladder rather than a second, competing one.
+ *   4. **A layer line says something a mode line doesn't.** The §22 bar, applied to the new
+ *      prose: name the war, not the payout; never restate the mode's own sentence; no key
+ *      names.
+ *   5. **The reserved §15 seam stays empty.** `raidId` must be null everywhere until a raid
+ *      table exists for it to resolve against — the same rule `relicProblems` applies to
+ *      the reserved `raid`/`tower` drop kinds.
+ *   6. **The Reliquary widening only ever widens.** The frontier route may add access and
+ *      may never remove it, so no existing save can lose a sector it already had.
+ *
+ * Headless, no browser. Run with `npm run world`.
+ */
+
+import { biomeFor } from "../src/data/biomes";
+import {
+  DOWN_LAYERS, LAYERS, RIFT_LAYERS, UP_LAYERS, layerAt, layerFor, type WorldLayer,
+} from "../src/data/layers";
+import { MODES, RUN_MODES, delveConfig, riftConfig } from "../src/data/modes";
+import { PLANETS, planetConfig, planetUnlocked } from "../src/data/planets";
+import { DELVE_BOTTOM } from "../src/data/legends";
+import { dailyConfig, dayNumber } from "../src/data/daily";
+import { weekNumber, weeklyConfig } from "../src/data/weekly";
+import { profileFor } from "../src/data/depth";
+
+let failures = 0;
+function check(label: string, ok: boolean, detail = "") {
+  console.log(`${ok ? "  ok  " : " FAIL "} ${label}${detail ? "  — " + detail : ""}`);
+  if (!ok) failures++;
+}
+
+/** How deep the walks below go. Well past the authored world on either ladder. */
+const FAR = 60;
+
+// --- 1. the bands tile the ladder -----------------------------------------
+
+console.log("\n=== every floor on both ladders is in exactly one layer ===");
+
+for (const [axis, ladder] of [["down", DOWN_LAYERS], ["up", UP_LAYERS]] as const) {
+  check(`${axis}: the ladder starts at depth 1`, ladder[0]!.from === 1,
+    `first band starts at ${ladder[0]!.from}`);
+  check(`${axis}: the ladder has no end`, ladder[ladder.length - 1]!.to === Infinity);
+
+  let contiguous = true;
+  for (let i = 1; i < ladder.length; i++) {
+    if (ladder[i]!.from !== ladder[i - 1]!.to + 1) contiguous = false;
+  }
+  check(`${axis}: the bands are contiguous, no gap and no overlap`, contiguous,
+    ladder.map((l) => `${l.from}-${l.to === Infinity ? "∞" : l.to}`).join(" "));
+
+  let everyDepthOnce = true;
+  for (let d = 1; d <= FAR; d++) {
+    const hits = ladder.filter((l) => d >= l.from && d <= l.to);
+    if (hits.length !== 1 || hits[0] !== layerAt(axis, d)) everyDepthOnce = false;
+  }
+  check(`${axis}: depths 1-${FAR} each land in exactly one band`, everyDepthOnce);
+
+  check(`${axis}: every band is on the ${axis} axis`, ladder.every((l) => l.axis === axis));
+}
+
+// A depth below the ladder is not a crash and not a gap: it reads as the first band.
+check("a depth below 1 reads as the top band",
+  layerAt("down", 0) === DOWN_LAYERS[0] && layerAt("down", -5) === DOWN_LAYERS[0]);
+check("a fractional depth reads as its floor",
+  layerAt("down", 6.9) === layerAt("down", 6));
+
+check("every layer id is unique",
+  new Set(LAYERS.map((l) => l.id)).size === LAYERS.length);
+check("every layer name is unique",
+  new Set(LAYERS.map((l) => l.name)).size === LAYERS.length);
+
+// --- 2. every run has a layer ---------------------------------------------
+
+console.log("\n=== every run mode says where in the war it happens ===");
+
+const today = dayNumber();
+const thisWeek = weekNumber();
+for (const id of RUN_MODES) {
+  const config = id === "delve"
+    ? delveConfig(7)
+    : id === "vigil"
+      ? dailyConfig(today)
+      : id === "convergence"
+        ? weeklyConfig(thisWeek, 1)
+        : id === "planet"
+          ? planetConfig(PLANETS[0]!, 1, 1)
+          : riftConfig(id, 1, 1);
+  const layer = layerFor(config);
+  check(`${MODES[id].name} has a layer`, !!layer && LAYERS.includes(layer),
+    layer ? `${layer.name} (${layer.realm})` : "none");
+}
+
+check("the Abyssal Rift is in the Abyss, not in Hell",
+  layerFor(riftConfig("abyss", 1, 1)) === RIFT_LAYERS.abyss
+  && RIFT_LAYERS.abyss.realm === "abyss");
+check("the Avarice Rift is a piece of Hell's fourth circle",
+  layerFor(riftConfig("hoard", 1, 1)) === RIFT_LAYERS.avarice
+  && RIFT_LAYERS.avarice.realm === "hell");
+check("the Reliquary, the Vigil and the Convergence are all in the Threshold",
+  [planetConfig(PLANETS[0]!, 1, 1), dailyConfig(today), weeklyConfig(thisWeek, 1)]
+    .every((c) => layerFor(c) === RIFT_LAYERS.threshold));
+
+// The Delve is the one mode whose layer moves with the floor. That is the §23 point.
+check("the Delve changes layer as it descends",
+  new Set([1, 8, 20, 30].map((d) => layerFor(delveConfig(d)).id)).size === 4);
+check("the bottom of the Delve is the Abyss's ground, not Hell's",
+  layerFor(delveConfig(DELVE_BOTTOM)).realm === "abyss",
+  `depth ${DELVE_BOTTOM} → ${layerFor(delveConfig(DELVE_BOTTOM)).name}`);
+
+// The profile is where every screen reads the layer from, so it must agree with the
+// function. A second answer here is exactly the drift §20 warns about.
+let profileAgrees = true;
+for (let d = 1; d <= FAR; d++) {
+  const config = delveConfig(d);
+  if (profileFor(d, config).layer !== layerFor(config)) profileAgrees = false;
+}
+check(`the profile's layer is the function's answer, depths 1-${FAR}`, profileAgrees);
+
+// --- 3. the bands sit on boundaries the game already had -------------------
+
+console.log("\n=== a layer edge is a boundary the Delve already had ===");
+
+let edgesAlign = true;
+const edgeDetail: string[] = [];
+for (const layer of DOWN_LAYERS) {
+  if (layer.from === 1) continue;
+  const same = biomeFor(layer.from) === biomeFor(layer.from - 1);
+  if (same) {
+    edgesAlign = false;
+    edgeDetail.push(`${layer.name} starts at ${layer.from} mid-biome`);
+  }
+}
+check("every descent band starts where the biome changes", edgesAlign, edgeDetail.join("; "));
+
+// The Proving stands at the bottom of the Delve and must not be split off into a band of
+// its own by a later edit — it is inside the last one.
+check("the Proving's floor is inside the last descent band",
+  layerAt("down", DELVE_BOTTOM) === DOWN_LAYERS[DOWN_LAYERS.length - 1]);
+
+// --- 4. the prose says something the mode's own line doesn't ---------------
+
+console.log("\n=== a layer line says where, not what the mode already said ===");
+
+/** The §22 vocabulary: a line has to name the war it belongs to. */
+const WAR = /Heaven|Hell|Abyss|Purgatory|Keepers|Rift|Citadel|Reliquary|Limbo|circle|celestial|Threshold/i;
+/** Payout words. A layer says where you are, never what it pays. */
+const PAYOUT = /coins|keys|rarity|farm|loot|drops/i;
+/** No on-screen legend may hardcode a key name or a "press"/"click" (CLAUDE.md). */
+const KEYS = /\[[A-Z]\]|\bpress\b|\bclick\b/i;
+
+const MODE_LORE = RUN_MODES.map((id) => MODES[id].lore);
+
+for (const layer of LAYERS) {
+  const l = layer.lore;
+  check(`${layer.name}: has a line`, l.trim().length > 0);
+  check(`${layer.name}: names the war`, WAR.test(l));
+  check(`${layer.name}: doesn't quote the payout`, !PAYOUT.test(l));
+  check(`${layer.name}: hardcodes no key`, !KEYS.test(l) && !KEYS.test(layer.name));
+  check(`${layer.name}: fits the panel`, l.length <= 320, `${l.length} chars`);
+  // The pair on screen is "what this place is" (the mode) plus "where it sits" (the
+  // layer). If a layer line ever becomes a copy of a mode line, one of them is dead text.
+  check(`${layer.name}: isn't a restatement of a mode's line`, !MODE_LORE.includes(l));
+}
+
+check("no two layers share a line",
+  new Set(LAYERS.map((l) => l.lore)).size === LAYERS.length);
+
+// Both halves of the war are actually described. A table with only the descent in it
+// would be the disconnected-tiers problem wearing a new name.
+check("the descent and the ascent are both authored",
+  DOWN_LAYERS.length >= 3 && UP_LAYERS.length >= 3,
+  `${DOWN_LAYERS.length} down, ${UP_LAYERS.length} up`);
+check("the ascent is Heaven's ground throughout",
+  UP_LAYERS.every((l) => l.realm === "heaven"));
+check("the descent ends on ground that is no longer Hell's",
+  DOWN_LAYERS[DOWN_LAYERS.length - 1]!.realm === "abyss");
+
+// --- 5. the reserved §15 seam ---------------------------------------------
+
+console.log("\n=== the raid seam is reserved, and empty ===");
+
+check("no layer claims a raid yet (UAT §15 is not built)",
+  LAYERS.every((l) => l.raidId === null),
+  LAYERS.filter((l) => l.raidId !== null).map((l) => l.name).join(", "));
+check("every layer has the field, so a raid has somewhere to hang",
+  LAYERS.every((l) => "raidId" in (l as WorldLayer)));
+
+// --- 6. the Reliquary widening only widens --------------------------------
+
+console.log("\n=== a sector unlocks by the ladder or by the frontier, never less ===");
+
+check("the first sector is always open", planetUnlocked(PLANETS[0]!, {}, 0));
+check("the ladder route still works on its own at frontier 0",
+  planetUnlocked(PLANETS[1]!, { [PLANETS[0]!.id]: 2 }, 0));
+check("a fresh account still can't skip ahead",
+  !planetUnlocked(PLANETS[1]!, {}, 0));
+
+// The new route: the frontier against the sector's own tuned depth.
+let frontierOpens = true;
+for (const planet of PLANETS.slice(1)) {
+  if (!planetUnlocked(planet, {}, planet.baseDepth)) frontierOpens = false;
+  if (planetUnlocked(planet, {}, planet.baseDepth - 1)) frontierOpens = false;
+}
+check("the frontier opens a sector exactly at its own base depth", frontierOpens);
+
+// The property that makes this safe to ship: more progress never removes access.
+let monotonic = true;
+for (const planet of PLANETS) {
+  for (const progress of [{}, { [PLANETS[0]!.id]: 2 }]) {
+    let wasOpen = false;
+    for (let f = 0; f <= FAR; f++) {
+      const open = planetUnlocked(planet, progress, f);
+      if (wasOpen && !open) monotonic = false;
+      wasOpen = open;
+    }
+  }
+}
+check("a higher frontier never closes a sector that was open", monotonic);
+
+let ladderPreserved = true;
+for (let i = 1; i < PLANETS.length; i++) {
+  const progress = { [PLANETS[i - 1]!.id]: 1 };
+  if (!planetUnlocked(PLANETS[i]!, progress, 0)) ladderPreserved = false;
+}
+check("every sector the old ladder opened is still open at frontier 0", ladderPreserved);
+
+console.log(failures === 0
+  ? "\nThe world reads as one structure.\n"
+  : `\n${failures} problem(s).\n`);
+process.exit(failures === 0 ? 0 : 1);

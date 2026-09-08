@@ -237,6 +237,20 @@ export class GameState {
   }
 
   /**
+   * How far into the war this account has got, on any ladder (UAT §23) — the one number
+   * that answers "what has this player earned the right to stand in".
+   *
+   * Today that is the lifetime record depth and nothing else, so this getter is exactly
+   * `stats.deepestDepth`. It exists as its own name anyway because §21's Tower adds a
+   * second ladder and the frontier then becomes the deeper of the two: one place to widen
+   * rather than a `Math.max` copied into every caller. `planetUnlocked` is its first
+   * reader.
+   */
+  get frontier(): number {
+    return this.stats.deepestDepth;
+  }
+
+  /**
    * The universal tree's point pool — UAT §18. **Account-wide**, unlike the class tree's,
    * and derived from the lifetime record depth across every character rather than from
    * any one character's level.

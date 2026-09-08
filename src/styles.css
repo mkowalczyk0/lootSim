@@ -264,6 +264,18 @@ html, body {
 
 .list.records { padding: 20px; }
 
+/* A band of the war, heading the floors that fall in it on the Dive list (UAT §23).
+   Not a `.row`: it carries no data-index, so it is not selectable or clickable. */
+.group {
+  padding: 12px 12px 5px;
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.group:first-child { padding-top: 5px; }
+
 .row {
   display: flex;
   justify-content: space-between;
