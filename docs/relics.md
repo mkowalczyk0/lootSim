@@ -231,8 +231,18 @@ saying once: there is no "old Spark" anywhere.
 - **Relic crafting, upgrading, salvaging.** A relic is found, never made or unmade.
   `relicProblems` refuses a craft source.
 - **Three relics at once.** One constant if the owner wants it.
-- **Relic art.** Every shipped relic is on the tinted-glyph fallback; `relic.<id>` rows
-  in the atlas manifest and PNGs under `src/render/atlas/relics/` are the contract.
+- **A `resourceRule` relic.** Allowed by the type, refused by the validator: a class
+  resource is one class's, and a relic is worn by twenty-one.
+
+## Relic art
+
+`relic.<id>` rows in the atlas manifest and PNGs under `src/render/atlas/relics/` are
+the contract; `chooseRelicArt` falls back to the tinted glyph for anything without one.
+The 8 Proving relics (one per element) are authored as of the item-art pass that
+followed UAT §11/§12's named-item art; the artifacts and the 4 remaining relics
+(the two Nameless relics, Sandals of the Swift Messenger, Remnant of What Was Not)
+follow in later batches of the same pass — `npm run itemart`'s relic section reports
+the live count. `tools/itemart.ts` never hardcodes the number for this exact reason.
 - **A `resourceRule` relic.** Allowed by the type, refused by the validator: a class
   resource is one class's, and a relic is worn by twenty-one.
 

@@ -150,7 +150,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // --- relics and artifacts (UAT §19) --- one row per `RelicDef.art`, by convention
   // `relic.<def id>`, PNG under `src/render/atlas/relics/`. Same fallback contract as
   // named items: `relicArt` draws the gem glyph tinted by tier until a row lands here.
-  // (No rows yet — the largest half of this pass, paced across its own batches.)
+  // worldScale/feet copied from `icon.gem` — the sibling the fallback glyph itself uses —
+  // since a relic has no item type of its own to draw a floor size from.
+  //
+  // The 8 Proving relics, one per element (docs/relics.md) — the first batch of the
+  // larger relics/artifacts pass, prioritised ahead of the artifacts per the owner.
+  "relic.spark-of-the-unfinished-storm":  { id: "relic.spark-of-the-unfinished-storm",  w: 25, h: 30, worldScale: 0.60, feet: 0.15 },
+  "relic.cinder-of-the-unfinished-pyre":  { id: "relic.cinder-of-the-unfinished-pyre",  w: 30, h: 29, worldScale: 0.60, feet: 0.15 },
+  "relic.rime-of-the-unfinished-vigil":   { id: "relic.rime-of-the-unfinished-vigil",   w: 18, h: 27, worldScale: 0.60, feet: 0.15 },
+  "relic.hymn-of-the-unfinished-choir":   { id: "relic.hymn-of-the-unfinished-choir",   w: 24, h: 27, worldScale: 0.60, feet: 0.15 },
+  "relic.venom-of-the-unfinished-garden": { id: "relic.venom-of-the-unfinished-garden", w: 20, h: 31, worldScale: 0.60, feet: 0.15 },
+  "relic.hollow-of-the-unfinished-word":  { id: "relic.hollow-of-the-unfinished-word",  w: 18, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.sigil-of-the-unfinished-art":    { id: "relic.sigil-of-the-unfinished-art",    w: 26, h: 27, worldScale: 0.60, feet: 0.15 },
+  "relic.measure-of-the-unfinished-duel": { id: "relic.measure-of-the-unfinished-duel", w: 30, h: 25, worldScale: 0.60, feet: 0.15 },
 };
 
 /**
