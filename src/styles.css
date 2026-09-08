@@ -340,6 +340,7 @@ html, body {
 .badge.boss { color: var(--danger); border-color: var(--danger); }
 .badge.warn { color: var(--danger); border-color: var(--danger); }
 .badge.on { color: var(--accent); border-color: var(--accent); }
+.badge.gold { color: var(--gold); border-color: var(--gold); }
 
 .dot {
   width: 8px;
@@ -710,6 +711,19 @@ html, body {
   box-shadow: 0 0 0 1px var(--class-color, var(--accent)), 0 0 22px -6px var(--class-color, var(--accent));
   background: var(--panel);
   transform: scale(1.08);
+}
+
+/* A completed Legend — UAT §13. The gold border is the whole reward, so it reads at a
+   glance across a row of twenty-one cards. Selected *and* complete keeps the class colour
+   in the glow so the cursor is still findable on a card that is already gold. */
+.class-card.complete {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 18px -8px var(--gold);
+}
+
+.class-card.complete.on {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 22px -6px var(--class-color, var(--accent));
 }
 
 .class-card-art {

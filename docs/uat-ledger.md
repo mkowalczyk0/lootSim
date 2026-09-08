@@ -9,7 +9,7 @@ Status vocabulary: **done** (merged to master, tests green) · **partial** (real
 landed, spec not fully satisfied) · **open** (nothing built) · **assigned** (in flight in
 a worktree, not yet merged).
 
-Last audited: 2026-09-08, PM session `lootsim-70`.
+Last audited: 2026-09-08, PM session `lootsim-70`. §13/§14 rows updated by the session that built them, on landing.
 
 ## Phase 12 chunk order
 
@@ -23,7 +23,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 3 — Floor completion loop | clear condition, elite quota, completion portal, extraction penalty | done |
 | 4 — UI | stash, item images, hero screen | partial |
 | 5 — Universal progression | universal skill tree | done |
-| 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | in flight |
+| 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | class completion done; weekly + previews in flight |
 | 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
 | 8 — Crafting | forge overhaul, reforging, currency, recipes | in flight |
 | 9 — Relics | relic system, ~20 relics, equip, acquisition | open |
@@ -46,8 +46,8 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 10 | Ultimate generation fix | done | `fix/ultimate-rate`, merged. |
 | 11 | Stash UI rework | partial | Real 2-D grid with rarity filter and sell flow. **Open half: the §11 critical requirement** — the stash icon must be the same image the chest-open shows, consistently everywhere. Depends on the §28 art-id pipeline. |
 | 12 | Hero / character UI | partial | Pipeline art in the Hero and Style portraits landed. Open: equipment slots arranged around the character with real per-item images. Depends on §28. |
-| 13 | Endgame class completion | **assigned** | Opus 5, `feat/class-completion`. Per-`Player` completion state, gold border. |
-| 14 | Final boss / delve concept | **assigned** | Same. Steer: tie it into the Delve rather than a separate system, per the spec. |
+| 13 | Endgame class completion | **done** | `feat/class-completion`. The Proving: `src/data/legends.ts` + `tools/legends.ts` (wired into `npm test`). One new persisted field, `Player.legendComplete` (SAVE_VERSION 18); gold border on the Path cards, a side-panel state per class, Records rows, a one-time announcement. Powerless — asserted to leave the sheet byte-identical. Solo only in v1. See `docs/class-completion.md`. |
+| 14 | Final boss / delve concept | **done** | Tied into the Delve, at depth 30, with **no** new mode, station, portal, tab or wire field. Depth 30 because that is where the authored world already ends (`biomeFor` caps from 26, `bossFor` from 25). The ladder is deliberately **not** capped. Gate is a per-class *banked* clear of the bottom, so no new unlock state. 21 encounters borrowed-and-reskinned per the `planetBossSpec` precedent. |
 | 15 | Raid bosses (4–20p) | open | **Unblocked** — §28 landed, and boss-exclusive named drops now work (5 encounters already have one). The raid framework itself is untouched. |
 | 16 | Raid drop rarity | open | Blocked on §15. `NamedSource` already scales drop chance with `danger`, which is the hook §16 asks for. |
 | 17 | Daily & weekly dungeons | partial | Daily shipped as **The Vigil** (`data/daily.ts`, `daily-dungeon.md`). Weekly **assigned** to Sonnet 5, `feature/weekly-dungeon`. |
@@ -90,10 +90,27 @@ Proving) sits at roughly three times anything the harness has ever reached.
 
 That is not necessarily wrong — the smoke campaign plays 20 dives on a *fresh* character
 and measures the early curve, not an account with a filled tree, universal allocation,
-crafted gear and rift-farmed drops. The actual problem is that **nothing in the repo
-measures account-level reach at all.** We don't know if depth 30 is a stretch goal or an
-impossibility, and §7 ("players become overpowered too early") pushed the curve steeper
-without anything checking the far end. Wants an owner call plus a measurement harness.
+crafted gear and rift-farmed drops.
+
+**Partly answered, 2026-09-08, by the §13 work.** `tools/smoke.ts`'s Proving section now
+builds the account-level character that was missing: level 60, class tree filled, universal
+pool spent, thirty Legendary chests worn, gear rolled at the bottom. What it found:
+
+- Depth 30 **is** clearable by such a character — 6/6 on the Proving.
+- A level-34 Elite-geared character cannot clear depth 30 in *either* flavour (0/4, boss
+  left above 94%), so the gate is real and steep.
+- **Class power at depth 30 varies enormously.** Sampled across eight classes at level 60
+  with legendary gear, only three could beat depth 30 at all — and that holds for the
+  *ordinary* depth-30 floor as much as for the Proving, so it is a class-balance statement,
+  not an encounter one. It rhymes with `npm run builds` being red for a known set of
+  classes.
+
+So depth 30 is a stretch goal rather than an impossibility, and the remaining open question
+is narrower than it was: **what level and gear does the curve actually intend for depth 30,
+and why can most classes not get there at 60?** Still wants an owner call. Not tuned around
+inside the §13 ticket, deliberately — the fiction and the data both put the bottom at 30,
+and the completion gate is a banked clear, so the feature simply never fires for a character
+that cannot reach it.
 
 **The sharp-vs-reckless margin is thin.** The comparison assertion added after the Sept
 2026 inversion requires `sharp >= reckless + 1`; the live margin is **1.2** (10.3 vs 9.1).

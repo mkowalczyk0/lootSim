@@ -113,6 +113,16 @@ export class Player {
    */
   universalAllocated: string[] = [];
   deepestDepth = 0;
+  /**
+   * The Legend is Complete — this class beat its own Proving at the bottom of the Delve
+   * (UAT §13/§14, `data/legends.ts`). Per-`Player` because class completion is exactly
+   * the thing that must be earned once per class; the gold border on the class card is
+   * this boolean.
+   *
+   * Read by the UI and by nothing in the simulation. It grants no stats and unlocks no
+   * mechanics on purpose — prestige, not power.
+   */
+  legendComplete = false;
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
   /** Legacy mana pool, kept for the HUD and potions. A class's real casting resource is

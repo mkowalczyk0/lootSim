@@ -85,8 +85,16 @@
  * keep the thing" rule `normalizeAppearance` applies to a removed cosmetic. Because
  * `equipment` already travels on the co-op snapshot via `playerToJSON`, the id crosses
  * the wire for free and a client renders a remote hero's named gear by name and art.
+ *
+ * Version 18 added endgame class completion — the Proving at the bottom of the Delve
+ * (UAT §13/§14, `data/legends.ts`). One new persisted field per character,
+ * `Player.legendComplete`, and nothing else: the *gate* is the per-class `deepestDepth`
+ * this save already carried, so there is no unlock state to migrate. A version 17 save
+ * loads with every class incomplete, which is the truth — the encounter did not exist
+ * when it was written. A character that had already banked depth 30 finds its Proving
+ * waiting at the bottom on the next dive rather than having to re-earn the trip down.
  */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

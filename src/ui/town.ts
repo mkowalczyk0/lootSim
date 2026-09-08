@@ -31,6 +31,7 @@ import {
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
+import { DELVE_BOTTOM, legendName, provingUnlocked } from "../data/legends";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
 import { WEAPONS } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
@@ -335,6 +336,18 @@ export class TownUI {
         `The class update rebuilt the skill tree. ${n} point${n === 1 ? "" : "s"} refunded — `
           + `spend them however you like, respec is still free.`,
         "#7dd3fc",
+      );
+    }
+    // The Legend became Complete on the dive that just ended (UAT §13). Say it once, on
+    // the way back in, then clear the flag — the permanent record is the gold border on
+    // the Path tab, not this line.
+    const finished = this.state.legendJustCompleted;
+    if (finished) {
+      this.state.legendJustCompleted = null;
+      this.state.save();
+      this.announce(
+        `${legendName(finished)} is finished. ${CLASSES[finished].name}: the Legend is Complete.`,
+        "#fbbf24",
       );
     }
     this.cursor = 0;
@@ -2669,12 +2682,16 @@ export class TownUI {
       const untouched = pc.level === 1 && pc.xp === 0 && pc.allocated.length === 0
         && (Object.values(pc.equipment) as (Item | null)[]).every((it) => it === null);
       const icon = pixelImageFit(weaponSprite(cls.affinity[0]!, null, null), 64, `path-${id}`);
+      // The gold border (UAT §13): this class beat its own Proving at the bottom of the
+      // Delve, so its Legend is Complete. Read straight off the character sheet.
+      const complete = pc.legendComplete;
       return `
-        <div class="class-card row ${i === this.cursor ? "on" : ""}" data-index="${i}"
+        <div class="class-card row ${i === this.cursor ? "on" : ""} ${complete ? "complete" : ""}" data-index="${i}"
           style="--class-color:${cls.color}">
           <div class="class-card-art"><img src="${icon}" alt=""></div>
-          <span class="class-card-name" style="color:${cls.color}">${escapeHtml(cls.name)}</span>
+          <span class="class-card-name" style="color:${complete ? "var(--gold)" : cls.color}">${escapeHtml(cls.name)}</span>
           <span class="badge">${untouched ? "new" : `lv ${pc.level}`}</span>
+          ${complete ? '<span class="badge gold">complete</span>' : ""}
           ${playing ? '<span class="badge on">playing</span>' : ""}
         </div>`;
     }).join("");
@@ -2692,13 +2709,37 @@ export class TownUI {
     const charge = def ? meterFillSummary(def) : "fighting";
     const equippedCount = (Object.values(selChar.equipment) as (Item | null)[]).filter(Boolean).length;
 
+    // What the bottom of the Delve is currently offering this character, and what it
+    // already took (UAT §13/§14). Both read off the same per-class numbers the
+    // simulation reads, so the screen can never claim a border that isn't there.
+    const done = selChar.legendComplete;
+    const qualified = provingUnlocked(selChar.deepestDepth);
+    const legend = `
+        <h3 style="color:${done ? "var(--gold)" : sel.color}">The Proving</h3>
+        ${done
+          ? `<p><b style="color:var(--gold)">The Legend is Complete.</b> ${escapeHtml(sel.name)} went
+             to the bottom of the Delve and came back the whole of itself. The border stays.</p>
+             <p class="muted">${escapeHtml(legendName(selId))} is still down there, and still
+             fightable. It will not get any less finished than it already is.</p>`
+          : qualified
+            ? `<p>This one has stood at the bottom, so the bottom knows it now. Depth
+               ${DELVE_BOTTOM} is no longer an ordinary floor for
+               ${escapeHtml(sel.name)}: <b>${escapeHtml(legendName(selId))}</b> is waiting on it.</p>
+               <p class="muted">Everything of this Legend you never recovered, assembled by
+               something that kept it. Beat it and the class wears a gold border.</p>`
+            : `<p class="muted">Clear depth ${DELVE_BOTTOM} — the bottom of the Delve — and bank
+               it, on this class. Then come back and something will be waiting.</p>
+               <p class="muted">Deepest banked on this one: <b>${selChar.deepestDepth}</b> of
+               ${DELVE_BOTTOM}. Dying down there doesn't count, and neither does bailing out.</p>`}`;
+
     return `<div class="carousel">
         <span class="chip carousel-arrow" data-action="left">◀</span>
         <div class="carousel-track">${cards}</div>
         <span class="chip carousel-arrow" data-action="right">▶</span>
       </div>
       <aside class="side">
-        <h3 style="color:${sel.color}">${escapeHtml(sel.name)}</h3>
+        <h3 style="color:${done ? "var(--gold)" : sel.color}">${escapeHtml(sel.name)}
+          ${done ? '<span class="badge gold">complete</span>' : ""}</h3>
         <p class="muted">${escapeHtml(sel.title)}</p>
         <p>${escapeHtml(sel.blurb)}</p>
         <p class="muted">${escapeHtml(sel.playstyle)}</p>
@@ -2710,6 +2751,7 @@ export class TownUI {
         <h3 style="color:${sel.color}">${escapeHtml(ult?.name ?? "—")}</h3>
         <p>${escapeHtml(ult?.description ?? "")}</p>
         <p class="muted">Charges by ${escapeHtml(charge)}. ${escapeHtml(def?.question ?? "")}</p>
+        ${legend}
         <h3>Built for</h3>
         <p>${escapeHtml(weapons)} <span class="muted">· +${Math.round(sel.affinityBonus * 100)}% damage,
         and anything else hits a little softer</span></p>
@@ -3119,6 +3161,14 @@ export class TownUI {
         <span class="muted">${n > 0 ? `found ×${n}` : "not yet"}</span>
         <em>${escapeHtml(namedSourceLines(def).join(" · "))}</em></li>`;
     }).join("");
+    // UAT §13: which Legends are Complete. Only the finished ones are listed — a wall of
+    // twenty-one "not yet" rows would say less than the count already does.
+    const complete = CLASS_IDS.filter((id) => this.state.players[id].legendComplete);
+    const legends = complete.length === 0
+      ? `<p class="muted">None yet. Clear depth ${DELVE_BOTTOM} on a class, then go back down.</p>`
+      : `<table class="cmp">${complete.map((id) => `<tr>
+          <td style="color:var(--gold)">${escapeHtml(CLASSES[id].name)}</td>
+          <td>${escapeHtml(legendName(id))}</td></tr>`).join("")}</table>`;
 
     return `
       <div class="list records">
@@ -3134,6 +3184,8 @@ export class TownUI {
           <tr><td>Gems earned</td><td>${formatNumber(st.gemsEarned)}</td></tr>
           <tr><td>Capsules opened</td><td>${formatNumber(st.capsulesOpened)}</td></tr>
           <tr><td>Wardrobe</td><td>${this.state.cosmetics.length} / ${COSMETICS.length}</td></tr>
+          <tr><td>Legends complete</td><td style="color:${this.state.legendsComplete > 0 ? "var(--gold)" : "inherit"}">
+            ${this.state.legendsComplete} / ${CLASS_IDS.length}</td></tr>
         </table>
       </div>
       <aside class="side">
@@ -3141,6 +3193,8 @@ export class TownUI {
         <table class="cmp">${rifts}</table>
         <h3>Named items <span class="muted">${Object.keys(st.namedFound).filter((id) => id in NAMED_BY_ID).length} / ${NAMED_ITEMS.length}</span></h3>
         <ul class="pulls">${named}</ul>
+        <h3>Legends</h3>
+        ${legends}
         <h3>Rarities found</h3>
         <table class="cmp">${rarities}</table>
         <h3>Chests opened</h3>
