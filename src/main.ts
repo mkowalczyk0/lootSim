@@ -46,7 +46,7 @@ const town = new TownUI(
   townRoot, state,
   (config) => enterDungeon(config),
   (planet, tier) => {
-    // The star map doesn't dive — it spawns a portal for the ship to find.
+    // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into.
     hub.setExpedition(planet.id, tier);
     enterHub();
   },
@@ -144,7 +144,7 @@ function handleHubInteraction(): void {
   const station = hub.nearStation();
   if (!station) return;
   // While a party room is open, every other portal has to wait — walking into the
-  // Delve (or a rift, star map, expedition or the forge) would launch a solo run out
+  // Delve (or a rift, the Reliquary Gate, a sector portal or the forge) would launch a solo run out
   // from under the room and strand whoever joined. The Party Portal and the screens
   // that don't start a run (Comms Relay, the Quartermaster) stay open.
   if (party.inRoom && station.kind !== "party" && station.kind !== "comms" && station.kind !== "quartermaster") {

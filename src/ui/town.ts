@@ -65,7 +65,7 @@ type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
 const STATION_LABELS: Record<StationTab, string> = {
-  Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "STAR MAP", Craft: "THE FORGE",
+  Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY",
 };
 
@@ -114,7 +114,7 @@ function tabHelp(tab: Tab, s: Settings): string {
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
-    case "StarMap": return `${sel} choose tier · ${adj} switch planet · ${e} open a portal for it`;
+    case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
     case "Party": return `${sel} select · ${e} do it · ${adj} change the depth · then everyone walks into the Party Portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
@@ -150,7 +150,7 @@ export class TownUI {
   private chestCategory = 0;
   private rarityFilter: Rarity | "all" = "all";
   private riftMode: RunModeId = "hoard";
-  /** Which planet the star map is showing. */
+  /** Which Reliquary sector the gate screen is showing. */
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
@@ -630,7 +630,7 @@ export class TownUI {
       case "StarMap": {
         if (!this.requireClass()) break;
         if (!planetUnlocked(this.starMapPlanet, this.state.planetProgress)) {
-          this.notify("Locked. Clear the previous planet's first tier to open this one.", "#ef4444");
+          this.notify("Sealed. Clear the previous sector's first tier to open this one.", "#ef4444");
           break;
         }
         const tier = this.cursor + 1;
@@ -1358,9 +1358,9 @@ export class TownUI {
   }
 
   /**
-   * Star map: pick a planet and a tier, same shape as the rift screen — A/D switches
-   * planet instead of rift flavor, and confirming doesn't dive, it opens a portal for
-   * the ship to find.
+   * The Ashen Reliquary: pick a sector and a tier, same shape as the rift screen — A/D
+   * switches sector instead of rift flavor, and confirming doesn't dive, it opens a
+   * portal by the Reliquary Gate for you to walk into.
    */
   private renderStarMap(): string {
     const planet = this.starMapPlanet;
@@ -1400,7 +1400,7 @@ export class TownUI {
           <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
           <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
         <p>${escapeHtml(planet.blurb)}</p>
-        ${unlocked ? "" : "<p class=\"danger\">Locked. Clear the previous planet's first tier.</p>"}
+        ${unlocked ? "" : "<p class=\"danger\">Sealed. Clear the previous sector's first tier.</p>"}
         <table class="cmp">
           <tr><td>Floors</td><td>${planet.floors}, boss last</td></tr>
           <tr><td>Boss floor depth</td><td>${sel.depth}</td></tr>
@@ -1408,10 +1408,10 @@ export class TownUI {
           <tr><td>Local element</td><td style="color:${ELEMENT_COLORS[planet.element]}">${ELEMENT_LABELS[planet.element]}</td></tr>
           <tr><td>Material</td><td style="color:${MATERIALS[planet.element].color}">${escapeHtml(MATERIALS[planet.element].name)}</td></tr>
         </table>
-        <p class="muted">Fight and mine your way to the boss. Beating it opens
-        extraction and the next tier — the further you travel, the better it pays.</p>
-        <p>Opening a portal doesn't dive — it spawns one back at the ship. Walk into it
-        when you're ready.</p>
+        <p class="muted">Fight and harvest your way to the boss. Beating it opens
+        extraction and the next tier — the deeper the sector, the better it pays.</p>
+        <p>Opening a portal doesn't dive — it spawns one by the Reliquary Gate. Walk into
+        it when you're ready.</p>
         ${this.challengerNote()}
       </aside>`;
   }
@@ -2012,7 +2012,7 @@ export class TownUI {
             : this.cursor === this.challengerIndex
               ? `<p>A difficulty multiplier you choose yourself, on top of whatever a mode
                 and depth already imply. Applies to the delve, every rift and every
-                planet — even the gentlest floor in the game gets real teeth at a high
+                Reliquary sector — even the gentlest floor in the game gets real teeth at a high
                 tier. ${challenger > 0 ? `Currently ×${challengerMultiplier(challenger).toFixed(1)} danger.` : ""}</p>`
               : `<p class="danger">Erases your class, level, tree, gear, stash, coins, keys
                 and every record. There is no undo and no backup. The page reloads into a

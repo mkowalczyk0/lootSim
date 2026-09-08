@@ -1,8 +1,8 @@
 /**
  * The ship: a small explorable hub, not a menu. Every non-combat system in the game is
  * reached by walking up to something here and pressing confirm, Diablo-portal style —
- * the delve and each rift stand as permanent portals, a terminal at the star map spawns
- * a portal for whichever planet expedition you've configured, and the forge and the
+ * the delve and each rift stand as permanent portals, the Reliquary Gate spawns a portal
+ * for whichever Ashen Reliquary sector run you've configured, and the forge and the
  * quartermaster are their own stations. Everything else about managing a character
  * (stash, equipment, skills, the tree, style, capsules, records, settings) still lives
  * in the DOM town screen — CLAUDE.md's own rule that menu-heavy UI belongs there, not
@@ -53,13 +53,13 @@ const FIXED_STATIONS: readonly HubStation[] = [
   { kind: "dive", label: "The Delve", x: 170, y: 100, radius: 24 },
   { kind: "abyss", label: "Abyssal Rift", x: 320, y: 80, radius: 24 },
   { kind: "hoard", label: "Hoard Rift", x: 470, y: 100, radius: 24 },
-  { kind: "starmap", label: "Star Map", x: 80, y: 280, radius: 20 },
+  { kind: "starmap", label: "Reliquary Gate", x: 80, y: 280, radius: 20 },
   { kind: "forge", label: "The Forge", x: 560, y: 280, radius: 20 },
   { kind: "quartermaster", label: "Quartermaster", x: 320, y: 280, radius: 20 },
   { kind: "comms", label: "Comms Relay", x: 80, y: 130, radius: 20 },
 ];
 
-/** Where a chosen expedition's portal stands once the star map has picked one. */
+/** Where a chosen sector's portal stands once the Reliquary Gate has picked one. */
 const EXPEDITION_SPOT = { x: 320, y: 185 };
 /** Where the party portal opens once you're in a room. Near the spawn on purpose —
  *  "everyone walk into the portal" should be a two second walk, not a hike. */
@@ -71,7 +71,7 @@ export class Hub {
   x = HUB_WIDTH / 2;
   y = HUB_HEIGHT - 40;
   facing = -Math.PI / 2;
-  /** Set by the star map; walking into the portal this spawns launches the expedition. */
+  /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
   /** True while a party room is open, which is what puts the party portal on the deck. */
   partyOpen = false;
@@ -82,7 +82,7 @@ export class Hub {
     const stations = [...FIXED_STATIONS];
     if (this.expedition) {
       stations.push({
-        kind: "expedition", label: "Expedition Portal",
+        kind: "expedition", label: "Reliquary Portal",
         x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
       });
     }
