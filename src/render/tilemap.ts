@@ -8,44 +8,64 @@
  * generator produced, so it changes nothing about the simulation and stays in
  * sync across a co-op party for free.
  *
- * The rock mask is the level's **raw wall rectangles** — the exact footprint the
- * old per-frame `drawWalls` pass painted — not the `blocked` nav grid, which is
- * inflated by a body radius so the player can't clip a corner. Stamping the
- * inflated grid made every corridor read a tile narrower than it plays; the raw
- * rects keep the walkable space looking as wide as it actually is.
+ * **Tile pitch.** A sheet tile is 16 texels, but it is stamped across a 32-unit
+ * cell (`STAMP`), a clean 2× nearest-neighbour blow-up. The Citadel deck is
+ * authored at roughly 1.7 hub-units per pixel and then viewport-scaled up, so at
+ * the dungeon's 2.2× zoom its stone reads at ~5 screen-px per art-pixel. Stamping
+ * the floor 1:1 put it at ~2.2 — half the pitch of everything standing on it,
+ * which is what made the tiled floors look finer, busier and "zoomed out" next to
+ * the hub. Doubling the cell brings the floor onto the same pixel grid as the
+ * hero, the props and the deck.
+ *
+ * The rock mask is sampled from the level's **`blocked` grid** — the same
+ * body-inflated collision volume the player is actually stopped by — at each
+ * 32-unit cell's centre. An earlier pass rasterised the raw wall rects instead,
+ * but at this coarser 32-unit pitch a raw-rect coverage test paints rock a good
+ * half-tile out past the true wall, over floor the player can still stand on, so
+ * you could walk visibly into a "wall". Sampling `blocked` keeps painted stone a
+ * subset of where collision already forbids you — at the cost of walls reading
+ * one body-radius thicker, which at this chunky pitch actually matches the deck.
  */
 
 import type { LoadedTileset } from "./atlas/index";
 import type { Level } from "../game/level";
 
+/** World units a single sheet tile is stamped across — 2× the 16-texel source. */
+const STAMP = 32;
+/** The generator's own nav/collision grid pitch (`GRID` in `game/level.ts`). */
+const NAV = 16;
+
 /**
  * Paints the whole floor — stone and rock both — into `ctx` (expected to be a
  * fresh canvas the size of the level). Returns false without drawing if the
- * tileset's tile size doesn't match the level's 16-unit grid, so the caller can
- * fall back to the flat bake.
+ * tileset isn't the 16-texel corner-Wang sheet this stamper expects, so the
+ * caller can fall back to the flat bake.
  */
 export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: LoadedTileset): boolean {
-  const T = ts.tile;
-  // The generator's nav grid is 16 units; a tileset authored at any other tile
-  // size can't line up with it cell-for-cell, so bail rather than draw it askew.
-  if (T !== 16) return false;
+  const SRC = ts.tile;
+  // The stamper reads a 16-texel sheet tile; anything else can't be a corner-Wang
+  // sheet from the pipeline, so bail rather than draw it askew.
+  if (SRC !== 16) return false;
 
-  const { cols, rows, width, height, walls } = level;
+  const T = STAMP;
+  const { width, height, blocked, cols: navCols, rows: navRows } = level;
+  const cols = Math.ceil(width / T);
+  const rows = Math.ceil(height / T);
   const sheet = ts.canvas;
 
-  // Rasterise the raw wall rects (and the level border) to the 16-unit grid once.
-  // A cell counts as rock if its centre sits inside a wall rect — no body-radius
-  // inflation, so the stone lines up with what you could see before, not with the
-  // slightly-fatter collision volume.
+  // A coarse tile cell is rock when the player's collision grid forbids its
+  // centre. `blocked` is the raw walls inflated by a body radius, so painted
+  // stone can never claim a spot you're allowed to stand on. The border cells
+  // fall outside `blocked` and read as rock via the range check below.
   const rock = new Uint8Array(cols * rows);
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
-      const x = cx * T + T / 2;
-      const y = cy * T + T / 2;
-      if (x < 3 || y < 3 || x > width - 3 || y > height - 3) { rock[cy * cols + cx] = 1; continue; }
-      for (const w of walls) {
-        if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) { rock[cy * cols + cx] = 1; break; }
-      }
+      const nx = Math.floor((cx * T + T / 2) / NAV);
+      const ny = Math.floor((cy * T + T / 2) / NAV);
+      const s = nx < 0 || ny < 0 || nx >= navCols || ny >= navRows
+        ? 1
+        : blocked[ny * navCols + nx];
+      rock[cy * cols + cx] = s ? 1 : 0;
     }
   }
 
@@ -87,10 +107,10 @@ export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: Lo
         ctx.save();
         ctx.translate(dx + T / 2, dy + T / 2);
         ctx.scale(o & 1 ? -1 : 1, o & 2 ? -1 : 1);
-        ctx.drawImage(sheet, box[0], box[1], T, T, -T / 2, -T / 2, T, T);
+        ctx.drawImage(sheet, box[0], box[1], SRC, SRC, -T / 2, -T / 2, T, T);
         ctx.restore();
       } else {
-        ctx.drawImage(sheet, box[0], box[1], T, T, dx, dy, T, T);
+        ctx.drawImage(sheet, box[0], box[1], SRC, SRC, dx, dy, T, T);
       }
     }
   }
