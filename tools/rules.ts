@@ -12,13 +12,27 @@
  */
 
 import { Dungeon } from "../src/game/dungeon";
+import type { Enemy } from "../src/game/entities";
 import {
-  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill,
+  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesTick,
 } from "../src/game/rules";
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
-import { CLASS_BY_ID, buildProgressionTree } from "../src/progression/index";
+import { ARCHETYPES } from "../src/data/enemies";
+import { CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
 import type { ClassId } from "../src/data/classes";
+
+/** `makeEnemy` is private; a headless test may reach it to stage a fixed encounter. */
+function spawn(d: Dungeon, x: number, y: number): Enemy {
+  const mk = (d as unknown as {
+    makeEnemy(a: typeof ARCHETYPES.brute, x: number, y: number): Enemy;
+  }).makeEnemy;
+  const e = mk.call(d, ARCHETYPES.brute, x, y);
+  e.state = "active";
+  e.spawnTimer = 0;
+  d.enemies.push(e);
+  return e;
+}
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ""): void {
@@ -33,6 +47,7 @@ function section(name: string): void {
 function dungeonWith(classId: ClassId, pathNames: string[]): Dungeon {
   const def = CLASS_BY_ID[classId]!;
   const tree = buildProgressionTree(def.progression);
+  installClass(def); // register the class's statuses (Withering, Flow, …) — idempotent
   const state = new GameState(1234);
   state.chooseClass(classId);
   state.player.level = 60;
@@ -115,6 +130,51 @@ section("on-kill rules fire");
   const enemy = { x: hero.avatar.x, y: hero.avatar.y, health: 0, sc: { has: (s: string) => s === "curse" } } as never;
   rulesOnKill(d, hero, enemy);
   check("Devour Soul refunds mana on a cursed kill", hero.player.mana > 0, `${hero.player.mana} (was ${manaBefore})`);
+}
+
+// --- B-1: damage-link keystones spread a hit across linked enemies -----
+
+section("damage-link keystones spread a hit");
+{
+  const d = dungeonWith("shaman", ["Witch Doctor"]);
+  const hero = d.localHero;
+  const anchor = spawn(d, 100, 100);
+  const near = spawn(d, 140, 100);
+  const far = spawn(d, 900, 900);
+  for (const e of [anchor, near, far]) {
+    e.sc.apply("withering", { stacks: 6, sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  }
+  const nearBefore = near.health;
+  const farBefore = far.health;
+  rulesOnHit(d, hero, anchor, { isBasic: true, isCrit: false, movedRecently: false, outOfReach: false, amount: 200 });
+  check("Hexmaster bleeds the hit onto a linked enemy in range", near.health < nearBefore, `${near.health} / ${nearBefore}`);
+  check("Hexmaster does not reach a linked enemy out of range", far.health === farBefore, `${far.health}`);
+}
+
+// --- B-3: stance / form keystones ------------------------------------
+
+section("stance / form keystones");
+{
+  const d = dungeonWith("monk", ["Iron Body"]);
+  const hero = d.localHero;
+  for (let i = 0; i < 5; i++) {
+    hero.sc.apply("flow", { sourceActorId: hero.index, chance: 1, roll: () => 0 });
+  }
+  rulesTick(d, hero, 0.016);
+  const landedHigh = hero.sc.apply("stunned", { sourceActorId: -1, chance: 1, roll: () => 0 });
+  check("Adamant Form blocks CC while Flow is high", !landedHigh && !hero.sc.has("stunned"));
+  while (hero.sc.has("flow")) hero.sc.list.splice(hero.sc.list.findIndex((s) => s.id === "flow"), 1);
+  rulesTick(d, hero, 0.016);
+  const landedLow = hero.sc.apply("stunned", { sourceActorId: -1, chance: 1, roll: () => 0 });
+  check("Adamant Form lets CC through once Flow drops", landedLow && hero.sc.has("stunned"));
+}
+{
+  const d = dungeonWith("reaper", ["Wraith"]);
+  const hero = d.localHero;
+  const souls = hero.resources.get("reaped_souls");
+  if (souls) souls.value = 20;
+  const out = rulesOnDamageTaken(d, hero, hero.player.health + 999);
+  check("Deathless Form negates a downing hit and spends Souls", out === 0 && !!souls && souls.value <= 12, `out=${out} souls=${souls?.value}`);
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);

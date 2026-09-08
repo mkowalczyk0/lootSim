@@ -54,21 +54,43 @@ No hook branches on a class id — only on the rule id, which is data. `tools/ru
    `ranger.ch.winters_predator`, `alchemist.tx.biological_collapse`,
    `reaper.sh.endless_harvest`, `corsair.th.black_market`.
 
-## Status — batch 1 (this commit)
+## Status
 
-Wired and tested (`npm run rules`): the 5 seams above — ~28 rule ids.
+**Batch 1** — the 5 shared seams (§ above): ~28 rule ids. Wired and tested (`npm run rules`).
+
+**Batch 2** — B-1 damage-link + B-3 stance/form + two free-cast rules: **+7 rule ids**.
+- **Damage-link seam** (`rulesOnHit`, `LINK_RULES`): a hit on an anchor enemy bleeds a
+  fraction onto every linked enemy in range, capped at `LINK_SPREAD_CAP` (6) per hit so a
+  raid pack can't turn one swing into a wipe. `shaman.wd.shared_suffering` (cursed↔cursed,
+  0.30 / r220), `shaman.wd.hexmaster` (Withering ≥ 5 ↔ same, 0.50 / r320),
+  `shaman.hybrid.master_hex` (3+ debuffs anchors → any debuffed enemy, 0.35 / r320). Needs
+  `ctx.amount` on `rulesOnHit` — threaded from `weaponStrike` and the `dealDamage` enemy branch.
+- **Stance / form**: `monk.ib.adamant_form` (`rulesTick` — grants CC immunity for
+  stun/root/freeze/silence/taunt while Flow ≥ 4, clears it the moment Flow drops);
+  `reaper.wr.deathless_form` (`rulesOnDamageTaken` — a downing hit is negated for 8 Souls
+  and 1 s of i-frames, gated 6 s; sits beside Soul Fortress).
+- **Free-cast**: `monk.cm.infinite_sequence` (a non-repeated melee skill is taken off
+  cooldown at 8 Flow), `duelist.tp.perfect_rhythm` (every third distinct cast also
+  refunds the cooldown, folded into the existing 3-distinct prime block).
+
+Remaining B-1 candidates that are **not** simple links and stay in the backlog:
+`corsair.cm.harpooner` (needs the Hookshot tether to exist as movement state),
+`duelist.bm.thousand_cuts` / `duelist.hybrid.red_contract` (DoT-tick rewrites — need a
+status-tick hook), `warlock.co.total_corruption` (status-duration → permanent + detonation
+double-count), `assassin.bh.death_spiral` (really a B-2 execute flip).
+Remaining B-3: `shaman.ws.avatar_of_the_hunt`, `warden.be.primal_guardian`,
+`warden.hybrid.elder_form` — all gated on an Aspect/Site ability that isn't a rule.
 
 ## Backlog (ordered)
 
-- **B-1 tethers/links** — `shaman.wd.hexmaster`, `shaman.wd.shared_suffering`,
-  `shaman.hybrid.master_hex`, `corsair.cm.harpooner`, `assassin.bh.death_spiral`,
-  `duelist.bm.thousand_cuts`, `warlock.co.total_corruption`.
 - **B-2 execute-threshold flips** — `ranger.ch.cull_the_weak`, `ranger.de.perfect_shot`,
-  `reaper.ex.final_sentence`, `assassin.sb.critical_weakness`, `warden.hm.apex_predator`,
-  `corsair.hybrid.bounty_hunter`, `paladin.hybrid.holy_execution`.
-- **B-3 stance/form toggles** — `shaman.ws.avatar_of_the_hunt`, `warden.be.primal_guardian`,
-  `warden.hybrid.elder_form`, `reaper.wr.deathless_form`, `monk.ib.adamant_form`
-  (CC-immunity while Flow ≥ 4).
+  `reaper.ex.final_sentence`, `assassin.sb.critical_weakness`, `assassin.bh.death_spiral`,
+  `warden.hm.apex_predator`, `corsair.hybrid.bounty_hunter`, `paladin.hybrid.holy_execution`.
+  One seam: `rulesOnHit` returns an `execute` flag when the target is below the rule's
+  threshold and carries the rule's required status; the hit path finishes the enemy.
+- **B-1 remainder** — `warlock.co.total_corruption` (status → permanent), the two Duelist
+  bleed-tick rewrites, `corsair.cm.harpooner` (after Hookshot tether lands in B-4).
+- **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form abilities).
 - **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
   `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`.
 - **B-5 zone keystones** — `alchemist.py.conflagration`, `warden.tk.briarheart`,
@@ -76,7 +98,11 @@ Wired and tested (`npm run rules`): the 5 seams above — ~28 rule ids.
 - **B-6 Mythic persistent-state** — all 21 archetypes' "stops being a cooldown, becomes
   a state" clause. Each: extend the ultimate's mutation with `follows`/`duration`, then a
   rule in `rulesTick` that re-arms it while its condition holds.
-- **D** — convert the ~20 pure-passive rules to `mods` / `whileAbove` in the class files.
+- **D** — the ~20 "pure passive" rules turned out to be mostly *conditional* passives
+  (low-health flips, stand-still ramps, in-zone bonuses) rather than flat `mods`, so
+  folding them in blind would move the arena numbers under the Part 3 tuning pass (and
+  under the concurrent XP-curve / deep-difficulty work on `uat/combat-content`). Do the
+  genuine flat conversions **as part of Part 3**, per cluster, with a measured before/after.
 - **M/G/R verification sweep** — confirm the ~133 companion-backed rules read right.
 
 ## Full appendix — every rule id, its companion effects, its text
