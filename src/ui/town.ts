@@ -24,7 +24,7 @@ import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/
 import { trapsFor } from "../data/traps";
 import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine } from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
-import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, modLine, type ModKey } from "../data/mods";
+import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
 import { WEAPONS } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
 import {
@@ -33,8 +33,10 @@ import {
 } from "../data/settings";
 import { SKILL_SLOTS } from "../game/player";
 import {
-  ALL_CLASSES, CLASS_BY_ID, classMatrixRow, pathKeystones,
-  type PilotClass, type TreeNodeV2,
+  ALL_CLASSES, CLASS_BY_ID, classMatrixRow,
+  categoryGloss, describeEffects, describeNode, describeNodeLong, pathPointsByName,
+  unlockProgress,
+  type DescribeCtx, type PilotClass, type PathUnlockDef, type TreeNodeV2,
 } from "../progression/index";
 import type { Ability } from "../combat/ability";
 
@@ -125,7 +127,7 @@ function tabHelp(tab: Tab, s: Settings): string {
     case "Path": return `${sel} choose a class · ${e} commit to it`;
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
-    case "Codex": return `${sel} browse the class roster · ${adj} switch view — the refactored 21-class design, not yet the live combat`;
+    case "Codex": return `${sel} browse the class roster · ${adj} switch view — the full 21-class design; play one from the Path tab`;
     case "Records": return "Nothing to do here — just numbers.";
     case "Settings": return `${sel} select · ${e} toggle/rebind · ${q} resets a key/backs out · reset progress asks twice`;
   }
@@ -1780,8 +1782,12 @@ export class TownUI {
     const cls = p.heroClass;
     const def = p.pilotClass;
     const tree = p.tree;
-    const build = p.build;
     const columns: string[] = [];
+
+    const dctx: DescribeCtx = {
+      abilityName: (id) => def?.abilities.find((a) => a.id === id)?.name,
+      resourceLabel: (id) => def?.resources.find((r) => r.id === id)?.label,
+    };
 
     for (let b = 0; b < TREE_PATH_COUNT; b++) {
       const pathName = def?.progression.paths[b]?.name ?? `Path ${b + 1}`;
@@ -1797,7 +1803,7 @@ export class TownUI {
           <div class="tree-node ${state} ${node.category === "keystone" ? "keystone" : ""} ${here ? "on" : ""}"
                style="--accent:${cls.color}">
             <span class="tree-name">${escapeHtml(node.name)}</span>
-            <span class="tree-mods">${escapeHtml(nodeEffectSummary(node))}</span>
+            <span class="tree-mods">${escapeHtml(describeNode(node, dctx))}</span>
           </div>`);
       }
       columns.push(`
@@ -1811,21 +1817,37 @@ export class TownUI {
     const selTaken = sel ? p.allocated.includes(sel.id) : false;
     const path = def?.progression.paths[this.treeBranch];
 
-    const hybridBadges = build.hybrids.map((h) =>
-      `<span class="badge on" style="color:${cls.color};border-color:${cls.color}">${escapeHtml(h.ui?.badge ?? h.name)}</span>`).join(" ");
-    const archBadges = build.archetypes.map((a) =>
-      `<span class="badge on" style="color:#ff1493;border-color:#ff1493">${escapeHtml(a.ui?.badge ?? a.name)}</span>`).join(" ");
+    // The whole hybrid / archetype ladder for this class, with live progress — what the
+    // tree is building toward, not just what has already fired.
+    const points = pathPointsByName(tree, p.allocated);
+    const unlockRow = (u: PathUnlockDef): string => {
+      const prog = unlockProgress(u, points);
+      const mythic = u.tier === "mythic";
+      const tint = mythic ? "#ff1493" : cls.color;
+      const bits = prog.parts
+        .map((pt) => `<span class="${pt.ok ? "up" : "muted"}">${escapeHtml(pt.path)} ${pt.have}/${pt.need}</span>`)
+        .join(" · ");
+      return `<li class="${prog.met ? "up" : ""}">
+        <b style="color:${tint}">${escapeHtml(u.name)}</b>${prog.met ? " — unlocked" : ""}
+        <em>${escapeHtml(u.description)}</em>
+        <span class="muted">${bits}</span></li>`;
+    };
+    const hybridRows = (def?.unlocks ?? []).filter((u) => u.tier === "hybrid").map(unlockRow).join("");
+    const archRows = (def?.unlocks ?? []).filter((u) => u.tier === "mythic").map(unlockRow).join("");
+
+    const selLines = sel ? describeNodeLong(sel, dctx) : [];
 
     return `<div class="list"><div class="tree">${columns.join("")}</div></div>
       <aside class="side">
         <h3 style="color:${cls.color}">${escapeHtml(cls.name)} · ${p.treePoints} points</h3>
         <p class="muted">${p.allocated.length} nodes lit. One point a level, two on every fifth.
         The tree deals in behaviours, not stat sticks.</p>
-        ${hybridBadges || archBadges ? `<p>Unlocked: ${archBadges} ${hybridBadges}</p>` : ""}
         ${sel ? `
-          <h3>${escapeHtml(sel.name)} <em>${escapeHtml(sel.category)}${sel.cost > 1 ? " · 2 pts" : ""}</em></h3>
-          <p>${escapeHtml(sel.blurb)}</p>
-          <p class="muted">${escapeHtml(nodeEffectSummary(sel))}</p>
+          <h3>${escapeHtml(sel.name)}</h3>
+          <p class="muted">${escapeHtml(categoryGloss(sel.category))}${sel.cost > 1 ? " · costs 2 points" : ""}</p>
+          ${selLines.length
+            ? `<ul class="pulls">${selLines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
+            : `<p class="muted">${escapeHtml(sel.blurb)}</p>`}
           <p class="${selTaken ? "up" : p.canAllocate(sel) ? "" : "muted"}">
             ${selTaken ? "Lit."
               : p.canAllocate(sel) ? `Press ${k(this.state.settings, "confirm")} to take it.`
@@ -1833,6 +1855,8 @@ export class TownUI {
               : `Needs ${sel.cost} point${sel.cost > 1 ? "s" : ""}. Go and earn ${sel.cost > 1 ? "them" : "one"}.`}</p>
         ` : ""}
         ${path ? `<h3>${escapeHtml(path.name)}</h3><p class="muted">${escapeHtml(path.blurb)}</p>` : ""}
+        ${hybridRows ? `<h3>Cross-path hybrids</h3><ul class="pulls">${hybridRows}</ul>` : ""}
+        ${archRows ? `<h3>Mythic Archetype${(def?.unlocks ?? []).filter((u) => u.tier === "mythic").length > 1 ? "s" : ""}</h3><ul class="pulls">${archRows}</ul>` : ""}
         <p class="muted">
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · refund the whole tree</span>
           free, any time. Nobody is going to charge you for changing your mind.</p>
@@ -2183,11 +2207,11 @@ export class TownUI {
   /**
    * The Codex — the class-refactor roster, in the game as a browsable reference.
    *
-   * This reads entirely from `src/progression` (the 21-class design layer) and is
-   * deliberately not wired to `state.player`: the live dungeon still runs the shipped
-   * `data/classes` + `data/tree`. It's the matrix the refactor spec asks for —
-   * class → resource → role → damage → mechanic → ultimate → paths → hybrids — plus a
-   * drill-down into each class's ten skills and its hybrid/archetype builds.
+   * This reads entirely from `src/progression` — the same 21-class layer the live
+   * dungeon now runs — as a browse-the-whole-roster reference, where the Path and Tree
+   * tabs only ever show the class you're playing. It's the matrix the refactor spec
+   * asks for — class → resource → role → damage → mechanic → ultimate → paths → hybrids
+   * — plus a drill-down into each class's ten skills and its hybrid/archetype builds.
    */
   private renderCodex(): string {
     const VIEWS = ["Overview", "Skills", "Builds"] as const;
@@ -2213,8 +2237,20 @@ export class TownUI {
 
     let body: string;
     if (this.codexView === 0) {
-      const keystones = pathKeystones(def).map((p) =>
-        `<li>${escapeHtml(p.path)} <em>→ ${escapeHtml(p.keystone)} · ${escapeHtml(p.blurb)}</em></li>`).join("");
+      const dctx: DescribeCtx = {
+        abilityName: (id) => def.abilities.find((a) => a.id === id)?.name,
+        resourceLabel: (id) => def.resources.find((r) => r.id === id)?.label,
+      };
+      const paths = def.progression.paths.map((pathDef) => {
+        const nodes = pathDef.nodes.map((n) => {
+          const lines = describeEffects(n.effects, dctx);
+          return `<li><b>${escapeHtml(n.name)}</b> <span class="muted">${escapeHtml(n.category)}</span>
+            <em>${escapeHtml(lines.join(" · ") || categoryGloss(n.category))}</em></li>`;
+        }).join("");
+        return `<h4 style="color:${color}">${escapeHtml(pathDef.name)}</h4>
+          <p class="muted">${escapeHtml(pathDef.blurb)}</p>
+          <ul class="pulls">${nodes}</ul>`;
+      }).join("");
       body = `
         <table class="cmp">
           <tr><td>Resource</td><td>${escapeHtml(m.resource)}</td></tr>
@@ -2224,8 +2260,8 @@ export class TownUI {
         <h3>Unique mechanic</h3>
         <p>${escapeHtml(m.mechanic)}</p>
         <p class="muted">${escapeHtml(def.fantasy)}</p>
-        <h3>Five paths <span class="muted">→ keystone</span></h3>
-        <ul class="pulls">${keystones}</ul>`;
+        <h3>Five paths <span class="muted">foundation → behaviour → resource → mutation → keystone</span></h3>
+        ${paths}`;
     } else if (this.codexView === 1) {
       const skills = def.abilities.map((a) => {
         const tags = a.tags.slice(0, 4).join(" · ");
@@ -2256,9 +2292,9 @@ export class TownUI {
         <p>${tabs}</p>
         ${body}
         <p class="muted">${escapeHtml(ult.flavor ?? "")}</p>
-        <p class="danger">Reference only — the live dungeon still runs the shipped 15-class
-        combat. This is the refactored 21-class design (spec: <b>${ALL_CLASSES.length} classes</b>,
-        ${ALL_CLASSES.length * 10} unique skills, ${ALL_CLASSES.length * 6} hybrids).</p>
+        <p class="muted">The live roster: <b>${ALL_CLASSES.length} classes</b>,
+        ${ALL_CLASSES.length * 10} unique skills, ${ALL_CLASSES.length * 6} cross-path hybrids.
+        Play one from the Path tab; spend its points on the Tree tab.</p>
       </aside>`;
   }
 
@@ -2326,13 +2362,6 @@ function isResistKey(key: ModKey): boolean {
   return key.endsWith("Resist");
 }
 
-/** One line of what a tree node actually does, for the node box itself. */
-function nodeSummary(mods: Record<string, number | undefined>): string {
-  return Object.entries(mods)
-    .map(([k, v]) => modLine(k as ModKey, v as number))
-    .join(", ");
-}
-
 /** "12 Rage · 4s" style cost readout for an ability. */
 function abilityCostLine(a: Ability, p: { cooldownMult: number }): string {
   const costs = (a.costs ?? []).map((c) => `${Math.round(c.amount)} ${c.resource}`);
@@ -2351,21 +2380,6 @@ function unlockIds(build: {
   archetypes: readonly { id: string }[];
 }): Set<string> {
   return new Set([...build.hybrids, ...build.archetypes].map((u) => u.id));
-}
-
-/** A short readout of a behaviour node — its stat line if it has one, else its role. */
-function nodeEffectSummary(node: TreeNodeV2): string {
-  for (const eff of node.effects) {
-    if (eff.kind === "mods") return nodeSummary(eff.mods);
-  }
-  const label: Record<TreeNodeV2["category"], string> = {
-    foundation: "path foundation",
-    behavior: "changes how it plays",
-    resource: "resource rule",
-    mutation: "rewrites an ability",
-    keystone: "build rule",
-  };
-  return label[node.category];
 }
 
 /** Plain English for how a class fills its ultimate meter, read off its generation rules. */

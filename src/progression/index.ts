@@ -19,6 +19,7 @@ export * from "./nodes";
 export * from "./unlocks";
 export * from "./build";
 export * from "./class";
+export * from "./describe";
 
 /**
  * All 21 canonical classes, built on the framework above. The six that came first
