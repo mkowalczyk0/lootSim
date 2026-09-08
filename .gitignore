@@ -10,5 +10,8 @@ __pycache__/
 .venv
 art-sheet.png
 
-# Accounts and saves live here (tools/accounts.ts); LOOTSIM_DB moves it.
-data/
+# Accounts and saves live here (tools/accounts.ts); LOOTSIM_DB moves it. Anchored to the
+# repo root on purpose — an unanchored `data/` also matches `src/data/`, which silently
+# blackholed any *new* file added there (already-tracked files were unaffected, which is
+# why this went unnoticed) until this rule was scoped down.
+/data/
