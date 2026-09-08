@@ -38,6 +38,8 @@ import {
   NAMED_BY_ID, NAMED_ITEMS, NAMED_RULE_PREFIX, craftRecipeFor, craftableNamed, namedDropChance,
   namedForSource, namedProblems, namedSourceLines, rollNamedDrops, type NamedDropQuery,
 } from "../src/data/named";
+import { CLASS_IDS } from "../src/data/classes";
+import { legendBossSpec } from "../src/data/legends";
 import { PLANETS } from "../src/data/planets";
 import type { Action, AvatarInput } from "../src/core/input";
 import { REACTIVE_EVENTS } from "../src/game/abilities";
@@ -148,7 +150,12 @@ section("2. every reference resolves against the live roster");
     }
     for (const src of def.sources) {
       if (src.kind === "boss") {
-        const real = BOSSES.some((b) => b.id === src.bossId) || PLANETS.some((p) => `planet-${p.id}` === src.bossId);
+        // Three kinds of encounter can carry an exclusive now: an authored one, a
+        // Reliquary sector's reskin (`planet-<id>`), and a class's Proving
+        // (`legend-<classId>`, generated per class by `data/legends.ts`).
+        const real = BOSSES.some((b) => b.id === src.bossId)
+          || PLANETS.some((p) => `planet-${p.id}` === src.bossId)
+          || CLASS_IDS.some((id) => legendBossSpec(id).id === src.bossId);
         check(`${def.id}: boss source "${src.bossId}" is a real encounter`, real);
       }
       if (src.kind === "chest") check(`${def.id}: chest tier "${src.tier}" exists`, (CHEST_TIERS as readonly string[]).includes(src.tier));
