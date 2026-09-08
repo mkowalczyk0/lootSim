@@ -2931,6 +2931,15 @@ export class Dungeon implements CombatHost, RuleHost {
       .sort((p, q) => dist(p.x, p.y, x, y) - dist(q.x, q.y, x, y));
   }
 
+  zonesOwnedBy(hero: Hero): { x: number; y: number; radius: number; element: Element; benefit: boolean }[] {
+    const out: { x: number; y: number; radius: number; element: Element; benefit: boolean }[] = [];
+    for (const g of this.ground) {
+      if (g.owner !== hero.index) continue;
+      out.push({ x: g.x, y: g.y, radius: g.radius, element: g.element, benefit: !!g.benefit });
+    }
+    return out;
+  }
+
   hitEnemy(
     hero: Hero, e: Enemy, amount: number, element: Element = "physical",
     opts: { crit?: boolean; ailment?: number; knockAngle?: number; fromUltimate?: boolean } = {},
@@ -3106,6 +3115,7 @@ export class Dungeon implements CombatHost, RuleHost {
       color: benefit ? BENEFIT_COLORS[benefit] : ELEMENT_COLORS[req.damage?.type ?? "physical"],
       ...(benefit ? { benefit } : {}),
       ...(req.follows && owner ? { follows: owner.index } : {}),
+      ...(owner ? { owner: owner.index } : {}),
       ...(req.status ? { status: req.status.id } : {}),
       // A hero's damage zone keeps its packet so each tick feeds the caster's resources.
       ...(owner && req.damage ? { packet: req.damage } : {}),

@@ -30,6 +30,8 @@ export interface RuleHost {
   shake(amount: number): void;
   /** Enemies within `radius` of a point, nearest first. */
   enemiesAround(x: number, y: number, radius: number): Enemy[];
+  /** The hero's own ground zones — damage pools and benefit circles they placed. */
+  zonesOwnedBy(hero: Hero): ZoneView[];
   /** Deal a hit to one enemy, credited to `hero` (kill/among/meter all flow to them). */
   hitEnemy(
     hero: Hero, e: Enemy, amount: number, element: Element,
@@ -47,6 +49,16 @@ export interface RuleHost {
 }
 
 const AURA_TICK = 0.5;
+
+/** A read-only snapshot of one of a hero's ground zones, for the zone keystones (B-5). */
+export interface ZoneView {
+  x: number;
+  y: number;
+  radius: number;
+  element: Element;
+  /** True for a heal / shield / haste circle; false for a damage pool. */
+  benefit: boolean;
+}
 
 /** One hero's mutable rule bookkeeping. Reset per floor with the Hero. */
 export class HeroRuleState {
@@ -287,6 +299,16 @@ export function rulesOnCast(host: RuleHost, hero: Hero, ability: Ability): void 
     hero.rt.clearCooldown(ability.id);
   }
 
+  // Shaman "Great Ritual" (B-5) — once a ritual zone is down, every skill you cast fires
+  // a burst out of every zone you hold.
+  if (has(rules, "shaman.rt.great_ritual")) {
+    for (const z of host.zonesOwnedBy(hero)) {
+      for (const e of host.enemiesAround(z.x, z.y, z.radius + 30)) {
+        host.hitEnemy(hero, e, hero.player.spellDamage * 0.4, z.element);
+      }
+    }
+  }
+
   // Bard "Improvise" — a song not used recently grants a personal burst (approximated
   // as a primed strike so it reads without a full buff-status).
   if (has(rules, "bard.vt.improvise") && !st.recentSkills.slice(0, -1).includes(ability.id)) {
@@ -332,6 +354,14 @@ export function rulesOnHit(
     e.windup = 0;
     if (e.state === "windup") e.state = "active";
   }
+  // Stormcaller "Outer Bands" (B-5) — attacks landed outside your own eye zone are
+  // empowered (the eye trades safety for reach; you give up the safety).
+  if (has(rules, "stormcaller.eye.outer_bands")) {
+    const zones = host.zonesOwnedBy(hero);
+    const inside = zones.some((z) => Math.hypot(hero.avatar.x - z.x, hero.avatar.y - z.y) <= z.radius);
+    if (zones.length > 0 && !inside) damageMult *= 1.25;
+  }
+
   // Corsair "Six Shooter" — every sixth pistol shot crits and reloads.
   if (!ctx.isBasic && has(rules, "corsair.gs.six_shooter") && ctx.isCrit === false) {
     if (st.bump("corsair.gs.six_shooter") % 6 === 0) forceCrit = true;
@@ -354,6 +384,19 @@ export function rulesOnHit(
       damageMult *= inflateToKill(e, ctx.amount * damageMult);
       forceCrit = true;
       host.emit({ kind: "boom", x: e.x, y: e.y, radius: 30, color: hero.player.heroClass.color });
+    }
+  }
+
+  // Duelist "Thousand Cuts" (B-1) — a hit on a heavily-bleeding target cashes in the
+  // whole wound at once: every remaining bleed tick is dealt now, then the stack is
+  // spent back down. Bounded by how much bleed the target has actually accrued.
+  if (has(rules, "duelist.bm.thousand_cuts") && e.sc.stacksOf("bleed") >= 5) {
+    const bleed = e.sc.get("bleed")!;
+    const burst = bleed.tickDamage * bleed.stacks * Math.min(bleed.remaining, 4);
+    if (burst > 0) {
+      host.hitEnemy(hero, e, burst, "physical", { crit: ctx.isCrit });
+      bleed.remaining = Math.min(bleed.remaining, 1);
+      host.emit({ kind: "boom", x: e.x, y: e.y, radius: 24, color: hero.player.heroClass.color });
     }
   }
 
@@ -524,6 +567,24 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
     }
   }
 
+  // Duelist "Red Contract" (B-1) — bleeds on your duel target cannot run out while it
+  // stays marked. Warlock "Total Corruption" (B-1) — a hex that reaches 3 stacks stops
+  // decaying and sits as a permanent wound. Both hold the status timer full while the
+  // hero is engaged; the enemy scan is already bounded by its radius.
+  if (has(rules, "duelist.hybrid.red_contract") || has(rules, "warlock.co.total_corruption")) {
+    for (const e of host.enemiesAround(a.x, a.y, 900)) {
+      if (has(rules, "duelist.hybrid.red_contract") && isMarked(e)) {
+        const bleed = e.sc.get("bleed");
+        if (bleed) bleed.remaining = Math.max(bleed.remaining, 4);
+      }
+      if (has(rules, "warlock.co.total_corruption")) {
+        const hex = e.sc.get("hex");
+        // The "counts double for detonations" half waits on a detonation seam (B-4).
+        if (hex && hex.stacks >= 3) hex.remaining = Math.max(hex.remaining, 9);
+      }
+    }
+  }
+
   const auraTick = (rule: string, run: () => void): void => {
     if (!has(rules, rule)) return;
     const t = (st.auraTimers.get(rule) ?? 0) - dt;
@@ -564,6 +625,48 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
   // Berserker "World-Eater" companion aura — overkill shockwaves (approx small pulse).
   auraTick("berserker.marauder.world_eater", () => {
     for (const e of host.enemiesAround(a.x, a.y, 70)) host.hitEnemy(hero, e, p.attackDamage * 0.2, "physical");
+  });
+
+  // --- Zone keystones (B-5) — read the hero's own ground zones each aura tick ---------
+  // Alchemist "Conflagration" — where two of your fire pools overlap, the overlap ignites.
+  auraTick("alchemist.py.conflagration", () => {
+    const fire = host.zonesOwnedBy(hero).filter((z) => z.element === "fire");
+    for (let i = 0; i < fire.length; i++) {
+      for (let j = i + 1; j < fire.length; j++) {
+        const z1 = fire[i]!;
+        const z2 = fire[j]!;
+        if (Math.hypot(z1.x - z2.x, z1.y - z2.y) > z1.radius + z2.radius) continue;
+        const mx = (z1.x + z2.x) / 2;
+        const my = (z1.y + z2.y) / 2;
+        for (const e of host.enemiesAround(mx, my, Math.min(z1.radius, z2.radius) + 20)) {
+          host.hitEnemy(hero, e, p.spellDamage * 0.6, "fire");
+          host.afflict(hero, e, "burn", { duration: 3 });
+        }
+        host.emit({ kind: "boom", x: mx, y: my, radius: 40, color: "#ff7a3c" });
+      }
+    }
+  });
+  // Warden "Briarheart" — every zone you hold pulses a thorn nova; more up, harder bite.
+  auraTick("warden.tk.briarheart", () => {
+    const zones = host.zonesOwnedBy(hero);
+    if (zones.length === 0) return;
+    const scale = 0.2 + 0.1 * Math.min(zones.length, 4);
+    for (const z of zones) {
+      for (const e of host.enemiesAround(z.x, z.y, z.radius + 24)) {
+        host.hitEnemy(hero, e, p.attackDamage * scale, "physical");
+      }
+    }
+  });
+  // Warden "Worldroot" — your healing zones are one zone: in any is in all of them.
+  auraTick("warden.vd.worldroot", () => {
+    const benefit = host.zonesOwnedBy(hero).filter((z) => z.benefit);
+    if (benefit.length < 2) return;
+    const near = (z: ZoneView): boolean => Math.hypot(a.x - z.x, a.y - z.y) <= z.radius + a.radius;
+    if (!benefit.some(near)) return;
+    // One "you are also standing here" heal for every linked zone you are NOT in.
+    for (const z of benefit) {
+      if (!near(z)) host.healHero(hero, p.maxHealth * 0.02);
+    }
   });
 
   // --- Mythic Archetype persistent-state auras (B-6) -------------------

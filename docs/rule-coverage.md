@@ -113,6 +113,23 @@ read `mythicOn(st, host, rule)`:
 
 `berserker.mythic.blood_god` was already wired (health-gated aura, batch 1).
 
+**Batch 5** — B-5 zone keystones + B-1 remainder: **+8 rule ids**. New `GroundZone.owner`
+(the casting hero's index, set on every hero-spawned zone) plus `RuleHost.zonesOwnedBy(hero)`
+give the rule engine a read of "the zones you hold".
+- **Zone keystones** (`rules.ts`): `stormcaller.eye.outer_bands` (`rulesOnHit` — ×1.25
+  while you stand outside your own eye zone, and you hold one); `shaman.rt.great_ritual`
+  (`rulesOnCast` — every skill bursts each zone you own); `alchemist.py.conflagration`
+  (`rulesTick` aura — the overlap of any two of your fire pools ignites);
+  `warden.tk.briarheart` (`rulesTick` aura — each zone pulses a thorn nova, harder with
+  more up); `warden.vd.worldroot` (`rulesTick` aura — standing in any of your benefit
+  zones heals you as if standing in all of them).
+- **B-1 remainder**: `duelist.bm.thousand_cuts` (`rulesOnHit` — a hit on a 5+ stack bleed
+  deals every remaining tick at once, then spends the stack down);
+  `duelist.hybrid.red_contract` (`rulesTick` — a marked target's bleed timer is held
+  full); `warlock.co.total_corruption` (`rulesTick` — a hex that reaches 3 stacks stops
+  decaying; the "double for detonations" half waits on a detonation seam).
+- Still out of B-1: `corsair.cm.harpooner` (Hookshot tether — deferred with B-4).
+
 **Mutation-only Mythics — no engine work, verified against their `mutations`:**
 `lancer.mythic.comet_vanguard`, `swordsman.mythic.sword_saint`,
 `ranger.mythic.winters_quarry`, `duelist.mythic.the_last_word`, `bard.mythic.the_symphony`
@@ -124,20 +141,14 @@ label. **Deferred to B-4** (need the summon layer): `corsair.mythic.dread_admira
 ## Backlog (ordered)
 
 - **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
-  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`, plus
-  the 5 summon/detonation Mythics above.
-- **B-5 zone keystones** — `alchemist.py.conflagration`, `warden.tk.briarheart`,
-  `warden.vd.worldroot`, `shaman.rt.great_ritual`, `stormcaller.eye.*`.
-- **B-1 remainder** — `warlock.co.total_corruption` (status → permanent), the two Duelist
-  bleed-tick rewrites, `corsair.cm.harpooner` (after Hookshot tether lands in B-4).
-- **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form abilities).
-- **B-4 construct/summon keystones** — `engineer.*` (5 keystones + 6 hybrids),
-  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`.
-- **B-5 zone keystones** — `alchemist.py.conflagration`, `warden.tk.briarheart`,
-  `warden.vd.worldroot`, `shaman.rt.great_ritual`, `stormcaller.eye.*`.
-- **B-6 Mythic persistent-state** — all 21 archetypes' "stops being a cooldown, becomes
-  a state" clause. Each: extend the ultimate's mutation with `follows`/`duration`, then a
-  rule in `rulesTick` that re-arms it while its condition holds.
+  `necromancer.*` keystones, `ranger.bm.alpha_companion`, `corsair.pk.ghost_crew`,
+  `corsair.cm.harpooner` (Hookshot tether), plus the 5 summon/detonation Mythics
+  (`dread_admiral`, `the_foundry`, `reality_killer`, `soul_legion`, `the_reckoning`).
+  **Folded into Part 3** — it overlaps the concurrent minion work on `uat/combat-content`
+  and the Part 3 "Necromancer vs Engineer summon scaling" cluster; wiring each summoner's
+  keystones in the same pass that fixes its minion scaling avoids tuning them twice.
+- **B-3 remainder** — `avatar_of_the_hunt`, `primal_guardian`, `elder_form` (form
+  abilities gated on an Aspect/Site ability that isn't a rule).
 - **D** — the ~20 "pure passive" rules turned out to be mostly *conditional* passives
   (low-health flips, stand-still ramps, in-zone bonuses) rather than flat `mods`, so
   folding them in blind would move the arena numbers under the Part 3 tuning pass (and
