@@ -9,7 +9,7 @@ import {
 } from "../data/cosmetics";
 import {
   CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, craftBulkCost, craftEssenceCost,
-  type CraftCategory,
+  reforgeCoinCost, type CraftCategory,
 } from "../data/crafting";
 import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
@@ -112,17 +112,20 @@ function k(settings: Settings, action: RebindableAction): string {
  * bindings rather than hardcoded, since a rebind has to move this legend too, the same
  * rule `combatHints` follows for the dungeon HUD.
  */
-function tabHelp(tab: Tab, s: Settings): string {
+function tabHelp(tab: Tab, s: Settings, forgeMode: "craft" | "reforge" = "craft"): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
   const e = k(s, "confirm");
   const q = k(s, "cancel");
   const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
+  const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
-    case "Craft": return `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence`;
+    case "Craft": return forgeMode === "reforge"
+      ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to crafting`
+      : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · ${adj} change the depth · then everyone walks into the Party Portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
@@ -161,6 +164,10 @@ export class TownUI {
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
+  /** The Forge is two screens sharing a station: craft something new, or reforge
+   *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
+   *  on a station tab. */
+  private forgeMode: "craft" | "reforge" = "craft";
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
@@ -212,6 +219,13 @@ export class TownUI {
       const catEl = target.closest<HTMLElement>("[data-category]");
       if (catEl) {
         this.chestCategory = Number(catEl.dataset.category);
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const forgeModeEl = target.closest<HTMLElement>("[data-forge-mode]");
+      if (forgeModeEl) {
+        this.forgeMode = forgeModeEl.dataset.forgeMode as "craft" | "reforge";
         this.cursor = 0;
         this.render();
         return;
@@ -332,7 +346,15 @@ export class TownUI {
 
     // Only the Quartermaster's own tabs cycle with [I]/[O] — a station tab (Dive, a
     // rift, the star map, the forge) is a destination you walked to, not a row you
-    // browse past, so these are simply inert while one of them is open.
+    // browse past, so these are otherwise inert while one of them is open. The Forge is
+    // the one exception: it's two screens sharing a station, and [I]/[O] flip between
+    // them since there's no CYCLE_TABS row to browse past there anyway.
+    if (this.tab === "Craft" && (input.wasPressed("tabNext") || input.wasPressed("tabPrev"))) {
+      this.forgeMode = this.forgeMode === "craft" ? "reforge" : "craft";
+      this.cursor = 0;
+      this.resetArmed = false;
+      dirty = true;
+    }
     if (input.wasPressed("tabNext")) {
       const i = (CYCLE_TABS as readonly Tab[]).indexOf(this.tab);
       if (i >= 0) {
@@ -424,7 +446,8 @@ export class TownUI {
       case "Dive": return this.state.maxUnlockedDepth;
       case "Rifts": return this.state.riftTiers[this.riftMode];
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
-      case "Craft": return CRAFTABLE_RARITIES.length;
+      case "Craft": return this.forgeMode === "reforge"
+        ? this.reforgeCandidates().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
       case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
@@ -737,6 +760,17 @@ export class TownUI {
         break;
       }
       case "Craft": {
+        if (this.forgeMode === "reforge") {
+          const item = this.reforgeCandidates()[this.cursor];
+          if (!item) break;
+          const reforged = this.state.reforgeItem(item.id);
+          if (reforged) {
+            this.notify(`Reforged: ${reforged.name}`, RARITY_COLORS[reforged.rarity]);
+          } else {
+            this.notify("Not enough coins or materials for that.", "#ef4444");
+          }
+          break;
+        }
         const rarity = CRAFTABLE_RARITIES[this.cursor]!;
         const item = this.state.craftItem(this.craftCategory, rarity, this.craftEssence);
         if (item) {
@@ -960,6 +994,7 @@ export class TownUI {
         break;
       }
       case "Craft": {
+        if (this.forgeMode === "reforge") break;
         if (this.craftEssence === null) {
           this.notify("No essence selected.", "#9aa4b2");
           break;
@@ -1029,7 +1064,7 @@ export class TownUI {
    * left/right drive the carousel instead.
    */
   private tertiary(): void {
-    if (this.tab === "Craft") {
+    if (this.tab === "Craft" && this.forgeMode === "craft") {
       const i = CRAFT_CATEGORIES.indexOf(this.craftCategory);
       this.craftCategory = CRAFT_CATEGORIES[(i + 1) % CRAFT_CATEGORIES.length]!;
       this.cursor = 0;
@@ -1103,7 +1138,7 @@ export class TownUI {
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${tabHelp(this.tab, this.state.settings)}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
@@ -1515,12 +1550,23 @@ export class TownUI {
       </aside>`;
   }
 
+  /** The switcher pill pair shared by both Forge screens — Craft and Reforge. */
+  private renderForgeSwitcher(): string {
+    return `<div class="chest-cats">
+        <div class="chest-cat ${this.forgeMode === "craft" ? "on" : ""}" data-forge-mode="craft">Craft</div>
+        <div class="chest-cat ${this.forgeMode === "reforge" ? "on" : ""}" data-forge-mode="reforge">Reforge</div>
+      </div>`;
+  }
+
   /**
    * The forge: pick a rarity, a category and (optionally) an essence, and see the cost
    * before spending anything — a chest never shows you that in advance, which is the
-   * whole difference between gambling and crafting.
+   * whole difference between gambling and crafting. tabPrev/tabNext flip to Reforge,
+   * the other half of this station.
    */
   private renderCraft(): string {
+    if (this.forgeMode === "reforge") return this.renderReforge();
+
     const category = this.craftCategory;
     const essence = this.craftEssence;
     const rows = CRAFTABLE_RARITIES.map((rarity, i) => {
@@ -1543,7 +1589,7 @@ export class TownUI {
       `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td><td>${formatNumber(this.state.materials[e])}</td></tr>`,
     ).join("");
 
-    return `<div class="list">${rows}</div>
+    return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="list">${rows}</div></div>
       <aside class="side">
         <h3>Craft: <b>${CRAFT_CATEGORY_LABELS[category]}</b>
           <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} cycle</span></h3>
@@ -1560,6 +1606,71 @@ export class TownUI {
         <table class="cmp">${bag}</table>
         <p class="muted">Dropped by monsters and mined from resource nodes — planets
         only. The dive and the rifts never pay in these.</p>
+      </aside>`;
+  }
+
+  /** Every item the active character could reforge: worn first, then the stash. */
+  private reforgeCandidates(): Item[] {
+    const equipment = this.state.player.equipment;
+    const worn = EQUIP_SLOTS.map((slot) => equipment[slot]).filter((it): it is Item => it !== null);
+    return [...worn, ...this.state.inventory];
+  }
+
+  /**
+   * Reforge: the other half of the Forge. Same card grid Stash uses, so a piece of gear
+   * still reads the same way it does everywhere else — clicking (or confirming) a card
+   * rerolls its affixes on the spot, at the cost already shown on it, exactly like
+   * clicking a rarity row crafts one over in Craft mode.
+   */
+  private renderReforge(): string {
+    const items = this.reforgeCandidates();
+    if (items.length === 0) {
+      return `<div class="forge-pane">${this.renderForgeSwitcher()}
+          <div class="stash-grid empty"><div class="stash-none">Nothing to reforge yet — equip or find something first.</div></div>
+        </div>
+        <aside class="side"><p class="muted">Reforging rerolls an item's affixes for coins
+        and Iron Scrap, climbing hard with rarity. It never touches the base stats, a
+        granted skill or a trigger.</p></aside>`;
+    }
+
+    const wornIds = new Set(
+      EQUIP_SLOTS.map((slot) => this.state.player.equipment[slot]?.id).filter((id): id is string => !!id),
+    );
+    const cards = items.map((it, i) => {
+      const coinCost = reforgeCoinCost(it.rarity);
+      const matCost = craftBulkCost(it.rarity);
+      const afford = this.state.coins >= coinCost && this.state.materials.physical >= matCost;
+      const icon = pixelImageFit(itemIcon(it.type, it.rarity), 64, `item:${it.type}:${it.rarity}`);
+      return `
+        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+             style="--r:${RARITY_COLORS[it.rarity]}">
+          ${wornIds.has(it.id) ? `<span class="ic-mark" title="equipped">E</span>` : ""}
+          ${afford ? "" : `<span class="ic-lock">${formatNumber(coinCost)}c</span>`}
+          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
+          <span class="ic-slot">${it.slot}</span>
+        </div>`;
+    }).join("");
+
+    const sel = items[this.cursor];
+    const coinCost = sel ? reforgeCoinCost(sel.rarity) : 0;
+    const matCost = sel ? craftBulkCost(sel.rarity) : 0;
+    const afford = sel ? this.state.coins >= coinCost && this.state.materials.physical >= matCost : false;
+
+    return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="stash-grid">${cards}</div></div>
+      <aside class="side">
+        ${sel ? this.renderCompare(sel) : `<p class="muted">Pick something to reforge.</p>`}
+        ${sel ? `
+          <h3>Cost</h3>
+          <table class="cmp">
+            <tr><td>Coins</td><td class="${this.state.coins >= coinCost ? "" : "warn"}">${formatNumber(coinCost)}</td></tr>
+            <tr><td>${escapeHtml(MATERIALS.physical.name)}</td>
+              <td class="${this.state.materials.physical >= matCost ? "" : "warn"}">${formatNumber(matCost)}</td></tr>
+          </table>
+          <p class="muted">${k(this.state.settings, "confirm")}, or click the card, to reforge —
+          rerolls every affix, keeps the base stats, the grant and the trigger.</p>
+          ${afford ? "" : `<p class="danger">Not enough coins or ${escapeHtml(MATERIALS.physical.name)}.</p>`}
+        ` : ""}
       </aside>`;
   }
 
