@@ -107,9 +107,9 @@ export const CORSAIR_BOARDING_CUT: Ability = {
   targeting: "currentTarget",
   range: 65,
   effects: [
-    { kind: "damage", damage: { base: 1.3, scale: "attack", type: "physical", canCrit: true }, to: "target" },
+    { kind: "damage", damage: { base: 1.9, scale: "attack", type: "physical", canCrit: true }, to: "target" },
     { kind: "consumeStatus", status: "hooked", to: "target", then: [
-      { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true }, to: "target" },
+      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true }, to: "target" },
     ] },
   ],
 };
@@ -161,7 +161,7 @@ export const CORSAIR_GRAPPLE_SWING: Ability = {
   range: 220,
   effects: [
     { kind: "move", style: "dash", distance: 220, iframes: 0.35 },
-    { kind: "damage", damage: { base: 1.4, scale: "attack", type: "physical", canCrit: true }, to: "enemies" },
+    { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true }, to: "enemies" },
   ],
 };
 
@@ -211,7 +211,7 @@ export const CORSAIR_RICOCHET_SHOT: Ability = {
   targeting: "direction",
   range: 300,
   effects: [
-    { kind: "projectile", projectile: { damage: { base: 1.1, scale: "attack", type: "physical", canCrit: true }, speed: 620, radius: 8, life: 1.4, pierce: 0, count: 1, behavior: "boomerang" } },
+    { kind: "projectile", projectile: { damage: { base: 1.5, scale: "attack", type: "physical", canCrit: true }, speed: 620, radius: 8, life: 1.4, pierce: 0, count: 1, behavior: "boomerang" } },
   ],
   mutationHooks: [{ id: "ricochet_shot.projectile", kind: "projectile", note: "Six Shooter adds bounces and a reload burst." }],
 };

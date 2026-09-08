@@ -46,6 +46,36 @@ export interface RuleHost {
   alliesOf(hero: Hero): Hero[];
   /** The lowest-health ally (or the hero themselves solo). */
   lowestAlly(hero: Hero): Hero;
+
+  // --- the summon layer, for the construct/summon keystones (B-4) ----------
+  /** Every summon `hero` currently has out. */
+  minionsOwnedBy(hero: Hero): MinionView[];
+  /**
+   * Summon `count` constructs for `hero`, told to hold the point. Returns their host
+   * ids. `lifespan` 0 uses the summon default; pass a large number for "permanent".
+   */
+  summonFor(
+    hero: Hero, x: number, y: number, count: number,
+    opts?: { lifespan?: number; inherit?: number; unit?: string },
+  ): number[];
+  /** Heal a summon by host id (a repair drone, Auto-Repair). */
+  repairMinion(id: number, amount: number): void;
+  /** Bump a summon's remaining life to at least `seconds` — the "permanent" keystones. */
+  sustainMinion(id: number, seconds: number): void;
+  /** Point every summon `hero` owns at one enemy; null hands them back their own targeting. */
+  focusSummons(hero: Hero, target: Enemy | null): void;
+}
+
+/** A read-only view of one of a hero's summons, for the construct keystones (B-4). */
+export interface MinionView {
+  /** Host id — pass back to `repairMinion` / `sustainMinion`. */
+  id: number;
+  x: number;
+  y: number;
+  health: number;
+  maxHealth: number;
+  /** Archetype tag from the ability that made it ("skeleton", "drone", "turret"). */
+  unit: string;
 }
 
 const AURA_TICK = 0.5;
@@ -79,6 +109,12 @@ export class HeroRuleState {
   /** Mythic Archetype "the ultimate becomes a state" — which rule, and when the window shuts. */
   mythicRule: string | null = null;
   mythicUntil = 0;
+  /**
+   * Mythic Archetypes whose ultimate "becomes permanent" rather than opening a timed
+   * window (Engineer's Foundry, Corsair's Dread Admiral). Added on the cast, then held
+   * for the rest of the floor — reset with the Hero.
+   */
+  readonly persistentMythics = new Set<string>();
 
   /** True and clears the gate if `seconds` have passed since it last fired. */
   gateReady(host: RuleHost, rule: string, seconds: number): boolean {
@@ -221,6 +257,20 @@ const MYTHIC_WINDOW: Record<string, number> = {
 
 function mythicOn(st: HeroRuleState, host: RuleHost, rule: string): boolean {
   return st.mythicRule === rule && host.now() < st.mythicUntil;
+}
+
+/**
+ * Mythic Archetypes whose clause turns the ultimate into a *permanent* thing rather than
+ * a timed window — a factory that keeps building, a crew that keeps growing. `rulesOnUltimate`
+ * latches these on; the hooks read `persistentOn`, and nothing turns them back off.
+ */
+const PERSISTENT_MYTHIC = new Set<string>([
+  "engineer.mythic.the_foundry",
+  "corsair.mythic.dread_admiral",
+]);
+
+function persistentOn(st: HeroRuleState, rule: string): boolean {
+  return st.persistentMythics.has(rule);
 }
 
 /** Damage multiplier that carries `e`'s remaining health through resists + mitigation. */
@@ -475,7 +525,54 @@ export function rulesOnKill(host: RuleHost, hero: Hero, e: Enemy): void {
       host.afflict(hero, near, "mark", { duration: 12 });
     }
   }
+
+  // --- Construct / summon keystones (B-4) --------------------------------
+  // Engineer "Automated Army" — a kill next to one of your turrets drops a fresh one.
+  if (
+    has(rules, "engineer.gn.automated_army") &&
+    st.gateReady(host, "engineer.gn.automated_army", 1.5) &&
+    host.minionsOwnedBy(hero).some((m) => Math.hypot(m.x - e.x, m.y - e.y) <= 150)
+  ) {
+    host.summonFor(hero, e.x, e.y, 1, { unit: "turret" });
+  }
+  // Corsair "Ghost Crew" — the two core deckhands revive on any of your kills.
+  if (has(rules, "corsair.pk.ghost_crew")) {
+    const have = host.minionsOwnedBy(hero).length;
+    if (have < 2) host.summonFor(hero, a.x, a.y, 2 - have, { lifespan: 999, unit: "deckhand" });
+  }
+  // Corsair "Dread Admiral" — every enemy the fleet kills is pressed into the crew.
+  if (persistentOn(st, "corsair.mythic.dread_admiral")) {
+    host.summonFor(hero, e.x, e.y, 1, { lifespan: 999, unit: "deckhand" });
+  }
+
   host.emit({ kind: "trail", x: a.x, y: a.y, color: hero.player.heroClass.color });
+}
+
+/**
+ * A summon `hero` owned was just destroyed at (x, y). The construct-detonation
+ * keystones (B-4): a dead machine is not wasted — it goes off, or it is rebuilt.
+ */
+export function rulesOnMinionDeath(host: RuleHost, hero: Hero, x: number, y: number): void {
+  const rules = hero.player.build.rules;
+  if (rules.size === 0) return;
+  const st = hero.ruleState;
+  const p = hero.player;
+
+  // Engineer "Chain Detonation" — a construct destroyed by anything goes off like a
+  // Shock Mine. It only ever hits enemies, so a blast cannot chain another minion death.
+  if (has(rules, "engineer.sa.chain_detonation")) {
+    for (const enemy of host.enemiesAround(x, y, 110)) {
+      host.hitEnemy(hero, enemy, p.attackDamage * 1.3, "fire");
+    }
+    host.emit({ kind: "boom", x, y, radius: 100, color: "#ffb24c" });
+  }
+  // Engineer "Recursive Explosives" — the blast scatters enough Scrap to rebuild it once.
+  if (
+    has(rules, "engineer.hybrid.recursive_explosives") &&
+    st.gateReady(host, "engineer.hybrid.recursive_explosives", 4)
+  ) {
+    host.summonFor(hero, x, y, 1);
+  }
 }
 
 /**
@@ -720,6 +817,92 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
       host.afflict(hero, e, "withering", { duration: 4 });
     }
   });
+
+  const persistentAura = (rule: string, run: () => void): void => {
+    if (!persistentOn(st, rule)) return;
+    const t = (st.auraTimers.get(rule) ?? 0) - dt;
+    if (t <= 0) {
+      st.auraTimers.set(rule, AURA_TICK);
+      run();
+    } else {
+      st.auraTimers.set(rule, t);
+    }
+  };
+
+  // --- Construct / summon keystones (B-4) -----------------------------
+  const mine = (): MinionView[] => host.minionsOwnedBy(hero);
+
+  // Engineer "Auto-Repair" — nearby constructs slowly mend and stop timing out.
+  auraTick("engineer.mc.auto_repair", () => {
+    for (const m of mine()) {
+      if (Math.hypot(m.x - a.x, m.y - a.y) > 260) continue;
+      host.repairMinion(m.id, m.maxHealth * 0.04);
+      host.sustainMinion(m.id, 3);
+    }
+  });
+  // Engineer "Artillery Platform" — plant your feet and every construct fires as one.
+  auraTick("engineer.se.artillery_platform", () => {
+    if (Math.hypot(a.vx, a.vy) > 12) return;
+    const n = mine().length;
+    if (n === 0) return;
+    const target = host.enemiesAround(a.x, a.y, 640)[0];
+    if (!target) return;
+    host.hitEnemy(hero, target, p.attackDamage * 0.3 * Math.min(n, 6), "physical");
+    host.emit({ kind: "boom", x: target.x, y: target.y, radius: 22, color: hero.player.heroClass.color });
+  });
+  // Engineer "Killbox" — the crossfire follows the Tag and keeps it fresh.
+  auraTick("engineer.hybrid.killbox", () => {
+    const tagged = host.enemiesAround(a.x, a.y, 900).find((e) => e.sc.has("tagged")) ?? null;
+    host.focusSummons(hero, tagged);
+    if (tagged) host.afflict(hero, tagged, "tagged", { duration: 4 });
+  });
+  // Engineer "Mobile Armory" — you carry the cache: you and nearby allies cycle faster.
+  auraTick("engineer.qm.mobile_armory", () => {
+    hero.rt.reduceCooldowns(0.12);
+    for (const ally of host.alliesOf(hero)) {
+      if (Math.hypot(ally.avatar.x - a.x, ally.avatar.y - a.y) <= 220) ally.rt.reduceCooldowns(0.12);
+    }
+  });
+  // Engineer "Field Workshop" — the Repair Drone tends allied constructs and their cooldowns.
+  auraTick("engineer.hybrid.field_workshop", () => {
+    for (const ally of host.alliesOf(hero)) {
+      ally.rt.reduceCooldowns(0.1);
+      for (const m of host.minionsOwnedBy(ally)) {
+        host.repairMinion(m.id, m.maxHealth * 0.04);
+        host.sustainMinion(m.id, 3);
+      }
+    }
+  });
+
+  // "Permanent" keystones — held every tick, cheap and idempotent.
+  if (has(rules, "engineer.mc.self_repairing_workshop")) {
+    for (const m of mine()) host.sustainMinion(m.id, 999);
+    if (st.gateReady(host, "engineer.mc.self_repairing_workshop", 8) && mine().length < 3) {
+      host.summonFor(hero, a.x, a.y, 1);
+    }
+  }
+  if (has(rules, "ranger.bm.alpha_companion")) {
+    const pack = mine();
+    for (const m of pack) host.sustainMinion(m.id, 999);
+    if (pack.length === 0 && st.gateReady(host, "ranger.bm.alpha_companion", 5)) {
+      host.summonFor(hero, a.x, a.y, 1, { lifespan: 999, unit: "companion" });
+    }
+  }
+  if (has(rules, "corsair.pk.ghost_crew")) {
+    for (const m of mine().slice(0, 2)) host.sustainMinion(m.id, 999);
+  }
+
+  // Engineer "The Foundry" — Siege Engine is now a factory: permanent, self-mending,
+  // and it keeps assembling more of the workshop around it.
+  persistentAura("engineer.mythic.the_foundry", () => {
+    for (const m of mine()) {
+      host.sustainMinion(m.id, 999);
+      host.repairMinion(m.id, m.maxHealth * 0.06);
+    }
+    if (st.gateReady(host, "engineer.mythic.the_foundry", 4)) {
+      host.summonFor(hero, a.x, a.y, 1, { unit: "turret" });
+    }
+  });
 }
 
 /**
@@ -730,6 +913,11 @@ export function rulesTick(host: RuleHost, hero: Hero, dt: number): void {
 export function rulesOnUltimate(host: RuleHost, hero: Hero): void {
   const st = hero.ruleState;
   for (const rule of hero.player.build.rules) {
+    if (PERSISTENT_MYTHIC.has(rule)) {
+      st.persistentMythics.add(rule);
+      host.emit({ kind: "boom", x: hero.avatar.x, y: hero.avatar.y, radius: 90, color: hero.player.heroClass.color });
+      continue;
+    }
     const w = MYTHIC_WINDOW[rule];
     if (w === undefined) continue;
     st.mythicRule = rule;

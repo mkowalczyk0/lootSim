@@ -89,7 +89,7 @@ export const ENGINEER_AUTO_TURRET: Ability = {
   targeting: "point",
   range: 160,
   effects: [
-    { kind: "summon", unit: "auto_turret", count: 1, duration: 20, command: { behavior: "guardPoint", inheritPower: 0.6 } },
+    { kind: "summon", unit: "auto_turret", count: 1, duration: 20, command: { behavior: "guardPoint", inheritPower: 0.72 } },
   ],
   mutationHooks: [{ id: "auto_turret.summon", kind: "summon", note: "Gunner path adds turrets and fire rate." }],
 };
@@ -107,8 +107,8 @@ export const ENGINEER_MORTAR_POD: Ability = {
   targeting: "point",
   range: 300,
   effects: [
-    { kind: "summon", unit: "mortar_pod", count: 1, duration: 18, command: { behavior: "guardPoint", inheritPower: 0.7 } },
-    { kind: "zone", zone: { radius: 100, duration: 18, tickInterval: 2, follows: false, damage: { base: 1.4, scale: "attack", type: "fire", channel: "periodic" } } },
+    { kind: "summon", unit: "mortar_pod", count: 1, duration: 18, command: { behavior: "guardPoint", inheritPower: 0.8 } },
+    { kind: "zone", zone: { radius: 120, duration: 18, tickInterval: 2, follows: false, damage: { base: 2.4, scale: "attack", type: "fire", channel: "periodic" } } },
   ],
 };
 
@@ -144,7 +144,7 @@ export const ENGINEER_SHOCK_MINE: Ability = {
   effects: [
     { kind: "terrain", piece: "anchor", duration: 25, hp: 1 },
     { kind: "delay", seconds: 0, effects: [
-      { kind: "damage", damage: { base: 1.0, scale: "attack", type: "lightning", canCrit: true }, to: "enemies" },
+      { kind: "damage", damage: { base: 1.5, scale: "attack", type: "lightning", canCrit: true }, to: "enemies" },
       { kind: "status", status: "stunned", chance: 1, to: "enemies" },
       { kind: "status", status: "tagged", chance: 1, to: "enemies" },
     ] },
@@ -213,9 +213,9 @@ export const ENGINEER_REMOTE_DETONATION: Ability = {
   cooldown: 16,
   targeting: "self",
   effects: [
-    { kind: "damage", damage: { base: 2.4, scale: "attack", type: "fire", canCrit: true, knockback: 100 }, to: "enemies" },
+    { kind: "damage", damage: { base: 3.0, scale: "attack", type: "fire", canCrit: true, knockback: 100 }, to: "enemies" },
     { kind: "consumeStatus", status: "tagged", to: "enemies", then: [
-      { kind: "damage", damage: { base: 2.0, scale: "attack", type: "fire", canCrit: true, channel: "execute" }, to: "enemies" },
+      { kind: "damage", damage: { base: 2.6, scale: "attack", type: "fire", canCrit: true, channel: "execute" }, to: "enemies" },
     ] },
   ],
   mutationHooks: [{ id: "remote_detonation.packet", kind: "damagePacket", note: "Saboteur path chains the detonation and re-lays the mines." }],

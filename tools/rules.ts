@@ -15,7 +15,8 @@ import { Dungeon, type Hero } from "../src/game/dungeon";
 import type { Element } from "../src/data/elements";
 import type { Enemy } from "../src/game/entities";
 import {
-  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesOnUltimate, rulesTick,
+  rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill, rulesOnMinionDeath,
+  rulesOnUltimate, rulesTick,
 } from "../src/game/rules";
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
@@ -337,6 +338,90 @@ section("zone keystones");
   const before = hero.player.health;
   rulesTick(d, hero, 0.016);
   check("Worldroot heals you for the linked zones you are not standing in", hero.player.health > before, `${hero.player.health.toFixed(0)} / ${before.toFixed(0)}`);
+}
+
+// --- B-4: construct / summon keystones ----------------------------------
+
+section("construct / summon keystones (B-4)");
+{
+  const d = dungeonWith("engineer", ["Mechanic"]);
+  const hero = d.localHero;
+  d.summonFor(hero, hero.avatar.x + 20, hero.avatar.y, 1);
+  const m = d.minions[0]!;
+  m.health = m.maxHealth * 0.4;
+  m.remaining = 1;
+  const hpBefore = m.health;
+  rulesTick(d, hero, 0.6);
+  check("Auto-Repair mends a nearby construct", m.health > hpBefore, `${m.health.toFixed(0)} / ${hpBefore.toFixed(0)}`);
+  check("Auto-Repair keeps it from timing out", m.remaining >= 3, `${m.remaining.toFixed(1)}`);
+}
+{
+  const d = dungeonWith("engineer", ["Saboteur"]);
+  const hero = d.localHero;
+  const e = spawn(d, 300, 300);
+  const before = e.health;
+  rulesOnMinionDeath(d, hero, 300, 300);
+  check("Chain Detonation blasts enemies by a destroyed construct", e.health < before, `${e.health.toFixed(0)} / ${before.toFixed(0)}`);
+}
+{
+  const d = dungeonWith("engineer", ["Gunner"]);
+  const hero = d.localHero;
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  d.summonFor(hero, hero.avatar.x + 30, hero.avatar.y, 1);
+  const nBefore = d.minions.length;
+  e.health = 0;
+  rulesOnKill(d, hero, e);
+  check("Automated Army drops a turret on a kill by one", d.minions.length > nBefore, `${d.minions.length} vs ${nBefore}`);
+}
+{
+  const d = dungeonWith("engineer", ["Siege Engineer"]);
+  const hero = d.localHero;
+  hero.avatar.vx = 0;
+  hero.avatar.vy = 0;
+  d.summonFor(hero, hero.avatar.x + 20, hero.avatar.y, 2);
+  const e = spawn(d, hero.avatar.x + 200, hero.avatar.y);
+  const before = e.health;
+  rulesTick(d, hero, 0.6);
+  check("Artillery Platform focuses construct fire while you hold still", e.health < before, `${e.health.toFixed(0)} / ${before.toFixed(0)}`);
+}
+{
+  const d = dungeonWith("engineer", ["Gunner", "Siege Engineer", "Mechanic"]);
+  const hero = d.localHero;
+  check("the three required paths unlock engineer.mythic.the_foundry", hero.player.build.rules.has("engineer.mythic.the_foundry"));
+  rulesOnUltimate(d, hero);
+  check("casting the ultimate latches the persistent state", hero.ruleState.persistentMythics.has("engineer.mythic.the_foundry"));
+  const nBefore = d.minions.length;
+  rulesTick(d, hero, 0.6);
+  check("The Foundry assembles a construct on its own", d.minions.length > nBefore, `${d.minions.length} vs ${nBefore}`);
+}
+{
+  const d = dungeonWith("ranger", ["Beastmaster"]);
+  const hero = d.localHero;
+  check("alpha_companion is lit", hero.player.build.rules.has("ranger.bm.alpha_companion"));
+  rulesTick(d, hero, 0.6);
+  check("Alpha Companion resummons a lost companion", d.minions.length === 1, `${d.minions.length}`);
+  d.minions[0]!.remaining = 4;
+  rulesTick(d, hero, 0.6);
+  check("Alpha Companion holds the companion permanent", d.minions[0]!.remaining > 100, `${d.minions[0]?.remaining}`);
+}
+{
+  const d = dungeonWith("corsair", ["Pirate King"]);
+  const hero = d.localHero;
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  e.health = 0;
+  rulesOnKill(d, hero, e);
+  check("Ghost Crew keeps two deckhands crewed", d.minions.filter((mn) => mn.owner === hero.index).length === 2, `${d.minions.length}`);
+}
+{
+  const d = dungeonWith("corsair", ["Chainmaster", "Pirate King", "Treasure Hunter"]);
+  const hero = d.localHero;
+  check("dread_admiral is lit", hero.player.build.rules.has("corsair.mythic.dread_admiral"));
+  rulesOnUltimate(d, hero);
+  const e = spawn(d, hero.avatar.x + 200, hero.avatar.y);
+  const nBefore = d.minions.length;
+  e.health = 0;
+  rulesOnKill(d, hero, e);
+  check("Dread Admiral presses a slain enemy into the crew", d.minions.length > nBefore, `${d.minions.length} vs ${nBefore}`);
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);
