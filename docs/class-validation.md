@@ -13,10 +13,28 @@ Measurement tools:
   incoming-damage tolerance, plus a static effect-step census. **It systematically
   over-fills every meter** (the driver cast-spams with infinite resources and never
   travels, kites or dies) so the meter column is a *floor*, not a real cadence.
+- `npm run builds` — **real delve floors**, a real tree allocation, the build's own skills.
+  Three cross-path hybrids plus the Mythic per class, reported as a behaviour fingerprint
+  (engage range, movement, ultimate cadence, summon/zone uptime, ailment density, per-skill
+  casts) and gated on spec §35. This is the instrument the arena is not: where the two
+  disagree, **this one is closer to the game**. Not in `npm test` yet — six classes fail
+  §35 legitimately (Cluster 7) and a red gate would be noise until those are decided.
+  It also carries the **meter-generation ledger**: for any class no build of which ever
+  fills its ultimate meter (or every class, under `BUILDS_GEN=1`) it prints each generation
+  rule's offered points per floor, and why a rule offered none — a `requireTags` gate that
+  never matched, with the tag sets it actually saw; THE ULTIMATE RULE refusing the credit;
+  or an `on:` event the simulation never broadcasts. That is the instrument Cluster 5b
+  needed, and it overturned 5b's first guess.
 - `npm run roster` — data-shape + unlock-threshold + anti-overlap gates.
 - `npm run rules` — the keystone/hybrid/Mythic rule engine does something observable.
 - `npm run smoke` — whole floors; the bot plays **Swordsman**, so changes to any other
   class's numbers leave the campaign byte-identical (13.8 / 9.4).
+
+> **Read the arena's numbers with the build harness beside them.** The arena is a
+> class-level instrument: no tree, the first three abilities in unlock order, stationary
+> dummies. That is fine for a controlled output comparison and actively misleading for
+> anything whose value depends on the floor moving — summons, zones, packs, positioning,
+> and above all the ultimate meter. Clusters 5–7 below are the corrections.
 
 ---
 
@@ -29,15 +47,15 @@ dummies cannot measure "did the escape save you").
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | juggernaut | 229 | 1413 | 1559 | 260 | 24.8 | 6088 | 0 | 4 | 4 | 1 | 0 | 3 | 0 | 0 |
 | paladin | 390 | 1485 | 1478 | 246 | 21.5 | 7800 | 4 | 3 | 1 | 1 | 0 | 5 | 0 | 0 |
-| engineer | 395 | 1330 | 1384 | 231 | 6.7 | 4031 | 0 | 2 | 0 | 0 | 0 | 0 | 5 | 0 |
-| corsair | 458 | 1775 | 455 | 76 | none (90%) | 9447 | 0 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
+| engineer | 431 ‡ | 1478 ‡ | 1471 ‡ | 245 ‡ | 6.7 | 328 ‡ | 0 | 2 | 0 | 0 | 0 | 0 | 5 | 0 |
+| corsair | 539 ‡ | 2287 ‡ | 538 ‡ | 90 ‡ | none (90%) | 9581 ‡ | 0 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
 | necromancer | 571 | 1668 | 2467 | 411 | 7.3 | 7276 | 3 | 0 | 1 | 1 | 0 | 0 | 5 | 0 |
-| shaman | 596 | 1789 | 1386 | 231 | **111.6** | 7169 | 1 | 0 | 0 | 0 | 0 | 1 | 4 | 0 |
+| shaman | 596 | 1789 | 1386 | 231 | 41.8 † | 7169 | 1 | 0 | 0 | 0 | 0 | 1 | 4 | 0 |
 | lancer | 602 | 2007 | 697 | 116 | none (0%) | 9715 | 0 | 1 | 0 | 6 | 2 | 2 | 0 | 0 |
 | berserker | 661 | 2656 | 5436 | 906 | 6.4 | 8674 | 0 | 1 | 1 | 0 | 1 | 6 | 0 | 1 |
 | swordsman | 662 | 2527 | 2273 | 379 | 12.5 | 8547 | 0 | 1 | 0 | 2 | 1 | 3 | 0 | 2 |
 | duelist | 723 | 2313 | 716 | 119 | 71.2 | 8398 | 0 | 0 | 1 | 2 | 1 | 1 | 0 | 1 |
-| monk | 758 | 2564 | 3275 | 546 | **1.2** | 8118 | 2 | 0 | 0 | 3 | 0 | 8 | 1 | 0 |
+| monk | 765 | 2112 | 1863 | 311 | 6.5 † | 8118 | 2 | 0 | 0 | 3 | 0 | 8 | 1 | 0 |
 | bard | 758 | 2362 | 3004 | 501 | 74.5 | 8840 | 2 | 0 | 0 | 0 | 1 | 9 | 0 | 0 |
 | alchemist | 769 | 2570 | 2598 | 433 | 40.6 | 8840 | 2 | 1 | 0 | 0 | 1 | 3 | 0 | 0 |
 | ranger | 966 | 1686 | 4667 | 778 | 6.3 | 9248 | 0 | 0 | 0 | 1 | 2 | 2 | 1 | 1 |
@@ -50,7 +68,12 @@ dummies cannot measure "did the escape save you").
 | magician | 2463 | 7137 | 4390 | 732 | 17.1 | 8844 | 1 | 0 | 0 | 1 | 2 | 2 | 1 | 1 |
 
 `dmg.in` = total damage absorbed over the 120 s fair fight (lower = tankier / better
-sustain). `meter s` = seconds to a full ultimate meter with it held.
+sustain). `meter s` = seconds to a full ultimate meter with it held. **†** = post-Cluster-1
+value (monk / shaman meter rates retuned; monk's AoE/burst columns fell because the arena
+no longer credits it with a near-constant free ultimate — see Cluster 1). **‡** =
+post-Cluster-2 value (corsair / engineer damage-floor pass — see Cluster 2; engineer's
+`dmg.in` 328 is a body-block artifact, its AoE is understated by the arena's 3-ability
+loadout, and a real read of both waits on the build harness).
 
 ### What the table says (healthy)
 
@@ -67,29 +90,33 @@ sustain). `meter s` = seconds to a full ultimate meter with it held.
   shld 4 + mit 4, paladin heal 4 + shld 3, reaper/assassin exec 3. Every identity has a
   column that spikes for it.
 
-### Meter-fill triage (the `meter s` column)
+### Meter-fill triage — **superseded by the real-play column; see Cluster 5**
 
-The arena over-fills 2–3×, so a 20–90 s arena reading is *in band* and a "none" can be a
-harness artifact. Classified:
+The original triage read the arena's `meter s` alone, on the assumption it over-fills 2–3×
+so that a 20–90 s arena reading is in band and a "none" is probably a harness artifact.
+`npm run builds` now gives the real number, and **the assumption was wrong in both
+directions.** The table is kept with the real-play column added because the *pattern* of
+error is the useful part: the arena mis-reads exactly the rules whose trigger the floor
+supplies and the dummies do not.
 
-| class | arena | verdict |
-|---|--:|---|
-| lancer | none | **harness artifact** — `on: "move"`, the driver only strafes a 40 px orbit |
-| reaper | none | **harness artifact** — charges on `execute` / kill-with-execute; dummies are full-HP |
-| assassin | none | **harness artifact** — charges on `mark` / `ailmentInflicted ["poison"]`; dummies unmarked |
-| corsair | none (90%) | **borderline artifact** — Crew-gated; nearly fills. Monitor. |
-| monk | **1.2 s** | **REAL — far too fast.** See Cluster 1. |
-| warlock | **2.7 s** | **REAL — too fast**, though a fast Damnation is somewhat on-brand. Cluster 1, lower priority. |
-| ranger / berserker / necromancer / engineer | 6–7 s | flagged `< 20 s` but every one is a discrete-event driver the arena spams; **needs the real-play/build harness to judge** — do not tune blind. |
-| swordsman | 12.5 s | just under; leave |
-| magician / stormcaller / paladin / juggernaut | 17–25 s | in band |
-| trickster / warden / alchemist | 37–41 s | in band |
-| duelist / bard | 71–75 s | in band (support-ish); leave |
-| shaman | **111.6 s** | **REAL — too slow.** See Cluster 1. |
+| class | arena | real (first full / per min) | verdict |
+|---|--:|--:|---|
+| lancer | none | **2 s / 48.9** | ⚠ **the arena was maximally wrong.** `on: "move", 0.6/unit` against `max: 100`, and real movement is 305–358 units/s → ~190 points/s. Fires every 1.2 s. Cluster 5. |
+| engineer | 6.7 s | **2 s / 9.3** | ⚠ **real, and worse than the arena said.** Cluster 5. |
+| warlock | 2.7 s | 9 s / 5.9 | fast but not alarming — the Cluster 1 *hold* was the right call. Cluster 5 watch-list. |
+| necromancer | 7.3 s | 7 s / 4.5 | real, mildly fast. Cluster 5 watch-list. |
+| shaman | 41.8 s † | 8 s / 3.4 | Cluster 1 read it as "now in band" off the arena; real play is 8 s. Re-open in Cluster 5. |
+| monk | 6.5 s † | 11 s / 3.7 | Cluster 1's projection (≈15–20 s real) was close. Bottom of band, as intended. |
+| ranger | 6.3 s | 11 s / 3.8 | the arena's `< 20 s` flag was roughly right. Fine. |
+| berserker | 6.4 s | 20 s / 0.9 | **arena artifact confirmed** — real play is in band. No change. |
+| swordsman / magician / juggernaut / alchemist | 12–41 s | 13–32 s | in band. |
+| corsair | none (90%) | 47 s / 0.3 | fills, slowly. Consistent with Corsair being the weakest class in real play (Cluster 6). |
+| reaper / assassin / trickster | none | **never** | the "harness artifact" verdict was **wrong** — these do not fill in real play either. Cluster 5. |
+| duelist / bard / paladin / stormcaller / warden | none / 39–75 s | **never** | ⚠ five more classes whose ultimate never becomes available on a real floor. Cluster 5. |
 
 ---
 
-## Cluster 1 — meter-fill outliers: monk (too fast) / shaman (too slow) — **PROPOSED, not applied**
+## Cluster 1 — meter-fill outliers: monk (too fast) / shaman (too slow) — **APPLIED** (commit pending)
 
 ### monk — Heavenly Fist fills in 1.2 s (arena), ≈ 25–90 s wanted
 
@@ -139,41 +166,568 @@ its `damageDealt` loop (0.3 → 0.03). A fast Damnation is not obviously wrong f
 caster whose fantasy is inevitability. **Hold** until the build-differentiation harness
 gives a single-target real-play number.
 
-### Verification for Cluster 1 (once applied)
+### Result (applied)
 
-- `npm run arena` — monk meter 8–30 s, shaman meter 40–70 s, no other class's meter moved.
-- `npm test` green; smoke campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman).
-- Record the before/after `meter s` deltas back in this section.
+Two data edits, nothing else:
+
+| file | field | before | after |
+|---|---|--:|--:|
+| `src/progression/monk.ts` `MONK_ULTIMATE_METER.generation` | `hitDealt` amount | 3 | **0.5** |
+| | `skillUse` amount | 4 | **3** |
+| `src/progression/shaman.ts` `SHAMAN_ULTIMATE_METER.generation` | `ailmentInflicted` amount | 4 | **10** |
+| | `statusApplied` amount | 2 | **5** |
+
+`npm run arena` `meter s` deltas:
+
+| class | before | after | band (arena, discounted 2–3×) |
+|---|--:|--:|---|
+| monk | **1.2 s** | **6.5 s** | ≈ 15–20 s real — bottom of the 20–90 s band, as intended for a no-stop rhythm loop |
+| shaman | **111.6 s** | **41.8 s** | comfortably inside; leans the meter into the spread-affliction identity |
+| warlock | 2.7 s | 2.7 s | held — unchanged, revisit with the build harness |
+
+No other class's `meter s` moved. Monk's arena AoE/burst columns dropped (3275→1863 AoE,
+2564→2112 burst3) as a *side effect* — the arena is no longer crediting monk with a
+near-constant free ultimate during the measurement window, so these numbers are now more
+representative, not a regression. Monk sustained ST is unchanged (758→765).
+
+`npm test` green. Smoke campaign **13.8 / 9.4 byte-identical** (bot plays Swordsman, so
+monk/shaman edits can't move it — the check confirms nothing shared shifted).
+
+---
+
+## Cluster 3 — summon curve scaling — **INVESTIGATED, retracted; no change**
+
+The original plan flagged "necromancer L50/L3 ratio ≈ 3.0× vs a 5–7× norm — minions
+inherit a fixed fraction of owner attack and don't ride the gear curve." That number came
+from a `scratchpad/curve.ts` that no longer exists; **it does not reproduce.**
+
+Fresh measurement — `scratchpad/curve.ts` (rebuilt) plus the arena run at L3 and L50 via
+the new `ARENA_LEVEL` / `ARENA_KEYS` env overrides on `tools/arena.ts`:
+
+| class | ST L3 | ST L18 | ST L50 | **L50/L3** | AoE L50/L3 |
+|---|--:|--:|--:|--:|--:|
+| swordsman (no pets, baseline) | 309 | 662 | 1448 | 4.7 | 4.1 |
+| magician | 879 | 2463 | 4354 | 5.0 | 5.6 |
+| ranger | 575 | 966 | 2422 | 4.2 | 3.7 |
+| trickster | 480 | 1219 | 1910 | 4.0 | 5.9 |
+| reaper | 630 | 1499 | 2023 | 3.2 | 4.7 |
+| **necromancer** | 233 | 571 | 1245 | **5.3** | **6.4** |
+| **engineer** | 202 | 395 | 1115 | **5.5** | 5.6 |
+
+`spawnMinion` sets `power = attackDamage * inherit`, and `attackDamage` itself scales
+~6× L3→L50 for a caster (the probe: necro `attackDamage` 45 → 290, 6.4×). So minions **do**
+ride the curve. Necromancer's ST ratio (5.3) and AoE ratio (6.4) are dead centre of the
+roster. Engineer's (5.5) is fine too. The shallow-curve classes are actually **reaper**
+(3.2) and **trickster** (4.0) — both front-loaded (high L3 base attack) and both
+top-quartile at L18, i.e. working as designed, not broken.
+
+**Conclusion:** there is no summon-scaling bug. The `attack + spell` blend is **not**
+applied — it would have buffed every summoner (magician mirror images, monk afterimage,
+reaper wraiths…) to fix a problem that isn't there. `MINION_DEFAULT_INHERIT` and the
+per-ability `inheritPower` values stay as-is.
+
+**Kept from this investigation:** `tools/arena.ts` now honours `ARENA_LEVEL` / `ARENA_KEYS`
+(default 18 / 14–18 unchanged), and `scratchpad/curve.ts` is a reusable L3/L18/L50
+attack-vs-spell probe. The real finding — **engineer is genuinely bottom on ST *and* AoE
+at every level** (395 / 1384 at L18, last on both) with only `sum 5` to justify it —
+folds into Cluster 2 below.
+
+---
+
+## Cluster 2 — bottom-quartile damage with no identity to pay for it: Corsair + Engineer — **APPLIED** (commit pending)
+
+Both are last-or-near-last on ST *and* AoE at every level and neither has a defensive /
+support / control census column that spikes to justify sitting there. This is the
+"legible 12-axis spread" failing in the other direction — a tank at the damage floor is
+correct; a skirmisher and a summoner at the damage floor with no compensating axis is not.
+
+B-4 is now wired (Batch 6, `docs/rule-coverage.md`), so the keystones are no longer inert —
+but `tools/arena.ts`'s `geared()` allocates **no tree**, so the 12-axis table measures the
+bare class kit either way. The numbers below are the bare-kit floor the tuning has to lift;
+the keystones then build on top of a kit that isn't starting underwater.
+
+### Corsair — ST 458 (20th of 21), AoE 455 / 76 per-tgt (21st), burst3 1775 (19th)
+
+**Imbalance.** Corsair is a single-target skirmisher — the same profile as Duelist
+(ST 723 / burst 2313 / AoE 716). It sits ~35–40% below Duelist on every damage axis while
+its identity census (`heal 0 / shld 0 / mit 0 / mob 2 / ctrl 1 / sup 2 / sum 1 / exec 0`)
+is *also* thinner than Duelist's (which additionally has the `one_opponent` near-immunity
+keystone). It is strictly dominated: a weaker duelist with a weaker toolkit.
+
+Root causes, all data:
+- Base block (`src/data/classes.ts` `corsair.base`) carries **no crit stat** —
+  `attackSpeed: 0.06, moveSpeed: 0.07, lifeOnHit: 1`. Every other blade skirmisher
+  (duelist, assassin, swordsman) starts with `critChance`/`critDamage`/`attackSpeed`.
+- The two single-target damage skills roll low multipliers:
+  `corsair.boarding_cut` `1.3` + `1.6`-on-hooked, `corsair.ricochet_shot` `1.1`.
+- Four of the ten abilities (`hookshot`, `chain_drag`, `dirty_trick`, `plunder`) deal
+  **zero** damage, so `autoSlotNewAbilities` fills the arena's four skill slots with a
+  lower average damage-per-slot than a class whose kit is mostly attacks.
+
+**Change applied** (data only — `src/data/classes.ts`, `src/progression/corsair.ts`):
+
+| file · field | before | after | why |
+|---|--:|--:|---|
+| `classes.ts` `corsair.base.attackSpeed` | 0.06 | **0.09** | brings the basic-attack cadence to skirmisher tier |
+| `classes.ts` `corsair.base` add `critChance` | — | **0.06** | a pistol-and-cutlass duelist should crit; matches the archetype |
+| `classes.ts` `corsair.base` add `critDamage` | — | **0.12** | matches Duelist's base; the crit needs to be worth landing |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` base hit | 1.3 | **1.9** | the bread-and-butter melee, and it's gated behind a Hookshot setup |
+| `corsair.ts` `CORSAIR_BOARDING_CUT` hooked bonus | 1.6 | **2.4** | rewards the hook→cut combo the class is built around |
+| `corsair.ts` `CORSAIR_RICOCHET_SHOT` base | 1.1 | **1.5** | the ranged single-target option |
+| `corsair.ts` `CORSAIR_GRAPPLE_SWING` damage | 1.4 | **1.8** | the mobility-attack |
+
+**Left alone on purpose:** `corsair.powder_keg` (2.4) and the AoE column generally — a
+low AoE number *is* the single-target-duelist identity, same call as Duelist (716) and the
+reason not to touch either one's AoE.
+
+**Projected:** ST 458 → ~640–680 (Duelist tier, correct for the shared profile), AoE
+roughly flat (~500), burst3 → ~2200. Identity spread unchanged.
+
+### Engineer — ST 395 (21st), AoE 1384 (21st), burst3 1330 (21st), per-tgt 231
+
+**Imbalance.** Engineer is a summoner (`sum 5`, tied for the roster's highest) and is
+*supposed* to deal little personally — that part is correct and stays. What is not
+correct: it is last on **AoE**, where the other `sum 5` class (Necromancer) sits at 2467,
+and last on burst and per-target too, with only `shld 2` besides `sum 5` to show for it.
+A turret-and-mortar summoner filling a room should read as a mid-pack AoE class; right now
+the constructs simply don't put enough on the floor. It also took the least damage of any
+class (`dmg.in 4031`) — it hangs back correctly, but it's paying the squishy-caster
+durability price of a glass cannon while dealing a tank's damage.
+
+Root causes, all data (the L3→L50 *curve* is healthy at 5.5× — Cluster 3 — so this is an
+absolute-level fix via per-ability numbers and the base block, **not** `MINION_DEFAULT_INHERIT`
+or the attack+spell blend, both of which stay retracted):
+- `engineer.auto_turret` summons **one** turret at `inheritPower 0.6`.
+- `engineer.mortar_pod` zone `base 1.4`, `inheritPower 0.7`.
+- `engineer.shock_mine` `base 1.0`; `engineer.remote_detonation` `2.4` + `2.0`-on-tagged.
+- `classes.ts` `engineer.base.attack` **8** with `growth.attack` **1.9** — lowest base
+  *and* lowest growth on the board, so both the Engineer and everything it builds (turrets
+  inherit owner `attackDamage`) start from the lowest number in the game.
+
+**Change applied** (data only — `src/data/classes.ts`, `src/progression/engineer.ts`).
+`AUTO_TURRET` `count` was **held at 1** — a first pass to 2 turrets dropped engineer's
+fair-fight `dmg.in` to ~260 because two construct bodies body-block the arena's stationary
+dummies wholesale; the single stronger turret is the same idea without that artifact.
+
+| file · field | before | after | why |
+|---|--:|--:|---|
+| `classes.ts` `engineer.base.attack` | 8 | **9** | lifts the Engineer and every construct at once; still bottom-3 |
+| `classes.ts` `engineer.growth.attack` | 1.9 | **2.05** | the construct floor shouldn't fall further behind with level |
+| `engineer.ts` `ENGINEER_AUTO_TURRET` `inheritPower` | 0.6 | **0.72** | turret bite (count held at 1) |
+| `engineer.ts` `ENGINEER_MORTAR_POD` zone `base` | 1.4 | **2.4** | the sustained-AoE anchor |
+| `engineer.ts` `ENGINEER_MORTAR_POD` zone `radius` | 100 | **120** | a pod that "lobs shells at an area" should own a real footprint |
+| `engineer.ts` `ENGINEER_MORTAR_POD` `inheritPower` | 0.7 | **0.8** | — |
+| `engineer.ts` `ENGINEER_SHOCK_MINE` damage `base` | 1.0 | **1.5** | the burst-AoE / CC option |
+| `engineer.ts` `ENGINEER_REMOTE_DETONATION` base | 2.4 | **3.0** | the payoff button |
+| `engineer.ts` `ENGINEER_REMOTE_DETONATION` tagged follow-up | 2.0 | **2.6** | rewards the Tagged setup |
+
+**Left alone on purpose:** personal basic-attack multipliers and every non-construct
+skill — the Engineer *should* stay near the ST floor (a summoner's ST identity).
+
+### Result (applied)
+
+`npm run arena` deltas (all other 20 class rows **byte-identical** to the 12-axis table —
+every edit is class-file-local or a per-class `classes.ts` block):
+
+| class | ST | burst3 | AoE | per-tgt | dmg.in | meter |
+|---|--:|--:|--:|--:|--:|--:|
+| corsair | 458 → **539** | 1775 → **2287** | 455 → **538** | 76 → **90** | 9447 → 9581 | none (90%) → none (90%) |
+| engineer | 395 → **431** | 1330 → **1478** | 1384 → **1471** | 231 → **245** | 4031 → **328** † | 6.7 → 6.7 |
+
+**Corsair — landed clean.** ST +18% (still below Duelist's 723, correct for a class that
+also skirmishes and displaces), burst +29% off the base crit, AoE essentially flat. It is
+off the absolute ST floor (was 20th, now mid-low) with its identity census unchanged. This
+one is done.
+
+**Engineer — smaller than projected, and the arena can't score the rest.** `tools/arena.ts`
+slots only a class's **first three** abilities (`ABILITY_UNLOCK_LEVELS` order →
+`autoSlotNewAbilities`), which for the Engineer is `auto_turret / mortar_pod / repair_drone`.
+So of the buffs above, only `base.attack`, the turret and the mortar are in the measured
+loadout — `shock_mine` and `remote_detonation` (both real AoE a levelling player equips)
+never fire in the run. Measured ST is +9%; measured AoE moved almost not at all (+6%) and
+was **insensitive to a 70% mortar-zone buff**, which means the AoE number is dominated by
+the ultimate in that 30 s window, not the constructs. **†** `dmg.in` 4031 → 328 is a
+body-block artifact: a stronger single turret now holds the four stationary fair-fight
+dummies for the full 120 s. It is not a real durability change and it is exaggerated by
+dummies that never reposition.
+
+**Conclusion at the time:** the Corsair fix is complete and verified. The Engineer buffs
+are directionally right and the ST gain is real, but whether they are *enough* cannot be
+judged from the arena; a second Engineer pass is gated on the build-differentiation
+harness.
+
+### ⚠ Correction — the Engineer half was pointed the wrong way
+
+`npm run builds` (the harness that gate named) now exists, and it reverses the Engineer
+premise entirely. On real depth-9 floors:
+
+| class | dps | dmg taken /s | floors cleared | ult / min |
+|---|--:|--:|--:|--:|
+| **engineer** (3 hybrids + Mythic) | **1473 – 1785** | **2 – 5** | **3/3** | 7.9 – 11.6 |
+| necromancer (hybrids) | 2235 – 2545 | 10 – 13 | 3/3 | 4.4 – 5.6 |
+| *median class* | ~600 | ~18 | 3/3 | ~2 |
+| corsair | 240 – 336 | 35 – 36 | **0–1/3** | 0.3 – 0.5 |
+| duelist | 143 – 206 | 29 – 45 | **0–1/3** | 0 |
+
+The Engineer is not the weakest class on the board. It clears floors **twice as fast as
+the median** while taking **a quarter of the damage of anything else**, and it does that
+because its constructs work exactly as designed the moment there are real monsters walking
+into them — which is the one thing an arena of pinned dummies cannot show. The arena's
+"last on every damage axis" was an artifact of measuring a summoner with nothing to summon
+against.
+
+So the Cluster 2 Engineer change (`base.attack 8→9`, `growth 1.9→2.05`, turret/mortar/mine/
+detonation numbers) **buffed a class that was already top-tier**. → **Reverted in full;
+see Cluster 6a for the measured before/after and the refined verdict** (the Engineer's
+outlier axis is durability, 3.2 taken/s against a roster median of 17.8, and that is the
+class's stated identity rather than something to tune out).
+
+The **Corsair** half stands, but "stands" now needs a caveat the arena could not give it:
+it is still 20th of 21 in real play, dying on two floors in three and eating double the
+median's incoming damage, *after* the buff the arena signed off as landing. Recorded as
+Cluster 6b.
+
+**What this says about the method, not just the numbers:** the arena's `sum 5` census column
+told us the Engineer was a summoner, and its damage columns told us summoners are weak. The
+first was data about the kit; the second was an artifact of the instrument. A census column
+that spikes is *not* evidence that the identity is paying off — only a real floor is.
+
+`npm test` green. `npm run smoke` campaign **13.8 / 9.4 byte-identical** (bot plays
+Swordsman). `npm run roster` green.
+
+---
+
+## Cluster 5 — the ultimate meter is broken at both ends in real play — **PROPOSED**
+
+Evidence: the `real (first full / per min)` column in the triage table above, from
+`npm run builds` — three depth-9 floors per build, four builds per class, ultimates counted
+by the meter actually draining rather than by the button being pressed.
+
+Two failures, and they are not the ones the arena reported.
+
+### 5a. Lancer fires an ultimate every 1.2 seconds
+
+**Imbalance.** `LANCER_ULTIMATE_METER.generation` is
+`[{ on: "move", amount: 0.6, perUnit: "distance" }, { on: "hitDealt", amount: 6, requireTags: ["charge"] }]`
+against `max: 100`. The Lancer's measured real-play movement is **305–358 world units per
+second** — it is the roster's mobility class (`mob 6`, the highest census) and it dashes
+constantly. At 0.6 per unit that is **~190 meter points per second**: the bar refills
+almost twice over every second, and the harness measures **43–54 ultimate casts per
+minute** across all four builds.
+
+**Why the arena missed it, in the exact opposite direction.** The arena reported `none (0%)`
+and the original triage called it a harness artifact because "the driver only strafes a
+40 px orbit." That diagnosis of the *cause* was right and the inference was backwards: a
+40 px orbit accumulates almost no net distance, so the arena starved a rule that the real
+game floods. Comet Charge is supposed to be the Lancer's identity moment; at one cast per
+1.2 s it is the Lancer's basic attack.
+
+**Proposed change** (`src/progression/lancer.ts`): `on: "move"` amount `0.6 → 0.03`
+(≈20× down, giving ~9.6 points/s at measured movement → ~10 s of pure running, and less in
+practice because a Lancer that is running is not hitting). Leave the `hitDealt`/`charge`
+term at 6 — earning the meter by committing to a charge is the rule that says something
+about the class, and it should become the dominant term rather than a rounding error next
+to walking.
+
+### 5b. Eight of twenty-one classes never fill their meter on a real floor — **MEASURED**
+
+**duelist, trickster, reaper, stormcaller, paladin, bard, assassin, warden** — none of them
+reached a full meter in any of twelve floors each. Three of those (reaper, assassin,
+trickster) were previously written off as arena artifacts on the grounds that they charge
+on execute / mark / poison and the dummies were full-health and unmarked. **That was wrong**:
+they do not fill in real play either.
+
+The first draft of this entry guessed at a shared cause and said "do not tune these eight
+blind; instrument first." That instrumentation now exists (`tools/builds.ts`, printed
+automatically for any class no build of which ever fills, or for all 21 under
+`BUILDS_GEN=1`). It wraps `ResourceSet.broadcast` for the watched hero and re-walks the
+meter's own generation rules against every event using the same three primitives the pool
+uses — `isUltimateSourced`, `hasAnyTag`, and a copy of `ruleAmount` — so the verdict cannot
+drift from the real gate. Nothing in `src/` is touched: a measurement tool that needs a
+debug hook inside the simulation would be a change to the thing it is measuring.
+
+Points are reported **per floor** (the meter starts empty on every floor) and **as
+offered**, before the pool clips at max — a rule offering zero is the finding.
+
+The guess was wrong. It is not one systemic cause, it is **two, and they need opposite
+fixes**:
+
+**Cause A — the tag gate can never match. Four classes' flavour rule is dead data.**
+
+| class | rule | matches | what the events actually carried |
+|---|---|--:|---|
+| paladin | `on skillUse 2 [barrier]` | **0 / 207** | `ranged/holy/mark`, `charge/movement/support/holy`, `zone/heal/support/holy` |
+| bard | `on statusApplied 2 [support]` | **0 / 112** | `crowdControl/aura/arcane`, `(untagged)` |
+| assassin | `on hitDealt 3 [mark]` | **0 / 1540** | `melee/stealth/execute`, `melee/bleed/stealth`, `ranged/projectile/poison` |
+| warden | `on skillUse 6 [terrain]` | **0 / 223** | `ranged/projectile/nature/crowdControl`, `nature/area/crowdControl`, `zone/nature/heal/support` |
+
+No ability in any of those four classes carries the tag its own meter asks for. The Bard
+case is the instructive one: `STATUS_INSPIRED` *is* tagged `support`, but a `statusApplied`
+event carries the tags of the **ability** that applied the status, not the status's own —
+so a rule keyed on a status category can never fire. These are data bugs with a data fix
+(tag the abilities, or key the rule on a tag they already carry), and every one of them
+means the class is running on its *backup* generation rule alone.
+
+**Cause B — the rule fires exactly as designed and the amount is far too small.**
+Per floor, in bars:
+
+| class | working rule | offered | second rule | total |
+|---|---|--:|---|--:|
+| warden | `skillUse 4 [nature]` | 0.74 | `[terrain]` dead | **0.74** |
+| stormcaller | `hitDealt 1.2 [lightning]` | 0.51 | `ailmentInflicted 2` 0.15 | **0.66** |
+| reaper | `kill 8 [execute]` | 0.38 | `hitDealt 2 [execute]` 0.10 | **0.48** |
+| bard | `skillUse 5` | 0.44 | `[support]` dead | **0.44** |
+| duelist | `dodge 8` | 0.25 | `block 10` 0.14 | **0.39** |
+| trickster | `skillUse 6 [illusion]` | 0.26 | `dodge 6` 0.10 | **0.36** |
+| paladin | `damagePrevented 40 ×maxHealthFraction` | 0.21 | `[barrier]` dead | **0.21** |
+| assassin | `ailmentInflicted 2 [poison]` | 0.17 | `[mark]` dead | **0.17** |
+
+Every one of the eight lands between **0.17 and 0.74 bars per floor** — i.e. all of them
+are short by a factor of 1.4× to 6×, and none of them is short by 50×. That is a
+consistent, small, tunable gap, and it says the generation *model* is right and the
+amounts were sized against a longer fight than a floor actually is.
+
+**The Duelist is the exception and needs a different answer.** Its meter is fed *only* by
+`dodge` and `block`, which are passive procs off `evasion: 0.10` / `blockChance: 0.06` —
+and the harness measures **3 dodges and 1 block per floor**. At 8 and 10 points, filling a
+100-point bar needs eleven such events. No amount that respects the design note ("earned by
+countering — an attack read and punished, never a kill") fixes a rule whose event fires four
+times, unless the amounts go to roughly `dodge 22 / block 26`. That is the proposal; the
+alternative (raising evasion/blockChance until the procs are common) would rewrite the
+class's whole defensive profile to fix its meter, which is the wrong lever.
+
+**Proposed, per class, data only** — scale each working rule so a floor's worth of play
+fills roughly one bar and a long floor fills two, and fix the four dead tags. Not applied.
+
+Cluster 1's shaman fix should be re-opened in the same pass: it was declared "now in band"
+on an arena reading of 41.8 s, and real play is 8 s.
+
+---
+
+## Cluster 6 — arena-vs-real-play rank inversions — **6a APPLIED, 6b/6c PROPOSED**
+
+The arena's damage ranking and the real-floor ranking disagree badly enough that the
+12-axis table cannot be used on its own to decide who needs help.
+
+| class | arena ST rank | real-play dps | real-play verdict |
+|---|--:|--:|---|
+| engineer | 21st (last) | 1473–1785, 2–5 taken/s, 3/3 | **top tier** — see the Cluster 2 correction |
+| necromancer | 15th | 2235–2545 | **top tier** |
+| duelist | 7th (723) | **143–206**, 0–1/3 cleared | **bottom** — the arena flattered it enormously |
+| corsair | 20th | **240–336**, 0–1/3 cleared | bottom, consistent |
+
+### 6a. Revert the Engineer half of Cluster 2 — **APPLIED**
+
+`base.attack 9 → 8`, `growth.attack 2.05 → 1.9`, and every ability number back to its
+pre-Cluster-2 value: Auto-Turret `inheritPower 0.72 → 0.6`; Mortar Pod `inheritPower
+0.8 → 0.7`, zone `base 2.4 → 1.4`, `radius 120 → 100`; Shock Mine `1.5 → 1.0`; Remote
+Detonation `3.0 → 2.4` and its tagged follow-up `2.6 → 2.0`.
+
+Measured effect — only the four Engineer rows moved, every other class's fingerprint
+byte-identical:
+
+| build | dps before → after | clear before → after | taken/s |
+|---|--:|--:|--:|
+| Killbox | 1514 → **1261** | 22 s → 22 s | 2 → 4 |
+| Forward Base | 1473 → **945** | 20 s → 25 s | 5 → 2 |
+| Autonomous Army | 1591 → **1247** | 21 s → 21 s | 2 → 5 |
+| The Foundry ★ | 1785 → **1337** | 19 s → 22 s | 2 → 2 |
+
+**And a refinement of the finding that prompted it.** After the revert the Engineer is
+5th of 21 on damage (mean 1198 against a roster median of 730) and still clears in 22 s
+against a median of 34 s — but the axis it is genuinely an outlier on is neither:
+
+| | engineer | roster median | next-safest class |
+|---|--:|--:|--:|
+| damage taken / sec | **3.2** | 17.8 | stormcaller, 8.2 |
+
+Taking a fifth of the median's damage is not an accident to be tuned out. "Does very
+little personally. By the time the fight is a minute old there is a turret, a wall and a
+mine doing it instead" is the class blurb, and a builder that stands behind its machines
+belongs at the defensive extreme of the 12-axis spread by design — the standing rule is
+not to balance toward identical anything. **Verdict: the revert corrects the Cluster 2
+mistake and the Engineer needs nothing further.** Its remaining §35 failure
+(Killbox / Autonomous Army) is a content problem, tracked in Cluster 7.
+
+### 6b. Corsair — Cluster 2's other half also under-delivered — **evidence, no proposal yet**
+
+Recorded for honesty. The Corsair half of Cluster 2 was signed off as "Done" on arena
+evidence (ST 458 → 539, burst3 1775 → 2287). Real play, after that change:
+
+| | corsair | duelist | roster median |
+|---|--:|--:|--:|
+| dps | 312 | 169 | 730 |
+| floors cleared (of 3) | **0.8** | 0.2 | 3.0 |
+| damage taken / sec | **35.2** | 35.8 | 17.8 |
+
+20th of 21, dying on two floors in three, and taking double the median's damage. The arena
+said the fix landed; the floor says the Corsair is still at the bottom. No second Corsair
+proposal here — the point is that **an arena-only sign-off is not sufficient evidence that
+a damage-floor fix worked**, and Cluster 2's "Done" should be read with that caveat.
+
+### 6c. Duelist — the weakest class in the game on every axis at once — **PROPOSED**
+
+The arena rated it 7th; on a real floor it is last on damage (169 dps, 23% of the median),
+last on survival (35.8 taken/s), clears 0.2 floors of 3, and — per Cluster 5b — never
+charges its ultimate. Base stats are the lowest defensive block on the roster
+(`defense: 6`, `maxHealth: 124`) paired with the shortest engage range measured
+(**52–56 units**), no summons, and no zones. It is built as a single-target duellist whose
+mitigation is `evasion: 0.10` / `blockChance: 0.06`, and a real floor is packs: four
+avoided hits a floor against eighty-nine landed ones.
+
+**One caveat that must go in the write-up rather than be quietly ignored: the harness
+cannot play a Duelist.** The bot's policy is close to 26 units, hold attack, dodge
+telegraphs, retreat when hurt — the smoke bot's, deliberately (see the comment on
+`MELEE_STAND`). "Bait the swing, punish the gap" is not in its vocabulary, and the
+Duelist's whole kit is reactive. So 169 dps is a **floor** on the class, not its ceiling,
+and the gap between a bot and a player is larger for this class than for any other. What
+the measurement does establish beyond doubt is that the Duelist has no passive floor to
+stand on when played imperfectly, which is a real problem for a class a new player might
+pick.
+
+**Proposed** — a Cluster-2-style pass in two parts, neither applied:
+1. the meter fix from 5b (`dodge 8 → 22`, `block 10 → 26`), so the ultimate exists at all;
+2. a damage-floor pass on the base block and the three lowest-scaling abilities, sized to
+   move it from 169 to roughly the 400–500 band the other bottom-quartile melee classes
+   occupy — *not* to the median, since a duellist that needs the fight to go right is a
+   legible identity and flattening it is exactly what the standing rule forbids.
+
+### Intra-class spread — not yet a proposal
+
+| class | weakest build | strongest build | ratio |
+|---|--:|--:|--:|
+| berserker | Blood Frenzy 750 | Hemorrhage 3015 | **4.0×** |
+| magician | Elemental Rift 957 | Prismatic Cascade 2507 | 2.6× |
+| stormcaller | Cyclonic Step 643 | Stormlord ★ 1740 | 2.7× |
+| necromancer | **Soul Legion ★ 484** | Bone Forge 2545 | **5.3× — the Mythic is the worst build** |
+
+The Soul Legion anomaly was investigated and is **not** a balance number. See Cluster 8.
+
+---
+
+## Cluster 7 — §35: six classes' builds are not behaviourally distinct — **evidence only**
+
+`npm run builds` fails on **lancer, juggernaut, necromancer, stormcaller, bard, engineer**.
+The gate is deliberately generous — a pair fails only if it equips the *same three skills*
+and separates on **none** of seven behaviour axes (engage, movement, summons, zones,
+ailments, ultimate cadence, damage taken).
+
+| class | identical pair | note |
+|---|---|---|
+| bard | all three pairs | Battle Crescendo / Soloist / War Noise are one build |
+| necromancer | Meat Grinder / Lich Bond / Bone Forge | all three near-identical (2235–2545 dps, same skills) |
+| lancer | Thunder Lance / Phalanx Spear | — |
+| juggernaut | Bastion / Champion's Challenge | byte-identical fingerprints |
+| stormcaller | Supercell / Perfect Storm | — |
+| engineer | Killbox / Autonomous Army | expected: `autonomous_army` is documented as having nothing to wire (`docs/rule-coverage.md`) |
+
+Two distinct causes, and they need separating before anything is changed:
+
+1. **The hybrid genuinely does nothing observable** — the Engineer's `autonomous_army`
+   ("turrets reposition, no line-of-sight needed") was already documented as un-wireable
+   because the minion pather does this anyway. That is a content problem: the unlock should
+   do something else.
+2. **The harness cannot see what it does** — a hybrid that changes a damage *type*, a
+   status duration or a targeting shape may be a real difference the seven behaviour axes
+   miss. `npm run rules` proves a rule fires; it does not prove a player would feel it.
+
+Splitting those two is the work. It is also the natural home for the old Cluster 4
+(detectable-impact sweep), which asked the same question from the other end.
+
+---
+
+## Cluster 8 — `followUp` and `reactive` never fire — **BUG, not a balance number**
+
+This started as "investigate `necromancer.mythic.soul_legion`, which makes the class 5.3×
+worse than its own hybrids". The Mythic turned out to be a symptom of something much
+larger, and the balance question dissolved into an engine one.
+
+**What Soul Legion declares.** Its one mutation rewrites Kingdom of Bones with
+`{ kind: "summon", addCount: 6, addInheritPower: 0.2 }`, `{ kind: "addTags", tags: ["void"] }`,
+and a `{ kind: "followUp", window: 6, effects: [consumeSummons all → damage + 40 souls] }` —
+the "an army, or a cannon" choice the description promises.
+
+**What it resolves to.** A probe of all seven Necromancer builds at L18 shows the Mythic's
+aggregate mods, its ability cooldowns, its costs and its damage bases are *identical* to
+its hybrids'. The only differences are three extra entries in `build.rules`
+(`legion.endless_legion`, `hybrid.meat_grinder`, `hybrid.soul_general` — picked up because
+its 14-point allocation covers those requirements too), none of which is wired in
+`src/game/rules.ts`. **Soul Legion's mechanical payload does not reach the simulation at
+all**, so its 484 dps is not the Mythic being bad; it is a 14-point build that spends its
+points on nothing and plays worse than a 6-point one because of what those points did
+*not* buy.
+
+**The root cause is in `AbilityRuntime`.** There are three kinds of deferred effect
+(`PendingEffect.kind`), and only one of them is ever executed:
+
+- `delay` — fired by `AbilityRuntime.tick` when `now >= fireAt`. **Works.**
+- `followUp` — scheduled by `castAbility` with an `expiresAt` and no `fireAt`. `tick`'s
+  only other branch is `else if (p.expiresAt !== undefined && now >= p.expiresAt)`, which
+  **splices it out without running it**. Every follow-up window in the game expires unused.
+- `reactive` — fired only by `AbilityRuntime.notify(event, host)`, and **`notify` has no
+  callers anywhere in `src/`**. (The only `notify` grep hits are `TownUI.notify`, which is
+  the unrelated toast.)
+
+**Scope: roughly two dozen authored behaviours never execute.** Eleven `followUp` mutation
+ops (bard, corsair, assassin, lancer, magician, necromancer, swordsman, monk, paladin ×2,
+stormcaller ×2), one ability-level `followUp` (`lancer.ts:199`), and twelve `reactive`
+effect steps (duelist ×3, bard ×2, berserker ×2, juggernaut ×2, paladin, warden,
+trickster).
+
+**Independent confirmation, from the harness rather than from reading code.** The Corsair's
+Mythic Archetype is **byte-identical to a hybrid across all twelve fingerprint columns**:
+
+```
+corsair / Plunder Crew      1/3  42  336  35  82  115  0.5  47s  0.0 0.0 0.2  boarding_cut:13 powder_keg:4 grapple_swing:5
+corsair / Dread Admiral ★   1/3  42  336  35  82  115  0.5  47s  0.0 0.0 0.2  boarding_cut:13 powder_keg:4 grapple_swing:5
+```
+
+Dread Admiral's only mechanical addition over that hybrid is
+`{ kind: "followUp", window: 3, effects: [damage 2.4 /ultimate] }`. A dead code path
+predicts exactly this row, and this row is what the harness measured.
+
+**This also reaches back into two other clusters.** It is a cause of the Cluster 7 §35
+failures that is neither of the two the cluster names, and it lands hardest on the class
+Cluster 6c is about: the **Duelist owns three of the twelve dead `reactive` steps**, more
+than any other class, which is one concrete reason the roster's most reactive kit measures
+as its weakest.
+
+**Not fixed here, and deliberately not.** The fix is engine logic in `src/combat/runtime.ts`
+plus a `notify` call site in `src/game/dungeon.ts` — outside the data-only tuning remit,
+and it carries a real design question that is the owner's to answer, not mine:
+
+> Should a `followUp` fire **automatically when its window elapses**, or on the player's
+> **next cast or attack inside the window** (a combo opportunity)? The field name and the
+> `window` both suggest the second, and the two read completely differently in the hand —
+> Swordsman's Blade Dance finisher and Monk's Infinite Motion are combo prompts; Bard's
+> "fourth movement" and Corsair's ghost-crew second volley read as automatic.
+
+Recommended shape once that is decided: `tick` fires a `followUp` on expiry (or
+`castAbility`/the attack path calls `notify("cast")`-style for the combo reading), and
+`dungeon.ts` calls `rt.notify(...)` from the events it already broadcasts to the resource
+layer — the `reactive` events named in the data are `hitTaken`, `dodge`, `block` and
+`kill`, all of which the dungeon already emits. **`tools/rules.ts` should gain an assertion
+per dead declaration** so this class of "authored but never executed" cannot recur.
 
 ---
 
 ## Backlog (evidence gathered, proposals pending)
 
-- **Cluster 2 — Corsair.** Bottom-quartile ST (458) *and* AoE (455 / 76 per-tgt) with a
-  census of `0/0/0/2/1/2/1/0` — no defensive or support identity to justify the low
-  damage. Its fantasy is reach + skirmish. Needs either a numbers pass on the kit or a
-  sharper skirmisher payoff (a real reach/mobility power that reads). Propose after the
-  B-4 Corsair keystones are wired (they are currently inert — `ghost_crew`, `harpooner`,
-  and the crew/plunder hybrids — so the class is being measured with part of its kit
-  switched off).
-- **Cluster 3 — Necromancer vs Engineer summon scaling.** Two ends of one lever.
-  `scratchpad/curve.ts` (L3 vs L50): necromancer L50/L3 ratio **3.0×** vs the 5–7× norm,
-  and 2nd-lowest L50 ST — minions inherit a fixed fraction of owner `attack`
-  (`inheritPower ≈ 0.5`) and don't ride the gear curve. Engineer's constructs+zones
-  previously *looped* (cut Stage 11) and now read low (395 ST). Fix: make minion damage
-  scale with owner `attack`/gear consistently and set per-class inherit fractions from
-  the measured curves — `src/data/minions.ts` (`MINION_DEFAULT_INHERIT`, the `power`
-  formula in `spawnMinion`) + each summoner's `summon` effect steps. **Fold the B-4
-  construct/summon keystones into this cluster** — wire each summoner's keystones in the
-  same pass that fixes its scaling, so they are tuned once against final numbers.
-- **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** `npm run rules` now
+- ~~**Instrument the generation events**~~ — **DONE**, and it changed the answer. The
+  per-rule ledger in `tools/builds.ts` (auto-printed for any never-filling class,
+  `BUILDS_GEN=1` for all 21) split Cluster 5b into a four-class tag bug and an eight-class
+  amount problem, and ruled out the systemic cause the first draft guessed at. See 5b.
+- **Fix `followUp` / `reactive`** (Cluster 8) — the largest open item, and the only one
+  that needs an engine change rather than a number. Blocked on the owner's call between
+  automatic-on-expiry and next-input-inside-the-window.
+- **Cluster 4 — hybrid / keystone / Mythic detectable-impact sweep.** Folded into Cluster 7
+  above; `npm run rules` now
   proves ~40 of the wired rules do something; extend it to assert every hybrid/keystone/
   archetype changes a number or an effect list the harness can see. Feeds `npm run
   roster`.
-- **Build-differentiation harness** (`tools/builds.ts` or a smoke-bot mode). Allocate a
-  named path/hybrid, report a behaviour fingerprint (skill mix, mean engage range, meter
-  cadence, movement). Required for spec §35 ("3 builds/class play differently") and to
-  give warlock/berserker/ranger/necro/engineer a real-play meter number.
+- ~~**Build-differentiation harness**~~ — **DONE**, `tools/builds.ts` / `npm run builds`.
+  It produced Clusters 5–7 and the Cluster 2 correction. Still to do on the harness itself:
+  the generation-event counters above, and folding it into `npm test` once §35 passes.
 - **Raid-scale (10–20 p) hazard constraints** — consolidate the scattered §4 notes into
   one section: redirect `fraction` cap + total-redirect clamp per hit; party-wide
   `guardsDeath` single-source + decay; zone-merge total-radius cap (`mergeable` threaded

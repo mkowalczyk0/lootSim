@@ -40,8 +40,8 @@ export const MONK_ULTIMATE_METER: ResourceSpec = {
   start: "empty",
   ui: "meter",
   generation: [
-    { on: "hitDealt", amount: 3, requireTags: ["melee"] },
-    { on: "skillUse", amount: 4 },
+    { on: "hitDealt", amount: 0.5, requireTags: ["melee"] },
+    { on: "skillUse", amount: 3 },
   ],
   isUltimateMeter: true,
 };

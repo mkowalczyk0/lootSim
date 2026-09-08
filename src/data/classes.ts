@@ -215,7 +215,7 @@ export const CLASSES: Record<ClassId, HeroClass> = {
     playstyle: "Crack the line from range, keep circling, let Whipcrack Fury clear the deck.",
     base: {
       attack: 10, defense: 7, maxHealth: 138, maxMana: 58,
-      attackSpeed: 0.06, moveSpeed: 0.07, lifeOnHit: 1,
+      attackSpeed: 0.09, moveSpeed: 0.07, lifeOnHit: 1, critChance: 0.06, critDamage: 0.12,
     },
     growth: { attack: 2.2, defense: 1.3, maxHealth: 17, maxMana: 4 },
     affinity: ["whip"], affinityBonus: 0.2,
