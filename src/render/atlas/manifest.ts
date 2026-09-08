@@ -88,6 +88,29 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "prop.crystal":  { id: "prop.crystal",  w: 24, h: 36, worldScale: 0.44, feet: 0.05 },
   "prop.rock":     { id: "prop.rock",     w: 35, h: 26, worldScale: 0.46, feet: 0.06 },
 
+  // --- Delve dungeon dressing (§5) --- big set-piece props that sell the Nine
+  // Circles: broken funerary statuary, wall braziers, bone altars, hung gibbets.
+  // Authored near-monochrome grimdark; `drawProps` gives each a light per-circle
+  // wall-colour wash so the same set reads limbo-grey or heresy-red in place.
+  // worldScale lands each on a deliberate world height (statue taller than the
+  // hero's ~32, altar a low wide slab); feet ≈ 0 — trimmed to the base.
+  "prop.delve-statue":      { id: "prop.delve-statue",      w: 58, h: 93, worldScale: 0.40, feet: 0.03 },
+  "prop.delve-brazier":     { id: "prop.delve-brazier",     w: 28, h: 48, worldScale: 0.55, feet: 0.03 },
+  "prop.delve-altar":       { id: "prop.delve-altar",       w: 77, h: 74, worldScale: 0.42, feet: 0.05 },
+  "prop.delve-gibbet":      { id: "prop.delve-gibbet",      w: 35, h: 87, worldScale: 0.42, feet: 0.03 },
+  "prop.delve-sarcophagus": { id: "prop.delve-sarcophagus", w: 90, h: 66, worldScale: 0.40, feet: 0.06 },
+  "prop.delve-skulls":      { id: "prop.delve-skulls",      w: 80, h: 50, worldScale: 0.42, feet: 0.06 },
+
+  // --- Ashen Reliquary dressing (§8.2) --- the tomb-of-the-supernatural set:
+  // a fallen higher being's hand out of the ash, war graves, funerary urns,
+  // toppled winged pillars, chained reliquary caskets. Same wash treatment as
+  // the Delve set (drawProps → biome.wallSide), themed per sector.
+  "prop.reliquary-hand":     { id: "prop.reliquary-hand",     w: 90, h: 74, worldScale: 0.42, feet: 0.05 },
+  "prop.reliquary-urn":      { id: "prop.reliquary-urn",      w: 56, h: 52, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-pillar":   { id: "prop.reliquary-pillar",   w: 88, h: 45, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-casket":   { id: "prop.reliquary-casket",   w: 77, h: 45, worldScale: 0.44, feet: 0.06 },
+  "prop.reliquary-wargrave": { id: "prop.reliquary-wargrave", w: 46, h: 86, worldScale: 0.42, feet: 0.03 },
+
   // --- item / drop icons (§12) --- drawn through pickupSprite at `worldScale` (fixed
   // 1.4 before). Legacy icon grids ~8–12 wide. In UI they flow through pixelImageFit,
   // which normalises by width, so worldScale here is only the in-world drop size.
@@ -153,6 +176,53 @@ export interface AtlasScene {
   readonly w: number;
   readonly h: number;
 }
+
+// --- tilesets ---------------------------------------------------------------
+
+/**
+ * A PixelLab top-down corner Wang tileset — 16 tiles on a 4x4 sheet describing
+ * every way a floor terrain (`lower`) and a wall mass (`upper`) can meet at the
+ * four corners of a cell. `render/tilemap.ts` stamps a level's wall grid with it
+ * by dual-grid autotiling, so a procedurally generated floor gets real
+ * hand-arted stone instead of the flat `bakeFloor` fill.
+ *
+ * The PNG (`<id>.png`) is committed under `atlas/tilesets/`; the sheet layout is
+ * baked to `<id>.json` (one `[x, y]` per corner mask) by `npm run tileset`,
+ * because PixelLab's sheet order is arbitrary and only the metadata says which
+ * tile is which. A biome names its tileset by id in `data/biomes.ts` /
+ * `data/planets.ts`; an unlisted or unloaded tileset falls back to `bakeFloor`.
+ */
+export interface AtlasTileset {
+  readonly id: string;
+  /** Sheet size in px — 64x64 for a standard 16-tile set. */
+  readonly w: number;
+  readonly h: number;
+  /** Edge length of one tile in px (and in world units — tiles draw 1:1). */
+  readonly tile: number;
+}
+
+export const TILESETS: Record<string, AtlasTileset> = {
+  // The Delve (§5) — one per legacy biome, themed toward the Nine Circles it's
+  // becoming. Floor mid-tone, wall near-black, on the ash/Hell palette.
+  "tiles.delve-limbo":    { id: "tiles.delve-limbo",    w: 64, h: 64, tile: 16 }, // Training Grounds — Circle I, drained ash flagstone
+  "tiles.delve-gluttony": { id: "tiles.delve-gluttony", w: 64, h: 64, tile: 16 }, // Whispering Forest — Circle III, bile-stained stone, wet rot
+  "tiles.delve-cave":     { id: "tiles.delve-cave",     w: 64, h: 64, tile: 16 }, // Dark Cave — frozen cavern rock, ice rime
+  "tiles.delve-wrath":    { id: "tiles.delve-wrath",    w: 64, h: 64, tile: 16 }, // Ashen Wastes — Circle V, scorched flagstone, dull embers
+  "tiles.delve-heresy":   { id: "tiles.delve-heresy",   w: 64, h: 64, tile: 16 }, // Dragon's Lair — Circle VI, black cathedral, gold used wrong
+  "tiles.delve-veil":     { id: "tiles.delve-veil",     w: 64, h: 64, tile: 16 }, // The Veil — Abyss-touched, warped violet-black stone
+
+  // The Ashen Reliquary (§8.2) — one per sector, warm/element ash over
+  // dead-civilisation stone.
+  "tiles.reliquary-wargrave":  { id: "tiles.reliquary-wargrave",  w: 64, h: 64, tile: 16 }, // churned earth over buried armour
+  "tiles.reliquary-garden":    { id: "tiles.reliquary-garden",    w: 64, h: 64, tile: 16 }, // corrupted celestial garden, poison bloom
+  "tiles.reliquary-catacombs": { id: "tiles.reliquary-catacombs", w: 64, h: 64, tile: 16 }, // ash-buried catacombs still burning
+  "tiles.reliquary-basilica":  { id: "tiles.reliquary-basilica",  w: 64, h: 64, tile: 16 }, // cathedral frozen solid
+  "tiles.reliquary-sepulcher": { id: "tiles.reliquary-sepulcher", w: 64, h: 64, tile: 16 }, // battlefield of higher armies, embedded blades
+  "tiles.reliquary-archive":   { id: "tiles.reliquary-archive",   w: 64, h: 64, tile: 16 }, // where the Reliquary touches the Abyss
+
+  // The Abyssal Rift (§7) — null-black, one wrong colour, geometry that doesn't close.
+  "tiles.abyss": { id: "tiles.abyss", w: 64, h: 64, tile: 16 },
+};
 
 export const SCENES: Record<string, AtlasScene> = {
   // §4 The Citadel of the Threshold — the hub deck, drawn scaled to HUB_WIDTH x HUB_HEIGHT

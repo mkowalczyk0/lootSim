@@ -8,9 +8,12 @@ import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
 import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
+import { atlasCanvas, atlasTileset } from "./atlas/index";
+import { ATLAS } from "./atlas/manifest";
+import { paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
-  tinted, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
+  tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
 } from "./sprites";
 
 /**
@@ -68,6 +71,30 @@ export function drawSprite(
 
 const PROP_SPRITES: Record<PropKind, SpriteName> = {
   torch: "torch", bones: "bones", mushroom: "mushroom", crystal: "crystal", rock: "rock",
+  // The Delve set pieces have no procedural grid — they're atlas-only (see PROP_ATLAS).
+  // These fallbacks only matter for the frame or two before the PNGs finish loading.
+  brazier: "torch", statue: "rock", altar: "rock", sarcophagus: "rock", gibbet: "bones", skulls: "bones",
+  handstone: "rock", urn: "rock", pillar: "rock", casket: "rock", wargrave: "bones",
+};
+
+/**
+ * Delve dungeon dressing — atlas-only props with no procedural equivalent. Drawn
+ * straight from the loaded PNG at the manifest's world scale, with a light wash
+ * toward the biome's wall colour so one grimdark set sells every circle. A prop
+ * whose PNG hasn't loaded falls through to its `PROP_SPRITES` stand-in.
+ */
+const PROP_ATLAS: Partial<Record<PropKind, string>> = {
+  brazier: "prop.delve-brazier",
+  statue: "prop.delve-statue",
+  altar: "prop.delve-altar",
+  sarcophagus: "prop.delve-sarcophagus",
+  gibbet: "prop.delve-gibbet",
+  skulls: "prop.delve-skulls",
+  handstone: "prop.reliquary-hand",
+  urn: "prop.reliquary-urn",
+  pillar: "prop.reliquary-pillar",
+  casket: "prop.reliquary-casket",
+  wargrave: "prop.reliquary-wargrave",
 };
 
 /** Non-weapon gear on the floor. Weapons draw as the actual weapon instead. */
@@ -82,6 +109,9 @@ export class WorldRenderer {
   /** The floor is static for the life of a level, so it's painted once and blitted. */
   private floorCanvas: HTMLCanvasElement | null = null;
   private floorFor: Level | null = null;
+  /** True when this floor's walls are baked into `floorCanvas` by a tileset — the
+   *  per-frame `drawWalls` pass is then skipped, since there's nothing left for it. */
+  private floorTiled = false;
   /** Aura motes are emitted from the render loop, so they need their own clock. */
   private auraClock = 0;
   private lastElapsed = 0;
@@ -138,7 +168,7 @@ export class WorldRenderer {
     this.drawGround(ctx, dungeon);
     this.drawTraps(ctx, dungeon);
     this.drawTelegraphs(ctx, dungeon);
-    this.drawWalls(ctx, dungeon.level);
+    if (!this.floorTiled) this.drawWalls(ctx, dungeon.level);
     this.drawProps(ctx, dungeon.level);
     this.drawResourceNodes(ctx, dungeon);
     this.drawPortal(ctx, dungeon);
@@ -174,7 +204,9 @@ export class WorldRenderer {
 
   private drawFloor(ctx: CanvasRenderingContext2D, d: Dungeon): void {
     if (this.floorFor !== d.level || !this.floorCanvas) {
-      this.floorCanvas = bakeFloor(d.level);
+      const baked = bakeFloor(d.level, d.config.mode.tileset);
+      this.floorCanvas = baked.canvas;
+      this.floorTiled = baked.tiled;
       this.floorFor = d.level;
     }
     const floor = this.floorCanvas;
@@ -201,6 +233,33 @@ export class WorldRenderer {
 
   private drawProps(ctx: CanvasRenderingContext2D, level: Level): void {
     for (const p of level.props) {
+      // A Delve set piece: draw the atlas PNG directly, washed toward the biome's
+      // wall colour so the same grimdark set reads as this circle's stone. The
+      // brazier keeps its own fire.
+      const atlasId = PROP_ATLAS[p.kind];
+      if (atlasId) {
+        const png = atlasCanvas(atlasId);
+        const meta = ATLAS[atlasId];
+        if (png && meta) {
+          const lit = p.kind === "brazier";
+          // Wash stone/bone dressing toward the biome's *shadow* colour: it drops
+          // the brightness (PixelLab authors bone too pale for a grimdark floor)
+          // and tints the piece into this circle at the same time. The brazier
+          // keeps its own fire.
+          const canvas = lit ? png : tintedCanvas(png, atlasId, level.biome.wallSide, 0.42);
+          ctx.save();
+          ctx.globalAlpha = 0.95;
+          if (lit) {
+            ctx.shadowColor = "#ff8a3c";
+            ctx.shadowBlur = 16;
+          }
+          drawSprite(ctx, canvas, p.x, p.y, false, meta.worldScale * p.scale, meta.feet);
+          ctx.restore();
+          continue;
+        }
+        // PNG not loaded yet — fall through to the PROP_SPRITES stand-in below.
+      }
+
       const name = PROP_SPRITES[p.kind];
       // Crystals and rubble take the biome's colors; the rest are authored as-is.
       const canvas =
@@ -213,7 +272,7 @@ export class WorldRenderer {
       const feet = spriteFeet(name) ?? 0.22;
       ctx.save();
       ctx.globalAlpha = 0.9;
-      if (p.kind === "torch") {
+      if (p.kind === "torch" || p.kind === "brazier") {
         ctx.shadowColor = "#ff8a3c";
         ctx.shadowBlur = 14;
       }
@@ -768,16 +827,50 @@ export function drawPortalGlyph(
 }
 
 /**
- * Paints the floor of a level once into an offscreen canvas: base color, a scatter of
- * darker tiles for texture, and the arena border. It never changes during a run, so
- * there's no reason to redraw a few hundred rectangles every frame.
+ * Paints the whole floor of a level once into an offscreen canvas. It never changes
+ * during a run, so there's no reason to redraw it every frame.
+ *
+ * Two ways it can go: if the biome names a tileset and that tileset has loaded, the
+ * floor *and its walls* are stamped from real hand-arted stone by `paintTilemap`
+ * (`tiled: true`, and the per-frame `drawWalls` is then skipped). Otherwise it falls
+ * back to the flat bake — base colour, a scatter of darker tiles for texture, a border —
+ * and `drawWalls` paints the wall boxes on top as before.
  */
-function bakeFloor(level: Level): HTMLCanvasElement {
+function bakeFloor(
+  level: Level, tilesetOverride?: string,
+): { canvas: HTMLCanvasElement; tiled: boolean } {
   const { width, height, biome } = level;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
+
+  // A run mode (the Abyssal Rift) can override the biome's own tileset; fall back
+  // to the biome's if the override isn't loaded.
+  const tilesetId = tilesetOverride ?? biome.tileset;
+  const ts = tilesetId
+    ? atlasTileset(tilesetId) ?? (biome.tileset ? atlasTileset(biome.tileset) : null)
+    : null;
+  if (ts) {
+    // The biome's own floor tint behind the stamp, so any half-transparent tile
+    // edge or unreachable gap reads as dim floor rather than a hole to the void —
+    // a flat black ground made every room feel carved out of a solid block.
+    ctx.fillStyle = biome.tint;
+    ctx.fillRect(0, 0, width, height);
+    if (paintTilemap(ctx, level, ts)) {
+      // A faint inner vignette, just enough to settle the edges under low light
+      // without closing the room in.
+      const vg = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.45,
+        width / 2, height / 2, Math.max(width, height) * 0.7,
+      );
+      vg.addColorStop(0, "rgba(0,0,0,0)");
+      vg.addColorStop(1, "rgba(0,0,0,0.16)");
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, width, height);
+      return { canvas, tiled: true };
+    }
+  }
 
   ctx.fillStyle = biome.tint;
   ctx.fillRect(0, 0, width, height);
@@ -823,7 +916,7 @@ function bakeFloor(level: Level): HTMLCanvasElement {
   ctx.strokeStyle = biome.wall;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, width - 2, height - 2);
-  return canvas;
+  return { canvas, tiled: false };
 }
 
 /**

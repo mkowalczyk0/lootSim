@@ -24,7 +24,7 @@
  */
 
 import { clamp } from "../core/math";
-import type { Rng } from "../core/rng";
+import { Rng } from "../core/rng";
 import {
   biomeFor, LAYOUT_LABELS,
   type BiomeStyle, type LayoutKind, type PropKind,
@@ -869,8 +869,66 @@ function placeProps(level: Level, rng: Rng): Prop[] {
     if (out.some((p) => Math.hypot(p.x - spot.x, p.y - spot.y) < 34)) continue;
     out.push({ kind, x: spot.x, y: spot.y, scale: rng.range(0.85, 1.25) });
   }
+  return [...out, ...dressFloor(level)];
+}
+
+/**
+ * The heavy realm dressing — the Delve's funerary statuary and braziers, the
+ * Reliquary's war graves and toppled pillars — laid on top of the base scatter.
+ * It draws from its own seed-derived stream and consumes **nothing** from the
+ * generator's rng, so a floor's shape, difficulty and spawns can never shift
+ * because the decoration did (the dive rng is shared with combat), and the
+ * scatter still rebuilds exactly from `level.seed` for a co-op client.
+ *
+ * Any kind the renderer can't resolve to a loaded PNG is simply skipped, so this
+ * degrades cleanly while the art for a realm is still being filled in.
+ */
+function dressFloor(level: Level): Prop[] {
+  const set = DRESSING[level.biome.name];
+  if (!set) return [];
+  const rng = new Rng((level.seed ^ 0x50524f70) >>> 0);
+  const out: Prop[] = [];
+  const wall: ReadonlySet<PropKind> = new Set(["brazier", "statue", "gibbet", "sarcophagus"]);
+  const bulky: ReadonlySet<PropKind> = new Set([
+    "statue", "gibbet", "sarcophagus", "altar", "handstone", "pillar", "casket", "wargrave",
+  ]);
+  const want = 11 + Math.floor(level.width / 120);
+  for (let i = 0; i < want; i++) {
+    const kind = rng.pick(set);
+    const spot = wall.has(kind) ? wallSidePoint(level, rng) : randomOpenPoint(level, rng, { tries: 12 });
+    if (!spot) continue;
+    const big = bulky.has(kind);
+    if (Math.hypot(spot.x - level.start.x, spot.y - level.start.y) < (big ? 100 : 60)) continue;
+    if (Math.hypot(spot.x - level.portal.x, spot.y - level.portal.y) < 60) continue;
+    const clearance = big ? 56 : 38;
+    if (out.some((p) => Math.hypot(p.x - spot.x, p.y - spot.y) < clearance)) continue;
+    out.push({ kind, x: spot.x, y: spot.y, scale: big ? rng.range(0.9, 1.12) : rng.range(0.85, 1.2) });
+  }
   return out;
 }
+
+/**
+ * Per-realm mixes of the heavy dressing set, keyed by `BiomeStyle.name`
+ * (repetition = frequency). A biome with no entry — the Abyss, for now — gets no
+ * heavy dressing and `dressFloor` returns nothing.
+ */
+const DRESSING: Record<string, readonly PropKind[]> = {
+  // The Delve — the Nine Circles' funerary dungeon.
+  "Training Grounds": ["skulls", "skulls", "statue", "sarcophagus", "gibbet", "brazier", "altar"],
+  "Whispering Forest": ["skulls", "skulls", "statue", "sarcophagus", "brazier"],
+  "Dark Cave": ["skulls", "statue", "gibbet", "brazier", "brazier"],
+  "Ashen Wastes": ["skulls", "brazier", "brazier", "statue", "gibbet", "altar"],
+  "Dragon's Lair": ["brazier", "brazier", "statue", "altar", "gibbet", "sarcophagus"],
+  "The Veil": ["skulls", "brazier", "statue", "gibbet", "altar"],
+  // The Ashen Reliquary — the tomb of the supernatural, each sector its own dead war.
+  // (`casket` is wired but kept out of rotation — it reads too much like a loot chest.)
+  "The Wargrave": ["wargrave", "wargrave", "handstone", "urn", "pillar"],
+  "The Rotting Garden": ["pillar", "pillar", "urn", "handstone", "wargrave"],
+  "The Cinder Catacombs": ["urn", "urn", "wargrave", "handstone", "pillar"],
+  "The Frozen Basilica": ["pillar", "pillar", "handstone", "urn", "wargrave"],
+  "The Storm Sepulcher": ["wargrave", "wargrave", "handstone", "pillar", "urn"],
+  "The Black Archive": ["pillar", "pillar", "handstone", "urn", "wargrave"],
+};
 
 /** A point just outside a random wall face, for torches and other wall dressing. */
 function wallSidePoint(level: Level, rng: Rng): { x: number; y: number } | null {

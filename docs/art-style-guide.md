@@ -625,6 +625,77 @@ fallback and is what `npm run art` / the smoke grid-walk still exercise.
 `realm.category.name[.variant]` — `hell6.monster.false-angel`, `reliquary.node.void`,
 `boss.tyrant-first-heavens.phase2`, `weapon.sword.base`, `item.named.tempest-reaver`,
 `affix.glyph.chain-lightning`, `tower.enemy.throne`. Lowercase, kebab within a segment.
+Tilesets are `tiles.<place>` — `tiles.delve-limbo`, `tiles.reliquary-cinder`, `tiles.abyss`.
+
+### 17.7 Environment tilesets (the floors)
+
+Every floor in the game is a **procedurally generated room graph** (`game/level.ts`) —
+that does not change and should not. What changed is how it's *painted*: instead of
+`bakeFloor`'s flat tinted rectangle and `drawWalls`' grey boxes, a biome names a
+**corner Wang tileset** and the renderer stamps the floor and its walls from real
+hand-arted 16px stone.
+
+- **Generate with PixelLab `create_topdown_tileset`** — a 16-tile corner set,
+  `lower_description` = the floor, `upper_description` = the wall / rubble mass,
+  `transition_description` = the crumbled edge between them. `view: "high top-down"`
+  always (it must sit flat under a top-down camera). 16px tiles, `transition_size` 0
+  (a 25-tile transition sheet is a *cliff* set — not supported by the runtime yet).
+- **Bake the sheet layout** — `npm run tileset -- art/tilesets/<id>.raw.json` reads the
+  PixelLab metadata and writes `src/render/atlas/tilesets/<id>.json` (one `[x,y]` per
+  corner mask). PixelLab's sheet order is arbitrary; only the metadata says which tile
+  is which, so never eyeball it. Commit the PNG **and** the JSON next to each other.
+- **Wire it** — add a row to `TILESETS` in `render/atlas/manifest.ts`, then set
+  `tileset: "tiles.<id>"` on the `BiomeStyle` in `data/biomes.ts` (Delve) or
+  `data/planets.ts` (Reliquary sectors). It is opt-in and degrades: an unlisted or
+  not-yet-loaded tileset just falls back to the flat bake, so nothing breaks half-done.
+- **Contrast is a gameplay requirement.** Floor and wall must be instantly separable at
+  speed — the player reads *walkable vs. not* from this before anything else. A moody
+  low-contrast set that looks right in a 64px preview but turns to mush at game zoom is
+  wrong. Push the wall mass light *or* dark, but push it clear of the floor.
+- **Palette** still comes from §2 / §2.4 — ash + bone + `ink` seams for the Delve's
+  shallow circles, each circle shifting off the Hell base per §5; the six Reliquary
+  sectors are warm-ash `#33241d` pulled toward their element per §8.2; the Abyss is
+  `#0e0b14` null-black with one wrong colour per §7. The **one hot accent** rule does
+  **not** apply to a tileset — a floor has no eye. Keep it all low and dirty.
+- **Boss floors** inherit their depth's tileset automatically (a boss arena is still a
+  `Level` with a `biome`), and that's fine — the single big room just gets stamped with
+  the same stone.
+- **The walls render at their true footprint.** `tilemap.ts` stamps the raw wall
+  rectangles, not the body-radius-inflated `blocked` nav grid — the inflated grid made
+  every corridor look a tile narrower than it plays. Behind the stamp is the biome tint
+  (not flat black) under a faint vignette, so a room reads as low-lit, not as a solid
+  block someone carved a path through.
+
+### 17.7b Floor dressing (selling the theme)
+
+A stamped floor is the surface, not the scene. Each realm gets **heavy set pieces**
+scattered on top by `dressFloor` in `level.ts` — a second pass, separate from the small
+`biome.props` litter, pulling from a per-realm mix in `DRESSING` (keyed by
+`BiomeStyle.name`).
+
+- **Generate with PixelLab `create_map_object`** (basic mode, `high top-down`,
+  `single color outline`, `basic shading`, `medium detail`) — near-monochrome grimdark,
+  authored 50–110px, one hot accent at most (a candle flame, dried blood). Process with
+  the alpha-cut + despeckle + trim step, commit under `art/props/prop.<realm>-<name>.png`
+  and `src/render/atlas/props/…`, add an `ATLAS` row (`worldScale` lands the piece on a
+  deliberate world height — a statue taller than the hero's ~32, an altar a low slab).
+- **Wire it** — add the `PropKind` in `data/biomes.ts`, map it to its atlas id in
+  `PROP_ATLAS` (`render/draw.ts`), give it a `PROP_SPRITES` procedural stand-in for the
+  frame before the PNG loads, and list it in `DRESSING` (`level.ts`). `drawProps` blits
+  the PNG with a `tintedCanvas(…, biome.wallSide, ~0.42)` wash, so **one grimdark set
+  themes itself per circle** and PixelLab's too-pale bone gets pulled down. Anything that
+  doesn't resolve to a loaded PNG is silently skipped — the set can land incrementally.
+- **Never touch the generator rng.** `dressFloor` draws from its own
+  `new Rng(level.seed ^ constant)`. The dive rng is shared with combat — perturbing its
+  draw count shifts every spawn and telegraph on the floor and fails the smoke test.
+- Delve set: statue, brazier (wall), altar, gibbet, sarcophagus, skull heap. Reliquary
+  set: fallen giant's hand, war grave, funerary urn, toppled winged pillar. A prop that
+  reads as a **loot chest** at zoom (the reliquary "casket") stays out of rotation.
+
+Backlog for the suite is §18 chunk 11, pulled forward: the 6 Delve circles first (start
+`tiles.delve-limbo`), then `tiles.abyss`, then the 6 Reliquary sectors. `tiles.delve-limbo`
+was reworked dark (black basalt floor, pale bone-rubble walls) after the first pass read
+too bright — "dark is better" for the whole suite; the other circles are next.
 
 ---
 

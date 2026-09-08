@@ -9,7 +9,14 @@
 import type { Element } from "./elements";
 import type { TrapKind } from "./traps";
 
-export type PropKind = "torch" | "bones" | "mushroom" | "crystal" | "rock";
+export type PropKind =
+  | "torch" | "bones" | "mushroom" | "crystal" | "rock"
+  // Heavy realm dressing — big grimdark set pieces laid on by `dressFloor` in
+  // level.ts (a separate pass from the biome `props` scatter, on its own rng).
+  // Atlas-only (render/atlas/props/prop.<realm>-*); any the renderer can't
+  // resolve is skipped, so they degrade cleanly.
+  | "brazier" | "statue" | "altar" | "sarcophagus" | "gibbet" | "skulls"
+  | "handstone" | "urn" | "pillar" | "casket" | "wargrave";
 
 /** The shapes the level generator knows how to build. */
 export type LayoutKind = "open" | "pillars" | "chambers" | "gauntlet" | "rubble" | "ring";
@@ -25,6 +32,13 @@ export const LAYOUT_LABELS: Record<LayoutKind, string> = {
 
 export interface BiomeStyle {
   readonly name: string;
+  /**
+   * A corner Wang tileset id (`render/atlas/manifest.ts` → `TILESETS`) for the
+   * floor. When set and loaded, the renderer stamps the floor and walls from it
+   * instead of the flat `bakeFloor` fill. Optional and degrading — an unset or
+   * not-yet-loaded tileset just falls back to `tint` / `wall` below.
+   */
+  readonly tileset?: string;
   /** Floor base color. */
   readonly tint: string;
   /** Scattered tiles drawn over the base, for texture. */
@@ -48,6 +62,7 @@ export interface BiomeStyle {
 export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Training Grounds",
+    tileset: "tiles.delve-limbo",
     tint: "#2c3040", floorAlt: "#333849", wall: "#4a5165", wallSide: "#272c39",
     accent: "#7dd3fc",
     props: ["torch", "rock"],
@@ -57,6 +72,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Whispering Forest",
+    tileset: "tiles.delve-gluttony",
     tint: "#1e3326", floorAlt: "#24402d", wall: "#3c5a3f", wallSide: "#1a2c1e",
     accent: "#86efac",
     props: ["mushroom", "rock", "bones"],
@@ -66,6 +82,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Dark Cave",
+    tileset: "tiles.delve-cave",
     tint: "#241f2e", floorAlt: "#2c2637", wall: "#463c56", wallSide: "#1c1826",
     accent: "#c084fc",
     props: ["crystal", "rock", "bones"],
@@ -75,6 +92,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Ashen Wastes",
+    tileset: "tiles.delve-wrath",
     tint: "#33241d", floorAlt: "#3d2b21", wall: "#5c4335", wallSide: "#251a14",
     accent: "#fb923c",
     props: ["bones", "rock", "torch"],
@@ -84,6 +102,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "Dragon's Lair",
+    tileset: "tiles.delve-heresy",
     tint: "#3a1c1c", floorAlt: "#472222", wall: "#6b3535", wallSide: "#2a1212",
     accent: "#ef4444",
     props: ["bones", "torch", "crystal"],
@@ -93,6 +112,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   },
   {
     name: "The Veil",
+    tileset: "tiles.delve-veil",
     tint: "#2a1836", floorAlt: "#331d42", wall: "#4e2f63", wallSide: "#1e1128",
     accent: "#ff1493",
     props: ["crystal", "bones", "torch"],

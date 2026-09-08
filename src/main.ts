@@ -2,7 +2,7 @@ import { GameLoop } from "./core/loop";
 import { Input } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
-import { type RunConfig, type RunModeId } from "./data/modes";
+import { delveConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { RARITY_COLORS } from "./data/rarity";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
@@ -538,7 +538,20 @@ applySettings();
 preloadArt()
   .catch((err) => console.error(err))
   .finally(() => {
-    enterHub();
+    // Dev-only shortcut for art review: `?dive=8` drops straight onto a Delve floor
+    // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor, instead of
+    // walking the hub.
+    const params = import.meta.env.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
+    const devDive = params.get("dive");
+    const devPlanet = params.get("planet");
+    if (devPlanet && PLANETS_BY_ID[devPlanet]) {
+      const tier = Math.max(1, Number(params.get("tier")) || 1);
+      enterDungeon(planetConfig(PLANETS_BY_ID[devPlanet]!, tier, 1, state.challengerTier));
+    } else if (devDive) {
+      enterDungeon(delveConfig(Math.max(1, Number(devDive) || 1), state.challengerTier));
+    } else {
+      enterHub();
+    }
     new GameLoop(update, render).start();
   });
 
