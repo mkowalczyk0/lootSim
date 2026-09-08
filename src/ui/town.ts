@@ -30,6 +30,7 @@ import {
 import {
   MODES, RIFT_LORE, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
+import { layerFor, type WorldLayer } from "../data/layers";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import {
   DAILY_MODIFIERS, DAILY_NAME, DAILY_UNLOCK_DEPTH, dailyConfig, dailyPlan, dailyUnlocked, dayNumber, msUntilReset,
@@ -943,8 +944,10 @@ export class TownUI {
       }
       case "StarMap": {
         if (!this.requireClass()) break;
-        if (!planetUnlocked(this.starMapPlanet, this.state.planetProgress)) {
-          this.notify("Sealed. Clear the previous sector's first tier to open this one.", "#ef4444");
+        if (!planetUnlocked(this.starMapPlanet, this.state.planetProgress, this.state.frontier)) {
+          this.notify(
+            "Sealed. Clear the previous sector's first tier, or reach depth "
+            + `${this.starMapPlanet.baseDepth} on either ladder.`, "#ef4444");
           break;
         }
         const tier = this.cursor + 1;
@@ -1721,8 +1724,16 @@ export class TownUI {
   private renderDive(): string {
     const challenger = this.state.challengerTier;
     const rows: string[] = [];
+    // The floors group under the band of the war they fall in (UAT §23). A header is not
+    // a `.row` and carries no `data-index`, so neither the click delegate nor the cursor
+    // (which indexes depths, not list children) can land on one.
+    let band: WorldLayer | null = null;
     for (let depth = 1; depth <= this.state.maxUnlockedDepth; depth++) {
       const p = profileFor(depth, delveConfig(depth, challenger));
+      if (p.layer !== band) {
+        band = p.layer;
+        rows.push(`<div class="group">${escapeHtml(band.name)}</div>`);
+      }
       const under = this.state.player.level < p.recommendedLevel;
       rows.push(`
         <div class="row ${depth - 1 === this.cursor ? "on" : ""}" data-index="${depth - 1}">
@@ -1738,6 +1749,7 @@ export class TownUI {
     }
     const depth = Math.min(this.cursor + 1, this.state.maxUnlockedDepth);
     const biome = biomeFor(depth);
+    const layer = layerFor(delveConfig(depth, challenger));
     const hazards = trapsFor(depth, biome.traps).map((t) => t.label);
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
@@ -1748,6 +1760,8 @@ export class TownUI {
         a raid boss, and it will take a while.</p>
         <p class="danger">Die and you lose every coin, key and item you picked up on the
         way down. XP is always kept.</p>
+        <h3>${escapeHtml(layer.name)}</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
         <h3>${escapeHtml(biome.name)}</h3>
         <p class="muted">No two floors are laid out the same. Watch the ground.</p>
         <p>Hazards: ${hazards.length ? escapeHtml(hazards.join(", ")) : "none yet. Enjoy it."}</p>
@@ -1801,6 +1815,7 @@ export class TownUI {
       `<span style="color:${m === this.riftMode ? MODES[m].color : "#5a6270"}">${MODES[m].short}</span>`,
     ).join(" / ");
 
+    const riftLayer = layerFor(sel);
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
         <p class="muted" style="font-style:italic">${escapeHtml(RIFT_LORE)}</p>
@@ -1809,6 +1824,7 @@ export class TownUI {
           <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
           <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
         <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
+        <p class="muted"><b>${escapeHtml(riftLayer.name)}</b> · ${escapeHtml(riftLayer.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         ${unlocked ? "" : `<p class="danger">Locked. Reach depth ${mode.unlockDepth} in the delve.</p>`}
         <table class="cmp">
@@ -1835,7 +1851,7 @@ export class TownUI {
    */
   private renderStarMap(): string {
     const planet = this.starMapPlanet;
-    const unlocked = planetUnlocked(planet, this.state.planetProgress);
+    const unlocked = planetUnlocked(planet, this.state.planetProgress, this.state.frontier);
     const maxTier = this.state.planetProgress[planet.id] ?? 1;
     const challenger = this.state.challengerTier;
 
@@ -1859,6 +1875,7 @@ export class TownUI {
     }
 
     const sel = planetConfig(planet, Math.min(this.cursor + 1, maxTier), planet.floors, challenger);
+    const sectorLayer = layerFor(sel);
     const other = PLANETS.map((p) =>
       `<span style="color:${p === planet ? ELEMENT_COLORS[p.element] : "#5a6270"}">${escapeHtml(p.name)}</span>`,
     ).join(" / ");
@@ -1866,13 +1883,15 @@ export class TownUI {
     return `<div class="list">${rows.join("")}</div>
       <aside class="side">
         <p class="muted" style="font-style:italic">${escapeHtml(MODES.planet.lore)}</p>
+        <p class="muted"><b>${escapeHtml(sectorLayer.name)}</b> · ${escapeHtml(sectorLayer.lore)}</p>
         <h3 style="color:${ELEMENT_COLORS[planet.element]}">${escapeHtml(planet.name)}
           <span class="muted">· T${planet.order}</span></h3>
         <p class="muted">${other}
           <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
           <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
         <p>${escapeHtml(planet.blurb)}</p>
-        ${unlocked ? "" : "<p class=\"danger\">Sealed. Clear the previous sector's first tier.</p>"}
+        ${unlocked ? "" : `<p class="danger">Sealed. Clear the previous sector's first tier,
+          or reach depth ${planet.baseDepth} on either ladder.</p>`}
         <table class="cmp">
           <tr><td>Floors</td><td>${planet.floors}, boss last</td></tr>
           <tr><td>Boss floor depth</td><td>${sel.depth}</td></tr>
@@ -2210,6 +2229,7 @@ export class TownUI {
       <aside class="side">
         <h3 style="color:${mode.color}">${escapeHtml(DAILY_NAME)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
+        <p class="muted"><b>${escapeHtml(profile.layer.name)}</b> · ${escapeHtml(profile.layer.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         <p class="muted">Today's floor is the same for everyone, everywhere — same layout, same
         twists, same key. It resets at midnight UTC, in <b>${countdown}</b>.</p>
@@ -2279,6 +2299,7 @@ export class TownUI {
       <aside class="side">
         <h3 style="color:${mode.color}">${escapeHtml(WEEKLY_NAME)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
+        <p class="muted"><b>${escapeHtml(profile.layer.name)}</b> · ${escapeHtml(profile.layer.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
         <p class="muted">This week's four floors are the same for everyone, everywhere —
         same layouts, same twists, same warden waiting at the end. It resets at the

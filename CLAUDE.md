@@ -22,7 +22,7 @@ npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
                   # currently markers+check+vocab+prog+classes+roster+rules+universal+named+
-                  # legends+forge+previews+itemart+relics+deadpaths+smoke
+                  # legends+forge+previews+world+itemart+relics+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
@@ -38,6 +38,10 @@ npm run previews  # drop previews (tools/previews.ts) — proves a preview lists
                   # what the real roll can produce; part of npm test
 npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
                   # everywhere" as a property; part of npm test
+npm run world     # the world structure (tools/world.ts) — UAT §23's layers as a property:
+                  # the bands tile both ladders, every mode says where it happens, a layer
+                  # edge is a boundary the Delve already had, and the Reliquary's second
+                  # unlock route only ever widens; part of npm test
 npm run relics    # relics and artifacts: the roster, rule 3 as a test, the drop table,
                   # slots, save/wire, live drop sites (tools/relics.ts) — part of npm test
 npm run rewards   # the reward curve (tools/rewards.ts) — UAT §16's "harder pays better",
@@ -167,6 +171,23 @@ reaches the player on the Dive / Rifts / Reliquary / Vigil / Convergence asides 
 the deck's portal prompt (`stationLore` in `game/hub.ts`), and `npm run previews` checks
 each line names the war rather than restating the payout. Don't put lore in a third place
 with its own copy of the text — read `MODES[id].lore`.
+
+**The world is layers, and there is one table of them** (UAT §23). `src/data/layers.ts`
+reads the depth ladders that already exist as named bands of the war: the Delve descends
+Surface → Deep Delve → Hell Layers → Hell Endgame, and the ascent §21 will build climbs
+Tower Base → Heaven Layers → Celestial Endgame; every rift and the Reliquary sit off both
+in the Threshold. `layerFor(config)` is the one answer for any `RunConfig`, exposed on
+`DepthProfile.layer` so the HUD and every commit screen read it rather than re-deriving
+it. **Nothing in the simulation reads a layer** — `profileFor` still takes an effective
+depth plus a `danger` and the one curve does the rest, and the band edges sit exactly on
+the five-depth boundaries `biomeFor` already changes at, which is what makes this a
+reading of the ladder rather than a second one. A layer's `lore` answers a different
+question from a mode's: the mode says *what this place is*, the layer says *where in the
+war it sits*, and `npm run world` fails a layer line that restates a mode line. A
+Reliquary sector now opens by **either** the travel ladder **or** the account frontier
+(`GameState.frontier`) reaching its `baseDepth` — widening only, so no save can lose
+access. `WorldLayer.raidId` is a reserved, null seam for §15: a raid is the thing holding
+a layer's gate, and the acceptance tool refuses a non-null id until a raid table exists.
 
 **The Vigil** (UAT §17 v1) is a daily one-floor mode, unlocked at `deepestDepth` 6: the
 seed, depth (band 6–14), two modifiers and the guaranteed key-tier reward all derive from

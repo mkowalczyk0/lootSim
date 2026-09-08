@@ -179,10 +179,34 @@ export const PLANETS_BY_ID: Record<string, PlanetSpec> = Object.fromEntries(
   PLANETS.map((p) => [p.id, p]),
 );
 
-/** Htrae is always open; every planet after it opens once the one before it is cleared. */
-export function planetUnlocked(planet: PlanetSpec, progress: Readonly<Record<string, number>>): boolean {
+/**
+ * Whether a sector is open. The Wargrave always is; after that there are **two** routes,
+ * and either one is enough.
+ *
+ * The original route is the travel ladder: clear the previous sector's first tier. That is
+ * unchanged and still the intended path.
+ *
+ * The second route is UAT §23's — the account's **frontier**, the deepest point it has
+ * reached on either ladder, against the sector's own `baseDepth`. A player who has fought
+ * their way to the depth a sector is tuned for has already earned the right to stand in it,
+ * and once the Tower exists a player who climbs rather than digs must still be able to reach
+ * materials or the ascent is a dead-end axis that can never craft anything. The Forge's own
+ * fiction says the Keepers arm the whole war effort out of the Reliquary; this is that
+ * paying off.
+ *
+ * **Widening only, and that is load-bearing.** The frontier route can add access, never
+ * remove it, so no existing save can lose a sector it had — a ladder-unlocked sector stays
+ * unlocked at frontier 0. `tools/world.ts` asserts both halves, including monotonicity in
+ * the frontier.
+ */
+export function planetUnlocked(
+  planet: PlanetSpec,
+  progress: Readonly<Record<string, number>>,
+  frontier = 0,
+): boolean {
   const i = PLANETS.findIndex((p) => p.id === planet.id);
   if (i <= 0) return true;
+  if (frontier >= planet.baseDepth) return true;
   const prev = PLANETS[i - 1]!;
   return (progress[prev.id] ?? 0) >= 1;
 }

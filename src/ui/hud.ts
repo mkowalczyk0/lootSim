@@ -379,10 +379,12 @@ export class Hud {
     ctx.fillStyle = "#e8eef7";
     ctx.fillText(`DEPTH ${d.profile.depth} — ${d.profile.name}`, cx, 18);
 
-    // The layout name is the only clue that the floor was generated, so it earns a line.
+    // Where in the war you are (UAT §23), and the layout name — the only clue that the
+    // floor was generated. They share a line so the layer costs no vertical space and
+    // `profile.tag` keeps its meaning: the tag is *which run*, the layer is *where*.
     ctx.font = `11px ${MONO}`;
     ctx.fillStyle = "#6b7480";
-    ctx.fillText(d.level.label.toUpperCase(), cx, 38);
+    ctx.fillText(`${d.profile.layer.name} · ${d.level.label}`.toUpperCase(), cx, 38);
 
     // Which run you're in, if it isn't the plain delve.
     let y = 54;

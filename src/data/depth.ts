@@ -9,6 +9,7 @@
 
 import { clamp } from "../core/math";
 import { biomeFor } from "./biomes";
+import { layerFor, type WorldLayer } from "./layers";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
 import { DAILY_MODIFIERS, dailyEffects } from "./daily";
 import type { Element } from "./elements";
@@ -22,6 +23,13 @@ export interface DepthProfile {
   readonly tint: string;
   /** The run this floor belongs to — mode, tier, position in the rift. */
   readonly run: RunConfig;
+  /**
+   * Where in the war this floor is (UAT §23) — the band of the Delve it falls in, or the
+   * realm the rift tore into. Read here rather than re-derived per screen, the same
+   * reason `data/encounters.ts` owns "which boss does this floor spawn". Nothing in the
+   * simulation reads it; it is what the HUD and the commit screens say.
+   */
+  readonly layer: WorldLayer;
   /** Baseline enemy stats before the archetype multipliers. */
   readonly enemyHealth: number;
   readonly enemyDamage: number;
@@ -133,6 +141,11 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     name: floorName(biome.name, d, run),
     tint: biome.tint,
     run,
+    // Asked with the *effective* depth this profile was built for, which is the number
+    // every other field below is derived from. Identical to `run.depth` at every current
+    // call site; stated explicitly so a caller that ever describes a floor at a depth its
+    // config doesn't carry can't land in the wrong band.
+    layer: layerFor(run.depth === d ? run : { ...run, depth: d }),
     enemyHealth,
     enemyDamage,
     enemySpeed,
