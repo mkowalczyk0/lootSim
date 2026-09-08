@@ -12,6 +12,7 @@
  */
 
 import { Dungeon, type Hero } from "../src/game/dungeon";
+import { circleHitsWall } from "../src/game/level";
 import type { Element } from "../src/data/elements";
 import type { Enemy } from "../src/game/entities";
 import {
@@ -602,6 +603,96 @@ section("ultimate-meter generation rules are feedable (Cluster 5b)");
     // 5 from the untagged `skillUse` rule, plus 2 for the song being `support`.
     check(`playing ${song.id} charges Performance at the song rate`, meter.value >= 7, `${meter.value}`);
   }
+}
+
+// --- the Lancer's two live-play bugs (Cluster 10) --------------------
+
+section("a lane charge that has nowhere to go costs nothing");
+{
+  // Walls are authored on a 32-unit lattice, so a hero parked hard against one with the
+  // facing pointed into it has a provably blocked lane without needing a real level probe.
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const a = hero.avatar;
+  const meter = hero.resources.ultimateMeter()!;
+  // Face the top wall from just inside it: `leapScan` clamps to `radius + WALL_PAD`, so
+  // there is no room at all to travel.
+  a.x = d.width / 2;
+  a.y = a.radius + 1;
+  a.facing = -Math.PI / 2;
+  meter.value = meter.max;
+  const x0 = a.x;
+  const y0 = a.y;
+  d.useUltimate(hero);
+  check(
+    "the blocked charge keeps the full meter",
+    meter.value === meter.max,
+    `${meter.value}/${meter.max}`,
+  );
+  check(
+    "and does not move the hero",
+    Math.hypot(a.x - x0, a.y - y0) < 1,
+    `${Math.hypot(a.x - x0, a.y - y0).toFixed(1)}u`,
+  );
+}
+{
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const a = hero.avatar;
+  const meter = hero.resources.ultimateMeter()!;
+  // The other half of the gate, and the half that matters: "no room" must never become a
+  // way to refuse a charge that had room. The lane is *verified* clear by walking it
+  // first rather than assumed — an earlier version of this check aimed along a wall the
+  // hero was already pressed against, which is blocked too, and failed the working fix.
+  let lane = -1;
+  for (let k = 0; k < 32 && lane < 0; k++) {
+    const ang = (k / 32) * Math.PI * 2;
+    let clear = true;
+    for (let t = 20; t <= 200; t += 12) {
+      if (circleHitsWall(d.level, a.x + Math.cos(ang) * t, a.y + Math.sin(ang) * t, a.radius)) {
+        clear = false;
+        break;
+      }
+    }
+    if (clear) lane = ang;
+  }
+  if (lane < 0) {
+    check("the spawn has a clear 200u lane to test", false);
+  } else {
+    a.facing = lane;
+    meter.value = meter.max;
+    const x0 = a.x;
+    const y0 = a.y;
+    d.useUltimate(hero);
+    check("a clear lane still spends the meter", meter.value === 0, `${meter.value}`);
+    check(
+      "and still charges down the lane",
+      Math.hypot(a.x - x0, a.y - y0) > 100,
+      `${Math.hypot(a.x - x0, a.y - y0).toFixed(0)}u`,
+    );
+  }
+}
+
+section("a stationary Lancer can always still act");
+{
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const mom = hero.resources.get("momentum")!;
+  mom.value = mom.max;
+  // Fifteen seconds of standing still. Momentum decays 12/s after a 1.5 s grace, so
+  // without a floor this bottoms out at zero in 9.7 s and every skill the class has
+  // becomes unpayable — which is what the owner reported as "the first press does nothing".
+  for (let i = 0; i < 15 * 60; i++) mom.tick(1 / 60);
+  const floor = mom.spec.decayFloor ?? 0;
+  check("momentum decays to its floor, not to zero", mom.value >= floor && floor > 0, `${mom.value} (floor ${floor})`);
+  const payable = hero.player.unlockedAbilities.filter((ab) =>
+    (ab.costs ?? []).some((c) => c.resource === "momentum" && c.amount <= mom.value),
+  );
+  check("at least one momentum skill is still payable", payable.length >= 1, `${payable.length} of the class's momentum skills`);
+  const spenders = hero.player.unlockedAbilities.filter((ab) =>
+    (ab.costs ?? []).some((c) => c.resource === "momentum" && c.amount > mom.value),
+  );
+  check("but the big spenders still need you to move", spenders.length >= 1, `${spenders.length} priced above the floor`);
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);

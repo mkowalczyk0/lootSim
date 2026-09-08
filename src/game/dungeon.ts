@@ -1726,6 +1726,10 @@ export class Dungeon implements CombatHost, RuleHost {
     // press has to reach the executor even while the ability is cooling down.
     if (!hero.rt.ready(ability) && !hero.rt.followUpOpen(ability.id, this)) return;
     const a = hero.avatar;
+    if (this.laneCharge(hero, ability).blocked) {
+      this.events.push({ kind: "pickup", x: a.x, y: a.y - 20, label: "no room", color: "#fbbf24" });
+      return;
+    }
     const res = hero.rt.castAbility(this, hero.index, ability, this.castInputFor(hero, ability));
     if (!res.ok) {
       if (res.failure === "cannot-afford") {
@@ -1760,6 +1764,11 @@ export class Dungeon implements CombatHost, RuleHost {
     // The second half of an ultimate is paid for by the first half: pressing it again
     // inside its follow-up window spends the window, not another full meter.
     const combo = hero.rt.followUpOpen(ability.id, this);
+    // Checked before the meter is spent, not after: a blocked lane must cost nothing.
+    if (this.laneCharge(hero, ability).blocked) {
+      this.events.push({ kind: "pickup", x: a.x, y: a.y - 20, label: "no room to charge", color: "#fbbf24" });
+      return;
+    }
     if (!combo) {
       if (!meter || meter.fraction < 1) return;
       if (!hero.rt.ready(ability)) return;
@@ -2148,7 +2157,14 @@ export class Dungeon implements CombatHost, RuleHost {
    * Stepping rather than teleporting is what keeps a leap from putting you inside a
    * wall on a floor full of pillars.
    */
-  private leapTo(hero: Hero, angle: number, reach: number): { x: number; y: number } {
+  /**
+   * How far along `angle` this hero could actually travel, and where they would land.
+   * Walks the lane in short steps and stops at the first wall, so a partly-blocked lane
+   * still gives you as much of the charge as it can. Pure — `leapTo` is what commits it,
+   * and `laneCharge` uses it to answer "is there any room to charge?" *before* an
+   * ultimate is paid for.
+   */
+  private leapScan(hero: Hero, angle: number, reach: number): { x: number; y: number; travelled: number } {
     const a = hero.avatar;
     const step = 12;
     let x = a.x;
@@ -2160,11 +2176,41 @@ export class Dungeon implements CombatHost, RuleHost {
       x = nx;
       y = ny;
     }
-    a.x = x;
-    a.y = y;
+    return { x, y, travelled: dist(a.x, a.y, x, y) };
+  }
+
+  private leapTo(hero: Hero, angle: number, reach: number): { x: number; y: number } {
+    const a = hero.avatar;
+    const landing = this.leapScan(hero, angle, reach);
+    a.x = landing.x;
+    a.y = landing.y;
     // A leap is a commitment, so it comes with the same window a dash does.
     a.invulnTimer = Math.max(a.invulnTimer, 0.2);
-    return { x, y };
+    return { x: landing.x, y: landing.y };
+  }
+
+  /**
+   * True when `ability` is a lane charge — it leads with a `style: "charge"` move along
+   * the facing — and the wall in front leaves nowhere to charge to.
+   *
+   * A charge that lands you where you started is not a weaker charge, it is the ability
+   * failing to happen: `lancer.meteor_lance` spent a full ultimate meter, dealt its
+   * damage and moved the player nowhere on the 8.6% of (position, direction) pairs a
+   * depth-9 floor has fully blocked. Refusing the cast up front is the only shape of fix
+   * that is not exploitable — refunding the meter *after* the effects ran would let a
+   * player stand against a wall and farm the damage for free.
+   *
+   * Partly-blocked lanes are deliberately untouched. `leapScan` already gives you as much
+   * of the charge as fits, and "as far as the lane allows" is the intended behaviour; only
+   * a lane that cannot clear the hero's own footprint counts as no room at all.
+   */
+  private laneCharge(hero: Hero, ability: Ability): { blocked: boolean } {
+    const lead = ability.effects.find((e) => e.kind === "move");
+    if (!lead || lead.kind !== "move") return { blocked: false };
+    if (lead.style !== "charge" || lead.toTarget) return { blocked: false };
+    const reach = lead.distance ?? 120;
+    const room = this.leapScan(hero, hero.avatar.facing, reach).travelled;
+    return { blocked: room < hero.avatar.radius * 2 };
   }
 
   private drinkPotion(hero: Hero): void {

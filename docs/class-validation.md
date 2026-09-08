@@ -428,7 +428,7 @@ minute** across all four builds.
 and the original triage called it a harness artifact because "the driver only strafes a
 40 px orbit." That diagnosis of the *cause* was right and the inference was backwards: a
 40 px orbit accumulates almost no net distance, so the arena starved a rule that the real
-game floods. Comet Charge is supposed to be the Lancer's identity moment; at one cast per
+game floods. Meteor Lance is supposed to be the Lancer's identity moment; at one cast per
 1.2 s it is the Lancer's basic attack.
 
 **Proposed change** (`src/progression/lancer.ts`): `on: "move"` amount `0.6 → 0.03`
@@ -956,6 +956,106 @@ Re-pointing it at `highestThreatEnemy` would land it on an arbitrary enemy, beca
 staged precondition to excuse it, and is wired into `npm test`. A new ability can no longer
 ship with the `0a6e2d6` bug in it. Engine-stub findings stay advisory — failing on those
 would make the guard useless until the seams are written.
+
+---
+
+## Cluster 10 — the Lancer's two live-play bugs — **APPLIED**
+
+Reported by the owner from real play, relayed through `lootsim-7c`: the Lancer's ultimate
+"activates but doesn't move the character", and its other skills "seem to do nothing on
+the first press and only fire on a second". Two unrelated bugs, neither of them Cluster 8.
+
+**Cluster 8 was ruled out with evidence, not reasoning.** A probe driving the real
+`castSkill` / `useUltimate` path was run against HEAD and against `56e6dcb~1` in a
+throwaway worktree: output identical except one line, and the ultimate moved *further*
+after Cluster 8. Every Lancer ability the owner can press reports `followUp=none` and
+`pending=0`, so the Cluster 8 code path is never entered. Both bugs trace to `cb4170f`
+("Stages 5-10: wire the 21-class progression system into the live game").
+
+### Bug A — a lane charge that had nowhere to go still cost a full meter
+
+`lancer.meteor_lance` is `{ kind: "move", style: "charge", distance: 600 }` along the
+facing. `leapTo` walks the lane in 12-unit steps and stops at the first wall, so a
+*partly* blocked lane already gave you as much of the charge as fits — that part was
+never broken. The bug was the fully-blocked case: the ultimate spent the whole meter,
+dealt its damage, and left you standing exactly where you were.
+
+Fixed by refusing the cast *before* the meter is spent (`Dungeon.laneCharge`), which is
+the only non-exploitable shape: refunding *after* the effects ran would let a player park
+against a wall and farm the damage for free. The lane scan is extracted into `leapScan`
+so the gate and the actual leap cannot disagree about the geometry. "Essentially nothing"
+is **one hero body diameter** — a charge that cannot clear its own footprint. Partly
+blocked lanes are deliberately untouched.
+
+480 (position, direction) pairs across 12 depth-9 floors, full meter, monster 120u down
+the lane:
+
+| | pairs | meter spent | mean move | mean dmg |
+| --- | --- | --- | --- | --- |
+| blocked lane, **before** | 36 (7.5%) | **36/36** | 6.0u | 367 |
+| blocked lane, **after** | 36 (7.5%) | **0/36** | 0.0u | 0 |
+| clear lane, before | 444 (92.5%) | 444/444 | 176.8u | 445 |
+| clear lane, after | 444 (92.5%) | 444/444 | 176.8u | 445 |
+
+The clear-lane rows are identical, which is the point. Note the blocked case did previously
+deal 367 damage — so this is not a pure win handed to the player, it removes damage they
+used to get. It is still strictly better for them: they keep a full meter and can take two
+steps for the full 445 and a real charge.
+
+The gate applies to all five `style: "charge"` abilities in the roster — `lancer`
+(Meteor Lance, Redline Charge), `juggernaut`, `paladin` (Aegis Rush), `warden` — because
+all five have the same bug. Skills get a "no room" floater; the ultimate gets
+"no room to charge".
+
+**`npm run builds` cannot measure this, and the byte-identical ledger is expected.** The
+harness bot presses `special` unconditionally on every tick the meter is full, with no
+line-of-sight or target check, so a refusal is simply retried a fraction of a second later
+once its facing rotates — and the Lancer bot moves at 341–420 u/s. The bug only bites a
+press that *cannot* be retried immediately: a human, aiming deliberately, backed against a
+wall. Hence the direct probe above and the assertions below.
+
+### Bug B — a stationary Lancer could not pay for anything
+
+`LANCER_MOMENTUM` is `start: "empty"`, `decayPerSec: 12`, `decayDelay: 1.5`, and its four
+skills cost 8 / 10 / 20 / 35. Standing still:
+
+| t | 0s | 3s | 6s | 9s | 10s | 15s |
+| --- | --- | --- | --- | --- | --- | --- |
+| momentum, before | 100 | 82 | 46 | 10 | **0** | **0** |
+| payable skills, before | 4/4 | 4/4 | 4/4 | 1/4 | **0/4** | **0/4** |
+| momentum, after | 100 | 82 | 46 | 10 | **10** | **10** |
+| payable skills, after | 4/4 | 4/4 | 4/4 | 2/4 | **2/4** | **2/4** |
+
+At 9.7 s a stationary Lancer had *nothing* castable, permanently, until they moved. Every
+press was refused for cost, and the only feedback is a small "no resource" floater — which
+is exactly why it read as "the skill does nothing on the first press", and why a fraction
+of a second of movement made the second press work.
+
+`decayDelay` and `decayPerSec` were the only two knobs on the pool and both merely move
+the cliff later, so this adds a generic `ResourceSpec.decayFloor`: decay stops there
+instead of at zero, and a pool already *below* its floor is left alone, so `start:
+"empty"` still means empty. `LANCER_MOMENTUM` gets `decayFloor: 10` — exactly the two
+cheapest skills. Standing still still costs the 90-threshold speed bonus and both big
+spenders (Crescent Sweep 20, Redline Charge 35), so the class's "keep moving" bargain is
+intact; it just can no longer end with the Lancer unable to act at all. No other class
+sets the field, so no other class moves.
+
+### Guarded
+
+Seven assertions in `npm run rules`: the blocked charge keeps its meter and does not move;
+a *verified-clear* lane still spends the meter and still charges (432u) — that second half
+is the one that matters, since "no room" must never become a way to refuse a charge that
+had room; and after 15 s stationary, momentum sits at its floor with at least one skill
+payable and at least one still priced above it.
+
+### Also found
+
+CLAUDE.md's class table calls the Lancer's ultimate **Comet Charge**. That string exists
+nowhere in `src/` — `src/data/classes.ts` records that the `ultimate` field moved onto
+`PilotClass`, and the ability has been `Meteor Lance` since the progression cutover
+(`docs/classes_refactor.md` §"Ultimate: Meteor Lance"). The whole five-class table is
+stale in the same way, so it wants a documentation pass and an owner call on which name
+is canonical — not a one-line edit from me.
 
 ---
 
