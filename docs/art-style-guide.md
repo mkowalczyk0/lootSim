@@ -577,14 +577,40 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   lands each on its predecessor's world footprint; `data/bosses.ts` `spriteScale` stays
   as the fallback for the procedural grids the smoke test still walks. 8 rotations per
   monster archived under `art/monsters/rotations/`.
-- `hero.legend-base` → the composed player, **while no cosmetic layer (hat/ears/face/back)
-  is worn** — a decorated character still gets the procedural stack until the cosmetic
-  layers get their own art pass. **v2 redraw (Sept 2026):** the plain low-res hero read
-  as out of place next to the redrawn bosses, so it was regenerated at boss-level detail
-  and fidelity (39×68, painterly plate/leather/cloak, still a plain calm face per §1.3 —
-  no hot accent, no sharp brows). World footprint unchanged (`worldScale` 0.471 lands the
-  same ~32-unit height the v1 sprite had). 8 PixelLab rotations re-archived under
-  `art/characters/` for the eventual animation runtime; only `south` is wired.
+- `hero.legend-base` → the composed player. **v2 redraw (Sept 2026):** the plain low-res
+  hero read as out of place next to the redrawn bosses, so it was regenerated at
+  boss-level detail and fidelity (39×68, painterly plate/leather/cloak, still a plain calm
+  face per §1.3 — no hot accent, no sharp brows). World footprint unchanged (`worldScale`
+  0.471 lands the same ~32-unit height the v1 sprite had). 8 PixelLab rotations
+  re-archived under `art/characters/` for the eventual animation runtime; only `south` is
+  wired.
+- **Cosmetic layers (Sept 2026)** — the "a decorated hero still uses the old sprite"
+  complaint this bullet used to document is now fixed for **9 of the 25** hat/ears/face/
+  back cosmetic ids: `hatWitch`, `hatCrown` (shared with `hatUnspoken`), `earsCat`,
+  `earsHorn`, `faceGlasses`, `faceVisor`, `backCape`, `backAngel`. `composePipelineHero`
+  in `render/sprites.ts` composites `hero.legend-base` with any of those onto a padded
+  `HERO_STAGE_W`x`HERO_STAGE_H` canvas (headroom for a hat, side margin for wings/a cape —
+  the same reason the procedural `CHAR_W` is wider than its 20-wide body); a cosmetic worn
+  in one of those four slots that *hasn't* migrated still falls the whole character back
+  to the procedural stack, so a half-migrated wardrobe never mixes two art styles on one
+  body. **This is the concrete §17.4 "indexed-mode PNG + palette map" mechanism**, applied
+  to a PixelLab generation for the first time (the weapon tint below is a single-colour
+  overlay, not a real palette swap): each cosmetic PNG is Aseprite-quantized onto
+  `[ink, colors[0], colors[1], colors[2]]` and then `replace_color`'d onto three reserved
+  marker RGBs (`COSMETIC_MARK_1/2/3` in `manifest.ts`); `recoloredCosmetic` in
+  `sprites.ts` swaps those markers for a cosmetic's real colours at draw time via
+  `getImageData`/`putImageData`, leaving the ink outline (never a marker) untouched. The
+  Style tab's wardrobe list (`cosmeticPreview`) reads the same migrated art. Left for a
+  follow-up session, not a design call made here: the other 16 hat/ears/face/back ids
+  (same recipe, just unrun); the 7 weapon skins (`WeaponPalette` has four regions, not
+  three, and would mean re-processing the 14 already-shipped `ATLAS_WEAPONS` PNGs, a
+  separate-sized job); and — a genuine open question rather than a backlog item — the 5
+  `HAIR_STYLES`: `hero.legend-base` bakes in one fixed hairstyle as part of the same flat
+  image, so a swappable hair *shape* would mean redrawing that already-shipped base
+  without its baked-in hair, not just adding another cosmetic layer. `npm run art` still
+  only contact-sheets the procedural grids — it has no PNG decoder, only the hand-rolled
+  encoder — so it doesn't yet show these 9 either; extending it is noted as future work,
+  not attempted here.
 - **All fourteen weapon families** (`ATLAS_WEAPONS` in `manifest.ts`, PNGs under
   `atlas/weapons/`) — the original six plus hammer, bow, whip, claws, chakram, scythe,
   rapier and fists. Authored greyscale +x with a named grip; `weaponSprite` tints the

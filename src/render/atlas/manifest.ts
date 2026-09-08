@@ -45,10 +45,10 @@ export interface AtlasSprite {
  */
 export const ATLAS: Record<string, AtlasSprite> = {
   // §9 The Legends — the plain, calm base adventurer. Replaces the composed procedural
-  // character (30×26 grid at SPRITE_SCALE 1.2 ≈ 31 world units tall) while the player
-  // isn't wearing a composited cosmetic layer (hat/ears/face/back) — those layers are
-  // still procedural until their own art pass, so a decorated character keeps the old
-  // look for now.
+  // character (30×26 grid at SPRITE_SCALE 1.2 ≈ 31 world units tall). A worn cosmetic no
+  // longer forces the whole character back to the procedural stack by itself — see
+  // `ATLAS_COSMETICS` below and `composePipelineHero` in `render/sprites.ts` — only a
+  // still-unmigrated cosmetic in the hat/ears/face/back slots does that now.
   //
   // v3 redraw (Sept 2026): re-authored at the Citadel deck's pixel pitch — chunkier and
   // stockier, low top-down, muted stone palette — so the hero reads as standing *in* the
@@ -285,4 +285,97 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
   claws:    { id: "weapon.claws",    w: 45,  h: 36, worldScale: 0.64, gripX: 7,  gripY: 28 },
   chakram:  { id: "weapon.chakram",  w: 40,  h: 42, worldScale: 0.45, gripX: 19, gripY: 20 },
   fists:    { id: "weapon.fists",    w: 33,  h: 38, worldScale: 0.42, gripX: 8,  gripY: 25 },
+};
+
+// --- cosmetic layers (§15/§17.3, the "v2 redraw" gap) ---------------------
+
+/**
+ * The pipeline hero (`hero.legend-base`, 28x48) is a single flattened image — unlike the
+ * procedural stack it isn't split into body/hair layers, so a cosmetic layer composites
+ * directly on top of (or, for `back`, behind) it rather than onto a bare body. That needs
+ * a bit of headroom the bare 28x48 canvas doesn't have: room above the head for a hat,
+ * and room either side of the shoulders for wings/a cape/a tail to spread into — exactly
+ * why the procedural `CHAR_W`/`CHAR_H` field is wider than the 20x22 body it holds.
+ *
+ * `HERO_STAGE_*` is that same idea at the pipeline's resolution: a canvas the hero PNG is
+ * pasted into at a fixed offset, sized so the existing weapon/monster/boss `worldScale`
+ * convention still holds — `worldScale` is world units *per authored pixel*, so padding
+ * the canvas with transparent margin costs nothing and moves no footprint; only the
+ * `feet` fraction needs rescaling, because it is a fraction of *canvas* height and the
+ * canvas just grew. See `composePipelineHero` in `render/sprites.ts`.
+ *
+ * Margins were sized empirically against `hero.legend-base` (see
+ * `art/cosmetics/preview.py`, a throwaway compositing checker kept under `art/`, not the
+ * committed atlas, for the next art session): the hero's own head sits flush against its
+ * top row and its silhouette fills the full 28px width, so hats/ears need headroom this
+ * canvas doesn't have, and wings/a cape need side margin for the same reason the
+ * procedural `CHAR_W` is wider than its 20-wide body.
+ */
+export const HERO_STAGE_W = 56;
+export const HERO_STAGE_H = 68;
+/** Where `hero.legend-base` itself is pasted into the stage. */
+export const HERO_STAGE_DX = 14;
+export const HERO_STAGE_DY = 20;
+
+/**
+ * The three reserved marker colours a cosmetic-layer PNG is quantized onto in place of
+ * its three recolourable regions (`Cosmetic.colors[0..2]` — primary/secondary/accent,
+ * the same convention `COSMETIC_ART`'s grid keys `1`/`2`/`3` use). Chosen as saturated
+ * primaries no generated art or the shared `ink` outline would ever legitimately contain,
+ * so an exact-match runtime swap (`recoloredCosmetic` in `sprites.ts`) can't misfire on
+ * real art. This is the §15/§17.4 "indexed-mode PNG + palette map" mechanism applied to
+ * a photographic PixelLab generation instead of a hand-authored grid: Aseprite quantizes
+ * the generation onto `[ink, colors[0], colors[1], colors[2]]` (four colours, chosen to
+ * be the cosmetic's own default look so the quantize step has a real target to snap
+ * toward) and then `replace_color` swaps each of the three onto its marker, one exact
+ * match at a time. The ink outline is left alone — it already IS the palette's ink entry
+ * post-quantize, so it needs no marker and never gets recoloured, exactly like the
+ * procedural grids' `O`.
+ */
+export const COSMETIC_MARK_1 = "#ff00ff";
+export const COSMETIC_MARK_2 = "#00ff00";
+export const COSMETIC_MARK_3 = "#00ffff";
+
+/**
+ * A pipeline cosmetic layer. Keyed by the same string `Cosmetic.art` already points at
+ * (`COSMETIC_ART`'s keys in `render/pixels.ts`) — `hatWitch`, `cape`, and so on — so a
+ * migrated cosmetic needs no change in `data/cosmetics.ts`; `composePipelineHero` just
+ * finds an entry here before falling back to the procedural grid of the same name.
+ * `dx`/`dy` are absolute `HERO_STAGE_*` coordinates, exactly like `COSMETIC_ART`'s `dx`/
+ * `dy` are absolute `CHAR_W`/`CHAR_H` coordinates today.
+ */
+export interface AtlasCosmetic {
+  readonly id: string;
+  readonly w: number;
+  readonly h: number;
+  readonly dx: number;
+  readonly dy: number;
+}
+
+/**
+ * Migrated cosmetic-layer art. Every entry here is a genuine PixelLab generation (never a
+ * hand-authored placeholder) quantized onto its cosmetic's own default colours and then
+ * marker-swapped per `COSMETIC_MARK_*` above — see `art/cosmetics/*.raw.png` /
+ * `*.trim.png` for the pre-quantize source. A `Cosmetic.art` id with no row here (most of
+ * the wardrobe, still) keeps falling back to the procedural grid; nothing breaks either
+ * way, exactly like every other half-migrated atlas table.
+ *
+ * Placement (`dx`/`dy`) was tuned against `HERO_STAGE_*` above: hats/ears sit on the
+ * hero's own head (rows ~20-36 of the stage), face items centre on its eye row (~30-32),
+ * and `back` items — drawn *behind* the hero, at shoulder height (~32-40) — rely on the
+ * hero's silhouette being narrower than the stage to peek out at the sides without the
+ * base needing its own separate back-item layer.
+ */
+export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
+  hatWitch: { id: "cosmetic.hat-witch", w: 36, h: 24, dx: 10, dy: 2 },
+  // Shared by hatCrown (legendary) and hatUnspoken (divine, same grid in pixels.ts too).
+  hatCrown: { id: "cosmetic.hat-crown", w: 27, h: 16, dx: 14, dy: 8 },
+  earsCat: { id: "cosmetic.ears-cat", w: 20, h: 13, dx: 18, dy: 18 },
+  earsHorn: { id: "cosmetic.ears-horn", w: 24, h: 18, dx: 16, dy: 12 },
+  faceGlasses: { id: "cosmetic.face-glasses", w: 26, h: 11, dx: 15, dy: 25 },
+  faceVisor: { id: "cosmetic.face-visor", w: 28, h: 14, dx: 14, dy: 24 },
+  // `Cosmetic.art` id for backCape.
+  cape: { id: "cosmetic.back-cape", w: 30, h: 26, dx: 13, dy: 30 },
+  // `Cosmetic.art` id for backAngel.
+  wingsAngel: { id: "cosmetic.back-wings-angel", w: 50, h: 36, dx: 3, dy: 32 },
 };
