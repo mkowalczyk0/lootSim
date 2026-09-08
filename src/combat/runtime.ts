@@ -53,6 +53,12 @@ export interface CastResult {
   targets?: TargetResult;
   /** Deferred effects the caller should tick down and fire (delay / reactive / follow-up). */
   pending: PendingEffect[];
+  /**
+   * True when this press spent an open follow-up window rather than casting afresh. It
+   * paid no cost and set no cooldown, so a caller that fires per-cast rule hooks should
+   * not fire them again — the combo is the tail of the first press, not a second one.
+   */
+  fromFollowUp?: boolean;
 }
 
 export interface PendingEffect {
@@ -138,9 +144,86 @@ export class AbilityRuntime {
         this.pending.splice(i, 1);
         for (const step of p.effects) runEffect(host, p.ctx, step, this);
       } else if (p.expiresAt !== undefined && now >= p.expiresAt) {
+        // A window that ran out is dropped on purpose: a `reactive` whose event never
+        // came, or a follow-up combo the player did not press in time. Both are misses,
+        // not effects owed. What must never happen is a window closing *unnoticed* —
+        // `notify` and `takeFollowUp` are the two things that can spend one.
         this.pending.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * Is a follow-up window open for `abilityId`? A second press would spend it, which is
+   * why this has to be asked *before* a caller's own cooldown gate: the ability is
+   * supposed to be cooling down while its combo window is live.
+   */
+  followUpOpen(abilityId: string, host: CombatHost): boolean {
+    const now = host.now();
+    return this.pending.some(
+      (p) => p.kind === "followUp" && p.ctx.ability.id === abilityId && (p.expiresAt ?? 0) >= now,
+    );
+  }
+
+  /** Takes the open follow-up window for `abilityId`, removing it. */
+  private takeFollowUp(abilityId: string, host: CombatHost): PendingEffect | null {
+    const now = host.now();
+    for (let i = 0; i < this.pending.length; i++) {
+      const p = this.pending[i]!;
+      if (p.kind === "followUp" && p.ctx.ability.id === abilityId && (p.expiresAt ?? 0) >= now) {
+        this.pending.splice(i, 1);
+        return p;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Runs a follow-up's effects as what `Ability.followUp` says it is — "effects available
+   * for a short window after the cast, on a second press".
+   *
+   * Targeting is re-resolved against where the caster is standing and aiming *now*: a
+   * second press is a press, and a three-to-six second window is long enough that the
+   * first cast's target list has gone stale. The original cast's `DamageSource` is kept
+   * verbatim, though, so attribution — and specifically THE ULTIMATE RULE's
+   * `fromUltimate` stamp — cannot be laundered off an ultimate by comboing out of it.
+   *
+   * It deliberately broadcasts no `skillUse`/`ultimateUse`. Those events feed the
+   * ultimate meters, and crediting a combo as a second cast would quietly change the
+   * fill rate of every class that has one — a balance change, which is not what fixing
+   * an executor bug is allowed to smuggle in.
+   */
+  private runFollowUp(
+    host: CombatHost,
+    caster: HostActor,
+    casterId: number,
+    ability: Ability,
+    input: CastInput,
+    pending: PendingEffect,
+  ): CastResult {
+    const tctx: TargetContext = {
+      casterId,
+      casterFaction: caster.faction,
+      origin: { x: caster.x, y: caster.y },
+      facing: Math.atan2((input.aim?.y ?? caster.y) - caster.y, (input.aim?.x ?? caster.x + 1) - caster.x),
+      ...(input.aim ? { aim: input.aim } : {}),
+      ...(input.currentTargetId !== undefined ? { currentTargetId: input.currentTargetId } : {}),
+      range: ability.range ?? 0,
+      ...(ability.shape ? { shape: ability.shape } : {}),
+      ...(input.positionHistory ? { positionHistory: input.positionHistory } : {}),
+    };
+    const targets = resolveTargets(ability.targeting, tctx, host);
+    const ctx: EffectContext = {
+      ability,
+      casterId,
+      targets,
+      origin: tctx.origin,
+      facing: tctx.facing,
+      input,
+      source: pending.ctx.source,
+    };
+    for (const step of pending.effects) runEffect(host, ctx, step, this);
+    return { ok: true, targets, pending: [...this.pending], fromFollowUp: true };
   }
 
   /** A reactive step's event fired — run its effects if the window is still open. */
@@ -159,10 +242,21 @@ export class AbilityRuntime {
     const caster = host.actor(casterId);
     if (!caster) return { ok: false, failure: "unknown-caster", pending: [] };
 
-    if (!this.ready(ability)) return { ok: false, failure: "on-cooldown", pending: [] };
+    // An open follow-up window beats the cooldown gate — the ability is *meant* to be
+    // cooling down while its combo is live — but not the silence gate, since a combo is
+    // still a cast and a silenced caster cannot make one.
+    const comboOpen = this.followUpOpen(ability.id, host);
+    if (!comboOpen && !this.ready(ability)) {
+      return { ok: false, failure: "on-cooldown", pending: [] };
+    }
 
     if (ability.tags.includes("ultimate") === false && caster.statuses.disables().cast) {
       return { ok: false, failure: "silenced", pending: [] };
+    }
+
+    if (comboOpen) {
+      const combo = this.takeFollowUp(ability.id, host);
+      if (combo) return this.runFollowUp(host, caster, casterId, ability, input, combo);
     }
 
     // --- costs ---

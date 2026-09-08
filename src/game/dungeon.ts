@@ -35,7 +35,7 @@ import {
   type MinionRequest, type MoveRequest, type ProjectileRequest, type StatusInstance, type TargetActor,
   type TerrainRequest, type ZoneRequest, type MinionCommand,
 } from "../combat/index";
-import { applyRuleFx, runBuildGrants, type BuildRuleContext } from "./abilities";
+import { applyRuleFx, runBuildGrants, runReactiveWindows, type BuildRuleContext } from "./abilities";
 import {
   HeroRuleState, rulesOnAvoid, rulesOnCast, rulesOnDamageTaken, rulesOnHit, rulesOnKill,
   rulesOnMinionDeath, rulesOnUltimate, rulesTick, type MinionView, type RuleHost,
@@ -489,6 +489,7 @@ export class Dungeon implements CombatHost, RuleHost {
         () => this.castInputFor(hero),
         () => hero.avatar.facing,
       );
+      runReactiveWindows(this.bus, this, hero.rt, hero.index);
     }
     this.portal = this.level.portal;
     this.startNextWave();
@@ -1718,7 +1719,9 @@ export class Dungeon implements CombatHost, RuleHost {
     const base = hero.player.activeAbilities[slot];
     if (!base) return;
     const ability = hero.player.resolvedAbility(base);
-    if (!hero.rt.ready(ability)) return;
+    // `Ability.followUp` is spent by pressing the ability again inside its window, so the
+    // press has to reach the executor even while the ability is cooling down.
+    if (!hero.rt.ready(ability) && !hero.rt.followUpOpen(ability.id, this)) return;
     const a = hero.avatar;
     const res = hero.rt.castAbility(this, hero.index, ability, this.castInputFor(hero, ability));
     if (!res.ok) {
@@ -1728,10 +1731,14 @@ export class Dungeon implements CombatHost, RuleHost {
       return;
     }
     this.events.push({
-      kind: "cast", x: a.x, y: a.y - 34, label: ability.name, color: hero.player.heroClass.color,
+      kind: "cast", x: a.x, y: a.y - 34,
+      label: res.fromFollowUp ? `${ability.name}!` : ability.name,
+      color: hero.player.heroClass.color,
     });
     applyRuleFx(this.ruleContext(hero), ability);
-    rulesOnCast(this, hero, ability);
+    // A combo is the tail of the first press; firing the on-cast rule hooks a second
+    // time would double every "when you cast" keystone for free.
+    if (!res.fromFollowUp) rulesOnCast(this, hero, ability);
   }
 
   /**
@@ -1743,15 +1750,21 @@ export class Dungeon implements CombatHost, RuleHost {
     const p = hero.player;
     const a = hero.avatar;
     const base = p.ultimateAbility;
-    const meter = hero.resources.ultimateMeter();
-    if (!base || !meter || meter.fraction < 1) return;
+    if (!base) return;
     const ability = p.resolvedAbility(base);
-    if (!hero.rt.ready(ability)) return;
+    const meter = hero.resources.ultimateMeter();
 
-    meter.value = 0;
+    // The second half of an ultimate is paid for by the first half: pressing it again
+    // inside its follow-up window spends the window, not another full meter.
+    const combo = hero.rt.followUpOpen(ability.id, this);
+    if (!combo) {
+      if (!meter || meter.fraction < 1) return;
+      if (!hero.rt.ready(ability)) return;
+      meter.value = 0;
+    }
     const res = hero.rt.castAbility(this, hero.index, ability, this.castInputFor(hero, ability));
     if (!res.ok) {
-      meter.value = meter.max; // couldn't fire — hand the meter back
+      if (!combo && meter) meter.value = meter.max; // couldn't fire — hand the meter back
       return;
     }
     this.events.push({
@@ -1759,8 +1772,10 @@ export class Dungeon implements CombatHost, RuleHost {
     });
     this.events.push({ kind: "shake", amount: 14 });
     applyRuleFx(this.ruleContext(hero), ability);
-    rulesOnUltimate(this, hero);
-    this.fireTriggers(hero, "onUltimate", a.x, a.y);
+    if (!res.fromFollowUp) {
+      rulesOnUltimate(this, hero);
+      this.fireTriggers(hero, "onUltimate", a.x, a.y);
+    }
   }
 
   /** Context handed to the keystone/hybrid/archetype rule interpreter. */
@@ -2995,6 +3010,9 @@ export class Dungeon implements CombatHost, RuleHost {
     const evade = clamp(m.evasion + bm.evasion, 0, EVASION_CAP);
     if (evade > 0 && this.defenseRng.chance(evade)) {
       hero.resources.broadcast({ type: "dodge", ...evtBase });
+      // Also on the typed bus: `dodge` is what closes a Duelist's or a Bard's `reactive`
+      // window, and the resource layer is not something the executor listens to.
+      this.bus.emit({ type: "dodge", actorId: hero.index, x: a.x, y: a.y });
       this.events.push({ kind: "pickup", x: a.x, y: a.y - 24, label: "dodge", color: "#c4b5fd" });
       rulesOnAvoid(this, hero, "dodge");
       return null;
@@ -3093,6 +3111,10 @@ export class Dungeon implements CombatHost, RuleHost {
     const evtBase = { maxHealth: p.maxHealth };
     hero.resources.broadcast({ type: "hitTaken", damage: dealt, ...evtBase });
     if (dealt > 0) hero.resources.broadcast({ type: "damageTaken", damage: dealt, ...evtBase });
+    // And on the typed bus, which is what closes a `reactive` window. `damageTaken` is
+    // the event eighteen of the roster's reactives key on — the Juggernaut's retaliation,
+    // the Duelist's ripostes, the Warden's and the Trickster's counters.
+    if (dealt > 0) this.bus.emit({ type: "damageTaken", actorId: hero.index, amount: dealt, x: a.x, y: a.y });
     if (prevented > 0) hero.resources.broadcast({ type: "damagePrevented", damage: prevented, ...evtBase });
 
     const kind = STATUS_FOR_ELEMENT[element];

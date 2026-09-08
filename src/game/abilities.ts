@@ -14,6 +14,11 @@
  *   - `runBuildGrants` — subscribes every `GrantedEffect` to the combat `EventBus` so
  *     "every thrust also applies Exposed" or "a crit exposes the target" fire their
  *     effect steps through the same `runEffect` the executor uses.
+ *   - `runReactiveWindows` — subscribes the hero's `AbilityRuntime` to the same bus so a
+ *     `reactive` effect step's window can be *closed* by the event it names. This is the
+ *     other half of the executor: `AbilityRuntime.notify` exists to fire those, and
+ *     before this it had no callers, so every reactive window in the roster expired
+ *     unused.
  */
 
 import {
@@ -95,6 +100,48 @@ function grantTargets(host: CombatHost, casterId: number, radius: number): Targe
  * that combat event directly; one keyed on `on.tag` fires on any `skillUse` /
  * `ultimateUse` carrying the tag. Returns an unsubscribe for the whole set.
  */
+/**
+ * The events a `reactive` effect step may key on that the simulation actually broadcasts.
+ *
+ * `summonDeath` is authored twice across the roster and is emitted nowhere, so a reactive
+ * keyed on it still cannot fire; that is a separate gap in the event vocabulary, tracked
+ * in `docs/class-validation.md`, not something this wiring can paper over.
+ */
+export const REACTIVE_EVENTS: readonly CombatEventType[] = [
+  "damageTaken", "hit", "criticalHit", "dodge", "kill", "enemyDeath", "skillUse", "ultimateUse",
+];
+
+/**
+ * Subscribes one hero's `AbilityRuntime` to the combat bus so a `reactive` step — "if you
+ * are hit in the next four seconds, retaliate" — can actually fire.
+ *
+ * Without this, `AbilityRuntime.notify` had no callers anywhere in the project and every
+ * reactive window authored across the roster opened and expired unused. The Duelist owns
+ * three of them and is built entirely around countering, which is a large part of why it
+ * measured last on damage.
+ *
+ * `enemyDeath` is about the *dier*, so it goes to every hero; every other event names the
+ * hero it is about in `actorId` and is filtered to them, so one player's dodge cannot fire
+ * another player's counter.
+ */
+export function runReactiveWindows(
+  bus: EventBus,
+  host: CombatHost,
+  rt: AbilityRuntime,
+  casterId: number,
+): () => void {
+  const unsubs: (() => void)[] = [];
+  for (const type of REACTIVE_EVENTS) {
+    unsubs.push(bus.on(type, (evt) => {
+      if (type !== "enemyDeath" && evt.actorId !== casterId) return;
+      rt.notify(type, host);
+    }));
+  }
+  return () => {
+    for (const u of unsubs) u();
+  };
+}
+
 export function runBuildGrants(
   bus: EventBus,
   build: ResolvedBuild,

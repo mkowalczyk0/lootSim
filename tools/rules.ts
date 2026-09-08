@@ -21,7 +21,9 @@ import {
 import { GameState } from "../src/game/state";
 import { delveConfig } from "../src/data/modes";
 import { ARCHETYPES } from "../src/data/enemies";
-import { CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
+import { REACTIVE_EVENTS } from "../src/game/abilities";
+import type { EffectStep } from "../src/combat/index";
+import { ALL_CLASSES, CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
 import type { ClassId } from "../src/data/classes";
 
 /** `makeEnemy` is private; a headless test may reach it to stage a fixed encounter. */
@@ -422,6 +424,125 @@ section("construct / summon keystones (B-4)");
   e.health = 0;
   rulesOnKill(d, hero, e);
   check("Dread Admiral presses a slain enemy into the crew", d.minions.length > nBefore, `${d.minions.length} vs ${nBefore}`);
+}
+
+// --- deferred effects actually execute (Cluster 8) ---------------------
+//
+// `delay`, `reactive` and `followUp` are the three deferred kinds the executor knows.
+// `delay` always worked; the other two were authored across the roster — 34 declarations
+// between them — and executed *never*: `AbilityRuntime.notify` had no callers anywhere,
+// and a `followUp` window was discarded on expiry with nothing able to spend it. These
+// checks exist so that cannot come back quietly, because nothing else in the suite
+// noticed: the data was valid, the shapes passed `npm run roster`, and the abilities
+// simply did a fraction of what they said.
+
+section("deferred effects execute (Cluster 8)");
+
+/** Walk an effect tree, including the nested effects of the deferred kinds. */
+function walkSteps(steps: readonly EffectStep[], visit: (s: EffectStep) => void): void {
+  for (const s of steps) {
+    visit(s);
+    if (s.kind === "delay" || s.kind === "reactive" || s.kind === "followUp") walkSteps(s.effects, visit);
+    if (s.kind === "random") for (const c of s.choices) walkSteps(c.effects, visit);
+    if (s.kind === "projectile" && s.projectile.onExpire) walkSteps(s.projectile.onExpire, visit);
+    if ((s.kind === "consumeStatus" || s.kind === "consumeSummons") && s.then) walkSteps(s.then, visit);
+  }
+}
+
+{
+  // Every event a `reactive` keys on has to be one the simulation actually delivers to
+  // the runtime, or the window can never close and the effects are decoration.
+  const delivered = new Set<string>(REACTIVE_EVENTS);
+  const orphans = new Map<string, string[]>();
+  let reactives = 0;
+  for (const def of ALL_CLASSES) {
+    for (const ability of def.abilities) {
+      walkSteps(ability.effects, (s) => {
+        if (s.kind !== "reactive") return;
+        reactives++;
+        if (delivered.has(s.event)) return;
+        const list = orphans.get(s.event) ?? [];
+        list.push(ability.id);
+        orphans.set(s.event, list);
+      });
+    }
+  }
+  check(
+    `every authored reactive event is one the bus delivers (${reactives} reactives)`,
+    orphans.size === 0,
+    [...orphans].map(([e, ids]) => `${e} ← ${ids.join(", ")}`).join("; "),
+  );
+}
+
+{
+  // A `reactive` fires when its event arrives. Riposte is the clearest case in the
+  // roster: "Take a hit in the window and you answer it instantly."
+  const d = dungeonWith("duelist", ["Riposte"]);
+  const hero = d.localHero;
+  const riposte = hero.player.unlockedAbilities.find((a) => a.id === "duelist.riposte");
+  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  const before = e.health;
+
+  if (!riposte) {
+    check("Riposte is unlocked", false);
+  } else {
+    hero.rt.castAbility(d, hero.index, riposte, { attackDamage: 100, aim: { x: e.x, y: e.y } });
+    check("casting Riposte opens a reactive window", hero.rt.pending.length > 0, `${hero.rt.pending.length}`);
+
+    d.bus.emit({ type: "damageTaken", actorId: hero.index, amount: 10, x: hero.avatar.x, y: hero.avatar.y });
+    check("taking a hit inside the window answers it", e.health < before, `${before} → ${e.health}`);
+    check("the answered window is spent, not left open", hero.rt.pending.length === 0, `${hero.rt.pending.length}`);
+
+    // …and it is the hero's *own* hit that answers. Another player's damage must not
+    // fire this hero's counter, or a party would riposte for each other.
+    const e2 = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+    hero.rt.castAbility(d, hero.index, riposte, { attackDamage: 100, aim: { x: e2.x, y: e2.y } });
+    const held = e2.health;
+    d.bus.emit({ type: "damageTaken", actorId: hero.index + 7, amount: 10 });
+    check("another hero's hit does not fire this one's counter", e2.health === held, `${held} → ${e2.health}`);
+  }
+}
+
+{
+  // A native `Ability.followUp` is documented as "effects available for a short window
+  // after the cast, on a second press" — so the first press arms it and the second
+  // spends it, cooldown notwithstanding.
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const lance = hero.player.unlockedAbilities.find((a) => a.followUp);
+  if (!lance) {
+    check("the Lancer has an ability with a follow-up window", false);
+  } else {
+    const e = spawn(d, hero.avatar.x + 120, hero.avatar.y);
+    const input = { attackDamage: 100, aim: { x: e.x, y: e.y } };
+    const first = hero.rt.castAbility(d, hero.index, lance, input);
+    check(`${lance.id} casts`, first.ok, first.failure ?? "");
+    check("the first press arms the follow-up window", hero.rt.followUpOpen(lance.id, d));
+    check("the ability is now on cooldown", !hero.rt.ready(lance));
+
+    const second = hero.rt.castAbility(d, hero.index, lance, input);
+    check("a second press inside the window is accepted despite the cooldown", second.ok, second.failure ?? "");
+    check("…and it ran the follow-up, not a fresh cast", second.fromFollowUp === true);
+    check("the window is spent by the press", !hero.rt.followUpOpen(lance.id, d));
+
+    const third = hero.rt.castAbility(d, hero.index, lance, input);
+    check("a third press is refused — the combo is over", !third.ok && third.failure === "on-cooldown", third.failure ?? "ok");
+  }
+}
+
+{
+  // A window nobody spends is dropped when it elapses, and dropping it must not leave
+  // the pending list growing for the rest of the floor.
+  const d = dungeonWith("lancer", ["Dragoon"]);
+  const hero = d.localHero;
+  const lance = hero.player.unlockedAbilities.find((a) => a.followUp)!;
+  const e = spawn(d, hero.avatar.x + 120, hero.avatar.y);
+  hero.rt.castAbility(d, hero.index, lance, { attackDamage: 100, aim: { x: e.x, y: e.y } });
+  const window = lance.followUp!.window;
+  for (let t = 0; t < window + 1; t += 0.5) {
+    d.update(0.5);
+  }
+  check("a follow-up window nobody presses expires and is dropped", !hero.rt.followUpOpen(lance.id, d));
 }
 
 console.log(failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} RULE CHECK(S) FAILED`);
