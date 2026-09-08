@@ -8,9 +8,12 @@ import {
   OUTFIT_DYES, SKIN_TONES, type CosmeticSlot,
 } from "../data/cosmetics";
 import {
-  CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, craftBulkCost, craftEssenceCost,
-  reforgeCoinCost, type CraftCategory,
+  ASH_NAME, CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, FORGE_OPS, FORGE_OP_INFO,
+  craftBulkCost, craftEssenceCost, requirementLabel, type CraftCategory, type ForgeOp,
 } from "../data/crafting";
+import { affixRange, salvageYield } from "../game/forge";
+import { itemMeetsRequirement } from "../data/crafting";
+import { modShort } from "../game/item";
 import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
 import {
@@ -155,7 +158,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Craft": return forgeMode === "reforge"
-      ? `${sel} choose an item · ${e} reforge its affixes · ${forgeToggle} switch to named recipes`
+      ? `${sel} / ${adj} choose an item · ${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
       : forgeMode === "named"
         ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
@@ -203,6 +206,9 @@ export class TownUI {
    *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
    *  on a station tab. */
   private forgeMode: ForgeMode = "craft";
+  /** The workbench: which op the Reforge screen will apply, and to which affix when it needs one. */
+  private forgeOp: ForgeOp = "reforge";
+  private forgeAffix = 0;
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /** Which column of the skill tree the cursor is walking down. */
@@ -267,6 +273,18 @@ export class TownUI {
       if (forgeModeEl) {
         this.forgeMode = forgeModeEl.dataset.forgeMode as ForgeMode;
         this.cursor = 0;
+        this.render();
+        return;
+      }
+      const opEl = target.closest<HTMLElement>("[data-forge-op]");
+      if (opEl) {
+        this.forgeOp = opEl.dataset.forgeOp as ForgeOp;
+        this.render();
+        return;
+      }
+      const affixEl = target.closest<HTMLElement>("[data-forge-affix]");
+      if (affixEl) {
+        this.forgeAffix = Number(affixEl.dataset.forgeAffix);
         this.render();
         return;
       }
@@ -875,14 +893,7 @@ export class TownUI {
       }
       case "Craft": {
         if (this.forgeMode === "reforge") {
-          const item = this.reforgeCandidates()[this.cursor];
-          if (!item) break;
-          const reforged = this.state.reforgeItem(item.id);
-          if (reforged) {
-            this.notify(`Reforged: ${reforged.name}`, RARITY_COLORS[reforged.rarity]);
-          } else {
-            this.notify("Not enough coins or materials for that.", "#ef4444");
-          }
+          this.workbenchConfirm();
           break;
         }
         if (this.forgeMode === "named") {
@@ -1155,6 +1166,16 @@ export class TownUI {
         break;
       }
       case "Craft": {
+        if (this.forgeMode === "reforge") {
+          const item = this.reforgeCandidates()[this.cursor];
+          const n = item?.mods.length ?? 0;
+          if (n === 0 || !FORGE_OP_INFO[this.forgeOp].needsAffix) {
+            this.notify("That operation doesn't pick an affix.", "#9aa4b2");
+            break;
+          }
+          this.forgeAffix = (this.forgeAffix + 1) % n;
+          break;
+        }
         if (this.forgeMode !== "craft") break;
         if (this.craftEssence === null) {
           this.notify("No essence selected.", "#9aa4b2");
@@ -1235,6 +1256,12 @@ export class TownUI {
    * left/right drive the carousel instead.
    */
   private tertiary(): void {
+    if (this.tab === "Craft" && this.forgeMode === "reforge") {
+      const i = FORGE_OPS.indexOf(this.forgeOp);
+      this.forgeOp = FORGE_OPS[(i + 1) % FORGE_OPS.length]!;
+      this.render();
+      return;
+    }
     if (this.tab === "Craft" && this.forgeMode === "craft") {
       const i = CRAFT_CATEGORIES.indexOf(this.craftCategory);
       this.craftCategory = CRAFT_CATEGORIES[(i + 1) % CRAFT_CATEGORIES.length]!;
@@ -1793,9 +1820,9 @@ export class TownUI {
         <p class="muted">Biases the roll toward that element's damage or resist affix,
         instead of only ever hoping for it.</p>
         <h3>Materials</h3>
-        <table class="cmp">${bag}</table>
+        <table class="cmp">${bag}<tr><td>${ASH_NAME}</td><td>${formatNumber(this.state.ash)}</td></tr></table>
         <p class="muted">Dropped by monsters and mined from resource nodes — planets
-        only. The dive and the rifts never pay in these.</p>
+        only. The dive and the rifts never pay in these. ${ASH_NAME} comes from salvaging at the Reforge bench.</p>
       </aside>`;
   }
 
@@ -1847,10 +1874,15 @@ export class TownUI {
       const range = lo !== v ? `${fmtMod(m.key, lo)}–${fmtMod(m.key, v)}` : fmtMod(m.key, v);
       return `<tr><td>${escapeHtml(shortLabel(m.key))}</td><td>${range}${m.scale === "rarity" ? " <span class=\"muted\">× rarity</span>" : ""}</td></tr>`;
     }).join("");
-    const bill = (Object.entries(recipe.materials) as [Element, number][])
+    const components = (recipe.items ?? []).map((req) => {
+      const have = this.state.inventory.filter((it) => itemMeetsRequirement(req, it)).length;
+      const label = requirementLabel(req, (id) => NAMED_BY_ID[id]?.name ?? id);
+      return `<tr><td>${escapeHtml(label)}</td><td class="${have >= req.count ? "" : "warn"}">${have} <span class="muted">in the stash</span></td></tr>`;
+    });
+    const bill = components.concat((Object.entries(recipe.materials) as [Element, number][])
       .filter(([, n]) => n > 0)
       .map(([e, n]) => `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td>
-        <td class="${this.state.materials[e] >= n ? "" : "warn"}">${formatNumber(n)} <span class="muted">/ ${formatNumber(this.state.materials[e])}</span></td></tr>`)
+        <td class="${this.state.materials[e] >= n ? "" : "warn"}">${formatNumber(n)} <span class="muted">/ ${formatNumber(this.state.materials[e])}</span></td></tr>`))
       .concat(recipe.coins > 0
         ? [`<tr><td>Coins</td><td class="${this.state.coins >= recipe.coins ? "" : "warn"}">${formatNumber(recipe.coins)} <span class="muted">/ ${formatNumber(this.state.coins)}</span></td></tr>`]
         : [])
@@ -1896,15 +1928,15 @@ export class TownUI {
       EQUIP_SLOTS.map((slot) => this.state.player.equipment[slot]?.id).filter((id): id is string => !!id),
     );
     const cards = items.map((it, i) => {
-      const coinCost = reforgeCoinCost(it.rarity);
-      const matCost = craftBulkCost(it.rarity);
-      const afford = this.state.coins >= coinCost && this.state.materials.physical >= matCost;
+      // The lock badge answers "could the *current* op run on this one?" — same quote the
+      // side panel prices from, so the grid and the panel can never disagree.
+      const quote = this.state.forgeQuote(it.id, this.forgeOp, 0);
       const icon = pixelImageFit(itemArt(it), 64, itemArtKey("item", it));
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
-             style="--r:${RARITY_COLORS[it.rarity]}">
+             style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(quote?.blocker ?? "")}">
           ${wornIds.has(it.id) ? `<span class="ic-mark" title="equipped">E</span>` : ""}
-          ${afford ? "" : `<span class="ic-lock">${formatNumber(coinCost)}c</span>`}
+          ${quote?.blocker ? `<span class="ic-lock">✕</span>` : ""}
           <div class="ic-art"><img src="${icon}" alt=""></div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
           <span class="ic-slot">${it.slot}</span>
@@ -1912,25 +1944,104 @@ export class TownUI {
     }).join("");
 
     const sel = items[this.cursor];
-    const coinCost = sel ? reforgeCoinCost(sel.rarity) : 0;
-    const matCost = sel ? craftBulkCost(sel.rarity) : 0;
-    const afford = sel ? this.state.coins >= coinCost && this.state.materials.physical >= matCost : false;
-
     return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="stash-grid">${cards}</div></div>
       <aside class="side">
-        ${sel ? this.renderCompare(sel) : `<p class="muted">Pick something to reforge.</p>`}
-        ${sel ? `
-          <h3>Cost</h3>
-          <table class="cmp">
-            <tr><td>Coins</td><td class="${this.state.coins >= coinCost ? "" : "warn"}">${formatNumber(coinCost)}</td></tr>
-            <tr><td>${escapeHtml(MATERIALS.physical.name)}</td>
-              <td class="${this.state.materials.physical >= matCost ? "" : "warn"}">${formatNumber(matCost)}</td></tr>
-          </table>
-          <p class="muted">${k(this.state.settings, "confirm")}, or click the card, to reforge —
-          rerolls every affix, keeps the base stats, the grant and the trigger.</p>
-          ${afford ? "" : `<p class="danger">Not enough coins or ${escapeHtml(MATERIALS.physical.name)}.</p>`}
-        ` : ""}
+        ${sel ? this.renderCompare(sel) : `<p class="muted">Pick something to work on.</p>`}
+        ${sel ? this.renderWorkbench(sel) : ""}
       </aside>`;
+  }
+
+  /**
+   * The workbench (UAT §24/§26/§27): every operation the Forge can do to the selected
+   * item, priced, with the reason it can't when it can't. One currency, Ash, and it only
+   * comes from salvaging — so the balance sits right here next to the thing you'd break.
+   */
+  private renderWorkbench(item: Item): string {
+    if (this.forgeAffix >= item.mods.length) this.forgeAffix = 0;
+    const s = this.state.settings;
+    const ops = FORGE_OPS.map((op) => {
+      const q = this.state.forgeQuote(item.id, op, this.forgeAffix);
+      const info = FORGE_OP_INFO[op];
+      const on = op === this.forgeOp;
+      const cost = q ? [
+        q.ash ? `${formatNumber(q.ash)} ${ASH_NAME}` : "",
+        q.coins ? `${formatNumber(q.coins)}c` : "",
+        q.scrap ? `${formatNumber(q.scrap)} scrap` : "",
+      ].filter(Boolean).join(" · ") : "";
+      return `<span class="chip ${on ? "on" : ""} ${q?.blocker ? "dim" : ""}" data-forge-op="${op}"
+        title="${escapeHtml(info.blurb)}${q?.blocker ? `\n${escapeHtml(q.blocker)}` : ""}">${escapeHtml(info.label)}${cost ? ` <em>${escapeHtml(cost)}</em>` : ""}</span>`;
+    }).join(" ");
+
+    const info = FORGE_OP_INFO[this.forgeOp];
+    const quote = this.state.forgeQuote(item.id, this.forgeOp, this.forgeAffix);
+    const affixes = info.needsAffix && item.mods.length > 0
+      ? `<h4>Affix</h4><p>${item.mods.map((m, i) => {
+          const range = affixRange(item, i);
+          const span = range ? ` <span class="muted">(${fmtMod(m.key, range[0])}–${fmtMod(m.key, range[1])})</span>` : "";
+          return `<span class="chip ${i === this.forgeAffix ? "on" : ""}" data-forge-affix="${i}">${escapeHtml(modShort(m))}${span}</span>`;
+        }).join(" ")}</p>`
+      : "";
+    const components = this.forgeOp === "ascend" && quote && quote.components.length > 0
+      ? `<p class="muted">Melts down: ${quote.components.map((c) => `<span style="color:${RARITY_COLORS[c.rarity]}">${escapeHtml(c.name)}</span>`).join(", ")}.</p>`
+      : "";
+    const salvage = this.forgeOp === "salvage"
+      ? (() => {
+          const y = salvageYield(item);
+          const mats = (Object.entries(y.materials) as [Element, number][]).filter(([, n]) => n > 0)
+            .map(([e, n]) => `${n} ${MATERIALS[e].name}`);
+          return `<p>Returns <b>${formatNumber(y.ash)} ${ASH_NAME}</b>${mats.length ? ` and ${escapeHtml(mats.join(", "))}` : ""}. The item is gone.</p>`;
+        })()
+      : "";
+    const cost = quote && (quote.ash || quote.coins || quote.scrap)
+      ? `<table class="cmp">
+          ${quote.ash ? `<tr><td>${ASH_NAME}</td><td class="${this.state.ash >= quote.ash ? "" : "warn"}">${formatNumber(quote.ash)} <span class="muted">/ ${formatNumber(this.state.ash)}</span></td></tr>` : ""}
+          ${quote.coins ? `<tr><td>Coins</td><td class="${this.state.coins >= quote.coins ? "" : "warn"}">${formatNumber(quote.coins)} <span class="muted">/ ${formatNumber(this.state.coins)}</span></td></tr>` : ""}
+          ${quote.scrap ? `<tr><td>${escapeHtml(MATERIALS.physical.name)}</td><td class="${this.state.materials.physical >= quote.scrap ? "" : "warn"}">${formatNumber(quote.scrap)} <span class="muted">/ ${formatNumber(this.state.materials.physical)}</span></td></tr>` : ""}
+        </table>`
+      : "";
+    return `
+      <h3>Workbench <span class="muted">${formatNumber(this.state.ash)} ${ASH_NAME}</span>
+        <span class="chip" data-action="tertiary">${k(s, "special")} cycle</span></h3>
+      <p>${ops}</p>
+      <h4>${escapeHtml(info.label)}</h4>
+      <p class="muted">${escapeHtml(info.blurb)}</p>
+      ${affixes}
+      ${components}
+      ${salvage}
+      ${cost}
+      ${quote?.blocker ? `<p class="danger">${escapeHtml(quote.blocker)}</p>`
+        : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}.</p>`}
+      <p class="muted">${ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the same
+      ones everything else costs.</p>`;
+  }
+
+  /** Confirm on the bench: run the selected op on the selected item and say what happened. */
+  private workbenchConfirm(): void {
+    const item = this.reforgeCandidates()[this.cursor];
+    if (!item) return;
+    const op = this.forgeOp;
+    const quote = this.state.forgeQuote(item.id, op, this.forgeAffix);
+    if (quote?.blocker) {
+      this.notify(quote.blocker, "#ef4444");
+      return;
+    }
+    if (op === "salvage") {
+      const y = this.state.salvageItem(item.id);
+      if (y) {
+        this.notify(`Salvaged ${item.name} for ${formatNumber(y.ash)} ${ASH_NAME}`, "#fbbf24");
+        this.cursor = Math.max(0, Math.min(this.cursor, this.reforgeCandidates().length - 1));
+        this.state.save();
+      }
+      return;
+    }
+    const after = this.state.applyForgeOp(item.id, op, this.forgeAffix);
+    if (after) {
+      const verb = op === "reforge" ? "Reforged" : op === "ascend" ? `Ascended to ${rarityLabel(after.rarity)}` : FORGE_OP_INFO[op].label;
+      this.notify(`${verb}: ${after.name}`, RARITY_COLORS[after.rarity]);
+      this.state.save();
+    } else {
+      this.notify("The Forge declined. Nothing was spent.", "#ef4444");
+    }
   }
 
   /** The current Challenger dial, shown wherever a run gets configured. Set in Settings. */

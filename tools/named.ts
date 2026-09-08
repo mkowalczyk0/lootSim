@@ -351,10 +351,29 @@ section("7. acquisition is the table, and only the table");
   check("crafting refuses when the bill can't be paid", state.craftNamed(brand.id) === null && !state.canAffordNamed(brand.id));
   for (const [e, n] of Object.entries(recipe.materials) as [keyof typeof state.materials, number][]) state.materials[e] = n + 5;
   state.coins = recipe.coins + 7;
+  check("...nor when only the stash components are missing", state.craftNamed(brand.id) === null);
+  // The recipe's item lines (UAT §24, docs/forge.md): fill each with the cheapest legal
+  // item, plus one spare per line that must survive.
+  const spares: string[] = [];
+  for (const req of recipe.items ?? []) {
+    for (let i = 0; i < req.count + 1; i++) {
+      const rolled = req.named
+        ? forgeNamedItem(NAMED_BY_ID[req.named]!, 10, new Rng(900 + i))
+        : rollItem({ rarity: req.minRarity ?? "common", type: req.type ?? (req.slot === "weapon" ? "sword" : req.slot ?? "ring"), ilvl: 10, rng: new Rng(950 + i) });
+      // The spare is priced out of reach: components are taken cheapest-first, so it must survive.
+      const comp = i === req.count ? { ...rolled, value: 1_000_000_000 } : rolled;
+      state.inventory.push(comp);
+      if (i === req.count) spares.push(comp.id);
+    }
+  }
+  const stashBefore = state.inventory.length;
   const made = state.craftNamed(brand.id);
   check("crafting a named recipe forges that item", made?.named === brand.id);
   check("...and spends exactly the recipe",
     state.coins === 7 && (Object.entries(recipe.materials) as [keyof typeof state.materials, number][]).every(([e]) => state.materials[e] === 5));
+  const eaten = (recipe.items ?? []).reduce((n, r) => n + r.count, 0);
+  check("...consuming exactly the listed components and leaving the spares",
+    state.inventory.length === stashBefore - eaten + 1 && spares.every((id) => state.inventory.some((it) => it.id === id)), `${eaten} component(s)`);
   check("...into the stash", state.inventory.some((it) => it.id === made?.id));
   check("an id with no recipe is refused", state.craftNamed("the-first-seal") === null && state.craftNamed("nope") === null);
 }

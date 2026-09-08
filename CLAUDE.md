@@ -21,7 +21,7 @@ npm run host      # same, on 0.0.0.0 — how you play multiplayer with people ne
 npm run build     # typecheck + bundle to dist/
 npm run check     # typecheck only (tsc --noEmit)
 npm run test      # the full acceptance gate — see package.json for the exact chain;
-                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+deadpaths+smoke
+                  # currently check+vocab+prog+classes+roster+rules+universal+named+legends+forge+deadpaths+smoke
 npm run smoke     # headless simulated play (tools/smoke.ts) — run after any balance change
 npm run art       # render every sprite to a contact sheet (tools/artsheet.ts) — look
                   # at it after touching a grid; the smoke test only catches ragged rows
@@ -29,6 +29,10 @@ npm run roster    # full class-roster + anti-overlap audit (tools/roster.ts)
 npm run universal # sanity + balance checks on the Universal Skill Tree (tools/universal.ts)
 npm run legends   # the Proving (class completion) + the only structural audit of the
                   # boss rules in the repo (tools/legends.ts) — part of npm test
+npm run forge     # the Forge workbench, Ash and multi-item recipes (tools/forge.ts) —
+                  # asserts the crafting economy as comparisons; part of npm test
+npm run named     # named-item definitions, acquisition table, save/wire, live passives
+                  # (tools/named.ts) — part of npm test
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
@@ -308,16 +312,42 @@ about raw, uncapped danger (`challengerMultiplier`), not about paying out more.
 
 ### Crafting: the forge
 
-`src/data/crafting.ts` plus `GameState.craftItem`. The deterministic way to get an item,
-alongside chests, monsters and boss drops: choose a category (weapon / armor /
-accessory, mapped onto the existing `EquipSlot`s), a rarity, optionally an essence
-element, and spend materials. An essence doesn't force the roll, it **weights** it —
-`rollItem`'s `favorElement` triples that element's odds, so a crafted item still rolls
-through the exact same code every dropped item does.
+`src/data/crafting.ts` plus `GameState.craftItem`, `GameState.applyForgeOp`,
+`GameState.salvageItem` and `GameState.craftNamed`; the pure item operations live in
+`src/game/forge.ts`. See `docs/forge.md`. Three screens at one station:
 
-Crafting is capped at **mythic**. Divine and unspoken staying chest-only is deliberate —
-`src/data/rarity.ts`'s "keep it absurd, the long tail is the hook" rule would mean
-nothing if enough grinding could buy the top of the ladder outright.
+- **Craft** — the deterministic way to get an item, alongside chests, monsters and boss
+  drops: choose a category (weapon / armor / accessory, mapped onto the existing
+  `EquipSlot`s), a rarity, optionally an essence element, and spend materials. An essence
+  doesn't force the roll, it **weights** it — `rollItem`'s `favorElement` triples that
+  element's odds, so a crafted item still rolls through the exact same code every dropped
+  item does.
+- **The workbench** (the Reforge screen, UAT §26) — eleven ops on an item you already own,
+  worn or stashed: Reforge, Temper (one affix's value within its range), Recast (swap one
+  affix), Augment (add one, never past `MOD_COUNTS`), Inscribe/Rescribe/Erase a granted
+  skill and Awaken/Erase a trigger (**rolled, never chosen**, behind the drop's own
+  rarity gates), Ascend (one rarity up, keeping affixes, capped at mythic, melting two
+  same-rarity stash items) and Salvage. Every op rolls through the same code a drop uses,
+  so nothing the bench makes is an item a chest couldn't have dropped — **the dungeon is
+  the path to gear; the bench is the path to a specific piece of gear.** Named items
+  accept Reforge, Temper and Salvage only; identity isn't for sale.
+- **Named** — a named item's recipe (`NamedSource.craft`): materials, coins and stash
+  **item components** (`ItemRequirement`, UAT §24 — a boss drop plus N legendaries can be
+  an ingredient). Components come from the stash only, cheapest first, and a generic line
+  never eats a named item.
+
+**Ash is the one crafting currency** (UAT §27, whose heading says not to overcomplicate
+this). It has exactly one source — salvaging an item, which also returns a pinch of the
+materials its affixes were made of — and pays for every workbench op; coins stay the bulk
+cost and the nine materials stay the currency of making. `tools/forge.ts` (`npm run
+forge`, in `npm test`) asserts the economy as comparisons, not bounds: salvaging ten
+legendaries can't fund a rare→mythic ascension chain, making a specific item is never
+cheaper in vendor value than finding one, and one salvage never pays for tempering a peer.
+
+Crafting is capped at **mythic** on every path — Craft, Ascend, recipes. Divine and
+unspoken staying chest-only is deliberate — `src/data/rarity.ts`'s "keep it absurd, the
+long tail is the hook" rule would mean nothing if enough grinding could buy the top of
+the ladder outright.
 
 ### Classes: an interaction system, not a stat block
 

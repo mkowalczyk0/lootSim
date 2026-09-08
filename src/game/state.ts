@@ -21,6 +21,13 @@ import { emptyMaterials, type MaterialBag } from "../data/materials";
 import {
   NAMED_BY_ID, craftRecipeFor, isNamedId, rollNamedDrops, type NamedItemDef,
 } from "../data/named";
+import {
+  ASCEND_COMPONENTS, forgeOpCost, itemMeetsRequirement, type ForgeOp, type ItemRequirement,
+} from "../data/crafting";
+import {
+  ascend, ascendComponents, augment, awaken, eraseGrant, eraseTrigger, forgeOpBlocker, inscribe, recast,
+  salvageYield, temper,
+} from "./forge";
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
@@ -52,6 +59,9 @@ export interface RunStats {
   capsulesOpened: number;
   /** Copies of each named item ever forged for this account, by definition id (UAT §28). */
   namedFound: Record<string, number>;
+  /** Items broken down at the Forge, and the Ash they returned (UAT §24/§27). */
+  itemsSalvaged: number;
+  ashEarned: number;
 }
 
 function freshStats(): RunStats {
@@ -71,6 +81,8 @@ function freshStats(): RunStats {
     gemsEarned: 0,
     capsulesOpened: 0,
     namedFound: {},
+    itemsSalvaged: 0,
+    ashEarned: 0,
   };
 }
 
@@ -138,6 +150,12 @@ export class GameState {
   daily: { clearedDay: number } = { clearedDay: 0 };
   /** One per element, spent at the forge. Dropped and mined on planets, nowhere else. */
   materials: MaterialBag = emptyMaterials();
+  /**
+   * Ash — the Forge's one currency (UAT §27), returned only by salvaging items
+   * (`salvageItem`) and spent only at the workbench (`applyForgeOp`). Account-wide like
+   * coins and materials.
+   */
+  ash = 0;
   /**
    * The player's own difficulty dial — zero is plain. Set at a portal or the star map
    * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
@@ -380,16 +398,21 @@ export class GameState {
     const recipe = def ? craftRecipeFor(def) : null;
     if (!def || !recipe) return null;
     if (!this.canAffordNamed(id)) return null;
+    const components = this.recipeComponents(recipe.items ?? []);
+    if (!components) return null;
     for (const [e, n] of Object.entries(recipe.materials) as [Element, number][]) {
       if (n) this.materials[e] -= n;
     }
     if (recipe.coins > 0) this.spendCoins(recipe.coins);
+    // The components go in whole (UAT §24): out of the stash, into the item.
+    const eaten = new Set(components.flat().map((it) => it.id));
+    this.inventory = this.inventory.filter((it) => !eaten.has(it.id));
     const item = this.forgeNamed(def, Math.max(1, this.player.deepestDepth));
     this.addToInventory([item]);
     return item;
   }
 
-  /** True when every material and coin a named recipe asks for is in hand. */
+  /** True when every material, coin and stash component a named recipe asks for is in hand. */
   canAffordNamed(id: string): boolean {
     const def = NAMED_BY_ID[id];
     const recipe = def ? craftRecipeFor(def) : null;
@@ -397,7 +420,119 @@ export class GameState {
     for (const [e, n] of Object.entries(recipe.materials) as [Element, number][]) {
       if (n && this.materials[e] < n) return false;
     }
-    return this.coins >= recipe.coins;
+    if (this.coins < recipe.coins) return false;
+    return this.recipeComponents(recipe.items ?? []) !== null;
+  }
+
+  /**
+   * Which stash items would pay a recipe's item lines — one list per line, cheapest
+   * matching items first, an item never counted twice — or null when a line can't be
+   * filled. Stash only: what you're wearing is never eaten by a recipe. The bench shows
+   * exactly this list before anything is spent.
+   */
+  recipeComponents(reqs: readonly ItemRequirement[]): Item[][] | null {
+    const taken = new Set<string>();
+    const out: Item[][] = [];
+    for (const req of reqs) {
+      const picks = this.inventory
+        .filter((it) => !taken.has(it.id) && itemMeetsRequirement(req, it))
+        .sort((a, b) => a.value - b.value)
+        .slice(0, req.count);
+      if (picks.length < req.count) return null;
+      for (const it of picks) taken.add(it.id);
+      out.push(picks);
+    }
+    return out;
+  }
+
+  // --- the workbench (UAT §24 / §26 / §27) -------------------------------------------
+
+  /**
+   * Breaks an item down for Ash and a pinch of the materials it carried (`salvageYield`).
+   * Stash or worn — salvaging what you're wearing is allowed, on purpose: the choice
+   * "sell it, salvage it, or keep it" is the whole point of Ash having exactly one source.
+   */
+  salvageItem(itemId: string): { ash: number; materials: Partial<MaterialBag> } | null {
+    const located = this.locateItem(itemId);
+    if (!located) return null;
+    const yieldOf = salvageYield(located.item);
+    located.remove();
+    this.ash += yieldOf.ash;
+    this.stats.ashEarned += yieldOf.ash;
+    this.stats.itemsSalvaged++;
+    for (const [e, n] of Object.entries(yieldOf.materials) as [Element, number][]) {
+      if (n) this.materials[e] += n;
+    }
+    this.player.refresh();
+    return yieldOf;
+  }
+
+  /**
+   * Everything an op would cost on this item right now, and why it can't run if it can't.
+   * The bench renders this; `applyForgeOp` re-checks it, so the two can never disagree.
+   */
+  forgeQuote(itemId: string, op: ForgeOp, affix?: number): {
+    item: Item; ash: number; coins: number; scrap: number; components: Item[]; blocker: string | null;
+  } | null {
+    const located = this.locateItem(itemId);
+    if (!located) return null;
+    const item = located.item;
+    const cost = forgeOpCost(op, item.rarity);
+    const components = op === "ascend" ? ascendComponents(item, this.inventory) : [];
+    let blocker = forgeOpBlocker(op, item, affix);
+    if (!blocker && op === "ascend" && components.length < ASCEND_COMPONENTS) {
+      blocker = `Ascending needs ${ASCEND_COMPONENTS} other ${item.rarity} items in the stash to melt down.`;
+    }
+    if (!blocker) {
+      if (this.ash < cost.ash) blocker = `Needs ${cost.ash} Ash — salvage something.`;
+      else if (this.coins < cost.coins) blocker = `Needs ${cost.coins} coins.`;
+      else if (this.materials.physical < cost.scrap) blocker = `Needs ${cost.scrap} Iron Scrap.`;
+    }
+    return { item, ...cost, components, blocker };
+  }
+
+  /**
+   * Runs one workbench op on an item, stashed or worn, paying for it first. `reforge` and
+   * `salvage` have their own methods (`reforgeItem`, `salvageItem`) and are routed there
+   * so the old paths and their tests stay exactly as they were. Returns the new item, or
+   * null when the quote had a blocker; nothing is spent on a refusal.
+   */
+  applyForgeOp(itemId: string, op: ForgeOp, affix?: number): Item | null {
+    if (op === "reforge") return this.reforgeItem(itemId);
+    // Salvage destroys the item, so there is nothing to hand back; the bench calls
+    // `salvageItem` directly for the yield.
+    if (op === "salvage") { this.salvageItem(itemId); return null; }
+    const quote = this.forgeQuote(itemId, op, affix);
+    if (!quote || quote.blocker) return null;
+    const located = this.locateItem(itemId);
+    if (!located) return null;
+    const before = located.item;
+
+    let after: Item;
+    switch (op) {
+      case "temper": after = temper(before, affix!, this.rng); break;
+      case "recast": after = recast(before, affix!, this.rng); break;
+      case "augment": after = augment(before, this.rng); break;
+      case "inscribe":
+      case "rescribe": after = inscribe(before, this.rng); break;
+      case "eraseGrant": after = eraseGrant(before); break;
+      case "awaken": after = awaken(before, this.rng); break;
+      case "eraseTrigger": after = eraseTrigger(before); break;
+      case "ascend": after = ascend(before, this.rng); break;
+    }
+    if (after === before) return null;
+
+    this.ash -= quote.ash;
+    if (quote.coins > 0) this.spendCoins(quote.coins);
+    this.materials.physical -= quote.scrap;
+    if (op === "ascend") {
+      const eaten = new Set(quote.components.map((it) => it.id));
+      this.inventory = this.inventory.filter((it) => !eaten.has(it.id));
+      this.stats.raritiesFound[after.rarity]++;
+    }
+    located.replace(after);
+    this.player.refresh();
+    return after;
   }
 
   /**
@@ -418,20 +553,30 @@ export class GameState {
     this.materials.physical -= materialCost;
     const reforged = reforgeAffixes(located.item, this.rng);
     located.replace(reforged);
+    this.player.refresh();
     return reforged;
   }
 
   /** Finds an item by id wherever the active character keeps it, stashed or worn. */
-  private locateItem(itemId: string): { item: Item; replace: (next: Item) => void } | null {
+  private locateItem(itemId: string): { item: Item; replace: (next: Item) => void; remove: () => void } | null {
     const invIdx = this.inventory.findIndex((it) => it.id === itemId);
     if (invIdx >= 0) {
-      return { item: this.inventory[invIdx]!, replace: (next) => { this.inventory[invIdx] = next; } };
+      const item = this.inventory[invIdx]!;
+      return {
+        item,
+        replace: (next) => { this.inventory[invIdx] = next; },
+        remove: () => { this.inventory = this.inventory.filter((it) => it.id !== item.id); },
+      };
     }
     const equipment = this.player.equipment;
     for (const slot of EQUIP_SLOTS) {
       const worn = equipment[slot];
       if (worn?.id === itemId) {
-        return { item: worn, replace: (next) => { equipment[slot] = next; } };
+        return {
+          item: worn,
+          replace: (next) => { equipment[slot] = next; },
+          remove: () => { equipment[slot] = null; },
+        };
       }
     }
     return null;
@@ -615,6 +760,7 @@ export class GameState {
       planetProgress: this.planetProgress,
       daily: this.daily,
       materials: this.materials,
+      ash: this.ash,
       challengerTier: this.challengerTier,
       stats: this.stats,
       inventory: this.inventory,
@@ -661,6 +807,8 @@ export class GameState {
       // Saves from before the wardrobe existed have none of these; the normalizers
       // hand back a fresh look and an empty collection rather than throwing.
       state.gems = Number(d.gems ?? 0);
+      // Version 19 added Ash; an older save has simply never salvaged anything.
+      state.ash = Math.max(0, Math.floor(Number(d.ash ?? 0)) || 0);
       state.cosmetics = normalizeOwned(d.cosmetics);
       state.appearance = normalizeAppearance(d.appearance);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);

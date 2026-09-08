@@ -40,6 +40,7 @@ import { BOSSES } from "./bosses";
 import { CHEST_TIERS, chestName, type ChestTier } from "./chests";
 import { ELEMENTS, type Element } from "./elements";
 import type { ItemType, TriggerSpec } from "./items";
+import { requirementLabel, type ItemRequirement } from "./crafting";
 import { MATERIAL_NAMES, type MaterialBag } from "./materials";
 import { MODES, RUN_MODES, type RunModeId } from "./modes";
 import { MOD_KEYS, type ModKey } from "./mods";
@@ -108,8 +109,16 @@ export type NamedSource =
   | { readonly kind: "clearCache"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
   /** Any wave monster at least this deep. Elites triple the odds. */
   | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number }
-  /** Forged on demand for these materials and coins (UAT §25 named crafting). */
-  | { readonly kind: "craft"; readonly materials: Partial<MaterialBag>; readonly coins: number };
+  /**
+   * Forged on demand for these materials and coins (UAT §25 named crafting), plus any
+   * `items` consumed from the stash (UAT §24 — "boss drop + materials + N items = named").
+   */
+  | {
+      readonly kind: "craft";
+      readonly materials: Partial<MaterialBag>;
+      readonly coins: number;
+      readonly items?: readonly ItemRequirement[];
+    };
 
 export interface NamedItemDef {
   /** Stable kebab-case id. It is persisted on every copy — never rename one that shipped. */
@@ -374,11 +383,51 @@ export const NAMED_ITEMS: readonly NamedItemDef[] = [
     ],
     sources: [{
       kind: "craft",
-      // Both sides of the wound: something of Heaven, something of the Abyss, and a lot of iron.
+      // Both sides of the wound: something of Heaven, something of the Abyss, a lot of
+      // iron — and two blades that already proved themselves, melted down for the steel.
       materials: { physical: 600, holy: 80, void: 80 },
       coins: 40_000,
+      items: [{ count: 2, minRarity: "legendary", slot: "weapon" }],
     }],
     art: "named.threshold-brand",
+  },
+
+  // ---- multi-step (UAT §24/§25): a boss drop is the component ----------------------
+  {
+    id: "the-seal-unbroken",
+    name: "The Seal Unbroken",
+    flavor: "It was standing here a while. It intends to keep standing.",
+    description: "The First Seal, re-forged around three more walls. What hits you hits back, and what you block is not forgotten.",
+    rarity: "mythic", type: "shield", statScale: 1.3,
+    mods: [
+      { key: "defense", value: [6, 8], scale: "rarity" },
+      { key: "blockChance", value: [0.12, 0.16] },
+      { key: "thorns", value: 3, scale: "rarity" },
+      { key: "healthPercent", value: 0.1 },
+      { key: "holyResist", value: 25 },
+    ],
+    effects: [
+      {
+        kind: "grantEffect", on: { event: "damageTaken" },
+        note: "Taking a hit raises a ward and knocks everything near you back.",
+        effects: [
+          { kind: "shield", amount: 0.7, scale: "attack", duration: 3, to: "self" },
+          { kind: "knockback", force: 140, to: "allTargets" },
+        ],
+      },
+    ],
+    sources: [{
+      kind: "craft",
+      // The Warden's own shield goes in whole, with three legendary pieces of armour or
+      // shield for the extra walls. Two steps: kill the Warden, then bring it here.
+      materials: { physical: 400, holy: 120 },
+      coins: 60_000,
+      items: [
+        { count: 1, named: "the-first-seal" },
+        { count: 3, minRarity: "legendary", slot: "shield" },
+      ],
+    }],
+    art: "named.the-seal-unbroken", minIlvl: 15,
   },
 ];
 
@@ -484,7 +533,8 @@ export function namedSourceLines(def: NamedItemDef): string[] {
         const mats = (Object.entries(s.materials) as [Element, number][])
           .filter(([, n]) => n > 0)
           .map(([e, n]) => `${n} ${MATERIAL_NAMES[e]}`);
-        return `Forged for ${[...mats, `${s.coins.toLocaleString()} coins`].join(", ")}`;
+        const parts = (s.items ?? []).map((r) => requirementLabel(r, (id) => NAMED_BY_ID[id]?.name ?? id));
+        return `Forged for ${[...parts, ...mats, `${s.coins.toLocaleString()} coins`].join(", ")}`;
       }
     }
   });
@@ -543,11 +593,20 @@ export function namedProblems(def: NamedItemDef): string[] {
         break;
       case "craft": {
         const entries = Object.entries(s.materials) as [string, number][];
-        if (entries.every(([, n]) => !(n > 0)) && !(s.coins > 0)) out.push("craft recipe costs nothing");
+        if (entries.every(([, n]) => !(n > 0)) && !(s.coins > 0) && !(s.items?.length)) out.push("craft recipe costs nothing");
         for (const [e, n] of entries) {
           if (!(ELEMENTS as readonly string[]).includes(e)) out.push(`craft recipe names unknown material "${e}"`);
           if (n < 0) out.push(`craft recipe has a negative ${e} cost`);
         }
+        for (const r of s.items ?? []) {
+          if (!(r.count >= 1)) out.push("a recipe item line needs count >= 1");
+          if (r.minRarity !== undefined && !(RARITIES as readonly string[]).includes(r.minRarity)) out.push(`recipe item line names unknown rarity "${r.minRarity}"`);
+          if (r.named !== undefined && !(r.named in NAMED_BY_ID)) out.push(`recipe item line names unknown named item "${r.named}"`);
+          if (r.named === def.id) out.push("a recipe cannot require the item it makes");
+        }
+        // Mythic is the crafting wall (data/crafting.ts): a recipe may not make a divine or
+        // unspoken any more than the ordinary forge may.
+        if (RARITIES.indexOf(def.rarity) > RARITIES.indexOf("mythic")) out.push(`a craftable named item may not be ${def.rarity} — mythic is the cap`);
         break;
       }
     }
