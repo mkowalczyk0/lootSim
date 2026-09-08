@@ -94,6 +94,18 @@ export interface RollOptions {
   readonly favorElement?: Element;
 }
 
+/** Sell/reforge-cost basis: rarity and item level plus what the affix list carries. */
+function computeValue(
+  rarity: Rarity, levelScale: number, modCount: number, grant: string | null, trigger: TriggerSpec | null,
+): number {
+  return Math.round(
+    RARITY_VALUE[rarity] * levelScale
+    * (1 + modCount * 0.09)
+    * (grant ? 1.35 : 1)
+    * (trigger ? 1.5 : 1),
+  );
+}
+
 export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions): Item {
   const names = ITEM_NAMES[rarity][type];
   const baseName = rng.pick(names);
@@ -114,13 +126,7 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
   const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement);
   const grant = rollGrant(type, tier, rng);
   const trigger = rollTrigger(tier, rng);
-
-  const value = Math.round(
-    RARITY_VALUE[rarity] * levelScale
-    * (1 + rolls.length * 0.09)
-    * (grant ? 1.35 : 1)
-    * (trigger ? 1.5 : 1),
-  );
+  const value = computeValue(rarity, levelScale, rolls.length, grant, trigger);
 
   return {
     id: makeId(),
@@ -139,12 +145,32 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
 }
 
 /**
+ * The Forge's reforge: a fresh affix roll on an item you already own, through the exact
+ * same `rollMods` a drop uses. Rarity, type, ilvl and the base stat block never move —
+ * only `mods` (and the name, which is only ever decoration hung on those affixes) — so
+ * the grant and trigger an item carries survive a reforge untouched. Cost lives in
+ * `data/crafting.ts#reforgeCoinCost`; `GameState.reforgeItem` spends it.
+ */
+export function reforgeAffixes(item: Item, rng: Rng): Item {
+  const tier = rarityIndex(item.rarity);
+  const levelScale = 1 + (item.ilvl - 1) * 0.033;
+  const rolls = rollMods(item.type, item.rarity, tier, levelScale, rng);
+  const baseName = rng.pick(ITEM_NAMES[item.rarity][item.type]);
+  return {
+    ...item,
+    name: decorate(baseName, rolls.map((r) => r.roll)),
+    mods: rolls.map((r) => r.mod),
+    value: computeValue(item.rarity, levelScale, rolls.length, item.grant, item.trigger),
+  };
+}
+
+/**
  * Picks the affixes. Rarity decides how many and gates which are reachable at all,
  * which is the whole reason to keep opening chests once your slots are full: an extra
  * projectile does not exist below epic, and an extra ultimate bounce does not exist
  * below mythic.
  */
-function rollMods(
+export function rollMods(
   type: ItemType, rarity: Rarity, tier: number, levelScale: number, rng: Rng, favorElement?: Element,
 ): { mod: ItemMod; roll: ModRoll }[] {
   const [lo, hi] = MOD_COUNTS[rarity];
