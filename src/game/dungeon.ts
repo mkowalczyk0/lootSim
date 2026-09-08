@@ -23,6 +23,7 @@ import { coinDropFor, profileFor, xpDropFor, type DepthProfile } from "../data/d
 import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
 import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
+import { dailyEffects } from "../data/daily";
 import { planetBossSpec } from "../data/planets";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
@@ -445,10 +446,12 @@ export class Dungeon implements CombatHost, RuleHost {
    */
   constructor(state: GameState, depth: number | RunConfig, opts: number | DungeonOptions = {}) {
     const options: DungeonOptions = typeof opts === "number" ? { seed: opts } : opts;
-    const seed = options.seed ?? ((Math.random() * 2 ** 32) >>> 0);
     this.role = options.role ?? "solo";
     this.state = state;
     this.config = typeof depth === "number" ? delveConfig(depth) : depth;
+    // The Vigil carries its own seed (UAT §17): the same UTC day is the same floor for
+    // everybody. Anything handed an explicit seed — a co-op `start`, a test — still wins.
+    const seed = options.seed ?? this.config.daily?.seed ?? ((Math.random() * 2 ** 32) >>> 0);
     this.profile = profileFor(this.config.depth, this.config);
     // The floor-clear quota (UAT §5). A boss floor is its boss; everything else is
     // "every monster the director will spawn" plus a difficulty-scaled elite count,
@@ -459,7 +462,9 @@ export class Dungeon implements CombatHost, RuleHost {
     } else {
       this.killsRequired = Math.max(1, this.profile.enemiesPerWave * this.profile.waves);
       this.elitesRequired = clamp(
-        this.config.danger >= 1.6 ? 1 + Math.floor(this.config.danger - 1.6) : this.profile.depth >= 8 ? 1 : 0,
+        (this.config.danger >= 1.6 ? 1 + Math.floor(this.config.danger - 1.6) : this.profile.depth >= 8 ? 1 : 0)
+          // The Vigil's Elite Hunt asks for more (UAT §17); still clamped to what the floor can make.
+          + dailyEffects(this.config.daily?.modifiers ?? []).elites,
         0,
         this.eliteCapForFloor(),
       );
@@ -631,7 +636,10 @@ export class Dungeon implements CombatHost, RuleHost {
     return 1
       + (this.config.danger > 1.6 ? 1 : 0)
       + Math.floor(d / 18)
-      + (this.config.danger > 3.5 ? 1 : 0);
+      + (this.config.danger > 3.5 ? 1 : 0)
+      // The Vigil's Elite Hunt (UAT §17) raises what the floor *makes* as well as what it
+      // asks for — otherwise the quota bump would clamp straight back to the cap.
+      + dailyEffects(this.config.daily?.modifiers ?? []).elites;
   }
 
   /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
@@ -2668,6 +2676,9 @@ export class Dungeon implements CombatHost, RuleHost {
         this.dropPickup(x, y, { kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()) });
       }
     }
+    // The Vigil pays in keys (UAT §17): one of the day's tier, guaranteed, here and only
+    // here — so it can't be had without closing the floor, and only once a day.
+    if (this.config.daily) this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
     if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }
 

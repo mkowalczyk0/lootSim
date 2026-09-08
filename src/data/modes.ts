@@ -26,9 +26,10 @@
  */
 
 import { challengerMultiplier } from "./challenger";
+import type { DailyRun } from "./daily";
 import type { PlanetSpec } from "./planets";
 
-export const RUN_MODES = ["delve", "abyss", "hoard", "planet"] as const;
+export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil"] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
 export interface RunMode {
@@ -132,6 +133,25 @@ export const MODES: Record<RunModeId, RunMode> = {
     rarityBias: 0.03, quantity: 1.6,
     coinMult: 1.4, keyMult: 1.3, gemMult: 1.1, xpMult: 1, unlockDepth: 0,
   },
+  /**
+   * The Vigil — the daily dungeon (UAT §17). One floor, the same for everybody on a given
+   * UTC day, with two rotating modifiers; `data/daily.ts` derives all of it from the day
+   * number and hangs the specifics on `RunConfig.daily`. Rift-shaped with a single floor so
+   * the run ends where every rift does. It pays in *keys*: the clear cache carries one
+   * guaranteed key of the day's tier, and it can be cleared once a day — the way `gemMult`
+   * makes the hoard the wardrobe mode, this is the one reliable source of the currency
+   * that's scarce everywhere else. Unlock is `DAILY_UNLOCK_DEPTH` in `daily.ts`, not here.
+   */
+  vigil: {
+    id: "vigil", name: "The Vigil", short: "Vigil",
+    blurb: "Today's rift, the same for everyone. One floor, two twists, and a key for closing it.",
+    color: "#c084fc",
+    isRift: true, floors: 1,
+    baseDepth: 6, depthPerTier: 0, depthPerFloor: 0,
+    dangerPerTier: 1,
+    rarityBias: 0, quantity: 1,
+    coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1.4, unlockDepth: 0,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -158,6 +178,8 @@ export interface RunConfig {
   readonly players?: number;
   /** Set only for a planet expedition — its own visuals, boss and material payout. */
   readonly planet?: { readonly spec: PlanetSpec; readonly tier: number };
+  /** Set only for the daily Vigil — the day, its seed, its modifiers and its key. */
+  readonly daily?: DailyRun;
 }
 
 /**

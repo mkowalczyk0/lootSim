@@ -76,7 +76,7 @@ const KEY = "lootsim.save.v2";
  * spend is whatever its record depth already earned, so an existing character opens the
  * new screen with points waiting rather than having to go and re-earn them.
  */
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 
 export interface SavedGame {
   readonly version: number;

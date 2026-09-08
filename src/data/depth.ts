@@ -10,6 +10,7 @@
 import { clamp } from "../core/math";
 import { biomeFor } from "./biomes";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
+import { DAILY_MODIFIERS, dailyEffects } from "./daily";
 import { delveConfig, partyScale, type RunConfig } from "./modes";
 
 export interface DepthProfile {
@@ -54,6 +55,9 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   const biome = run.planet?.spec.biome ?? biomeFor(d);
   const mode = run.mode;
   const danger = run.danger;
+  // The Vigil's modifiers (UAT §17): multipliers on the fields below, nothing more. On
+  // any other run every one of these is exactly 1 (or 0 for the elite bump).
+  const daily = dailyEffects(run.daily?.modifiers ?? []);
   // A co-op floor is scaled by how many people walked into it. One player leaves every
   // number below exactly where it was.
   const party = partyScale(run.players ?? 1);
@@ -66,7 +70,7 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   // and the ultimates together put roughly 70% more damage in the player's hands, and
   // the smoke test caught it immediately: a careless bot was walking to depth 17 and a
   // raid boss was dying in eighteen seconds. Enemies got the difference back.
-  const enemyHealth = 48 * Math.pow(1.22, d - 1) * danger * party.health;
+  const enemyHealth = 48 * Math.pow(1.22, d - 1) * danger * party.health * daily.health;
   // Damage starts gentle and accelerates: the first few floors have to be learnable
   // with no gear at all, while depth 20 should genuinely frighten a geared character.
   // Rift danger is applied at a lower exponent so a high tier is a longer fight before
@@ -101,10 +105,10 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // Hordes, not a trickle: a wave throws 2-3x the bodies the old drip-feed did. Individual
     // trash gets a bit softer to pay for it (see WAVE_HEALTH_MULT in dungeon.ts), so the
     // total work per wave grows more modestly than the headcount alone suggests.
-    enemiesPerWave: Math.min(60, Math.round((3 + Math.floor(d * 0.5)) * crowd * 2.5 * party.count)),
-    maxAlive: Math.min(110, Math.round((5 + Math.floor(d * 0.9)) * crowd * 2.2 * party.count)),
+    enemiesPerWave: Math.min(60, Math.round((3 + Math.floor(d * 0.5)) * crowd * 2.5 * party.count * daily.count)),
+    maxAlive: Math.min(110, Math.round((5 + Math.floor(d * 0.9)) * crowd * 2.2 * party.count * daily.count)),
     crowd,
-    coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier),
+    coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier) * daily.coins,
     xpMultiplier: Math.pow(1.22, d - 1) * mode.xpMult,
     // Numbers alone can't threaten a player who dodges well, so the deeper floors
     // squeeze the thing skill actually spends: reaction time. The slopes are unchanged;
@@ -112,11 +116,11 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // deepest floors (roughly depth 30+) keep getting more aggressive and tighter-
     // telegraphed instead of plateauing. Nothing at or above those clamps in normal play
     // is affected.
-    aggression: clamp(1 - (d - 1) * 0.016, 0.4, 1),
-    telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1),
+    aggression: clamp(1 - (d - 1) * 0.016, 0.4, 1) * daily.aggression,
+    telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1) * daily.telegraph,
     isBoss,
-    rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier),
-    quantity: mode.quantity,
+    rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier) + daily.rarityBias,
+    quantity: mode.quantity * daily.quantity,
     // Levelling now tracks depth closely, so the advice should too.
     recommendedLevel: Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35))),
     tag: buildTag(run),
@@ -129,6 +133,8 @@ function buildTag(run: RunConfig): string {
   if ((run.players ?? 1) > 1) parts.push(`${run.players} players`);
   if (run.planet) {
     parts.push(`${run.planet.spec.name} · T${run.planet.tier} · Floor ${run.floor}/${run.planet.spec.floors}`);
+  } else if (run.daily) {
+    parts.push(`${run.mode.name} · ${run.daily.modifiers.map((id) => DAILY_MODIFIERS[id].name).join(" · ")}`);
   } else if (run.mode.isRift) {
     parts.push(`${run.mode.name} · T${run.tier} · Floor ${run.floor}/${run.mode.floors}`);
   }

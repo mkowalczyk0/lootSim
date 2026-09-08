@@ -21,6 +21,11 @@ import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/
 import { profileFor } from "../src/data/depth";
 import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import {
+  DAILY_DEPTH_MAX, DAILY_DEPTH_MIN, DAILY_KEY_ODDS, DAILY_MODIFIERS, DAILY_MODIFIER_IDS, DAY_MS,
+  dailyConfig, dailyEffects, dailyPlan, dailyUnlocked, dayNumber, daySeed, msUntilReset,
+  type DailyModifierId,
+} from "../src/data/daily";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
@@ -1668,6 +1673,13 @@ console.log("\n=== the ship hub ===");
   hub.clearExpedition();
   check("walking into it clears it back out", !hub.stations.some((s) => s.kind === "expedition"));
 
+  check("no Vigil portal until the delve has gone deep enough", !hub.stations.some((s) => s.kind === "vigil"));
+  hub.vigilOpen = true;
+  check("unlocking the Vigil puts its portal on the deck, clear of everything else",
+    hub.stations.some((s) => s.kind === "vigil") && hub.stations.every((a, i) =>
+      hub.stations.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius)));
+  hub.vigilOpen = false;
+
   // The party's ready spot is whichever portal the host picked (UAT §1 D1) — there is
   // no separate party portal any more.
   check("no party portal on the deck", !hub.stations.some((s) => (s.kind as string) === "party"));
@@ -1688,6 +1700,163 @@ console.log("\n=== the ship hub ===");
   check("…until the host picks it", hub.inPartyPortal);
   hub.partyOpen = false;
   hub.partyTarget = null;
+}
+
+console.log("\n=== the vigil ===");
+{
+  // The daily dungeon (UAT §17). One integer — the UTC day — decides the whole floor, so
+  // the first thing to prove is that it really is one floor for everyone and a different
+  // one tomorrow; then that each modifier moves exactly the knob it claims; then that it
+  // pays its key once, and only for closing it.
+
+  // 1. The calendar.
+  const noon = Date.UTC(2026, 8, 8, 12, 0, 0);
+  check("the day number is whole UTC days", dayNumber(noon) === Math.floor(noon / DAY_MS));
+  check("a minute before UTC midnight is still today", dayNumber(noon + 12 * 3600_000 - 60_000) === dayNumber(noon));
+  check("…and a minute after is tomorrow", dayNumber(noon + 12 * 3600_000 + 60_000) === dayNumber(noon) + 1);
+  check("the countdown reaches zero exactly at the reset",
+    msUntilReset(noon) === 12 * 3600_000 && msUntilReset((dayNumber(noon) + 1) * DAY_MS - 1) === 1);
+
+  // 2. One plan per day, a different one each day, always inside the rules.
+  const today = dayNumber(noon);
+  const a = dailyPlan(today);
+  const b = dailyPlan(today);
+  check("the same day is the same plan", JSON.stringify(a) === JSON.stringify(b));
+  const seeds = new Set<number>();
+  const depths = new Set<number>();
+  const tiers = { Advanced: 0, Elite: 0, Legendary: 0 };
+  let rulesHeld = true;
+  const YEARS = 10;
+  for (let d = today; d < today + 365 * YEARS; d++) {
+    const plan = dailyPlan(d);
+    seeds.add(plan.seed);
+    depths.add(plan.depth);
+    tiers[plan.keyTier as keyof typeof tiers]++;
+    const [m1, m2] = plan.modifiers;
+    const valid = plan.modifiers.length === 2 && m1 !== m2
+      && (DAILY_MODIFIER_IDS as readonly string[]).includes(m1!)
+      && (DAILY_MODIFIER_IDS as readonly string[]).includes(m2!)
+      && !(DAILY_MODIFIERS[m1!].reward && DAILY_MODIFIERS[m2!].reward);
+    const inBand = plan.depth >= DAILY_DEPTH_MIN && plan.depth <= DAILY_DEPTH_MAX;
+    if (!valid || !inBand || plan.seed !== daySeed(d)) rulesHeld = false;
+  }
+  check(`${YEARS} years of Vigils never repeat a seed`, seeds.size === 365 * YEARS);
+  check("every day stays inside the depth band, with two distinct twists and at most one reward twist", rulesHeld);
+  check("the band actually gets used", depths.size === DAILY_DEPTH_MAX - DAILY_DEPTH_MIN + 1,
+    [...depths].sort((x, y) => x - y).join(","));
+  const n = 365 * YEARS;
+  const legendary = tiers.Legendary / n;
+  const elite = tiers.Elite / n;
+  check("the key tier lands near its stated odds",
+    Math.abs(legendary - DAILY_KEY_ODDS.Legendary) < 0.02 && Math.abs(elite - DAILY_KEY_ODDS.Elite) < 0.03,
+    `Legendary ${(legendary * 100).toFixed(1)}%, Elite ${(elite * 100).toFixed(1)}%, Advanced ${(tiers.Advanced / n * 100).toFixed(1)}%`);
+  check("tomorrow is a different seed", daySeed(today) !== daySeed(today + 1));
+
+  // 3. The same floor for everyone: two dungeons from the same day, no seed handed in.
+  const fingerprint = (d: Dungeon) => JSON.stringify({
+    walls: d.level.walls, traps: d.level.traps, props: d.level.props, start: d.level.start, portal: d.level.portal,
+    quota: [d.killsRequired, d.elitesRequired], depth: d.profile.depth,
+  });
+  const one = new Dungeon(geared(14, 9101, 16, "swordsman"), dailyConfig(today));
+  const two = new Dungeon(geared(14, 9102, 16, "magician"), dailyConfig(today));
+  check("two players get the identical floor on the same day", fingerprint(one) === fingerprint(two));
+  const tomorrow = new Dungeon(geared(14, 9101, 16, "swordsman"), dailyConfig(today + 1));
+  check("…and a different one tomorrow", fingerprint(one) !== fingerprint(tomorrow));
+  check("the Vigil is one floor, and it's the last", dailyConfig(today).lastFloor && !dailyConfig(today).bossFloor
+    && dailyConfig(today).mode.isRift && dailyConfig(today).mode.floors === 1);
+  check("the Challenger dial still applies on top", dailyConfig(today, 3).danger > dailyConfig(today, 0).danger);
+
+  // 4. Each modifier moves exactly what it says. Build a Vigil config with a chosen pair
+  // and compare its profile against the same day with no twists at all.
+  const base = dailyConfig(today);
+  const withMods = (mods: readonly DailyModifierId[]): RunConfig => ({
+    ...base,
+    danger: dailyEffects(mods).danger,
+    daily: { ...base.daily!, modifiers: mods },
+  });
+  const plain = profileFor(base.depth, withMods([]));
+  const ratio = (mods: readonly DailyModifierId[], pick: (p: ReturnType<typeof profileFor>) => number) =>
+    pick(profileFor(base.depth, withMods(mods))) / pick(plain);
+  check("Ferocious is a rift tier's worth of danger, nothing else",
+    Math.abs(ratio(["ferocity"], (p) => p.enemyHealth) - 1.3) < 1e-9
+    && Math.abs(ratio(["ferocity"], (p) => p.quantity) - 1) < 1e-9);
+  check("Swarming means more, softer bodies",
+    ratio(["swarm"], (p) => p.enemiesPerWave) > 1.2 && Math.abs(ratio(["swarm"], (p) => p.enemyHealth) - 0.8) < 1e-9);
+  check("Hasty tightens the telegraph and the swing",
+    Math.abs(ratio(["hasty"], (p) => p.telegraph) - 0.85) < 1e-9 && Math.abs(ratio(["hasty"], (p) => p.aggression) - 0.9) < 1e-9);
+  check("Bountiful pays in volume and coin",
+    Math.abs(ratio(["bounty"], (p) => p.quantity) - 1.5) < 1e-9 && Math.abs(ratio(["bounty"], (p) => p.coinMultiplier) - 1.3) < 1e-9);
+  check("Sparse Ground trades volume for rarity",
+    Math.abs(ratio(["frugal"], (p) => p.quantity) - 0.6) < 1e-9
+    && Math.abs(profileFor(base.depth, withMods(["frugal"])).rarityBias - plain.rarityBias - 0.08) < 1e-9);
+  {
+    const st = geared(14, 9103, 16, "swordsman");
+    const quiet = new Dungeon(st, withMods([]), 4242);
+    const hunt = new Dungeon(st, withMods(["hunt"]), 4242);
+    check("Elite Hunt asks for more elites, within what the floor can make",
+      hunt.elitesRequired === Math.min(quiet.elitesRequired + 2, hunt.eliteCapForFloor()) && hunt.elitesRequired > quiet.elitesRequired,
+      `${quiet.elitesRequired} → ${hunt.elitesRequired}`);
+  }
+  check("a plain delve floor is untouched by any of it",
+    JSON.stringify(dailyEffects([])) === JSON.stringify({ danger: 1, count: 1, health: 1, telegraph: 1, aggression: 1, quantity: 1, coins: 1, rarityBias: 0, elites: 0 }));
+
+  // 5. It pays in keys — one of the day's tier, in the clear cache, once a day.
+  {
+    const st = geared(14, 9104, 16, "lancer");
+    const cfg = dailyConfig(today);
+    const d = new Dungeon(st, cfg);
+    const idle = new FakeInput();
+    d.killsSoFar = d.killsRequired;
+    d.elitesKilled = d.elitesRequired;
+    d.wave = d.profile.waves;
+    d.enemies.length = 0;
+    idle.beginTick();
+    d.update(DT, idle as unknown as AvatarInput);
+    check("closing the floor opens the completion portal", d.phase === "cleared" && d.completionPortal !== null);
+    const keys = d.pickups.filter((p) => p.kind === "key" && p.keyTier === cfg.daily!.keyTier);
+    check("the day's key is in the clear cache", keys.length >= 1, `${keys.length} × ${cfg.daily!.keyTier}`);
+    check("nothing is closed until it's banked", st.daily.clearedDay === 0);
+    for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier!]++;
+    const before = st.keys[cfg.daily!.keyTier];
+    d.bankLoot();
+    check("banking closes the Vigil for the day", st.daily.clearedDay === today && st.stats.vigilsCleared === 1);
+    check("…and the key is in the bag", st.keys[cfg.daily!.keyTier] > before);
+    check("a Vigil never opens a rift tier by accident", st.riftTiers.vigil === 1 && st.stats.riftsCleared.vigil === 0);
+
+    const again = new Dungeon(st, cfg);
+    again.loot.coins = 100;
+    again.earlyExtractLoot();
+    check("bailing out doesn't count as keeping it", st.daily.clearedDay === today && st.stats.vigilsCleared === 1);
+    const fresh = geared(14, 9105, 16, "lancer");
+    const lost = new Dungeon(fresh, cfg);
+    lost.earlyExtractLoot();
+    check("…nor does leaving early on a day you haven't closed", fresh.daily.clearedDay === 0);
+    check("a fresh save has never kept one", new GameState().daily.clearedDay === 0 && !dailyUnlocked(new GameState().stats.deepestDepth));
+    check("the portal opens at the bottom of the band", dailyUnlocked(DAILY_DEPTH_MIN) && !dailyUnlocked(DAILY_DEPTH_MIN - 1));
+  }
+
+  // 6. The save remembers it, and a save from before the Vigil existed loads clean.
+  {
+    const store = new Map<string, string>();
+    (globalThis as unknown as { localStorage: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    };
+    const st = geared(14, 9106, 16, "swordsman");
+    st.daily.clearedDay = today;
+    st.stats.vigilsCleared = 3;
+    st.save();
+    const back = GameState.load();
+    check("the save remembers the day you kept it", back.daily.clearedDay === today && back.stats.vigilsCleared === 3);
+    const raw = JSON.parse(store.get([...store.keys()][0]!)!) as Record<string, unknown>;
+    delete raw.daily;
+    raw.version = 15;
+    store.set([...store.keys()][0]!, JSON.stringify(raw));
+    const old = GameState.load();
+    check("a pre-Vigil save loads as never having kept one", old.daily.clearedDay === 0 && old.coins === st.coins);
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+  }
 }
 
 console.log("\n=== death loses unbanked loot ===");
