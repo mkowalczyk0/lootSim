@@ -1076,16 +1076,38 @@ is canonical — not a one-line edit from me.
 - **Two `MoveRequest` fields the host ignores** — `leaveAnchor` is accepted and dropped by
   `Dungeon.moveActor`, so a "dash out and come back" follow-up dashes again instead of
   returning. `temporalAnchor` targeting probably wants the same stored position.
-- **`ultimateRate` is a dead modifier, and gear rolls it.** It is declared in
-  `data/mods.ts`, priced in `MOD_SCORE`, and rolled as a real affix (`of Ascent`,
-  `minTier: 2`, so epic and up) — but **nothing in the simulation reads it.** Ultimate
-  meters fill purely from `ResourceSpec.generation` rules, and no code path multiplies
-  that gain. So an epic-or-better item can roll "+x% ultimate charge rate" and do
-  literally nothing, which is worse than a balance bug: the player is paying an affix slot
-  for it. Either plumb it into `combat/resources.ts` generation (multiply the credited
-  amount) or pull it from `MOD_POOL`. Found while auditing which knobs the universal tree
-  could honestly promise (UAT §18) — deliberately *not* fixed there, since it's a live
-  loot bug rather than anything to do with that tree. See `docs/universal-tree.md`.
+- ~~**`ultimateRate` is a dead modifier, and gear rolls it**~~ — **DONE, and it moved the
+  campaign.** It was declared in `data/mods.ts`, priced in `MOD_SCORE` and rolled as a
+  real affix (`of Ascent`, `minTier: 2`, epic and up) while **nothing in the simulation
+  read it** — ultimate meters fill purely from `ResourceSpec.generation` and no code path
+  multiplied that gain, so an epic-or-better item could roll "+x% ultimate charge rate"
+  and do literally nothing. Worse than a balance bug: the player was paying an affix slot
+  for it. Found while auditing which knobs the universal tree could honestly promise
+  (UAT §18) and deliberately not fixed there.
+
+  Fixed by plumbing rather than by deletion, on the reasoning that the game clearly
+  intended the affix to exist: `ResourcePool.rateMultiplier` scales what a generation
+  rule grants (and `regenPerSec`), `Player.ultimateChargeMult` reads the modifier, and
+  `Hero.syncChargeRate` points the ultimate meter at it every tick. Scaled *after* rule
+  evaluation, so a rate bonus can never talk an event past THE ULTIMATE RULE or a
+  `requireTags` gate — six assertions in `npm run vocab` §13 pin that.
+
+  **Measured effect, and it is not the direction you would guess.** Fixing it made the
+  sharp campaign *shallower*: at 12 seeds sharp went 11.3 → 9.8, but most of that was the
+  shared-rng reshuffle this file warns about, so it was re-measured at **36 seeds** on
+  both sides — master **sharp 10.9 / reckless 9.2**, fixed **sharp 10.2 / reckless 9.2**.
+  So the real effect is about **−0.7 depth for a skilled player and exactly zero for a
+  reckless one**. That split is the interesting part and it is almost certainly causal
+  rather than noise: the reckless bot never dodges, so it has no defensive uptime to lose,
+  while a sharp bot that now reaches its ultimate more often spends more time committed
+  to a cast it cannot dodge out of. If that reading is right, ultimate cadence trades
+  against telegraph-reading for exactly the players good enough to read telegraphs, which
+  is worth knowing before anyone tunes `of Ascent`'s numbers up. Unverified beyond the
+  correlation; nobody has instrumented dodge-uptime-during-ultimate directly.
+
+  Incidentally the cleanest proof the fix is live end to end: before it, gear rolling the
+  affix changed nothing at all, so smoke output was byte-identical to master. It isn't
+  any more.
 - **Four event types are declared and never broadcast** — `summonDeath`, `corpseCreated`,
   `enterCombat`, `leaveCombat`, in both `ResourceEventType` and `triggers.ts`. Two authored
   grants key on `summonDeath` and are dead because of it. The Cluster 8 assertion covers

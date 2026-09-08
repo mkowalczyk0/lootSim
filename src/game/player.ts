@@ -391,6 +391,20 @@ export class Player {
     return 1 + this.mods.ultimatePower;
   }
 
+  /**
+   * How fast the ultimate meter fills, as a multiplier on whatever the class's own
+   * charge rules grant. This is the *only* consumer of `Mods.ultimateRate`, and it
+   * exists because for a long time there wasn't one: the modifier was declared, priced
+   * and rolled as a real epic-and-up affix ("of Ascent") while nothing in the simulation
+   * read it, so wearing it did nothing at all.
+   *
+   * It scales the grant, never the rule — see `ResourcePool.rateMultiplier`. Floored at
+   * zero so a hypothetical large negative roll can't invert charging into draining.
+   */
+  get ultimateChargeMult(): number {
+    return Math.max(0, 1 + this.mods.ultimateRate);
+  }
+
   // --- damage and healing ----------------------------------------------
 
   mitigate(amount: number, element: Element = "physical", extraResist = 0): number {

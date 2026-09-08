@@ -170,6 +170,18 @@ export class ResourcePool {
   max: number;
   /** Set once when a temporary resource has been used up. */
   spent = false;
+  /**
+   * Scales everything that *fills* this pool — every generation rule's grant and the
+   * per-second regen — without touching what spends it, what it caps at, or the rules
+   * themselves. 1 is untouched.
+   *
+   * The bearer owns it: nothing in this file ever sets it, because a pool has no idea
+   * what a modifier is. `Hero` points the ultimate meter's copy at `Mods.ultimateRate`
+   * (`Player.ultimateChargeMult`), which is what makes "+x% ultimate charge rate" on a
+   * ring mean something. Deliberately generic rather than an ultimate-meter special
+   * case: a haste-like mod for any pool is the same idea and would need no new seam.
+   */
+  rateMultiplier = 1;
   private sinceGen = 0;
   private crossed = new Set<number>();
   private firedOnce = new Set<number>();
@@ -249,6 +261,11 @@ export class ResourcePool {
       }
       gained += this.ruleAmount(rule, evt);
     }
+    // Scaled after the rules have had their say, so a rate bonus can never talk a rule
+    // past THE ULTIMATE RULE or a `requireTags` gate — it only changes the size of a
+    // grant those already allowed. The return value is the amount actually credited,
+    // which is what the generation ledger in `tools/builds.ts` wants to report.
+    if (gained > 0) gained *= this.rateMultiplier;
     if (gained > 0) this.add(gained, ctx);
     this.checkThresholds(ctx);
     return gained;
@@ -274,7 +291,7 @@ export class ResourcePool {
     if (this.spec.temporary && this.spent) return;
     this.sinceGen += dt;
 
-    if (this.spec.regenPerSec) this.add(this.spec.regenPerSec * dt, ctx);
+    if (this.spec.regenPerSec) this.add(this.spec.regenPerSec * dt * this.rateMultiplier, ctx);
 
     if (this.spec.decayPerSec) {
       const delay = this.spec.decayDelay ?? 0;

@@ -20,6 +20,7 @@ import {
   DAMAGE_CHANNELS,
   DAMAGE_TYPES,
   EventBus,
+  ResourcePool,
   ResourceSet,
   StatusContainer,
   applyDamageModifiers,
@@ -40,6 +41,8 @@ import {
   type TerrainRequest,
   type ZoneRequest,
 } from "../src/combat/index";
+import { Player } from "../src/game/player";
+import { zeroStats } from "../src/game/item";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -670,6 +673,74 @@ console.log("\n=== 13. one Ultimate — and THE ULTIMATE RULE ===");
     new AbilityRuntime().castAbility(w, hero.id, feedback, CAST);
     check("an explicit opt-in exception still works", hero.resources.get("ultimate")!.value === 1);
   }
+
+  // --- rateMultiplier: what makes `Mods.ultimateRate` mean something ---
+  // The modifier was declared, priced and rolled as a real epic-and-up affix while
+  // nothing in the simulation read it, so "of Ascent" did nothing at all. These pin the
+  // seam that fixed it, and pin that it cannot be used to dodge the rule above.
+  {
+    const pool = new ResourcePool({ ...ultimateMeter, generation: [{ on: "kill", amount: 1 }] });
+    pool.handleEvent({ type: "kill" });
+    const base = pool.value;
+
+    const fast = new ResourcePool({ ...ultimateMeter, generation: [{ on: "kill", amount: 1 }] });
+    fast.rateMultiplier = 1.5;
+    const gained = fast.handleEvent({ type: "kill" });
+    check("a rate multiplier scales what a generation rule grants",
+      fast.value === base * 1.5, `${base} → ${fast.value}`);
+    check("…and handleEvent reports the amount actually credited", gained === base * 1.5);
+
+    const slow = new ResourcePool({ ...ultimateMeter, generation: [{ on: "kill", amount: 1 }] });
+    slow.rateMultiplier = 0;
+    slow.handleEvent({ type: "kill" });
+    check("a zero rate multiplier grants nothing rather than going negative",
+      slow.value === 0);
+
+    const regen = new ResourcePool({ ...ultimateMeter, regenPerSec: 2, generation: [] });
+    regen.rateMultiplier = 2;
+    regen.tick(1);
+    check("it scales per-second regen too", regen.value === 4, `${regen.value}`);
+
+    // The important negative: a rate bonus must not talk an event past the rule.
+    const ultSourced = new ResourcePool({ ...ultimateMeter, generation: [{ on: "kill", amount: 1 }] });
+    ultSourced.rateMultiplier = 3;
+    ultSourced.handleEvent({ type: "kill", fromUltimate: true });
+    check("THE ULTIMATE RULE still refuses an ultimate-sourced event at any rate",
+      ultSourced.value === 0, `meter ${ultSourced.value}`);
+
+    const tagged = new ResourcePool({
+      ...ultimateMeter,
+      generation: [{ on: "kill", amount: 1, requireTags: ["melee"] }],
+    });
+    tagged.rateMultiplier = 3;
+    tagged.handleEvent({ type: "kill", tags: ["spell"] });
+    check("a requireTags gate still refuses a non-matching event at any rate",
+      tagged.value === 0);
+
+    // And the live wiring: the mod has to reach the multiplier.
+    const plain = new Player("berserker");
+    check("a character with no ultimateRate charges at exactly 1x",
+      plain.ultimateChargeMult === 1);
+    check("ultimateChargeMult reads the modifier",
+      new Player("berserker").ultimateChargeMult === 1
+      && Math.abs(chargeMultWith(0.25) - 1.25) < 1e-9,
+      `+25% → ${chargeMultWith(0.25)}`);
+    check("a negative total can't invert charging into draining",
+      chargeMultWith(-5) === 0);
+  }
+}
+
+/** `Player.ultimateChargeMult` for a character carrying `value` of `ultimateRate`. */
+function chargeMultWith(value: number): number {
+  const p = new Player("berserker");
+  p.equipment.ring = {
+    id: "test-ring", name: "Test Ring", rarity: "epic", type: "ring", slot: "ring",
+    family: null, ilvl: 1, stats: zeroStats(),
+    mods: [{ id: "ascendant", key: "ultimateRate", value }],
+    grant: null, trigger: null, value: 1,
+  };
+  p.refresh();
+  return p.ultimateChargeMult;
 }
 
 console.log(`\n${failures === 0 ? "ALL VOCAB CHECKS PASSED" : `${failures} VOCAB CHECK(S) FAILED`}\n`);
