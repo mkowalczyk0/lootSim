@@ -209,11 +209,37 @@ completed 0–3% of the objective. Held pending the straggler fix, since stalls 
 contaminated this measurement too — but if it survives re-measurement, a number shown in
 the UI is actively misleading.
 
-**`tools/` has never been typechecked.** `tsconfig.json` is `"include": ["src"]`, and
-esbuild strips types without checking them — so every acceptance test in this repo, the
-entire gate, has only ever been type-stripped. That is precisely how a two-argument call to
-a three-argument function survived long enough to produce a retracted finding and an hour of
-re-planning. Being fixed; expect it to surface latent errors that were always there.
+**`tools/` has never been typechecked, and the gate was full of checks that measure
+nothing.** `tsconfig.json` is `"include": ["src"]` — which is simply what `npm create vite`
+gives you; nobody chose to exclude `tools/`, and an acceptance culture grew up beside it
+without anyone noticing the gate itself was outside the gate. esbuild strips types without
+checking them, so every acceptance test in this repo has only ever been type-stripped.
+
+Typechecking it surfaced **69 errors across 14 files, of which eight are real**. Two are
+checks in `npm test` that assert nothing:
+
+- **The early-extract key forfeiture has never been tested.** `tools/smoke.ts` sets
+  `d.loot.keys.basic = 4` against a `Record<ChestTier, number>` keyed
+  `Basic`/`Advanced`/`Elite`/`Legendary`, so the run never held a key and the check compares
+  `undefined === undefined`. CLAUDE.md says of that penalty: "**Don't soften this** — it's
+  the whole risk/reward decision the floor exists to create." Whether keys actually survive
+  a bail-out is now an open question.
+- **A follow-up check ticks the floor but not the player.** `tools/rules.ts` calls
+  `d.update(0.5)` with no input, so the local hero is skipped; the check is named "expires
+  *and is dropped*" and only ever tested the clock half. Same arity class as the retracted
+  stall finding, in the gate itself.
+
+The rest: `MockWorld` shadows its own `zones()` generator with a field and is four methods
+behind `CombatHost` (zone targeting and four host capabilities have zero coverage); a status
+option that doesn't exist, so a "chilled" setup isn't chilled; `def.ultimate` always false,
+so the arena kit census has never counted an ultimate; a `minDepth` read off a union that
+includes the reserved raid/tower kinds; and a `requireTags` gate tested against a tag the
+game can never emit.
+
+Fixed as two commits — the config guard first, then the eight — with a standing rule that a
+newly-red check is escalated, never pinned. `KNOWN_AUTHORED_VIOLATIONS` is for accepted
+design debt; using it for a fresh unknown failure would launder a bug into a sanctioned
+exception.
 
 **A real crash in `AbilityRuntime.notify`** (`src/combat/runtime.ts`). It iterates
 `this.pending` backwards, splices inside the loop, and calls `runEffect`, which re-enters
