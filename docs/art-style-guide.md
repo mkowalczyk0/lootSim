@@ -143,6 +143,51 @@ against everything else.
 > a reproducible script. **This is a prompting rule, not a claim about what is committed** —
 > check the PNGs for that.
 
+### 1.4b Value and saturation are different levers — reach for value
+
+Twice in two days a fix on this project was found by separating **value** (how light a
+colour is) from **saturation** (how colourful it is). They are not interchangeable, and
+reaching for the wrong one produces a characteristic failure each time.
+
+- **"This is too bright" is a value problem.** Desaturating it instead is the trap. The
+  natural fix for a hero whose face is too bright is to drain the colour out of the skin —
+  and grey skin reads as **dead**. An entire costume pass came back as corpses and orcs
+  from exactly that instruction, drifting straight into the monsters' design language,
+  which is the one thing §1.3 forbids for the hero. **Lower the face's value and contrast;
+  never its saturation.**
+- **"This has a second hot accent" is a saturation problem** (§1.4). There, darkening
+  doesn't help — a dark saturated red still competes. Desaturate it toward the neutral and
+  leave its value roughly alone.
+
+The quick diagnostic: if the offending region would still be wrong in greyscale, it is a
+value problem. If it only looks wrong in colour, it is a saturation problem.
+
+### 1.4c Measure the head, not just the sprite
+
+A character's **head is a region, and it must not out-inform the rest of the body**. The
+v4 hero was measured against the §1.4 checklist and passed — no hot accent, one dominant
+mass — and still read as "too realistic" in the world. The numbers say why: the body means
+**L40**, while the face ran **L185–203** with eye whites at **L233**, across **21 distinct
+colours in a 200px region**. The brightest, most colour-dense thing on the sprite was a
+rendered human portrait sitting on a body that is one flat dark mass.
+
+That is invisible on a contact sheet and obvious in a frame where **every other head in the
+game is a shape with an accent in it** — a hood, a helmet slit, a dark void. Nothing else
+in the cast has a face to render, which is also why the two casters sit at nearly the
+hero's pixel density without anyone ever complaining about them.
+
+So: **count the head's colours and compare its mean value against the body's** before
+shipping a character. The head should be the *least* detailed region on a character, not
+the most. Two cautions from doing it:
+
+- **Don't let the head become a void or a slit.** That is the monsters' vocabulary and
+  makes the hero frightening — an earlier pass was rolled back wholesale for exactly that.
+  Less information, not darker or more hostile information.
+- **Rebuild the eye row; don't remap it.** Collapsing eye whites, iris and socket shadow
+  into one dark shade leaves a hollow smear across the face, which is the corpse read
+  arriving by a different route. Repaint the band as plain skin, then place the eyes as
+  single dark pixels.
+
 ### 1.5 Silhouette carries the meaning
 A player identifies a monster's *threat and role* from its black silhouette alone, before
 any colour or detail. A sniper is not a recoloured grunt — it is a different shape. This
