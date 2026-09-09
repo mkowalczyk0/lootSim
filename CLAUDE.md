@@ -50,6 +50,11 @@ npm run rewards   # the reward curve (tools/rewards.ts) — UAT §16's "harder p
                   # including that it stays neutral at ordinary danger; part of npm test
 npm run markers   # refuses to let a committed conflict marker survive (grep, no build) —
                   # runs first in npm test; added after two merges shipped live markers
+npm run check:tools # typechecks tools/ against tsconfig.tools.json — the acceptance gate
+                  # itself went unchecked for most of the project's life, because
+                  # `include: ["src"]` is the vite default and esbuild strips types
+                  # without checking them. `src` deliberately keeps `types: []` under its
+                  # own config, so the game half still cannot see Node's globals
 npm run deadpaths # sweeps every class for abilities whose targeting/effects never
                   # resolve (tools/deadpaths.ts) — part of npm test
 npm run builds    # build-differentiation gate (tools/builds.ts) — deliberately
