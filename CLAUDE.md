@@ -87,6 +87,17 @@ otherwise touch a field the comparison reads) — a real behavior change that on
 something the run doesn't compare, or a rare branch the scenario never hits, passes the
 check while proving nothing, the same way a one-sided bound does.
 
+**A second lesson from the same family (2026-09-09)**: the boss-telegraph comparison
+("reading the telegraphs actually gets you out of them") ran on 5 hardcoded seeds and
+turned out to fail *master itself* on an unlucky draw — a check that can flip on the
+seeds alone isn't measuring the design promise it claims to. Deriving a seed count from
+one sweep across sizes is the same error as asserting a promise with a one-sided bound:
+the number looks derived either way, but only a second, entirely disjoint sweep at the
+same sizes tells you whether you landed on the noise floor's plateau or its edge. Here it
+mattered — one candidate size looked safely past the line on the first sweep and dropped
+to barely above it on the second. Widening a check's sample size needs the same two-pass
+discipline a design-promise comparison does, not a round number that merely looks careful.
+
 ## The game loop (this is the design; respect it)
 
 Pick a class → the ship → walk to a portal or a terminal → **dive** → fight waves of
