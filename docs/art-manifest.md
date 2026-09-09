@@ -252,6 +252,18 @@ monster population. `manifest.ts`'s comment has been corrected to match. **Do no
 this a third time** without a new source — a production-cost argument alone doesn't
 clear the bar this section and the worldbuilding doc both already set.
 
+**Open finding, recorded rather than fixed: the three newest sectors have no visual
+escalation at all.** Gilded Ossuary, Unbound Spire and Hollow Orchard (§8.2 of the style
+guide) sit at `infusionChance`'s 65% cap from `baseDepth` — tier 1, floor 1 — because
+their base depths (34/39/44) are already past the depth-22 point the cap saturates at.
+Every other lever a sector has to read as itself (tileset, props, `enemyNames`) is static
+per sector too, so descending one of these three all the way down looks identical the
+whole way — no deepening, no ramp, unlike the Delve's own depth curve a player has
+already learned to expect. Correct under this section's own ruling (a sector is a place,
+not a ladder) and not something this pass changed on purpose or by accident — but nobody
+has decided it on purpose either, and it reads as a bug to a player who's played the
+Delve first. Worth an owner call at some point; not blocking anything today.
+
 ---
 
 ## 4. Section C — the Tower's monster identity (open decision, not a queued task)

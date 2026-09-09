@@ -1042,6 +1042,13 @@ const DRESSING: Record<string, readonly PropKind[]> = {
   "The Frozen Basilica": ["pillar", "pillar", "handstone", "urn", "wargrave"],
   "The Storm Sepulcher": ["wargrave", "wargrave", "handstone", "pillar", "urn"],
   "The Black Archive": ["pillar", "pillar", "handstone", "urn", "wargrave"],
+  // The three newest sectors (§3.3's closed question: reused monster art, reused prop
+  // art — a sector's identity is its tileset, its dressing *mix*, its infusion and its
+  // `enemyNames`, not a bespoke roster). Same five pieces, weighted toward what each
+  // place's own worldbuilding description calls out.
+  "The Gilded Ossuary": ["urn", "urn", "handstone", "pillar", "wargrave"], // funerary urns and a displayed relic
+  "The Unbound Spire": ["pillar", "pillar", "pillar", "handstone", "urn"], // a broken tower, mostly standing stone
+  "The Hollow Orchard": ["wargrave", "wargrave", "urn", "handstone", "pillar"], // an orchard grown over the dead
 };
 
 /**

@@ -368,6 +368,21 @@ twice."
 | **The Rotting Garden** | poison | A celestial garden corrupted by Hell | Flowers from corpses, bleeding trees |
 | **The Black Archive** | void | Where the Reliquary touches the Abyss | Overlapping rooms, broken distance |
 | **The Wargrave** | physical | Mortal + demonic + celestial armies, piled | Mountains of armour, buried siege engines, half-sunk giants |
+| **The Gilded Ossuary** | holy | A reliquary in the oldest sense — saints gilded and put on display | The gold has kept growing since |
+| **The Unbound Spire** | arcane | A mage-tower that outlived the war it was built to win | Its wards broke; rooms rewrite themselves while you stand in them |
+| **The Hollow Orchard** | nature | An orchard planted over a civilisation's mass grave | Still growing, still fed |
+
+The last three (added Sept 2026, `tiles.reliquary-ossuary`/`-spire`/`-orchard`) carry a
+constraint the first six didn't need spelled out: `infusionChance` (data/enemies.ts) caps
+at 65% around depth 22, and these three sectors' `baseDepth` (34/39/44) is already past
+that cap on tier 1 floor 1 — so roughly two of every three monsters a player sees there
+are washed in the sector's own element from the first step in. **The floor cannot be that
+colour**, because the element is already spoken for by the things standing on it: gold is
+the Ossuary's bodies and relics, not its ground; arcane light comes off the Unbound
+Spire's stone, not out of it; the Hollow Orchard leads with the grave (turned earth, bone,
+dead bark) and leaves green to what grew out of it. `tools/smoke.ts` now asserts this as a
+gate ("an infused monster stays at least 28 luminance apart from its own sector's floor"),
+not just a prompting note.
 
 ### 8.3 Resource nodes — "harvesting the corpse of a dead god"
 **Never MMO ore veins.** Each element's node is a piece of a dead supernatural thing:

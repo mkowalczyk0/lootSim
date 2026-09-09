@@ -65,7 +65,7 @@ import {
 import {
   BODY, BODY_DY, BODY_H, BOSS_GRIDS, CHAR_H, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems,
 } from "../src/render/pixels";
-import { FLOOR_GRADE, gradeSheet, tileLuminance } from "../src/render/grade";
+import { FLOOR_GRADE, gradeSheet, hexToRgb, luminance, tileLuminance } from "../src/render/grade";
 import {
   ATLAS, ATLAS_COSMETICS, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
   MONSTER_SETS,
@@ -74,7 +74,8 @@ import { STATION_PROP } from "../src/game/deck";
 import {
   HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX, portraitScale, portraitSpread,
 } from "../src/ui/portrait";
-import { BIOMES } from "../src/data/biomes";
+import { BIOMES, type BiomeStyle } from "../src/data/biomes";
+import { ELEMENT_COLORS } from "../src/data/elements";
 import { decodePng } from "./png";
 import { readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
@@ -3038,6 +3039,86 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
   check(`no graded tile is busier than ±${MAX_SPREAD}`, worstSpread <= MAX_SPREAD, `worst ±${worstSpread.toFixed(0)}`);
   if (bad.length) console.log(`  offenders: ${bad.slice(0, 6).join("; ")}`);
   console.log(`  ${Object.keys(TILESETS).length} tilesets — worst delta ${worstDelta.toFixed(0)}, brightest L${brightest.toFixed(0)}, busiest ±${worstSpread.toFixed(0)}`);
+
+  // --- a floor must not be its own sector's element -------------------------------------
+  //
+  // §17.7's contrast rule keeps floor separate from wall; it says nothing about floor vs.
+  // the *monsters standing on it*, and `infusionChance` (data/enemies.ts) can put a
+  // majority of a floor's monsters in that floor's own element by the time the sector is
+  // reachable — three Reliquary sectors (Gilded Ossuary, Unbound Spire, Hollow Orchard)
+  // sit at the 65% infusion cap from their very first floor. A gold tileset under a gold-
+  // washed monster is the same failure the floor/wall gate exists to catch, one hop over:
+  // the element that names a sector is the one colour its ground cannot be, because that
+  // element is already spoken for by the things standing on it. Same MIN_DELTA bar, same
+  // luminance metric, the subject is a `tinted()` monster instead of the wall tile.
+  /**
+   * Known, pre-existing collisions — each `<sector name>` is not this branch's to fix,
+   * reported to the PM instead. Same pinned-violation shape `tools/legends.ts` and
+   * `tools/chroma.ts` use: the found set must equal this exactly, so a NEW collision
+   * fails loudly and so does one of these getting fixed without the pin being removed.
+   * All three are fire- or void-toned floors under a same-element wash — a warm floor
+   * disappearing under a fire tint, a dark floor disappearing under a void one.
+   */
+  const KNOWN_INFUSION_COLLISIONS: readonly string[] = [
+    "Ashen Wastes",       // tiles.delve-wrath, fire-on-fire
+    "The Veil",           // tiles.delve-veil, void-on-void
+    "The Cinder Catacombs", // tiles.reliquary-catacombs, fire-on-fire
+  ];
+
+  let worstMonsterDelta = Infinity;
+  const collisions = new Map<string, string[]>(); // sector name -> detail lines
+  const ownerBiomes: BiomeStyle[] = [...BIOMES, ...PLANETS.map((p) => p.biome)];
+  for (const id of Object.keys(TILESETS)) {
+    const owners = ownerBiomes.filter((b) => b.tileset === id && b.element && b.element !== "physical");
+    if (owners.length === 0) continue;
+    const dir = "src/render/atlas/tilesets";
+    const png = decodePng(readFileSync(`${dir}/${id}.png`));
+    const layout = JSON.parse(readFileSync(`${dir}/${id}.json`, "utf8")) as { tile: number; boxes: [number, number][] };
+    for (const biome of owners) {
+      const floorData = new Uint8Array(png.data);
+      gradeSheet(floorData, png.width, png.height, layout.tile, layout.boxes, biome.tint, FLOOR_GRADE);
+      const floorLum = tileLuminance(floorData, png.width, layout.tile, layout.boxes[0]!).mean;
+      const [er, eg, eb] = hexToRgb(ELEMENT_COLORS[biome.element]);
+      const set = biome.monsterSet ? MONSTER_SETS[biome.monsterSet] : undefined;
+      if (!set) continue;
+      for (const [role, spriteId] of Object.entries(set)) {
+        const dirFor = spriteId.startsWith("boss.") ? "bosses" : "monsters";
+        let mpng;
+        try { mpng = decodePng(readFileSync(`src/render/atlas/${dirFor}/${spriteId}.png`)); } catch { continue; }
+        // The exact `tinted()` wash (render/sprites.ts): source-atop at 0.28, alpha untouched.
+        let sum = 0, n = 0;
+        for (let i = 0; i < mpng.width * mpng.height; i++) {
+          const s = i * 4;
+          if (mpng.data[s + 3]! < 128) continue;
+          const r = mpng.data[s]! * 0.72 + er * 0.28;
+          const g = mpng.data[s + 1]! * 0.72 + eg * 0.28;
+          const b = mpng.data[s + 2]! * 0.72 + eb * 0.28;
+          sum += luminance(r, g, b);
+          n++;
+        }
+        if (n === 0) continue;
+        const monsterLum = sum / n;
+        const delta = Math.abs(floorLum - monsterLum);
+        worstMonsterDelta = Math.min(worstMonsterDelta, delta);
+        if (delta < MIN_DELTA) {
+          const lines = collisions.get(biome.name) ?? [];
+          lines.push(`${id}@${biome.name}: floor L${floorLum.toFixed(0)} vs ${role} infused-with-${biome.element} L${monsterLum.toFixed(0)}`);
+          collisions.set(biome.name, lines);
+        }
+      }
+    }
+  }
+  const elementalTilesets = new Set(
+    ownerBiomes.filter((b) => b.tileset && b.element && b.element !== "physical").map((b) => b.tileset),
+  ).size;
+  const found = [...collisions.keys()].sort();
+  const pinned = [...KNOWN_INFUSION_COLLISIONS].sort();
+  for (const name of found) console.log(`       · ${collisions.get(name)![0]}  (+${collisions.get(name)!.length - 1} more roles)`);
+  check(`an infused monster stays at least ${MIN_DELTA} luminance apart from its own sector's floor,`
+    + ` except the sectors we already knew about`,
+    found.join(",") === pinned.join(","),
+    `found [${found.join(", ") || "none"}]  pinned [${pinned.join(", ") || "none"}]`
+    + `  — worst ${worstMonsterDelta.toFixed(0)} (${elementalTilesets} elemental tilesets checked)`);
 }
 
 console.log("\n=== gems and the wardrobe ===");
