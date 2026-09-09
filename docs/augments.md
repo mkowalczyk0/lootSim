@@ -303,11 +303,30 @@ tier 1 cannot, rather than a better roll of it**:
 - `divine` grade: Avarice tier 5+
 - `unspoken` grade: Avarice tier 8+
 
-So the Unspoken Augment is not merely rare, it is *unreachable* until you are clearing the
-Avarice Rift near the top of its exponential ladder. The target is roughly **one in six
-hundred top-tier Avarice boss caches** — a genuine chase, not a wall. That number is a dial:
-`tools/augments.ts` measures it and the doc records the intent, rather than this file
-pinning a figure that goes stale (the lesson CLAUDE.md already learned about depth figures).
+**Those gates are not flavour; they are what makes §7's comparison survivable.** A shallow
+Avarice cache almost never drops a divine item, so an ungated divine augment would be
+*commoner than the thing it guarantees* down there — the exact inversion the whole system
+must not have. The gates put each grade's first appearance at a tier where the item it
+guarantees is already plausible. The acceptance tool asserts the gates by measuring what
+tier 1 pays, not by reading the constants.
+
+**Measured rates** (`tools/augments.ts` computes these; they are recorded here for the
+argument, not depended on):
+
+| Grade | First tier | Augment, per boss cache | The item it guarantees, per boss cache |
+| --- | --- | --- | --- |
+| divine | 5 | 1 in 3,408 | 1 in 1,755 (**1.94× commoner**) |
+| unspoken | 8 | 1 in 6,912 | 1 in 1,749 (**3.95× commoner**) |
+
+The margin widens with tier (at tier 20 it is 9× and 14×), because the cache's own rarity
+bias climbs faster than the augment rate does — `dropChance` caps, and the loot curve does
+not. So the binding case is always a grade's **first** tier, which is where the tool checks
+it hardest.
+
+These are much rarer than the design's first guess of "roughly one in six hundred". The
+halving was not what moved them: the binding constraint turned out to be §7's comparison,
+and the grade weights were set from it rather than from feel. An Unspoken Augment is
+genuinely the rarest object in the game, which is what the brief asked for.
 
 Augments drop as **physical pickups in the cache, lost on death and on bail-out**, exactly
 like relics. They are the reward for finishing, and never make death free.
@@ -346,69 +365,43 @@ the system would quietly become a coin sink wearing a chase-item's clothes, and 
 the brief is built around — *"holy fucking shit I just got an unspoken augment"* — would
 arrive with a shopping trip attached to it.
 
-### 5.3 What the Unspoken Augment does — **B is built; A is an open owner question**
+### 5.3 What the Unspoken Augment does — **ruled: it guarantees**
 
-This is the one decision in the design that was escalated rather than made, because it sets
-a precedent about the top of the rarity ladder and the brief can be read two ways.
+This was escalated rather than decided, because it sets a precedent about the top of the
+rarity ladder. The owner ruled:
 
-`src/data/rarity.ts` keeps divine and unspoken absurd on purpose — "the long tail is the
-hook" — and crafting caps at mythic on every path *specifically* so the ceiling cannot be
-bought. The only sanctioned exception in the game is the Memories' rarity overshoot, and
-that is narrow by construction: mythic-only, scaled by the **square** of the burden load,
-capped a stated margin past the Abyssal Rift, and asserted as a comparison. It moves the
-ceiling by a few percent. It does not hand it over.
+> "Yes the unspoken augment would be a guaranteed unspoken, same for the bow augment would
+> be a guaranteed bow, etc. But they should be 2x harder to get dropped from the avarice
+> rifts because they guarantee it. It adds this fun 'crafting' element."
 
-A Divine or Unspoken Augment, read literally as a floor, hands it over.
+So **every axis guarantees**, and the drop rate pays for it. Three consequences, all built:
 
-**Option A — the floor reading.** `Unspoken Augment` = mask `{ unspoken: 1, rest: 0 }` = a
-guaranteed unspoken item, of the family, element and affix you chose. This is the brief's
-literal words twice over ("guarantee an insane endgame bow", "the holy grail").
+1. **The rarity ladder is six pure floors**, `rare` through `unspoken`. An Unspoken
+   Augment leaves exactly one rung standing. A floor still never *caps*: a Legendary
+   Augment can produce a mythic, because the mask above the floor is the chest's own curve.
+2. **`AUGMENT_RATES` is literally halved.** The owner's reason was causal — *because they
+   guarantee it* — and every augment guarantees its axis, so every augment pays, not just
+   the top of the ladder. This is deliberately the one place the standing "a multiplier in
+   a brief means a meaningful increase, never a literal factor" rule does **not** apply:
+   that rule is about gameplay modifiers on content, where a literal 5× is unbalanceable.
+   This is the drop rate of an object, where a factor is the right unit and is checkable.
+3. **An element augment now guarantees too**, not just weights. `favorElement` still
+   biases the rest of the affix roll, but one of the element's two rolls is reserved. Which
+   of the two — `dmg-` on an offensive slot, `res-` on a defensive one — is decided by
+   `modAllowed`, not authored.
 
-**Option B — the weight reading.** The floor ladder stops at **Mythic**, matching the
-crafting cap exactly, so the game has one rule: *nothing you can choose reaches past
-mythic.* Divine and Unspoken Augments still exist, but they are weight augments — an
-Unspoken Augment stacked on a Mythic Augment gives a guaranteed at-least-mythic item of the
-shape you chose, with (say) a one-in-three shot at it being unspoken. Never a guarantee.
+**What the player buys is agency, not a discount.** That is the whole justification, and it
+is the sentence meant to stop the next person widening this. The cost of reaching the
+ceiling is *unchanged* — §7's headline comparison holds it there. What changes is that the
+ceiling, when you finally reach it, arrives as the bow you wanted rather than gloves for a
+class you do not play. That is the "fun crafting element" the brief named.
 
-**I recommend A, and here is the argument.** The rule being protected is that the ceiling
-cannot be *bought* or *crafted* — and A violates neither. Chests are the sanctioned path to
-divine and unspoken; this is a chest. The augment cannot be purchased, cannot be forged,
-cannot be traded, and cannot be farmed any faster than the drop rate allows. What A actually
-does is **move the chase object one step and pay the player in agency**: instead of one in
-250,000 per pull for a random unspoken item, it is one in six hundred top-tier Avarice
-clears for a token that then lets you *aim* it. The rarity of reaching the ceiling is
-unchanged. What changes is that the ceiling, when you finally reach it, is a bow instead of
-a pair of gloves for a class you do not play — which is the difference between a grinder
-that respects a 200-hour chase and one that does not.
-
-The cost of A is that the top of the ladder stops surprising you: an unspoken item's
-identity becomes fully player-chosen. That is a real loss and it is why this is the owner's
-call and not mine.
-
-**A and B differ by exactly one field on one definition** — `weights` on the Unspoken
-Augment's effect — which is why this did not block the build.
-
-**Ruled: B is built. A goes to the owner as a question, with augments working in front of
-them rather than on paper.** Three reasons, recorded because the next person to reach for A
-should have to answer them:
-
-1. **The Memories precedent distinguishes A rather than supporting it.** The owner
-   overturned a "the ceiling never moves" rule once, for Memories — but the words they used
-   for the shape they wanted were *"it's not by much, but that little percent that it does
-   raise the ceiling does make it worth it."* A percent, said twice, and the same instinct
-   as their standing rule that a multiplier in a brief means "a meaningful increase of this
-   kind" rather than a literal factor. **A guarantee is the one thing a percent can never
-   become, however large it gets.**
-2. **The Memories lift is paid for; A is not.** That carve-out buys its overshoot with
-   burden load, *squared*, on the hardest content in the game, and it lands around 1-in-43
-   rather than at certainty. A is a token that converts a chase into a purchase order. That
-   may well still be what the owner wants — but they should choose it knowing that is what
-   it is, rather than inherit it from a design doc.
-3. **B is the reversible one.** Loosening later is a patch. Tightening later takes items out
-   of people's stashes.
-
-If A is later ruled, §5.4's *targeting is not a shortcut to rarity* becomes the only thing
-standing between "aim your unspoken" and "farm your unspoken". Keep it either way.
+**This is not a repeal of the crafting cap.** Crafting still stops at mythic on every path.
+The guarantee lives only on a rare *dropped* object, and four restrictions are load-bearing
+rather than incidental: an augment cannot be **bought, forged, salvaged or traded**.
+Anything that gives one a price turns a chase into a purchase order, which is the exact
+failure the brief warned about. `tools/augments.ts` asserts no augment carries a `craft`
+source; the others are structural (there is no vendor row and no recipe).
 
 ### 5.4 What augments must never do
 
@@ -475,32 +468,44 @@ comparisons, not bounds** — the lesson CLAUDE.md records from the sharp-vs-rec
 inversion, and the shape `tools/forge.ts` already uses.
 
 1. **Targeting works.** A full loadout on a Basic chest produces the exact named
-   family+element+affix item far more reliably than any number of un-augmented Legendary
-   chests does. If this comparison ever fails the system has no reason to exist.
-2. **Targeting is not a shortcut to rarity.** The expected top-tier Avarice boss caches to
-   earn a Mythic Augment exceed the expected Legendary chests to find a mythic item by
-   chance. You never augment your way to your *first* mythic — you augment to aim one.
-3. **The other three axes move zero rarity.** The rarity distribution of a
-   form+element+affix loadout on a Basic chest is byte-identical to a plain Basic chest's.
-   A direct comparison, in the spirit of the cosmetics-are-powerless assertion.
-4. **The ladder is ordered.** Each rarity augment's expected item rarity strictly exceeds the
-   one below it, and (under §5.3-B) the best possible loadout's unspoken probability is
-   strictly between "better than any chest" and 1.
+   family+element+affix item every single time, where four thousand un-augmented Legendary
+   chests produce it never. If this comparison ever fails the system has no reason to exist.
+2. **The headline: the ceiling is not cheaper — agency, not a discount.** At every tier a
+   grade can drop at, earning that grade's augment is **strictly rarer** than simply seeing
+   an item of that rarity fall out of the same cache. Both routes are measured in the same
+   unit (Avarice boss caches), and the by-chance side counts *only* the items the cache
+   itself drops — ignoring the coins the run also pays, which would buy chests and would
+   only make the by-chance route look better. It is the strictest benchmark available on
+   purpose. **If this ever inverts, augments have become a cheaper route to the ceiling and
+   the crafting cap has been repealed through a side door.**
+3. **The other three axes move zero rarity.** A form+element+affix loadout on a Basic chest
+   has a rarity distribution identical to a plain Basic chest's, to within floating point.
+   This got *more* important under the owner's ruling, not less: it is what stops "I wanted
+   a bow" from quietly becoming "I wanted a better bow".
+4. **The ladder is ordered, and a rarity augment is a pure floor.** Each floors at exactly
+   its own rarity, the ladder ascends strictly, and a floor never caps. The mask must keep a
+   *suffix* of the ladder at weight 1 — so the ceiling may now be reached deliberately, but
+   it still may not be *weighted* toward. The expensive mistake here is no longer the
+   guarantee; it is somebody later writing `{ unspoken: 40 }` and creating a second rarity
+   curve.
 5. **One roll path.** An augmented pull and a plain pull produce structurally identical
-   `Item`s — same fields, same invariants — because both went through `rollItem`.
-6. **The preview holds no table.** `augmentedPull` drives both the OUTCOME panel and
-   `openChests`, verified by rigging the dice and comparing the sets exactly, the idiom
-   `tools/previews.ts` uses for thirteen activities.
-7. **Every reference resolves.** Every form names an `ItemType`, every element an `Element`,
-   every affix a real `ModRoll` id reachable at its declared `minRarity`, every source a
-   live `DropSource` kind.
-8. **The overhaul is complete.** No removed chest tier is referenced anywhere in `src/`, and
-   every surviving tier appears in exactly one `CHEST_CATEGORIES` entry.
-9. **Migration is lossless.** A synthetic v25 save holding keys for removed tiers loads into
-   v26 with the coins refunded, the lifetime counts preserved, and no `undefined` anywhere
-   in `keys` or `chestsOpened`.
-10. **One per axis is unreachable.** The loadout type admits no second augment on an axis,
-    and the runtime swap is asserted rather than assumed.
+   `Item`s, because both went through `rollItem`. A forced affix the type cannot carry is
+   absent rather than invented — and that combine is refused at authoring time anyway.
+6. **The preview holds no table.** `augmentedPull` drives both the outcome panel and
+   `openChests`, verified by opening real chests and checking every result against the
+   composed pull.
+7. **Every reference resolves**, no augment carries a `craft` source or hides behind a
+   reserved kind, and a grade's total weight equals its grade weight however many
+   definitions sit there — so growing the weapon roster splits the rare share instead of
+   quietly diluting every other rare augment.
+8. **The overhaul is complete.** Nineteen tiers retired, none surviving anywhere, every
+   remaining tier in exactly one category, the four originals untouched.
+9. **Migration is lossless.** A synthetic v26 save holding retired keys loads into v27 with
+   the coins refunded at full price, lifetime counts folded into the surviving tier, no
+   `undefined` in either record, and an unknown augment id dropped rather than kept.
+10. **One per axis is unreachable**, augments are consumed exactly once each, a loadout you
+    cannot pay for spends nothing, and an augmented pull is always 1× however many are
+    asked for — while an un-augmented one still bulks.
 
 `npm run smoke` additionally walks the augment drop sites live — an Avarice Rift clear, a
 Vigil bank, a Convergence boss bank — the way it already walks named items and relics, so

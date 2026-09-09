@@ -145,9 +145,30 @@ export const AUGMENT_GRADE_WEIGHTS: Record<Rarity, number> = {
   epic: 0.175,
   legendary: 0.05,
   mythic: 0.03,
-  divine: 0.008,
-  unspoken: 0.0018,
+  // Set by the §7 comparison rather than by feel: each of these has to leave its grade's
+  // augment strictly rarer than the item it guarantees, measured at the lowest tier the
+  // grade can drop at. See `tools/augments.ts`.
+  divine: 0.001,
+  unspoken: 0.00044,
 };
+
+/** How many definitions sit at each grade — the denominator that keeps grades honest. */
+const GRADE_COUNT: Record<string, number> = {};
+
+/**
+ * One definition's weight in the pick.
+ *
+ * **Per grade, then split evenly inside it.** The grade weights above are probabilities of
+ * landing on that grade; a definition's share is that divided by how many definitions sit
+ * there. Written this way so that **adding a form augment splits the rare share rather
+ * than quietly making every other rare augment rarer** — the drift that a bare
+ * per-definition weight would introduce the next time the weapon roster grows, which is
+ * exactly the failure this codebase keeps rediscovering.
+ */
+export function augmentWeight(def: AugmentDef): number {
+  const n = GRADE_COUNT[def.grade] ?? 1;
+  return AUGMENT_GRADE_WEIGHTS[def.grade] / n;
+}
 
 /** Avarice tier a grade needs before it can drop at all — §16's "tier 8 drops what tier 1 cannot". */
 const GRADE_MIN_TIER: Partial<Record<Rarity, number>> = { divine: 5, unspoken: 8 };
@@ -214,11 +235,11 @@ export function augmentsUpTo(cap: Rarity): readonly AugmentDef[] {
 /** Weighted pick over a pool, by grade. Shared by the guaranteed payouts and the tool. */
 export function pickAugment(pool: readonly AugmentDef[], roll: number): AugmentDef | null {
   let total = 0;
-  for (const a of pool) total += AUGMENT_GRADE_WEIGHTS[a.grade];
+  for (const a of pool) total += augmentWeight(a);
   if (total <= 0) return null;
   let r = roll * total;
   for (const a of pool) {
-    r -= AUGMENT_GRADE_WEIGHTS[a.grade];
+    r -= augmentWeight(a);
     if (r < 0) return a;
   }
   return pool[pool.length - 1] ?? null;
@@ -321,6 +342,8 @@ export const AUGMENTS: readonly AugmentDef[] = [
 export const AUGMENT_BY_ID: Record<string, AugmentDef> = Object.fromEntries(
   AUGMENTS.map((a) => [a.id, a]),
 );
+
+for (const a of AUGMENTS) GRADE_COUNT[a.grade] = (GRADE_COUNT[a.grade] ?? 0) + 1;
 
 export function isAugmentId(id: unknown): id is string {
   return typeof id === "string" && id in AUGMENT_BY_ID;
@@ -518,11 +541,25 @@ export function augmentProblems(a: AugmentDef): string[] {
     case "rarity": {
       const mask = a.effect.weights;
       if (RARITIES.every((r) => mask[r] === 1)) out.push(`${a.id} is a rarity augment that changes nothing`);
-      // The ceiling (§5.3): no mask may guarantee divine or unspoken while B stands.
-      const reach = bestReachable(mask);
-      const only = RARITIES.filter((r) => mask[r] > 0);
-      if (only.length === 1 && rarityIndex(reach) > rarityIndex("mythic")) {
-        out.push(`${a.id} guarantees ${reach}; the floor ladder stops at mythic (docs/augments.md §5.3)`);
+      /**
+       * A rarity augment must be a **pure floor**: the rungs it keeps are a suffix of the
+       * ladder and they all carry weight 1. That is what makes it compose as a mask over
+       * the chest's own curve instead of becoming a second rarity distribution — the one
+       * thing `data/rewards.ts` forbids anywhere in the game.
+       *
+       * This replaced the old "nothing may guarantee past mythic" guard when the owner
+       * ruled that every axis guarantees. Note what survived the ruling: the ceiling may
+       * now be reached deliberately, but it still may not be *weighted* toward. The
+       * expensive thing to get wrong here is no longer the guarantee, it is somebody
+       * later writing `{ unspoken: 40 }` and quietly creating a second curve.
+       */
+      const kept = RARITIES.filter((r) => mask[r] > 0);
+      const first = kept.length > 0 ? rarityIndex(kept[0]!) : 0;
+      const contiguous = kept.every((r, i) => rarityIndex(r) === first + i)
+        && rarityIndex(kept[kept.length - 1]!) === RARITIES.length - 1;
+      if (!contiguous) out.push(`${a.id} is not a floor — a rarity mask must keep a suffix of the ladder`);
+      if (!kept.every((r) => mask[r] === 1)) {
+        out.push(`${a.id} weights rarities instead of flooring them; a second rarity curve is not allowed`);
       }
       break;
     }

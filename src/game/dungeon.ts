@@ -71,8 +71,8 @@ import { rollNamedDrops } from "../data/named";
 import { rollOne, type DropQuery } from "../data/drops";
 import { rollRelicDrops } from "../data/relics";
 import {
-  AUGMENTS, AUGMENT_BY_ID, AUGMENT_GRADE_WEIGHTS, DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP,
-  augmentsUpTo, pickAugment,
+  AUGMENTS, AUGMENT_BY_ID, DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP,
+  augmentWeight, augmentsUpTo, pickAugment,
 } from "../data/augments";
 import {
   circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
@@ -2912,7 +2912,7 @@ export class Dungeon implements CombatHost, RuleHost {
     // would drop four an evening. The tier gate that keeps divine and unspoken grades off
     // the low tiers lives on each definition's own source, so it is `sourceMatches` that
     // enforces it and not a branch here.
-    const augment = rollOne(AUGMENTS, q, this.rng, (def) => AUGMENT_GRADE_WEIGHTS[def.grade], this.config.danger);
+    const augment = rollOne(AUGMENTS, q, this.rng, augmentWeight, this.config.danger);
     if (augment) this.dropAugment(x, y, augment.id);
   }
 
