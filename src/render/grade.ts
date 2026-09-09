@@ -78,6 +78,22 @@ export function luminance(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/**
+ * HSV saturation × value, 0-100 — a colour's "how hot does this actually read" number.
+ * §1.4 of the art style guide: a monster's palette is low and dirty and the ONE
+ * saturated colour is the part looking at you; the hero is forbidden a hot accent
+ * outright. Derived by lootsim-76 while measuring hero candidates
+ * (`art/characters/candidates.ts`, branch `art/hero-v6`) after plain colour-count missed
+ * exactly this failure — a hot accent costs a palette exactly one colour, the same as any
+ * other. Moved here, verbatim, so both that instrument and the permanent `npm run chroma`
+ * gate (`tools/chroma.ts`) read off one definition instead of two copies drifting apart.
+ */
+export function chroma(packedRgb: number): number {
+  const r = (packedRgb >> 16) & 255, g = (packedRgb >> 8) & 255, b = packedRgb & 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  return mx === 0 ? 0 : ((mx - mn) / mx) * (mx / 255) * 100;
+}
+
 /** Mean RGB of one `tile`×`tile` box in an RGBA sheet `width` pixels wide. */
 export function tileMean(
   data: Uint8ClampedArray | Uint8Array, width: number, tile: number, box: readonly [number, number],
