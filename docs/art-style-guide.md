@@ -84,6 +84,45 @@ you*: the eye, the visor slit, the maw-glow. That single hot cluster is what mak
 18-pixel creature read as a threat. Never a second bright colour. The hero has no hot
 accent at all.
 
+**The rule is two-sided: exactly one. Not zero, not two.** Both failures ship a sprite that
+doesn't read — two accents and nothing is the thing looking at you; zero and it's scenery.
+The four raid bosses produced one of each on the first pass.
+
+#### Count the accent. Do not trust your eyes on this.
+
+Before committing any monster, boss or elite, **count saturated pixels**. If the saturated
+non-accent pixels outnumber the accent pixels, §1.4 is broken *however it looks* at zoom.
+
+The worked example, because the number is the part that makes this believable: the Queen of
+the Seventh Circle was re-prompted with an explicit palette clamp, the result visibly
+fixed the polished-gold problem, and it was judged acceptable by eye at 6×. Counted, it
+carried **362 saturated red pixels against 55 ember ones** — a second hot colour six times
+louder than the only one allowed, on a sprite that had already passed review. The Tyrant of
+the First Heavens failed the other way in the same batch: **zero** lit pixels, a boss with
+no accent at all.
+
+Both were fixed by `art/bosses/finish.ts` (`muteRivalHue`, `hotAccent`), which is also where
+the counting is easiest to re-run. A rough count is a handful of lines: take pixels with
+saturation > 0.55 and max channel > 90, bucket them by hue, and compare the accent's bucket
+against everything else.
+
+> **Pipeline note — PixelLab fights this rule, so clamp it in the prompt.** The generator
+> biases hard toward *clean heroic armour*, and the drift is reliable rather than unlucky:
+> both armoured raid bosses (§2 of `docs/art-manifest.md`) came back on the first pass as
+> bright polished gold-and-white — the Queen with a saturated red plume, the Tyrant as a
+> clean paladin rather than a cast-out one. Neither read as a threat, because when the whole
+> body is bright nothing is the part looking at you.
+>
+> So for **any armoured subject** (boss, elite, humanoid enemy, armoured named item),
+> write the clamp into the prompt explicitly rather than hoping: *matte, blackened,
+> soot-stained, heavily desaturated, no gold, no shine, no highlights, no white*, and then
+> **name the accent as the only saturated value in the image** — "the only bright thing in
+> the entire image is a thin \<element\> light in the helm slit".
+>
+> Expect to still finish by hand sometimes — and expect the count to disagree with your eyes
+> even after a re-prompt that clearly worked. **This is a prompting rule, not a claim about
+> what is committed** — check the PNGs for that.
+
 > **Pipeline note — PixelLab fights this rule, so clamp it in the prompt.** The generator
 > biases hard toward *clean heroic armour*, and the drift is reliable rather than unlucky:
 > both armoured raid bosses (§2 of `docs/art-manifest.md`) came back on the first pass as

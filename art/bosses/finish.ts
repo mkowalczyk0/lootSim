@@ -10,11 +10,16 @@
  * including the `worldScale` that lands it on its target world height, which is the one
  * number here that must not be eyeballed (see below).
  *
- * ## Why a script rather than a hand-edit
+ * ## Why a script rather than a hand-edit — the pattern for every art batch
  *
- * Two of these needed a finishing pass, and a pass nobody can reproduce is a pass that
- * silently rots. Everything the committed PNG has that the generation didn't is in this
- * file, so a reroll of any single boss re-applies the same treatment.
+ * **A treatment that lives in a script survives a reroll; a treatment applied by hand is
+ * lost the first time anyone regenerates one sprite.** That is the whole argument, and it
+ * is meant to generalise: any art batch that needs finishing should ship the finishing as
+ * a runnable file next to the raws, not as an undocumented set of edits baked into a PNG.
+ *
+ * Two of these four needed a pass. Everything the committed PNG has that the generation
+ * didn't is in this file, so re-rolling any single boss re-applies the same treatment and
+ * the ATLAS rows are re-derived rather than re-typed.
  *
  * ## The hot accent (art-style-guide §1.4)
  *
