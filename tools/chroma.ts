@@ -212,8 +212,18 @@ const KNOWN_ACCENT_VIOLATIONS: readonly string[] = [
 //
 // Hue can. A pulse keeps its hue and varies its chroma; a vanish swaps the accent to an
 // unrelated part of the sprite, and the hue jumps — 212° (cold blue) to 55° (olive) in the
-// case above. So: every frame's accent must sit near the strip's own accent hue, and its
-// chroma is left entirely free to pulse.
+// case above.
+//
+// **But hue alone is not sufficient either, and real art proved that too.** The animated
+// minotaur came back with its violet eyes *darkened* rather than replaced: #b577eb (45.5)
+// in frame 0, #351057 (27.8) in the other four. Same hue family, so the hue test called it
+// a pulse — but 27.8 is BELOW the hero's own skin at 30.2, i.e. the accent had dimmed until
+// it was no longer an accent at all. An eye the player cannot pick out is vanished in every
+// way that matters, whatever its hue.
+//
+// So the bar is BOTH, and each catches what the other cannot: the hue must stay near the
+// strip's accent (the accent was not replaced) AND the chroma must stay above the hero's
+// (it is still legible as an accent). Between those two the chroma is free to pulse.
 
 section("§1.4 per frame: an animated accent may pulse, but it may not vanish");
 
@@ -258,12 +268,19 @@ const HUE_TOLERANCE = 45;
     const drifted = perFrame
       .map((f, i) => ({ i, f, gap: hueGap(hue(parseInt(f.hex.slice(1), 16)), stripHue) }))
       .filter((e) => e.gap > HUE_TOLERANCE);
+    const dimmed = perFrame
+      .map((f, i) => ({ i, f }))
+      .filter((e) => e.f.max <= hero.max);
 
     console.log(`  ${meta.id}: accent ${strip.hex} (hue ${stripHue.toFixed(0)}°) — per frame `
       + perFrame.map((f) => `${f.max.toFixed(1)}${f.hex}`).join(" "));
-    check(`${meta.id}: the accent is present in all ${cols} frames, not just some`,
+    check(`${meta.id}: the accent is not REPLACED in any of the ${cols} frames`,
       drifted.length === 0,
       drifted.map((e) => `frame ${e.i} is ${e.f.hex} (${e.gap.toFixed(0)}° away — the accent is gone, not dimmed)`).join("; "));
+    check(`${meta.id}: the accent stays above the hero's in all ${cols} frames`,
+      dimmed.length === 0,
+      dimmed.map((e) => `frame ${e.i} is ${e.f.max.toFixed(1)} ${e.f.hex} vs hero ${hero.max.toFixed(1)}`
+        + " — dimmed until it is no longer an accent").join("; "));
 
     const lo = Math.min(...perFrame.map((f) => f.max));
     const hi = Math.max(...perFrame.map((f) => f.max));
