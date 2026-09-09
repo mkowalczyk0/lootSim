@@ -33,8 +33,8 @@ import { BIOMES as DELVE_BIOMES, biomeFor } from "../src/data/biomes";
 import {
   DOWN_LAYERS, LAYERS, RIFT_LAYERS, UP_LAYERS, layerAt, layerFor, type WorldLayer,
 } from "../src/data/layers";
-import { MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig } from "../src/data/modes";
-import { PLANETS, planetConfig, planetUnlocked } from "../src/data/planets";
+import { MODES, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId } from "../src/data/modes";
+import { PLANETS, planetConfig, planetUnlocked, nextFloorConfig } from "../src/data/planets";
 import { DELVE_BOTTOM } from "../src/data/legends";
 import { dailyConfig, dayNumber } from "../src/data/daily";
 import { weekNumber, weeklyConfig } from "../src/data/weekly";
@@ -46,6 +46,8 @@ import { TOWER_BIOMES, towerBiomeFor, towerBossSpec, towerConfig } from "../src/
 import { bossSpecForRun } from "../src/data/encounters";
 import { BOSSES } from "../src/data/bosses";
 import { RAID_BY_ID } from "../src/data/raids";
+import { rollMemory, memoryConfig } from "../src/data/memories";
+import { Rng } from "../src/core/rng";
 import { BIOMES } from "../src/data/biomes";
 import { TRAPS, REGARD_HOLD, REGARD_WATCH, type TrapKind } from "../src/data/traps";
 import { ELEMENTS, RESERVED_ELEMENTS } from "../src/data/elements";
@@ -151,6 +153,111 @@ for (let d = 1; d <= FAR; d++) {
   }
 }
 check(`the profile's layer is the function's answer, both ladders, 1-${FAR}`, profileAgrees);
+
+// --- 2b. nextFloorConfig: a run's identity survives the step ---------------
+//
+// The Sept 2026 Tower bug: `nextFloorConfig` branches on `config.planet`, `config.memory`
+// and `config.weekly`, then falls through to a generic delve/rift rebuild. The Tower
+// (`isRift: false`, no branch of its own) fell all the way through and every climb handed
+// back a Delve floor — the owner saw it live as "clear the Tower, land in the Delve".
+// This is the third time a mode that hangs data on `RunConfig` got left out of this
+// function (planet, then the Convergence, then a Memory), always found after the fact.
+// A per-mode case test doesn't stop a fourth: this walks every entry in `RUN_MODES`
+// instead, so a future mode with nothing here fails loudly rather than quietly landing
+// on whatever `nextFloorConfig`'s fallback happens to build.
+//
+// Per lootsim-76's related finding on the Memory case: floor 1 can come out right while
+// floors 2+ quietly go generic, so a mode with more than one floor is walked across all
+// of them — not just the first step — reaching exactly the floors the game itself visits
+// (`enterDungeon`/`party.descend` only call this while `!config.lastFloor`, i.e. from
+// floor 1 up through the floor before the last one). The Vigil and a raid are single-floor
+// by design — there is no floor 2 to build, `dailyConfig`/`raidConfig` don't even take a
+// floor argument — so the game never calls this on them and they're skipped rather than
+// given a manufactured step; `MODES[id].floors <= 1` is what makes that skip a fact about
+// the mode instead of a loophole a future multi-floor mode could hide in.
+console.log("\n=== nextFloorConfig: a run's identity survives the step ===");
+
+/** What must survive a step, beyond the depth/floor numbers that are supposed to move. */
+function modeFingerprint(id: RunModeId, config: RunConfig): unknown {
+  switch (id) {
+    case "tower": return config.tower ? "present" : null;
+    case "planet": return config.planet ? `${config.planet.spec.id}#${config.planet.tier}` : null;
+    case "memory": return config.memory ? config.memory.id : null;
+    case "convergence": return config.weekly ? config.weekly.week : null;
+    // abyss/hoard have no extra identity object — the rift tier is the whole claim.
+    default: return MODES[id].isRift ? `tier:${config.tier}` : "n/a";
+  }
+}
+
+const memoryRng = new Rng(20260909);
+const nextFloorSeeds: Partial<Record<RunModeId, RunConfig>> = {
+  delve: delveConfig(10),
+  tower: towerConfig(10),
+  abyss: riftConfig("abyss", 3, 1),
+  hoard: riftConfig("hoard", 3, 1),
+  planet: planetConfig(PLANETS[Math.min(1, PLANETS.length - 1)]!, 2, 1),
+  convergence: weeklyConfig(weekNumber(), 1),
+  memory: memoryConfig(rollMemory("rare", 30, memoryRng, "world-nextfloor"), 1),
+};
+
+for (const id of RUN_MODES) {
+  const floors = MODES[id].floors;
+  // The endless modes (`floors === 0`, delve/tower) have no floor count to walk to — they
+  // get their own unbounded walk below instead of being skipped here.
+  if (floors === 0) continue;
+  if (floors === 1) {
+    // Not a check — there's nothing to assert. `dailyConfig`/`raidConfig` don't even take
+    // a floor argument, `enterDungeon`/`party.descend` are both guarded on
+    // `!config.lastFloor`, and floor 1 of a one-floor mode always has `lastFloor: true`
+    // (`riftConfig`'s `f === mode.floors`), so this call site is provably unreached for
+    // these two. Logged so the coverage gap is visible rather than silent.
+    console.log(`  ..   ${MODES[id].name}: single-floor by design, not walked`);
+    continue;
+  }
+  const seed = nextFloorSeeds[id];
+  if (!seed) {
+    check(`${MODES[id].name}: has a walk-in config for this test`, false,
+      `add a branch to nextFloorSeeds — this is exactly the coverage gap the bug hid in`);
+    continue;
+  }
+  const steps = floors - 1; // floor 1 -> floor `floors`, the exact range the game visits
+  let cfg = seed;
+  let ok = true;
+  let detail = "";
+  const startFingerprint = modeFingerprint(id, cfg);
+  for (let step = 1; step <= steps; step++) {
+    const next = nextFloorConfig(cfg);
+    if (next.mode.id !== id) { ok = false; detail = `step ${step}: mode became "${next.mode.id}"`; break; }
+    if (next.floor !== cfg.floor + 1) {
+      ok = false; detail = `step ${step}: floor ${cfg.floor} -> ${next.floor}, expected ${cfg.floor + 1}`; break;
+    }
+    const fp = modeFingerprint(id, next);
+    if (fp !== startFingerprint) {
+      ok = false; detail = `step ${step}: identity drifted — ${JSON.stringify(startFingerprint)} -> ${JSON.stringify(fp)}`;
+      break;
+    }
+    cfg = next;
+  }
+  check(`${MODES[id].name}: identity survives ${steps} step(s) of nextFloorConfig (floor 1 → ${floors})`, ok, detail);
+}
+
+// The two endless modes never hit a last floor, so they're walked separately, further,
+// with no floor count to stop at — this is the shape the Tower bug actually was.
+for (const [id, seed] of [["delve", delveConfig(5)], ["tower", towerConfig(5)]] as const) {
+  let cfg: RunConfig = seed;
+  let ok = true;
+  let detail = "";
+  for (let step = 1; step <= 6; step++) {
+    const next = nextFloorConfig(cfg);
+    if (next.mode.id !== id) { ok = false; detail = `step ${step}: mode became "${next.mode.id}"`; break; }
+    if (id === "tower" && !next.tower) { ok = false; detail = `step ${step}: lost its tower field`; break; }
+    if (next.floor !== cfg.floor + 1) {
+      ok = false; detail = `step ${step}: floor ${cfg.floor} -> ${next.floor}`; break;
+    }
+    cfg = next;
+  }
+  check(`${MODES[id].name}: identity survives 6 steps with no top to the ladder`, ok, detail);
+}
 
 // --- 3. the bands sit on boundaries the game already had -------------------
 

@@ -43,6 +43,7 @@ import {
   weeklySeed, weeklyUnlocked, type WeeklyModifierId,
 } from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
+import { towerConfig } from "../src/data/tower";
 import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
@@ -1161,6 +1162,58 @@ console.log("\n=== challenger tier ===");
     && planet2.challengerTier === 12 && planet2.floor === 2
     && planet2.depth === planetConfig(PLANETS[1]!, 3, 2, 0).depth,
     `${planet2.planet?.spec.name} T${planet2.planet?.tier} F${planet2.floor} d${planet2.depth}`);
+
+  // The Tower is the other endless, non-rift mode `nextFloorConfig` has to carry — the
+  // Sept 2026 bug: it had no branch of its own, fell through to the delve fallback, and
+  // every climb quietly handed back a Delve floor (the owner hit this live: "clear the
+  // Tower ... it'll take me to the Delve"). `tools/world.ts` pins the config shape as a
+  // property across every mode; this proves the same thing through a real generated
+  // floor, the way the doc comment on this section asks for.
+  const tower2 = nextFloorConfig(towerConfig(4, 12));
+  check("descending the Tower keeps the height and the challenger tier",
+    tower2.mode.id === "tower" && tower2.tower?.height === 5 && tower2.depth === 5
+    && tower2.challengerTier === 12 && tower2.danger === challengerMultiplier(12),
+    `height ${tower2.tower?.height}, tier ${tower2.challengerTier}`);
+}
+
+console.log("\n=== the Tower actually climbs, not just its config ===");
+{
+  // Real `Dungeon`s, not config objects: each one generates a real floor (biome, roster,
+  // encounter) off the config the previous floor's clear handed to `nextFloorConfig`,
+  // exactly the path `enterDungeon(nextFloorConfig(config))` and `party.descend` take.
+  // A regression that loses `config.tower` shows up here as a floor that generated with
+  // the Delve's own biome instead of the Tower's holy one — the literal shape the bug
+  // took, not an approximation of it.
+  const st = geared(20, 9401, 16, "lancer");
+  let config: RunConfig = towerConfig(1, st.challengerTier);
+  for (let h = 1; h <= 4; h++) {
+    const d = new Dungeon(st, config, 9400 + h);
+    check(`height ${h}: the floor is the Tower's, not the Delve's`,
+      d.config.mode.id === "tower" && d.config.tower?.height === h && d.config.depth === h
+      && d.level.biome.element === "holy",
+      `mode "${d.config.mode.id}", tower.height ${d.config.tower?.height}, biome "${d.level.biome.name}"`);
+    if (h % 5 === 0) {
+      check(`height ${h}: every fifth floor is the Tower's own encounter`, d.config.bossFloor);
+    }
+    if (h < 4) {
+      // Force the clear the same way the Convergence campaign above does, then hand the
+      // floor to `nextFloorConfig` exactly as the completion-portal path does.
+      d.killsSoFar = d.killsRequired;
+      d.elitesKilled = d.elitesRequired;
+      d.wave = d.profile.waves;
+      d.enemies.length = 0;
+      const idle = new FakeInput();
+      idle.beginTick();
+      d.update(DT, idle as unknown as AvatarInput);
+      check(`height ${h}: closes and opens the completion portal`, d.phase === "cleared" && d.completionPortal !== null);
+      d.bankLoot();
+      config = nextFloorConfig(d.config);
+    }
+  }
+  check("a climb never touched the account's depth record",
+    st.stats.deepestDepth === 0 && st.player.deepestDepth === 0);
+  check("…but banking heights 1-3 did raise the height record to the last one banked",
+    st.stats.highestHeight === 3 && st.player.highestHeight === 3);
 }
 
 console.log("\n=== planets ===");
