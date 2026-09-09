@@ -175,7 +175,7 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // OF HELL" section) — one per circle, a shared worn-material family with one accent
   // colour each. First batch of the 19 artifacts; the Abyss/borrowed-encounter sets follow.
   "relic.coin-of-the-first-circle":    { id: "relic.coin-of-the-first-circle",    w: 29, h: 28, worldScale: 0.60, feet: 0.15 },
-  "relic.hook-of-the-second-circle":   { id: "relic.hook-of-the-second-circle",   w: 24, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.hook-of-the-second-circle":   { id: "relic.hook-of-the-second-circle",   w: 23, h: 33, worldScale: 0.60, feet: 0.15 },
   "relic.tooth-of-the-third-circle":   { id: "relic.tooth-of-the-third-circle",   w: 17, h: 36, worldScale: 0.60, feet: 0.15 },
   "relic.weight-of-the-fourth-circle": { id: "relic.weight-of-the-fourth-circle", w: 28, h: 20, worldScale: 0.60, feet: 0.15 },
   "relic.tempo-of-the-fifth-circle":   { id: "relic.tempo-of-the-fifth-circle",   w: 21, h: 37, worldScale: 0.60, feet: 0.15 },
@@ -183,6 +183,21 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "relic.drum-of-the-seventh-circle":  { id: "relic.drum-of-the-seventh-circle",  w: 27, h: 29, worldScale: 0.60, feet: 0.15 },
   "relic.mirror-of-the-eighth-circle": { id: "relic.mirror-of-the-eighth-circle", w: 24, h: 36, worldScale: 0.60, feet: 0.15 },
   "relic.frost-of-the-ninth-circle":   { id: "relic.frost-of-the-ninth-circle",   w: 30, h: 30, worldScale: 0.60, feet: 0.15 },
+
+  // The last 10 artifacts, organised by where they came from rather than one family
+  // palette: the Abyss itself (4, escalating in form — shard, echo, chain, whisper —
+  // rather than by circle, muted matte-obsidian to stay artifact-weight against the
+  // relics' brighter glow) and 6 trophies each themed to their source encounter.
+  "relic.shard-of-the-nothing":        { id: "relic.shard-of-the-nothing",        w: 21, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.echo-of-the-unmade":          { id: "relic.echo-of-the-unmade",          w: 28, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.chain-of-the-unmade":         { id: "relic.chain-of-the-unmade",         w: 29, h: 26, worldScale: 0.60, feet: 0.15 },
+  "relic.whisper-of-the-nameless":     { id: "relic.whisper-of-the-nameless",     w: 26, h: 31, worldScale: 0.60, feet: 0.15 },
+  "relic.splinter-of-the-first-seal":  { id: "relic.splinter-of-the-first-seal",  w: 28, h: 31, worldScale: 0.60, feet: 0.15 },
+  "relic.fragment-of-the-choir":       { id: "relic.fragment-of-the-choir",       w: 28, h: 35, worldScale: 0.60, feet: 0.15 },
+  "relic.breath-of-the-herald":        { id: "relic.breath-of-the-herald",        w: 20, h: 24, worldScale: 0.60, feet: 0.15 },
+  "relic.stitch-of-the-colossus":      { id: "relic.stitch-of-the-colossus",      w: 27, h: 31, worldScale: 0.60, feet: 0.15 },
+  "relic.interval-of-the-keepers":     { id: "relic.interval-of-the-keepers",     w: 19, h: 33, worldScale: 0.60, feet: 0.15 },
+  "relic.step-of-the-pilgrim":         { id: "relic.step-of-the-pilgrim",         w: 30, h: 27, worldScale: 0.60, feet: 0.15 },
 };
 
 /**

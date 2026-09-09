@@ -540,6 +540,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Shard of the Nothing",
     flavor: "It went through. So will you.",
     description: "Your projectile skills pierce one more enemy.",
+    art: "relic.shard-of-the-nothing",
     effects: [{
       kind: "mutate",
       mutation: {
@@ -556,6 +557,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Echo of the Unmade",
     flavor: "One of it was never enough. Now there are two of it.",
     description: "Your projectile skills fire one more, each a little weaker.",
+    art: "relic.echo-of-the-unmade",
     effects: [{
       kind: "mutate",
       mutation: {
@@ -572,6 +574,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Chain of the Unmade",
     flavor: "It holds one more link than it should.",
     description: "Everything you summon comes with one more, and none of them stay as long.",
+    art: "relic.chain-of-the-unmade",
     effects: [{
       kind: "mutate",
       mutation: {
@@ -588,6 +591,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Whisper of the Nameless",
     flavor: "It said something. You felt it land.",
     description: "Your critical hits Expose the target.",
+    art: "relic.whisper-of-the-nameless",
     effects: [{
       kind: "grantEffect", on: { event: "criticalHit" },
       note: "A critical hit Exposes its target: it takes more from everything after.",
@@ -602,6 +606,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Splinter of the First Seal",
     flavor: "A wall, in miniature.",
     description: "Being hit sometimes shoves everything near you back.",
+    art: "relic.splinter-of-the-first-seal",
     effects: [{
       kind: "grantEffect", on: { event: "damageTaken" },
       note: "One hit in three you take knocks every enemy near you back.",
@@ -620,6 +625,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Fragment of the Choir",
     flavor: "One voice. It is not yours either.",
     description: "Sometimes a skill you cast is answered by a bolt of void.",
+    art: "relic.fragment-of-the-choir",
     effects: [{
       kind: "grantEffect", on: { event: "skillUse" },
       note: "One cast in four fires a void bolt where you're facing.",
@@ -638,6 +644,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Breath of the Herald",
     flavor: "Arrived early. Left a mark.",
     description: "Your dash skills leave burning ground behind you.",
+    art: "relic.breath-of-the-herald",
     effects: [{
       kind: "grantEffect", on: { tag: "dash" },
       note: "A dash skill leaves burning ground where you started.",
@@ -650,6 +657,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Stitch of the Colossus",
     flavor: "Load-bearing.",
     description: "Your ultimate heals you when it fires.",
+    art: "relic.stitch-of-the-colossus",
     effects: [{
       kind: "grantEffect", on: { event: "ultimateUse" },
       note: "Firing your ultimate heals you for a good slice of your attack damage.",
@@ -662,6 +670,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Interval of the Keepers",
     flavor: "Between one watch and the next, a breath.",
     description: "Casting a skill sometimes shakes off whatever is on you.",
+    art: "relic.interval-of-the-keepers",
     effects: [{
       kind: "grantEffect", on: { event: "skillUse" },
       note: "One cast in three cleanses your debuffs.",
@@ -680,6 +689,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Step of the Pilgrim",
     flavor: "Purgatory is walked. This helps.",
     description: "You move a little faster and your dodge comes back sooner.",
+    art: "relic.step-of-the-pilgrim",
     effects: [{ kind: "mods", mods: { moveSpeed: 0.05, dashRate: 0.25 } }],
     statStick: true,
     sources: [{ kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache * 2, mode: "abyss", lastFloor: true }],
