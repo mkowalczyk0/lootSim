@@ -85,6 +85,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "physical",
     biome: {
       name: "The Wargrave", tileset: "tiles.reliquary-wargrave",
+      monsterSet: "reliquary",
       tint: "#2f2620", floorAlt: "#3a2f26", wall: "#574a3d", wallSide: "#231b15",
       accent: "#e2e8f0", props: ["rock", "bones", "torch"],
       layouts: ["open", "rubble", "pillars"], traps: ["spike"],
@@ -103,6 +104,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "poison",
     biome: {
       name: "The Rotting Garden", tileset: "tiles.reliquary-garden",
+      monsterSet: "reliquary",
       tint: "#282b1b", floorAlt: "#313620", wall: "#49512f", wallSide: "#1b1e12",
       accent: "#84cc16", props: ["mushroom", "bones", "rock"],
       layouts: ["chambers", "rubble", "open"], traps: ["mire", "spike"],
@@ -121,6 +123,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "fire",
     biome: {
       name: "The Cinder Catacombs", tileset: "tiles.reliquary-catacombs",
+      monsterSet: "reliquary",
       tint: "#331f17", floorAlt: "#3f271c", wall: "#5d3b2c", wallSide: "#241310",
       accent: "#ff7a2f", props: ["rock", "torch", "bones"],
       layouts: ["gauntlet", "chambers", "pillars"], traps: ["flame", "turret"],
@@ -139,6 +142,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "cold",
     biome: {
       name: "The Frozen Basilica", tileset: "tiles.reliquary-basilica",
+      monsterSet: "reliquary",
       tint: "#232e37", floorAlt: "#2b3843", wall: "#43566a", wallSide: "#18212a",
       accent: "#7dd3fc", props: ["crystal", "rock", "bones"],
       layouts: ["ring", "pillars", "rubble"], traps: ["spike", "saw"],
@@ -157,6 +161,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "lightning",
     biome: {
       name: "The Storm Sepulcher", tileset: "tiles.reliquary-sepulcher",
+      monsterSet: "reliquary",
       tint: "#2e2a1d", floorAlt: "#393324", wall: "#544a34", wallSide: "#211c13",
       accent: "#fde047", props: ["crystal", "torch", "rock"],
       layouts: ["ring", "gauntlet", "chambers"], traps: ["turret", "saw"],
@@ -175,6 +180,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "void",
     biome: {
       name: "The Black Archive", tileset: "tiles.reliquary-archive",
+      monsterSet: "reliquary",
       tint: "#100c17", floorAlt: "#17121f", wall: "#281f38", wallSide: "#0a0710",
       accent: "#c084fc", props: ["crystal", "bones", "torch"],
       layouts: ["ring", "gauntlet", "rubble", "chambers"], traps: ["turret", "flame", "saw", "mire"],
@@ -196,6 +202,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "holy",
     biome: {
       name: "The Gilded Ossuary", tileset: "tiles.reliquary-ossuary",
+      monsterSet: "reliquary",
       tint: "#2f2717", floorAlt: "#3a3020", wall: "#5c4c2c", wallSide: "#231d10",
       accent: "#fde68a", props: ["rock", "bones", "torch"],
       layouts: ["chambers", "pillars", "rubble"], traps: ["spike", "flame"],
@@ -215,6 +222,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "arcane",
     biome: {
       name: "The Unbound Spire", tileset: "tiles.reliquary-spire",
+      monsterSet: "reliquary",
       tint: "#241a33", floorAlt: "#2e2140", wall: "#453262", wallSide: "#160f24",
       accent: "#f0abfc", props: ["crystal", "rock", "torch"],
       layouts: ["ring", "pillars", "gauntlet"], traps: ["turret", "saw"],
@@ -234,6 +242,7 @@ export const PLANETS: readonly PlanetSpec[] = [
     element: "nature",
     biome: {
       name: "The Hollow Orchard", tileset: "tiles.reliquary-orchard",
+      monsterSet: "reliquary",
       tint: "#22271a", floorAlt: "#2b3320", wall: "#3f4a2c", wallSide: "#171c10",
       accent: "#34d399", props: ["mushroom", "rock", "bones"],
       layouts: ["chambers", "rubble", "open"], traps: ["mire", "spike"],

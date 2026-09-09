@@ -60,6 +60,7 @@ type Roster = Partial<Record<EnemyKind, string>>;
 const LOWER_TOWER: BiomeStyle = {
   name: "The Lower Tower",
   tileset: "tiles.tower-lower",
+  monsterSet: "tower",
   // Art guide §6: bone-gold `#d8cfa8` base, `#8a7d54` shadow, `#f4ecc9` highlight,
   // `#fde047` divine light. The floor is the shadow tone so the walls read as lit.
   tint: "#8a7d54", floorAlt: "#95875c", wall: "#d8cfa8", wallSide: "#6b6142",
@@ -81,6 +82,7 @@ const LOWER_TOWER: BiomeStyle = {
 const MID_TOWER: BiomeStyle = {
   name: "The Seamless Halls",
   tileset: "tiles.tower-mid",
+  monsterSet: "tower",
   // §6: bleaching toward white, gold hard-edged.
   tint: "#a89f7e", floorAlt: "#b4ab88", wall: "#f4ecc9", wallSide: "#8a7d54",
   accent: "#fde047",
@@ -101,6 +103,7 @@ const MID_TOWER: BiomeStyle = {
 const UPPER_HEAVEN: BiomeStyle = {
   name: "The Blinding Heights",
   tileset: "tiles.tower-upper",
+  monsterSet: "tower",
   // §6: near-white, `#fde047` as a blinding hazard rather than a highlight.
   tint: "#cfc9b0", floorAlt: "#d9d3ba", wall: "#f8f4e4", wallSide: "#a8a288",
   accent: "#fde047",

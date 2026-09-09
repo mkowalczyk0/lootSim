@@ -40,6 +40,18 @@ export interface BiomeStyle {
    * not-yet-loaded tileset just falls back to `tint` / `wall` below.
    */
   readonly tileset?: string;
+  /**
+   * A monster sprite set id (`render/atlas/manifest.ts` → `MONSTER_SETS`). Which pictures
+   * this place's monsters draw — **and nothing else about them.** The archetypes, their
+   * stats, their behaviour and their names are untouched: a `grunt` here is the same grunt
+   * that fights the same way at the same numbers, wearing a different face.
+   *
+   * Optional and degrading, exactly like `tileset` above: an unset set, an unknown id, or
+   * a set whose PNGs aren't committed all fall back to the game-wide default art rather
+   * than breaking a screen. That is what lets a realm's sprite set be *named* here before
+   * anybody has drawn it — the precedent the Tower's tilesets already set.
+   */
+  readonly monsterSet?: string;
   /** Floor base color. */
   readonly tint: string;
   /** Scattered tiles drawn over the base, for texture. */
@@ -77,6 +89,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Training Grounds",
     tileset: "tiles.delve-limbo",
+    monsterSet: "delve",
     tint: "#2c3040", floorAlt: "#333849", wall: "#4a5165", wallSide: "#272c39",
     accent: "#7dd3fc",
     props: ["torch", "rock"],
@@ -87,6 +100,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Whispering Forest",
     tileset: "tiles.delve-gluttony",
+    monsterSet: "delve",
     tint: "#1e3326", floorAlt: "#24402d", wall: "#3c5a3f", wallSide: "#1a2c1e",
     accent: "#86efac",
     props: ["mushroom", "rock", "bones"],
@@ -97,6 +111,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Dark Cave",
     tileset: "tiles.delve-cave",
+    monsterSet: "delve",
     tint: "#241f2e", floorAlt: "#2c2637", wall: "#463c56", wallSide: "#1c1826",
     accent: "#c084fc",
     props: ["crystal", "rock", "bones"],
@@ -107,6 +122,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Ashen Wastes",
     tileset: "tiles.delve-wrath",
+    monsterSet: "delve",
     tint: "#33241d", floorAlt: "#3d2b21", wall: "#5c4335", wallSide: "#251a14",
     accent: "#fb923c",
     props: ["bones", "rock", "torch"],
@@ -117,6 +133,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "Dragon's Lair",
     tileset: "tiles.delve-heresy",
+    monsterSet: "delve",
     tint: "#3a1c1c", floorAlt: "#472222", wall: "#6b3535", wallSide: "#2a1212",
     accent: "#ef4444",
     props: ["bones", "torch", "crystal"],
@@ -127,6 +144,7 @@ export const BIOMES: readonly BiomeStyle[] = [
   {
     name: "The Veil",
     tileset: "tiles.delve-veil",
+    monsterSet: "delve",
     tint: "#2a1836", floorAlt: "#331d42", wall: "#4e2f63", wallSide: "#1e1128",
     accent: "#ff1493",
     props: ["crystal", "bones", "torch"],

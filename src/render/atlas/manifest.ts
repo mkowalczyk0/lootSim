@@ -316,6 +316,96 @@ export interface AtlasTileset {
   readonly tile: number;
 }
 
+/**
+ * **Which pictures a realm's monsters draw.**
+ *
+ * `SPRITE_OVERRIDES` below is the game-wide default, and until this existed it was the
+ * *only* answer: `grunt` meant `reliquary.monster.rot-imp` everywhere, so the Delve, the
+ * Tower and every rift all fought the Reliquary's roster. One realm's art had quietly
+ * become the whole game's art, and there was no way to say otherwise.
+ *
+ * A `BiomeStyle` now names a set (`monsterSet`) and its archetypes resolve here first.
+ * Three rules, all of them the `TILESETS` precedent applied to monsters:
+ *
+ *  1. **A set may be named before it is drawn.** An id listed here whose PNGs are not
+ *     committed resolves to nothing and the archetype falls back to `SPRITE_OVERRIDES`,
+ *     then to the procedural bake. Declaring a realm's intent costs nothing and breaks
+ *     nothing — which is the whole reason the Tower's tilesets are already named.
+ *  2. **A set may be partial.** An archetype a set doesn't list falls back the same way,
+ *     so a realm can ship its grunt before its caster without looking half-finished in a
+ *     way that crashes.
+ *  3. **This decides pictures and nothing else.** No entry here may change a monster's
+ *     kind, stats, behaviour, name or hitbox — those are `data/enemies.ts` and
+ *     `data/biomes.ts`'s `enemyNames`. `tools/monstersets.ts` asserts it as a comparison:
+ *     the same seeded floor plays out byte-identically whichever set it draws from.
+ */
+/**
+ * Pairs of sets that knowingly draw the same art, and why.
+ *
+ * Sharing is legitimate but it must never be accidental: two realms quietly resolving to
+ * one roster is the exact defect this whole seam exists to surface, so `tools/monstersets.ts`
+ * fails any cross-set overlap that is not declared here.
+ */
+export const SHARED_MONSTER_SETS: readonly (readonly [string, string])[] = [
+  // Until the Reliquary's sectors get art of their own. See the `delve` note below.
+  ["delve", "reliquary"],
+];
+
+export const MONSTER_SETS: Record<string, Record<string, string>> = {
+  /**
+   * The Ashen Reliquary (§8.2) — dead-civilisation stone, rot and bone. Committed and
+   * loading; this is the set that has been standing in for every realm.
+   */
+  reliquary: {
+    grunt: "reliquary.monster.rot-imp",
+    archer: "reliquary.monster.bone-archer",
+    brute: "reliquary.monster.iron-brute",
+    caster: "reliquary.monster.cult-caster",
+    swarmer: "reliquary.monster.rot-scuttler",
+  },
+
+  /**
+   * The Delve (§5) — **the same five sprites, named deliberately.**
+   *
+   * These read as Hell: rot, bone, iron, a cult robe. The `reliquary.` prefix is an
+   * accident of *when* they were generated (during the Reliquary sector pass), not a claim
+   * of ownership — `docs/art-manifest.md` calls them "the identical Hell/Reliquary sprites"
+   * and lists them under "what has a bespoke sprite today", keyed by archetype rather than
+   * by realm. So the Delve does not have a five-sprite backlog; it has the right art under
+   * a misleading name, and pointing at it here is the honest expression of that.
+   *
+   * **This set and `reliquary` are identical today, and that is the finding rather than a
+   * mistake.** Two realms are drawing one roster. The seam does not fix that on its own —
+   * it makes it *visible and deliberate* instead of a global default nobody chose. The
+   * Reliquary is the one that should eventually diverge: its sectors are a frozen basilica,
+   * a rotting garden and a wargrave, which are places, whereas the Delve is where this art
+   * already looks at home. Declared in `SHARED_MONSTER_SETS` so it cannot happen by
+   * accident.
+   */
+  delve: {
+    grunt: "reliquary.monster.rot-imp",
+    archer: "reliquary.monster.bone-archer",
+    brute: "reliquary.monster.iron-brute",
+    caster: "reliquary.monster.cult-caster",
+    swarmer: "reliquary.monster.rot-scuttler",
+  },
+
+  /**
+   * The Tower (§6) — **named, deliberately undrawn.** Heaven is Order, and Order lives in
+   * silhouette: symmetry, repetition, geometry, against Hell's asymmetry and appetite. A
+   * palette swap of the Reliquary's roster would be white demons, which is why these are
+   * their own sprites rather than a tint. Until the PNGs land, every id below resolves to
+   * nothing and the Tower draws today's art — no worse than before, and no pretending.
+   */
+  tower: {
+    grunt: "tower.monster.power",
+    archer: "tower.monster.virtue-lancer",
+    brute: "tower.monster.throne-bearer",
+    caster: "tower.monster.dominion-herald",
+    swarmer: "tower.monster.halo-fragment",
+  },
+};
+
 export const TILESETS: Record<string, AtlasTileset> = {
   // The Delve (§5) — one per legacy biome, themed toward the Nine Circles it's
   // becoming. Floor mid-tone, wall near-black, on the ash/Hell palette.

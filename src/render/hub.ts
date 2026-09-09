@@ -28,7 +28,10 @@ import {
   HUB_HEIGHT, HUB_WIDTH, stationLore, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
-import { DECK_INTERIOR_WALLS, DECK_SPACE, DECK_WALLS, PAINTED_HALL_WIDTH } from "../game/deck";
+import { ATLAS } from "./atlas/manifest";
+import {
+  DECK_INTERIOR_WALLS, DECK_PROPS, DECK_SPACE, DECK_WALLS, PAINTED_HALL_WIDTH, STATION_PROP,
+} from "../game/deck";
 import type { Wall } from "../game/level";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import { heroSprite } from "./sprites";
@@ -72,8 +75,49 @@ const PORTAL_KINDS = new Set<HubStationKind>([
  */
 const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable", "altar"]);
 /** Note this only means anything while the *painted* scene is what's showing. A stamped
- *  floor has no relics in it at all, so on that ladder rung every terminal draws itself —
- *  which is the art bill the tileset pass has to pay: relic props for all six terminals. */
+ *  floor has no relics in it at all, so on that ladder rung every terminal draws itself. */
+
+/**
+ * A committed prop, or null. Tests `atlasCanvas` rather than manifest membership, the same
+ * rule `monsterSprite` follows: a manifest row is a statement of intent and a loaded canvas
+ * is a fact.
+ */
+function deckArt(id: string | null): HTMLCanvasElement | null {
+  return id ? atlasCanvas(id) : null;
+}
+
+/**
+ * Draws one committed prop standing on the floor at `(x, y)`.
+ *
+ * A pipeline prop carries its own `worldScale` and `feet` in the manifest, exactly as the
+ * dungeon's dressing does, so a relic keeps its authored footprint instead of being scaled
+ * to whatever its PNG happens to be — the same reason `drawProps` reads them.
+ */
+function drawDeckProp(ctx: CanvasRenderingContext2D, id: string, x: number, y: number): boolean {
+  const png = atlasCanvas(id);
+  if (!png) return false;
+  const scale = ATLAS[id]?.worldScale ?? 1;
+  const feet = ATLAS[id]?.feet ?? 0.12;
+  const w = png.width * scale;
+  const h = png.height * scale;
+  deckShadow(ctx, x, y, Math.max(6, w * 0.42));
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(png, Math.round(x - w / 2), Math.round(y - h * (1 - feet)), Math.round(w), Math.round(h));
+  return true;
+}
+
+/**
+ * The hall's floor dressing (`DECK_DRESSING` in `game/deck.ts`) — braziers, rubble, the
+ * standing relics that make the Threshold a place rather than a floor.
+ *
+ * This is where the room's character has to come from. `npm run smoke` holds a tileset's
+ * tiles to ±14 internal luminance spread, because a busy floor stops reading as
+ * walkable-vs-not at game zoom — so the dressing cannot live in the stone, and lives here.
+ * Nothing here is committed yet, so today every one of these silently draws nothing.
+ */
+function drawDeckDressing(ctx: CanvasRenderingContext2D): void {
+  for (const p of DECK_PROPS) drawDeckProp(ctx, p.art, p.x, p.y);
+}
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
@@ -127,6 +171,9 @@ export function renderHub(
   // holding. It used to be for the eight permanent stations (they came out of a shared
   // constant array) and never for the conditional portals — which is why the Vigil, the
   // Tower and the rest have never lit up when you walked to them.
+  // Dressing first: it is scenery, and a station or a person standing in front of a
+  // brazier should occlude it rather than the other way round.
+  drawDeckDressing(ctx);
   for (const s of hub.stations) drawStation(ctx, s, time, s.kind === near?.kind, look);
   // The party's portal (UAT §1 D1): whichever one the host picked gets a wide pulsing
   // ring, so "everyone walk into it" has an obvious "it".
@@ -223,6 +270,17 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
  * disk, so naming art the repo doesn't have is a failing test rather than a TODO. The
  * Tower's biomes set the same precedent. `atlasTileset` returns null for it today and the
  * deck falls back — see the module header for the ladder.
+ *
+ * **The row to add, the day the PNG and its baked JSON land together:**
+ *
+ * ```ts
+ * "tiles.citadel": { id: "tiles.citadel", w: 64, h: 64, tile: 16 },
+ * ```
+ *
+ * Nothing else changes — `bakeDeck` promotes the hall to the tiled rung on its own the
+ * first frame `atlasTileset` returns something. The pitch is not a choice: 16 texels across
+ * a 32-unit cell is the 2.0 world-units-per-art-pixel anchor every other sheet in the game
+ * shares (`docs/art-style-guide.md` §17.7).
  */
 const DECK_TILESET = "tiles.citadel";
 
@@ -342,7 +400,14 @@ function drawStation(
 ): void {
   const color = STATION_COLORS[s.kind];
 
-  if (PORTAL_KINDS.has(s.kind)) {
+  // A committed prop outranks everything: it is the actual relic, and it is what the
+  // painted scene had baked in. Drawn on any rung — a real Forge on the painted floor is
+  // still better than the painting's, and this is what stops the tiled rung being six
+  // identical terminals with different words under them.
+  const propId = STATION_PROP[s.kind];
+  if (propId && deckArt(propId) && drawDeckProp(ctx, propId, s.x, s.y)) {
+    // Drawn — nothing else to put under this station.
+  } else if (PORTAL_KINDS.has(s.kind)) {
     drawPortalPad(ctx, s, color, time);
   } else if (look !== "painted" || UNPAINTED_KINDS.has(s.kind)) {
     // The relic only exists inside the painted scene. On a stamped or flat floor there is

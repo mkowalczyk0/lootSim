@@ -69,16 +69,16 @@ const DECK: readonly string[] = [
   "##############################",
   "##############################",
   "#########.A###################",
-  "####T...........##############",
+  "####T....p..p...##############",
   "###.....L....H...#############",
   "###.W............#############",
-  "###..........Q..R#############",
-  "###C.............######......#",
+  "###.s........Q..R#############",
+  "###C.............######..r...#",
   "###.....E................P...#",
   "###...D....M...G.######......#",
-  "###..............#############",
+  "###.n............#############",
   "###.V...........F#############",
-  "####..X.........##############",
+  "####.rb.X..b....##############",
   "#########.@###################",
   "##############################",
 ];
@@ -87,11 +87,69 @@ const ROCK = "#";
 const SPAWN = "@";
 
 /**
+ * Floor dressing: one lowercase letter per decorative relic, standing on the same grid the
+ * stations do. **Adding a brazier is one character**, exactly as moving the Forge is.
+ *
+ * This exists because of a tension worth writing down. `npm run smoke` fails a tileset
+ * whose tiles carry more than ±14 internal luminance spread — a deliberately quiet tile,
+ * because a busy one turns to mush at game zoom and stops reading as walkable-vs-not. But
+ * the Citadel is the Threshold and the owner's standing note is that a bare stamped floor
+ * isn't finished. Those two pull opposite ways, and **the resolution is that the dressing
+ * lives in the props, never in the tiles.** A quiet floor with things standing on it reads
+ * as a place; a busy floor reads as noise. So this table is not a nicety — it is where the
+ * room's character has to come from once the sheet lands.
+ *
+ * Purely visual and walkable, like a dungeon floor's props: the only thing that stops you
+ * on this deck is `#`. An id here that has no committed PNG simply doesn't draw, the same
+ * fallback every other named-before-drawn asset takes.
+ */
+export const DECK_DRESSING: Record<string, string> = {
+  b: "prop.citadel-brazier",
+  r: "prop.citadel-rubble",
+  s: "prop.citadel-statue",
+  p: "prop.citadel-pillar",
+  n: "prop.citadel-banner",
+};
+
+/**
  * Which letter stands for which station. Exhaustive over `HubStationKind` by type, so a
  * new station cannot be added to the game without being given a place to stand — the
  * failure mode the old coordinate list had (the War Table and the Altar both arrived
  * after the deck was baked and had nowhere to be).
  */
+/**
+ * The relic each station stands on, as an atlas id — **the art bill the tileset rung pays.**
+ *
+ * The painted scene has its stations baked *into the image*, which is why the other two
+ * rungs draw a generic terminal glyph instead. On a stamped floor there is nothing under
+ * any of them, so every station needs a real prop or the Forge and the Quartermaster are
+ * the same shape with different words under them.
+ *
+ * `Record<HubStationKind, ...>` on purpose, exactly like `STATION_GLYPH` below: a new station cannot
+ * be added without deciding what it looks like, even if the decision is `null`.
+ *
+ * **These ids are deliberately absent from `ATLAS` until their PNGs are committed.** That
+ * is not laziness, it is the one failure mode that breaks rather than degrades: `loadAtlas`
+ * *rejects* on a missing PNG for an `ATLAS` row, so a half-declared prop is a boot failure
+ * where an undeclared one is a clean fallback. Naming it here and listing it there are two
+ * different promises — this one says "this is what it will be", that one says "this exists".
+ */
+export const STATION_PROP: Record<HubStationKind, string | null> = {
+  forge: "prop.citadel-forge",
+  quartermaster: "prop.citadel-rack",
+  comms: "prop.citadel-shrine",
+  starmap: "prop.citadel-starmap",
+  warTable: "prop.citadel-wartable",
+  altar: "prop.citadel-altar",
+  training: "prop.citadel-dummy",
+  // The portals are the shared summoning glyph turning over a ring cut into the floor, and
+  // that is deliberate: a portal should read as the same promise wherever it stands, so it
+  // is drawn rather than painted. `drawPortalPad` already grounds it in the flagstone.
+  dive: null, abyss: null, hoard: null, expedition: null,
+  vigil: null, convergence: null, tower: null,
+  raidPortal: null, memoryPortal: null,
+};
+
 const STATION_GLYPH: Record<HubStationKind, string> = {
   dive: "D", abyss: "A", hoard: "H", starmap: "R", expedition: "E",
   forge: "F", quartermaster: "Q", comms: "C", warTable: "W", raidPortal: "X",
@@ -201,6 +259,30 @@ export function deckAnchor(kind: HubStationKind): { x: number; y: number } {
 /** Where you arrive, and where a run drops you back. */
 export const DECK_SPAWN: { x: number; y: number } = findGlyph(SPAWN) ?? DECK_CENTRE;
 
+/** One dressing relic on the floor: where it stands and which prop it is. */
+export interface DeckProp {
+  readonly x: number;
+  readonly y: number;
+  readonly art: string;
+}
+
+/**
+ * Every dressing glyph on the deck, in reading order — so two braziers are two `b`s and
+ * nothing else has to change. Derived from the same grid the walls and stations are, which
+ * is the whole point of authoring the hall as text.
+ */
+export const DECK_PROPS: readonly DeckProp[] = (() => {
+  const out: DeckProp[] = [];
+  for (let row = 0; row < DECK.length; row++) {
+    const line = DECK[row]!;
+    for (let col = 0; col < line.length; col++) {
+      const art = DECK_DRESSING[line[col]!];
+      if (art) out.push({ x: (col + 0.5) * TILE, y: (row + 0.5) * TILE, art });
+    }
+  }
+  return out;
+})();
+
 /**
  * Everything wrong with the deck as authored, as sentences — the same shape
  * `relicProblems` uses, so the acceptance tool reads it rather than reimplementing the
@@ -212,8 +294,15 @@ export function deckProblems(): string[] {
     if (row.length !== DECK_COLS) problems.push(`a deck row is ${row.length} tiles, not ${DECK_COLS}`);
   }
   const seen = new Map<string, HubStationKind>();
+  for (const glyph of Object.keys(DECK_DRESSING)) {
+    if (glyph.length !== 1) problems.push(`the dressing glyph "${glyph}" is not one character`);
+    if (glyph === ROCK || glyph === SPAWN || glyph === ".") {
+      problems.push(`dressing claims the reserved glyph "${glyph}"`);
+    }
+  }
   for (const [kind, glyph] of Object.entries(STATION_GLYPH) as [HubStationKind, string][]) {
     if (glyph.length !== 1) problems.push(`${kind}'s glyph "${glyph}" is not one character`);
+    if (glyph in DECK_DRESSING) problems.push(`${kind}'s glyph "${glyph}" is also a dressing glyph`);
     if (glyph === ROCK || glyph === SPAWN) problems.push(`${kind} claims the reserved glyph "${glyph}"`);
     const other = seen.get(glyph);
     if (other) problems.push(`${kind} and ${other} both use the glyph "${glyph}"`);
@@ -228,7 +317,8 @@ export function deckProblems(): string[] {
   for (const row of DECK) {
     for (const ch of row) {
       if (ch === ROCK || ch === "." || ch === SPAWN) continue;
-      if (!seen.has(ch)) problems.push(`"${ch}" is on the deck but is nobody's station`);
+      if (ch in DECK_DRESSING) continue;
+      if (!seen.has(ch)) problems.push(`"${ch}" is on the deck but is neither a station nor dressing`);
     }
   }
   return problems;
