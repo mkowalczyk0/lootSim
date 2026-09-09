@@ -33,8 +33,29 @@ game's roster, and there was no way to say otherwise.**
 | Set | Realm | State |
 | --- | --- | --- |
 | `reliquary` | the Ashen Reliquary's six sectors | **drawn** — the five committed PNGs |
-| `delve` | the six Delve biomes | named, undrawn |
+| `delve` | the six Delve biomes | **drawn** — the same five, deliberately |
 | `tower` | the three ascent bands | named, undrawn |
+
+### The Delve did not need new art, and finding that out was the point
+
+A first pass pointed `delve` at five undrawn `delve.monster.*` ids, declaring a five-sprite
+backlog. **That was wrong.** The existing sprites read as Hell — rot, bone, iron, a cult
+robe — and the `reliquary.` prefix is an accident of *when* they were generated (during the
+Reliquary sector pass), not a claim of ownership. `docs/art-manifest.md` calls them "the
+identical Hell/Reliquary sprites" and lists them under *what has a bespoke sprite today*,
+keyed by archetype rather than by realm. The Delve has the right art under a misleading name.
+
+So `delve` and `reliquary` are identical today, and **that is the finding rather than a
+mistake**: two realms are drawing one roster. The seam does not fix that on its own — it
+makes it visible and deliberate instead of a global default nobody chose. The Reliquary is
+the side that should eventually diverge, because its sectors are *places* (a frozen basilica,
+a rotting garden, a wargrave) whereas the Delve is where this art already looks at home.
+
+The sharing is declared in `SHARED_MONSTER_SETS` and the acceptance test **fails any
+undeclared overlap** — two realms quietly resolving to one roster is the exact defect this
+seam exists to surface, so it must never happen by accident again. It also fails a
+declaration that has gone *stale*, because an exemption that no longer describes anything is
+how a real accidental overlap gets waved through later.
 
 **Naming a set before drawing it is the point, not a compromise.** It is the `TILESETS`
 precedent applied to monsters: the Tower's tilesets have been named-and-absent since §21

@@ -335,6 +335,18 @@ export interface AtlasTileset {
  *     `data/biomes.ts`'s `enemyNames`. `tools/monstersets.ts` asserts it as a comparison:
  *     the same seeded floor plays out byte-identically whichever set it draws from.
  */
+/**
+ * Pairs of sets that knowingly draw the same art, and why.
+ *
+ * Sharing is legitimate but it must never be accidental: two realms quietly resolving to
+ * one roster is the exact defect this whole seam exists to surface, so `tools/monstersets.ts`
+ * fails any cross-set overlap that is not declared here.
+ */
+export const SHARED_MONSTER_SETS: readonly (readonly [string, string])[] = [
+  // Until the Reliquary's sectors get art of their own. See the `delve` note below.
+  ["delve", "reliquary"],
+];
+
 export const MONSTER_SETS: Record<string, Record<string, string>> = {
   /**
    * The Ashen Reliquary (§8.2) — dead-civilisation stone, rot and bone. Committed and
@@ -349,20 +361,29 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
   },
 
   /**
-   * The Delve (§5) — **named, deliberately undrawn, and this is the live defect.**
+   * The Delve (§5) — **the same five sprites, named deliberately.**
    *
-   * The Delve has no monsters of its own and never did: it draws the Reliquary's, because
-   * `SPRITE_OVERRIDES` was the only answer there was. Nobody noticed because those sprites
-   * were tuned to look at home in exactly this palette. Naming the set here does not fix
-   * that on its own — the ids below resolve to nothing until somebody draws them — but it
-   * makes the gap *sayable*, which it previously was not.
+   * These read as Hell: rot, bone, iron, a cult robe. The `reliquary.` prefix is an
+   * accident of *when* they were generated (during the Reliquary sector pass), not a claim
+   * of ownership — `docs/art-manifest.md` calls them "the identical Hell/Reliquary sprites"
+   * and lists them under "what has a bespoke sprite today", keyed by archetype rather than
+   * by realm. So the Delve does not have a five-sprite backlog; it has the right art under
+   * a misleading name, and pointing at it here is the honest expression of that.
+   *
+   * **This set and `reliquary` are identical today, and that is the finding rather than a
+   * mistake.** Two realms are drawing one roster. The seam does not fix that on its own —
+   * it makes it *visible and deliberate* instead of a global default nobody chose. The
+   * Reliquary is the one that should eventually diverge: its sectors are a frozen basilica,
+   * a rotting garden and a wargrave, which are places, whereas the Delve is where this art
+   * already looks at home. Declared in `SHARED_MONSTER_SETS` so it cannot happen by
+   * accident.
    */
   delve: {
-    grunt: "delve.monster.grunt",
-    archer: "delve.monster.archer",
-    brute: "delve.monster.brute",
-    caster: "delve.monster.caster",
-    swarmer: "delve.monster.swarmer",
+    grunt: "reliquary.monster.rot-imp",
+    archer: "reliquary.monster.bone-archer",
+    brute: "reliquary.monster.iron-brute",
+    caster: "reliquary.monster.cult-caster",
+    swarmer: "reliquary.monster.rot-scuttler",
   },
 
   /**

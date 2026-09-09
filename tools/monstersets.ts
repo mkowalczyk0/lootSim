@@ -24,7 +24,7 @@ import { BIOMES } from "../src/data/biomes";
 import { PLANETS } from "../src/data/planets";
 import { TOWER_BIOMES } from "../src/data/tower";
 import { Dungeon } from "../src/game/dungeon";
-import { ATLAS, MONSTER_SETS, SPRITE_OVERRIDES } from "../src/render/atlas/manifest";
+import { ATLAS, MONSTER_SETS, SHARED_MONSTER_SETS, SPRITE_OVERRIDES } from "../src/render/atlas/manifest";
 import type { BiomeStyle } from "../src/data/biomes";
 import { geared, playFloor } from "./bot";
 
@@ -94,17 +94,34 @@ section("the fallback ladder");
       listed.join(", "));
   }
 
-  // And the ids are distinct per set, or two realms would share a picture by accident.
-  const seen = new Map<string, string>();
-  let collision = "";
+  // Two realms quietly resolving to one roster is the exact defect this seam exists to
+  // surface, so sharing has to be declared rather than discovered. Undeclared overlap
+  // fails; declared overlap is a design decision with a note attached.
+  const declaredPairs = new Set(SHARED_MONSTER_SETS.map(([a, b]) => [a, b].sort().join("+")));
+  const owner = new Map<string, string>();
+  const undeclared: string[] = [];
   for (const [id, set] of Object.entries(MONSTER_SETS)) {
     for (const art of Object.values(set)) {
-      const prev = seen.get(art);
-      if (prev && prev !== id) collision = `${art} in both ${prev} and ${id}`;
-      seen.set(art, id);
+      const prev = owner.get(art);
+      if (prev && prev !== id && !declaredPairs.has([prev, id].sort().join("+"))) {
+        undeclared.push(`${art} in both ${prev} and ${id}`);
+      }
+      owner.set(art, id);
     }
   }
-  check("no two sets claim the same sprite", collision === "", collision);
+  check("no two sets share a sprite without declaring it", undeclared.length === 0,
+    undeclared.slice(0, 3).join("; "));
+
+  for (const [a, b] of SHARED_MONSTER_SETS) {
+    const setA = MONSTER_SETS[a], setB = MONSTER_SETS[b];
+    check(`the declared "${a}"/"${b}" sharing names two real sets`, !!setA && !!setB);
+    // A declaration that no longer describes anything is stale, and a stale exemption is
+    // how an accidental overlap gets waved through later.
+    const overlap = setA && setB
+      ? Object.values(setA).filter((art) => Object.values(setB).includes(art)).length
+      : 0;
+    check(`...and they actually still share art`, overlap > 0, `${overlap} sprites in common`);
+  }
 }
 
 // --- 3. it decides pictures and nothing else -------------------------------------------
