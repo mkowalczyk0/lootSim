@@ -34,7 +34,7 @@
  */
 
 import type { BiomeStyle } from "./biomes";
-import { BOSSES, type BossSpec } from "./bosses";
+import { BOSSES, type BossSpec, type VariantKit, variantPhases } from "./bosses";
 import { challengerMultiplier } from "./challenger";
 import type { Element } from "./elements";
 import type { EnemyKind } from "./enemies";
@@ -64,6 +64,22 @@ export interface PlanetSpec {
   readonly bossTemplateId: string;
   readonly bossName: string;
   readonly bossTitle: string;
+  /**
+   * What makes this sector's boss *this* sector's boss, folded onto the borrowed kit by
+   * `variantPhases`: `signature` is added (the first from phase one, all of them from
+   * phase two) and `drop` is taken out everywhere.
+   *
+   * Before this existed, `planetBossSpec` spread the template and overrode only
+   * id/name/title/element — it never touched `phases` — so all nine sector bosses were
+   * byte-identical fights to an authored encounter with a new name plate. Measured:
+   * `tools/bossvariety.ts` found 74 pairs of encounters in the game that were literally
+   * the same fight, and the sectors and the Tower were most of them.
+   *
+   * **Author as many drops as signature entries.** A sector boss that only gained
+   * abilities would be a live difficulty increase to shipped content dressed up as a
+   * variety change; the point is a *different* hand of the same size, not a bigger one.
+   */
+  readonly bossKit: VariantKit;
   /** Flavor names for the ordinary archetypes, so the roster reads as this planet's own. */
   readonly enemyNames: Partial<Record<EnemyKind, string>>;
   /** Multiplies material drops from kills and how much a resource node pays out. */
@@ -92,6 +108,9 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "physical",
     },
     floors: 3, baseDepth: 4, depthPerTier: 1.6, depthPerFloor: 1.1, dangerPerTier: 1.08,
+    // Armies of three worlds piled where they fell: siege lines and massed volleys,
+    // not cinders and rot. Drops the Colossus's fire and its fouled ground.
+    bossKit: { signature: ["wall", "volley"], drop: ["meteor", "corruption"] },
     bossTemplateId: "colossus", bossName: "The Grave-Standard", bossTitle: "It was raised over the dead. Now it fights for them.",
     enemyNames: enemyFlavor("Grave Revenant", "Buried Archer", "Siege Remnant", "Bone Scuttler", "War-Chaplain"),
     materialYield: 1, nodeCount: 4,
@@ -111,6 +130,9 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "poison",
     },
     floors: 3, baseDepth: 9, depthPerTier: 1.9, depthPerFloor: 1.2, dangerPerTier: 1.1,
+    // A celestial garden Hell got into. What grows here spreads across ground and
+    // thrashes; it does not fire beams down a corridor.
+    bossKit: { signature: ["corruption", "windmill"], drop: ["beam", "wall"] },
     bossTemplateId: "herald", bossName: "The Gardener's Remains", bossTitle: "It still tends the beds. It is part of them now.",
     enemyNames: enemyFlavor("Corpse-Bloom", "Thorn Archer", "Bramble Hulk", "Spore Scuttler", "Blight Adept"),
     materialYield: 2, nodeCount: 4,
@@ -130,6 +152,13 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "fire",
     },
     floors: 3, baseDepth: 14, depthPerTier: 2.1, depthPerFloor: 1.3, dangerPerTier: 1.12,
+    // A crypt built to keep something burning. It is close, hot work — no room-wide
+    // quake, no chorus, and nothing thrown in a circle. Also the first place in the
+    // roster to put `summon` down, which until now no encounter in the game ever did.
+    bossKit: {
+      signature: ["meteor", "corruption", "backlash"],
+      drop: ["windmill", "quake", "summon"],
+    },
     bossTemplateId: "warden", bossName: "The Ember-Sealed", bossTitle: "Interred here to keep it burning. The seal held. Barely.",
     enemyNames: enemyFlavor("Cinder Revenant", "Ash Archer", "Slag Hulk", "Ember Scuttler", "Pyre Adept"),
     materialYield: 3, nodeCount: 5,
@@ -149,6 +178,12 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "cold",
     },
     floors: 3, baseDepth: 19, depthPerTier: 2.3, depthPerFloor: 1.35, dangerPerTier: 1.13,
+    // Frozen mid-hymn. The Choir's kit without the chorus or the sundering: ice holds
+    // ground and cuts close instead.
+    bossKit: {
+      signature: ["corruption", "backlash", "windmill"],
+      drop: ["wall", "summon", "quake"],
+    },
     bossTemplateId: "choir", bossName: "The Choir Preserved", bossTitle: "Frozen mid-hymn. It never stopped singing.",
     enemyNames: enemyFlavor("Rime Revenant", "Icebound Archer", "Glacier Hulk", "Frost Scuttler", "Hoarfrost Adept"),
     materialYield: 4, nodeCount: 5,
@@ -168,6 +203,10 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "lightning",
     },
     floors: 3, baseDepth: 24, depthPerTier: 2.5, depthPerFloor: 1.4, dangerPerTier: 1.14,
+    // The deepest sectors borrow the Nameless's fourteen-card kit, which leaves almost
+    // nothing in the fifteen-card vocabulary to add — so these three differentiate by
+    // what they put *down*. A storm does not foul the ground; it comes at you.
+    bossKit: { signature: ["cleave"], drop: ["corruption"] },
     bossTemplateId: "nameless", bossName: "The Last Standard-Bearer", bossTitle: "The battle ended. Nobody told it.",
     enemyNames: enemyFlavor("Charged Revenant", "Squall Archer", "Thunder Hulk", "Arc Scuttler", "Storm Adept"),
     materialYield: 5, nodeCount: 5,
@@ -187,6 +226,9 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "void",
     },
     floors: 3, baseDepth: 29, depthPerTier: 2.8, depthPerFloor: 1.5, dangerPerTier: 1.16,
+    // Where the Reliquary touches the Abyss and the distance stops working. It does not
+    // charge across a room it can simply reach across.
+    bossKit: { signature: ["beam", "starLance"], drop: ["charge", "meteor"] },
     bossTemplateId: "colossus", bossName: "The Index", bossTitle: "It catalogues what the Archive takes. It has an entry for you.",
     enemyNames: enemyFlavor("Hollow Revenant", "Unwritten Archer", "Erased Hulk", "Margin Scuttler", "Redacted Adept"),
     materialYield: 6, nodeCount: 6,
@@ -209,6 +251,12 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "holy",
     },
     floors: 3, baseDepth: 34, depthPerTier: 3.0, depthPerFloor: 1.55, dangerPerTier: 1.17,
+    // Saints gilded instead of buried, and still moving. Relics swing and fall; nothing
+    // here fires in formation.
+    bossKit: {
+      signature: ["windmill", "meteor", "charge"],
+      drop: ["volley", "starLance", "quake"],
+    },
     bossTemplateId: "choir", bossName: "The Reliquary Saint", bossTitle: "It was interred whole. It did not stay that way.",
     enemyNames: enemyFlavor("Gilded Revenant", "Reliquary Archer", "Ossuary Hulk", "Relic Scuttler", "Anointed Adept"),
     materialYield: 7, nodeCount: 6,
@@ -229,6 +277,9 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "arcane",
     },
     floors: 3, baseDepth: 39, depthPerTier: 3.2, depthPerFloor: 1.6, dangerPerTier: 1.18,
+    // A mage-tower that outlived its war, wards broken. See `stormreach` — same
+    // fourteen-card problem, a different card put down.
+    bossKit: { signature: ["cleave"], drop: ["backlash"] },
     bossTemplateId: "nameless", bossName: "The Unbound Archivist", bossTitle: "It never finished cataloguing itself.",
     enemyNames: enemyFlavor("Unbound Revenant", "Marginal Archer", "Bound Hulk", "Errant Scuttler", "Unread Adept"),
     materialYield: 8, nodeCount: 7,
@@ -249,6 +300,9 @@ export const PLANETS: readonly PlanetSpec[] = [
       element: "nature",
     },
     floors: 3, baseDepth: 44, depthPerTier: 3.4, depthPerFloor: 1.65, dangerPerTier: 1.2,
+    // Roots laced through a civilisation's bones, still growing outward. Expansion, not
+    // a lunge.
+    bossKit: { signature: ["ringOut", "windmill"], drop: ["backlash", "quake"] },
     bossTemplateId: "colossus", bossName: "The Orchard's Root", bossTitle: "It was planted a long time ago. It has not stopped growing.",
     enemyNames: enemyFlavor("Sapbound Revenant", "Orchard Archer", "Heartwood Hulk", "Root Scuttler", "Grove Adept"),
     materialYield: 9, nodeCount: 7,
@@ -300,6 +354,12 @@ export function planetBossSpec(planet: PlanetSpec): BossSpec {
     name: planet.bossName,
     title: planet.bossTitle,
     element: planet.element,
+    // The line this function was missing. Spreading the template and overriding only
+    // identity left every sector boss a byte-identical fight to an authored encounter
+    // with a new name plate — `tools/bossvariety.ts` measured nine of them. `bossKit`
+    // swaps cards without dealing more of them, so this is a variety change and not a
+    // difficulty change to shipped content.
+    phases: variantPhases(template, planet.bossKit),
   };
 }
 

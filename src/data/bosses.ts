@@ -249,6 +249,111 @@ export const BOSSES: readonly BossSpec[] = [
   },
 ];
 
+// --- reach, and rebuilding a template into a variant ------------------------
+
+/**
+ * How far an ability has to be able to touch before it counts as reaching across the
+ * arena.
+ *
+ * The rule it serves is `CLAUDE.md`'s "every phase needs at least one ability that
+ * reaches across the arena, or the fight can be beaten by walking backwards", so the test
+ * is whether the boss can *choose* the ability while you are far away and still hit you.
+ *
+ * This lived in `tools/bossrules.ts` until the variant builder below needed it. A tool
+ * cannot be imported from `src/`, and the alternative was a second copy of the predicate
+ * living in the data layer — which is exactly the fork this codebase keeps paying for
+ * elsewhere. So the predicate moved down here, where the vocabulary it reads already is,
+ * and `tools/bossrules.ts` re-exports it so the audit is unchanged.
+ */
+export const CROSS_ARENA_RANGE = 400;
+
+/** Whether one ability can touch a player who is refusing to come closer. */
+export function reachesAcross(id: BossAbilityId): boolean {
+  const a = BOSS_ABILITIES[id];
+  // A pure buff reaches nobody; it is not an answer to a player walking backwards.
+  if (a.damage <= 0 && a.count <= 0) return false;
+  if (a.maxRange < CROSS_ARENA_RANGE) return false;
+  // Centred on the boss and small enough to stand outside of: you can just leave.
+  // Unless it throws something (projectiles, adds) that comes to find you.
+  return !a.onSelf || a.radius >= 300 || a.count > 0;
+}
+
+/** How a borrowed encounter is bent into its own fight. */
+export interface VariantKit {
+  /**
+   * Folded on top of the borrowed kit: the first from phase one so the fight reads as
+   * itself immediately, all of them from phase two. The same rule `RaidSpec.signature`
+   * already stated, generalised.
+   */
+  readonly signature?: readonly BossAbilityId[];
+  /**
+   * Taken out of the borrowed kit **everywhere**, in every phase at once.
+   *
+   * This is the half that did not exist before, and it is the half that actually
+   * de-clones the roster. A variant that could only ever *add* ends up as the template
+   * plus more, which is why `quake` and `summon` measured at 100% of all 44 kits
+   * (`tools/bossvariety.ts`): every one of the five authored encounters has both, and
+   * nothing derived from them could ever put one down. An ability in every single kit is
+   * not a mechanic, it is a heartbeat.
+   *
+   * Dropped in every phase rather than in some of them, so the result is still strictly
+   * cumulative phase-to-phase — "phases add rather than replace" is a statement about a
+   * fight over time, not about which cards the fight was dealt.
+   *
+   * A drop is **refused** if it would leave a phase with no ability that reaches across
+   * the arena, or with no abilities at all. Both are rules in `CLAUDE.md` and both are
+   * cheaper to make impossible here than to catch in a gate afterwards.
+   */
+  readonly drop?: readonly BossAbilityId[];
+}
+
+/**
+ * Rebuilds a template's phase list into a variant's: the one place a borrowed encounter
+ * becomes its own fight.
+ *
+ * There were two near-copies of this before it existed — `raidPhases` and `provingPhases`
+ * — and the Reliquary sectors and the Tower had *none*, which is why `planetBossSpec` and
+ * `towerBossSpec` produced encounters that were byte-identical to the five authored ones
+ * with a new name plate. Fourteen of the game's forty-four encounters were name plates.
+ *
+ * What this does and deliberately does not do:
+ *
+ * - **It swaps cards, it does not deal more of them.** `at`, `haste`, `speed` and
+ *   `addsOnEnter` are the template's, untouched. A sector boss that gained abilities
+ *   without losing any would be a live difficulty change to shipped, played content
+ *   smuggled in under a variety commit. Authoring a variant with as many drops as
+ *   signature entries keeps the kit the same size; `tools/bossvariety.ts` reports the
+ *   sizes so a drift shows up.
+ * - **It unions forward**, so every phase contains every phase before it. The authored
+ *   encounters mostly but not strictly do this (three of them drop abilities between
+ *   phases and those violations are pinned in `tools/legends.ts`); a variant built here
+ *   is additive by construction.
+ * - **It invents nothing.** A variant is authored out of the existing vocabulary.
+ */
+export function variantPhases(template: BossSpec, kit: VariantKit): readonly BossPhase[] {
+  const signature = kit.signature ?? [];
+  const drop = new Set(kit.drop ?? []);
+  const seen = new Set<BossAbilityId>();
+
+  return template.phases.map((phase, i) => {
+    for (const id of phase.abilities) seen.add(id);
+    if (i === 0) {
+      const first = signature[0];
+      if (first) seen.add(first);
+    } else {
+      for (const id of signature) seen.add(id);
+    }
+
+    let abilities = [...seen].filter((id) => !drop.has(id));
+    // A drop that would break a rule is not applied. Refusing beats failing a gate the
+    // author has to go and read: the worst case is a variant that is less distinct than
+    // it asked to be, which is visible in the measurement, rather than a phase that can
+    // be beaten by walking backwards, which is not visible at all.
+    if (abilities.length === 0 || !abilities.some(reachesAcross)) abilities = [...seen];
+    return { ...phase, abilities };
+  });
+}
+
 /** Which encounter a floor gets. Deeper floors work down the list and then stay there. */
 export function bossFor(depth: number): BossSpec {
   const i = Math.floor(Math.max(1, depth) / 5) - 1;

@@ -35,7 +35,7 @@
  */
 
 import type { BiomeStyle } from "./biomes";
-import { BOSSES, type BossSpec } from "./bosses";
+import { BOSSES, type BossSpec, type VariantKit, variantPhases } from "./bosses";
 import { challengerMultiplier } from "./challenger";
 import type { EnemyKind } from "./enemies";
 import { MODES, type RunConfig } from "./modes";
@@ -159,28 +159,56 @@ interface TowerBoss {
   readonly templateId: string;
   readonly name: string;
   readonly title: string;
+  /**
+   * What makes this rank fight like its rank, folded onto the borrowed kit by
+   * `variantPhases` — added from phase one/two, and dropped everywhere.
+   *
+   * `towerBossSpec` used to spread the template and override only id/name/title/element,
+   * never touching `phases`, so all five Tower bosses were byte-identical fights to the
+   * five authored Delve encounters. That made the climb the descent in a bone-gold
+   * palette, which is precisely what §21 says the Tower must not be: what makes it a
+   * different place is *where* it is, and that has to include how the thing at the top
+   * of each band fights.
+   *
+   * Heaven is Order. The ascent's kits lean on formation and geometry — lances, lines,
+   * walls of light — and put down the Delve's fouled ground and its improvised swings.
+   * As many drops as signature entries: this is not the Tower getting harder.
+   */
+  readonly kit: VariantKit;
 }
 
 const TOWER_BOSSES: readonly TowerBoss[] = [
   {
     templateId: "warden", name: "Cherub of the Lower Gate",
     title: "It has been watching this door since before the door.",
+    // A gate guard fires down the approach rather than flailing at it.
+    kit: { signature: ["starLance", "volley"], drop: ["windmill", "enrage"] },
   },
   {
     templateId: "choir", name: "Virtue of the Second Ascent",
     title: "It is about to work a miracle. The miracle is aimed at you.",
+    // A miracle arrives from above and does not need a chorus to do it.
+    kit: { signature: ["meteor", "windmill"], drop: ["volley", "summon"] },
   },
   {
     templateId: "colossus", name: "Power of the Third Rampart",
     title: "Built for the war. Nothing else was included.",
+    // Built for the war: fortification and reach. Nothing rots up here.
+    kit: { signature: ["wall", "windmill"], drop: ["corruption", "meteor"] },
   },
   {
     templateId: "herald", name: "Throne of the Fourth Judgment",
     title: "The law, standing up.",
+    // The law does not fire a spread and it does not call for help.
+    kit: { signature: ["starLance", "backlash"], drop: ["volley", "summon"] },
   },
   {
     templateId: "nameless", name: "What Sits Above the Orders",
     title: "You have been perceived. That was the mistake.",
+    // Fourteen of the fifteen cards already, so this one differentiates by what it
+    // refuses to do: it does not run at anybody. See `PLANETS`' deep sectors for the
+    // same constraint and the two other cards put down to satisfy it.
+    kit: { signature: ["cleave"], drop: ["charge"] },
   },
 ];
 
@@ -201,6 +229,8 @@ export function towerBossSpec(height: number): BossSpec {
     name: entry.name,
     title: entry.title,
     element: "holy",
+    // See `TowerBoss.kit`. Without this the climb was the descent with a new name plate.
+    phases: variantPhases(template, entry.kit),
   };
 }
 
