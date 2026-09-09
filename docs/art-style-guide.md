@@ -900,6 +900,20 @@ hand-arted 16px stone.
   a dark floor. Reroll anything that comes back with a repeating cobble bump, a speckled
   wall, or stray glyph-like marks on the uniform floor tile: the two uniform tiles are
   what a whole room is made of.
+- **Describe value, not just hue — the gate measures luminance, and a prompt can satisfy
+  your eye while failing it.** The Citadel tileset's first pass asked for "ash grey" floor
+  vs. "pale bone-grey" wall — two colours that read as clearly different in the preview
+  thumbnail (a warm tan floor, a cool blue-grey wall) — and failed §17.7's contrast gate
+  outright: raw luminance delta 5.5, because ash and bone-grey are close in *lightness*
+  even though they're different in *hue*, and the grade's 50% desaturation step throws
+  chroma away and keeps only value. The fix was to describe darkness and brightness
+  explicitly rather than trusting a colour name to imply one — "dark charcoal-grey ... in
+  deep shadow, dim, matte" for the floor, "pale bone-white ... bright weathered stone" for
+  the wall — which took the same sheet from raw delta 5.5 to 148 and a comfortable graded
+  margin (76 against the 28 floor). Words like *dark/dim/shadowed* and *pale/bright/white*
+  carry value; colour-family words like "ash grey" or "bone-grey" often don't carry enough
+  of it on their own. If a sheet fails the gate, check whether the prompt asked for two
+  different-looking colours or two different-*valued* ones before reaching for a reroll.
 - **Every sheet goes through the floor grade** (`render/grade.ts`, applied by
   `gradedTileset` in `render/tilemap.ts` before stamping): each pixel is flattened toward
   its terrain's mean colour (55%), desaturated by half, blended 30% toward the biome's
