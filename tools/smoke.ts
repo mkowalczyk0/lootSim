@@ -1042,19 +1042,29 @@ console.log("\n=== per-class saves and the shared stash ===");
     state.player.level === 30 && state.player.equipment.weapon?.id === highItem.id);
 
   // Regression: chests and the forge used to roll item level off the account-wide
-  // deepest-depth record, so a fresh alt buying a chest right after a deep-diving main
-  // got gear rolled at the main's depth — gear the level lock then correctly refused to
-  // let it wear. Item level has to track the *active character's* own depth instead.
+  // frontier (the max of the depth and height records), so a fresh alt buying a chest
+  // right after a deep-diving main got gear rolled at the main's frontier — gear the
+  // level lock then correctly refused to let it wear, bricking the alt's chests. Item
+  // level tracks the *active character's own level* instead (owner ruling,
+  // docs/handoff.md). This needs a genuinely fresh third class, not berserker — its
+  // level was bumped to 30 above for the equip-catchup check, so by the time this runs
+  // it is levelled and would pass under either rule, proving nothing.
   state.keys.Basic += 20;
   const shamanChest = state.openChests("Basic", 20);
-  check("a deep-diving character's chests roll near its own depth",
+  check("a deep-diving character's chests roll near its own level",
     shamanChest.every((it) => it.ilvl >= 20), `ilvls: ${shamanChest.map((it) => it.ilvl).join(",")}`);
 
-  state.chooseClass("berserker");
+  state.chooseClass("paladin");
+  check("the second alt really is fresh", state.player.level === 1);
   state.keys.Basic += 20;
   const freshChest = state.openChests("Basic", 20);
-  check("a fresh alt's chests roll for its own (level 1) depth, not the main's",
-    freshChest.every((it) => it.ilvl === 1), `ilvls: ${freshChest.map((it) => it.ilvl).join(",")}`);
+  // A comparison, not a bound: prove the axis is the fresh alt's *own* level rather than
+  // pin a magic "1" that would keep passing if the formula moved onto some other constant.
+  check("a fresh alt's chests roll at its own level, not a fixed floor",
+    freshChest.every((it) => it.ilvl === state.player.level), `ilvls: ${freshChest.map((it) => it.ilvl).join(",")}`);
+  check("a fresh alt's chests roll well below the levelled main's",
+    Math.max(...freshChest.map((it) => it.ilvl)) < Math.min(...shamanChest.map((it) => it.ilvl)),
+    `fresh max ${Math.max(...freshChest.map((it) => it.ilvl))} vs main min ${Math.min(...shamanChest.map((it) => it.ilvl))}`);
   check("a fresh alt can equip what its own chests roll", freshChest.every((it) => state.player.canEquip(it)));
 
   // Regression: XP for a floor lands as its monsters die, so clearing depth N often
