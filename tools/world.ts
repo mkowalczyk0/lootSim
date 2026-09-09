@@ -43,6 +43,7 @@ import { provingFloor } from "../src/data/legends";
 import { TOWER_BIOMES, towerBiomeFor, towerBossSpec, towerConfig } from "../src/data/tower";
 import { bossSpecForRun } from "../src/data/encounters";
 import { BOSSES } from "../src/data/bosses";
+import { RAID_BY_ID } from "../src/data/raids";
 import { BIOMES } from "../src/data/biomes";
 import { TRAPS, REGARD_HOLD, REGARD_WATCH, type TrapKind } from "../src/data/traps";
 
@@ -383,15 +384,26 @@ check("the ascent is Heaven's ground throughout",
 check("the descent ends on ground that is no longer Hell's",
   DOWN_LAYERS[DOWN_LAYERS.length - 1]!.realm === "abyss");
 
-// --- 5. the reserved §15 seam ---------------------------------------------
+// --- 5. the §15 seam, now filled ------------------------------------------
 
-console.log("\n=== the raid seam is reserved, and empty ===");
+console.log("\n=== every raid a layer claims is a real raid, and it gates nothing ===");
 
-check("no layer claims a raid yet (UAT §15 is not built)",
-  LAYERS.every((l) => l.raidId === null),
-  LAYERS.filter((l) => l.raidId !== null).map((l) => l.name).join(", "));
+// This was "the seam is reserved, and empty" until raids landed (UAT §15). The check it
+// was holding the door for is the one below: an id that resolves. The half that matters
+// as much — that a raid standing at a layer does not gate the ladder through it — is in
+// `tools/raids.ts`, next to the raid table it would have to read to break that.
 check("every layer has the field, so a raid has somewhere to hang",
   LAYERS.every((l) => "raidId" in (l as WorldLayer)));
+check("every raid a layer claims resolves to a real one",
+  LAYERS.every((l) => l.raidId === null || RAID_BY_ID[l.raidId] !== undefined),
+  LAYERS.filter((l) => l.raidId !== null && !RAID_BY_ID[l.raidId]).map((l) => l.name).join(", "));
+check("…and names that layer back",
+  LAYERS.every((l) => l.raidId === null || RAID_BY_ID[l.raidId]!.layerId === l.id));
+// That a layer still changes nothing about how a floor *fights* is asserted where it can
+// be measured rather than grepped: `tools/raids.ts` §2 profiles a Delve floor either side
+// of every band edge, and §4 compares a raid floor against a Delve floor at the same depth
+// and danger. A source-text grep for the word "layer" was tried here first and matched
+// four unrelated sentences about the presentation layer.
 
 // --- 6. the Reliquary widening only widens --------------------------------
 

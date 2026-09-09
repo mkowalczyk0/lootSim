@@ -35,15 +35,20 @@
  * authored in `docs/art-style-guide.md` §5–§6 — the doc is read-only and it is the
  * tiebreaker, so none of this is invented cosmology.
  *
- * **`raidId` is a reserved seam for UAT §15**, null on every layer today. A raid is not a
- * boss floor and it is not a depth; it is *the thing holding a layer's gate*, and this is
- * the address it will hang from — the same reasoning that reserved the `raid` and `tower`
- * kinds in `data/drops.ts`. The doc's four example raids already sort cleanly by layer
- * (the Queen of the Seventh Circle into the Hell Layers, the Tyrant of the First Heavens
- * into the Celestial Endgame, the Minotaur of the Ninth Labyrinth into the Abyss, the
- * Ferryman into the Threshold). `tools/world.ts` refuses a non-null id until there is a
- * raid table for it to resolve against, exactly as `relicProblems` refuses a definition
- * hiding behind a reserved drop kind.
+ * **`raidId` names the raid holding a layer's gate (UAT §15)**, and as of the raid pass it
+ * is filled in on four of them. A raid is not a boss floor and it is not a depth; it is
+ * *the thing standing at a layer*, and this is the address it hangs from. The doc's four
+ * example raids sorted cleanly by layer and that sorting is what shipped: the Queen of the
+ * Seventh Circle into the Hell Layers, the Minotaur of the Ninth Labyrinth into the Hell
+ * Endgame where the ground stops being Hell's, the Tyrant of the First Heavens into the
+ * Celestial Endgame, the Ferryman into the Threshold.
+ *
+ * **It gates nothing on either ladder.** Nothing in the simulation reads a layer, and that
+ * has not changed: `raidId` is a *reading* — this band has a thing in it — and the only
+ * gate involved is the raid's own (`raidUnlocked` in `data/raids.ts`, keyed on the account
+ * frontier). Descending or climbing past a layer never asks whether its raid is dead.
+ * `tools/world.ts` and `tools/raids.ts` between them pin both halves: every id resolves to
+ * a real raid, and every raid names a layer that names it back.
  *
  * Pure data. Nothing here imports from the simulation.
  */
@@ -67,7 +72,11 @@ export interface WorldLayer {
   readonly to: number;
   /** Where in the war this sits. Not what the place is — that is `RunMode.lore`. */
   readonly lore: string;
-  /** RESERVED for UAT §15 — the raid encounter holding this layer's gate. Null until then. */
+  /**
+   * The raid standing at this layer's gate (UAT §15) — a `RaidSpec.id` from
+   * `data/raids.ts`, or null for a band nothing is holding. Read by the screens and by
+   * `raidForLayer`; never by the simulation, which reads no layer at all.
+   */
   readonly raidId: string | null;
 }
 
@@ -100,14 +109,14 @@ export const DOWN_LAYERS: readonly WorldLayer[] = [
     lore: "Deeper down Hell looks less like fire and more like an idea: rage, false faith, "
       + "a war that never finished. Black cathedrals with the gold used wrong. Not "
       + "everything here started as a demon. Some of it started as a saint.",
-    raidId: null,
+    raidId: "queen-of-the-seventh-circle",
   },
   {
     id: "hell-endgame", name: "The Hell Endgame", axis: "down", realm: "abyss", from: 26, to: Infinity,
     lore: "Past the last circle the ground stops being Hell's. Hell thins out and the "
       + "Abyss shows through, and the Abyss keeps nothing the way it found it. The Keepers "
       + "have no name for what stands at the bottom. Neither does it.",
-    raidId: null,
+    raidId: "minotaur-of-the-ninth-labyrinth",
   },
 ];
 
@@ -140,7 +149,7 @@ export const UP_LAYERS: readonly WorldLayer[] = [
     lore: "Near the top the light stops being light and starts being a weapon, and the "
       + "symmetry is total enough to lose your footing in. Above the orders are things "
       + "nobody has properly perceived. The Keepers would rather Heaven kept them.",
-    raidId: null,
+    raidId: "tyrant-of-the-first-heavens",
   },
 ];
 
@@ -157,7 +166,7 @@ export const RIFT_LAYERS: Record<"threshold" | "avarice" | "abyss", WorldLayer> 
     lore: "The middle kingdom, and the only ground positioned between the two of them. "
       + "Everything that falls out of the war lands here, which is why the Rifts open here "
       + "and the Reliquary fills. The Keepers hold this line because there is no other line.",
-    raidId: null,
+    raidId: "the-ferryman",
   },
   avarice: {
     id: "avarice", name: "The Fourth Circle", axis: "rift", realm: "hell", from: 1, to: Infinity,
@@ -179,6 +188,15 @@ export const RIFT_LAYERS: Record<"threshold" | "avarice" | "abyss", WorldLayer> 
 export const LAYERS: readonly WorldLayer[] = [
   ...DOWN_LAYERS, ...UP_LAYERS, ...Object.values(RIFT_LAYERS),
 ];
+
+/**
+ * Layers by id. Exists so `data/raids.ts` can resolve the band a raid stands in without
+ * this file having to import the raid table back — the two halves of the §15 link are
+ * declared as ids on both sides and asserted to agree, rather than as a circular import.
+ */
+export const LAYER_BY_ID: Readonly<Record<string, WorldLayer>> = Object.fromEntries(
+  LAYERS.map((l) => [l.id, l]),
+);
 
 /** The band a depth (or height) on one ladder falls in. Anything below 1 reads as 1. */
 export function layerAt(axis: "down" | "up", depth: number): WorldLayer {
@@ -205,6 +223,10 @@ export function layerFor(config: RunConfig): WorldLayer {
     case "tower": return layerAt("up", config.tower?.height ?? config.depth);
     case "abyss": return RIFT_LAYERS.abyss;
     case "hoard": return RIFT_LAYERS.avarice;
+    // A raid stands *at* a layer rather than in a band of one, so it carries the answer
+    // on its own spec (UAT §15). Read out of the config rather than looked up in the raid
+    // table, which is what keeps this file free of an import back from `data/raids.ts`.
+    case "raid": return LAYER_BY_ID[config.raid?.spec.layerId ?? ""] ?? RIFT_LAYERS.threshold;
     case "planet":
     case "vigil":
     case "convergence":

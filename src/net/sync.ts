@@ -26,6 +26,7 @@ import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { RELICS } from "../data/relics";
 import { REGARD_WATCH } from "../data/traps";
+import { RAID_BY_ID, raidConfig } from "../data/raids";
 import { towerConfig } from "../data/tower";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
@@ -72,6 +73,7 @@ export function configToWire(config: RunConfig): RunConfigWire {
     challengerTier: config.challengerTier,
     players: config.players ?? 1,
     ...(config.planet ? { planetId: config.planet.spec.id, planetTier: config.planet.tier } : {}),
+    ...(config.raid ? { raidId: config.raid.spec.id, raidTier: config.raid.tier } : {}),
   };
 }
 
@@ -82,7 +84,14 @@ export function configToWire(config: RunConfig): RunConfigWire {
  */
 export function configFromWire(wire: RunConfigWire): RunConfig {
   const planet = wire.planetId ? PLANETS_BY_ID[wire.planetId] : undefined;
-  const base: RunConfig = planet
+  // Raids are solo in v1, so nothing sends one — but a raid-shaped wire rebuilt through
+  // `riftConfig` would be a raid floor with no raid on it (no arena, no encounter, the
+  // depth-bucketed boss instead), and "nobody sends it" is not a reason to leave that
+  // reachable. Its own builder, like every other mode with a spec.
+  const raid = wire.raidId ? RAID_BY_ID[wire.raidId] : undefined;
+  const base: RunConfig = raid
+    ? raidConfig(raid, wire.raidTier ?? 1, wire.challengerTier)
+    : planet
     ? planetConfig(planet, wire.planetTier ?? 1, wire.floor, wire.challengerTier)
     // The Tower needed no new wire field: `mode` already names it and `floor` already
     // carries the height. It is rebuilt through its own builder rather than reassembled

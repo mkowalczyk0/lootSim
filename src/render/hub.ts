@@ -28,11 +28,25 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   // Bone-gold, the Heaven base tone from art-style-guide §6 — the one warm ring on the
   // deck, and the only one that reads as light rather than as a wound.
   tower: "#d8cfa8",
+  // The raid pair (UAT §15) share `MODES.raid.color`: the terminal that picks one and the
+  // portal it opens are the same door, and the deck should say so without a legend.
+  warTable: "#f472b6", raidPortal: "#f472b6",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
  *  Everything else is a relic already painted into the deck image. */
-const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower"]);
+const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower", "raidPortal"]);
+/**
+ * Terminals the Citadel deck art does *not* have painted into it, so they draw their own
+ * relic on top of the deck rather than only when the image is missing.
+ *
+ * The four original stations (Comms, Quartermaster, Reliquary Gate, Forge) are baked into
+ * `hub.citadel-deck` — see the coordinate note in `game/hub.ts`. The War Table (UAT §15)
+ * arrived after that bake, so until an art pass paints it in it is a drawn terminal. That
+ * is the honest state, not a placeholder somebody forgot: the alternative is a floating
+ * caption with nothing underneath it.
+ */
+const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable"]);
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
@@ -200,9 +214,9 @@ function drawStation(
 
   if (PORTAL_KINDS.has(s.kind)) {
     drawPortalPad(ctx, s, color, time);
-  } else if (!deckLoaded) {
-    // The relic lives in the deck image; if that hasn't loaded, leave a marker so the
-    // station isn't just a floating word.
+  } else if (!deckLoaded || UNPAINTED_KINDS.has(s.kind)) {
+    // The relic lives in the deck image; if that hasn't loaded — or was never painted —
+    // leave a marker so the station isn't just a floating word.
     deckShadow(ctx, s.x, s.y, s.radius * 1.1);
     drawTerminal(ctx, s.x, s.y, color, time);
   }

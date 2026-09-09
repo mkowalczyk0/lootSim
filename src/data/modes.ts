@@ -44,9 +44,10 @@
 import { challengerMultiplier } from "./challenger";
 import type { DailyRun } from "./daily";
 import type { PlanetSpec } from "./planets";
+import type { RaidSpec } from "./raids";
 import type { WeeklyRun } from "./weekly";
 
-export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower"] as const;
+export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower", "raid"] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
 export interface RunMode {
@@ -249,6 +250,37 @@ export const MODES: Record<RunModeId, RunMode> = {
     dangerPerTier: 1, rarityBias: 0, quantity: 1,
     coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1, unlockDepth: 5,
   },
+  /**
+   * A raid (UAT §15) — one floor, and that floor is a mythological event.
+   *
+   * Rift-shaped, because a raid is a fixed run ending in a boss and that is what
+   * `isRift` means; one floor, because §15 asks for raid *bosses* and a gauntlet in front
+   * of the encounter only taxes retrying it. Which raid, at which tier, and everything
+   * that differs between the four rides on `RunConfig.raid` (`data/raids.ts`) exactly as
+   * a sector rides on `RunConfig.planet` — `baseDepth`/`depthPerTier`/`dangerPerTier`
+   * here are nominal and unused, since `raidConfig` sets the depth and the danger from
+   * the raid's own spec.
+   *
+   * `unlockDepth` is 0 because a raid is not gated on this axis: each one opens at its
+   * own `unlockFrontier` (`raidUnlocked`), which reads the account frontier so the ascent
+   * counts as well as the descent. It pays in rarity and in item power — the loot is the
+   * point — and barely at all in coins, which is what the Avarice Rift is for.
+   */
+  raid: {
+    id: "raid", name: "Raid", short: "Raid",
+    blurb: "One floor. One enormous thing standing on it. Its table is the only place its items come from.",
+    lore: "Some of what the war shook loose is too large to be called a monster: a "
+      + "celestial warlord Heaven threw out, a labyrinth wearing a body, whatever is "
+      + "poling the river now. The Keepers do not contain these. They send enough people "
+      + "and hope.",
+    color: "#f472b6",
+    isRift: true, floors: 1,
+    baseDepth: 12, depthPerTier: 0, depthPerFloor: 0,
+    dangerPerTier: 1,
+    // The loot is the whole reason to be here, and it is the rarest table in the game.
+    rarityBias: 0.14, quantity: 1.3,
+    coinMult: 0.9, keyMult: 1.2, gemMult: 0.9, xpMult: 1.5, unlockDepth: 0,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -285,6 +317,15 @@ export interface RunConfig {
    * import so `data/tower.ts` can depend on this file and not the other way round.
    */
   readonly tower?: { readonly height: number };
+  /**
+   * Set only for a raid (UAT §15) — which mythological event this is, and at what tier.
+   *
+   * The same shape and the same reasoning as `planet`: everything that differs between
+   * the four raids (the arena, the encounter, the depth, the danger ladder, the layer it
+   * stands at) lives on the spec rather than on `MODES.raid`, so a fifth raid is a data
+   * entry. Built only by `raidConfig`.
+   */
+  readonly raid?: { readonly spec: RaidSpec; readonly tier: number };
   /** Set only for the daily Vigil — the day, its seed, its modifiers and its key. */
   readonly daily?: DailyRun;
   /** Set only for the weekly Convergence — the week, its base seed, its modifiers and

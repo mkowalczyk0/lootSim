@@ -7,6 +7,7 @@ import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
 import { RARITY_COLORS } from "./data/rarity";
+import { RAIDS, RAID_BY_ID, raidConfig, raidUnlocked } from "./data/raids";
 import { RELIC_BY_ID, RELIC_TIER_INFO } from "./data/relics";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
 import { Hub } from "./game/hub";
@@ -118,6 +119,13 @@ function start(state: GameState, who: AccountInfo): void {
         party.setPlan(planetConfig(planet, tier, 1, state.challengerTier), "expedition");
         flash(`${planet.name} T${tier} it is — everyone into the Reliquary Portal.`);
       }
+      enterHub();
+    },
+    (raid, tier) => {
+      // The War Table doesn't dive either (UAT §15) — it opens a portal on the deck. No
+      // party branch here: raids are solo in v1, and `handleHubInteraction` is where that
+      // is enforced, so there is one place to delete when co-op raids land.
+      hub.setRaid(raid.id, tier);
       enterHub();
     },
     party,
@@ -295,6 +303,13 @@ function start(state: GameState, who: AccountInfo): void {
         : "The host picks the portal. Wait for them to choose one.");
       return;
     }
+    // Raids are solo in v1 (UAT §15) — the same call the Vigil and the Proving made, and
+    // for the same reason: a mode whose credit can be duplicated or desynced across four
+    // saves is a bug waiting for a party to find it. One place to delete.
+    if (party.inRoom && (station.kind === "warTable" || station.kind === "raidPortal")) {
+      flash("Raids are solo for now. Leave the room to take one on.");
+      return;
+    }
     if (party.inRoom && station.kind === "expedition") {
       // The sector portal in a room is the party's ready spot, never a solo launch.
       flash(party.plan?.config.planet
@@ -311,6 +326,16 @@ function start(state: GameState, who: AccountInfo): void {
       case "quartermaster": enterTown("Stash"); break;
       case "comms": enterTown("Party"); break;
       case "tower": enterTown("Tower"); break;
+      case "warTable": enterTown("Raid"); break;
+      case "raidPortal": {
+        const plan = hub.raid;
+        const raid = plan ? RAID_BY_ID[plan.raidId] : undefined;
+        if (!plan || !raid) break;
+        state.player.fullHeal();
+        hub.clearRaid();
+        enterDungeon(raidConfig(raid, plan.tier, state.challengerTier));
+        break;
+      }
       case "vigil": enterTown("Vigil"); break;
       case "convergence": enterTown("Convergence"); break;
       case "expedition": {
@@ -697,6 +722,9 @@ function start(state: GameState, who: AccountInfo): void {
       // The Tower's portal is on the deck once the delve has gone deep enough (UAT §21) —
       // the depth record, not the frontier, so the climb can't unlock itself.
       hub.towerOpen = modeUnlocked(MODES.tower, state.stats.deepestDepth);
+      // A raid's portal only stands on the deck once at least one raid will look at you
+      // (UAT §15) — the account *frontier*, so a climb counts as well as a descent.
+      hub.raidOpen = RAIDS.some((r) => raidUnlocked(r, state.frontier));
       // The Vigil's portal is on the deck once the delve has gone deep enough (UAT §17).
       hub.vigilOpen = dailyUnlocked(state.stats.deepestDepth);
       // Same for the Convergence, at its own (deeper) unlock threshold.
