@@ -236,7 +236,8 @@ function tabHelp(
         ? `${sel} choose a Memory · ${semi} cycle the operation · ${e} do it · ${altarToggle} switch screen`
         : `${sel} choose a Memory · ${e} open its portal back at the Citadel · ${altarToggle} switch screen`;
     case "Craft": return forgeMode === "reforge"
-      ? `${sel} / ${adj} choose an item · ${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
+      ? `${sel} / ${adj} choose an item, then walk down onto the workbench for its operations · `
+        + `${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
       : forgeMode === "named"
         ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
@@ -305,6 +306,14 @@ export class TownUI {
   private forgeOp: ForgeOp = "reforge";
   private forgeAffix = 0;
   /**
+   * The workbench moved into its own bar under the item grid (UAT feedback: it was a
+   * scrolling sidebar). W/A/S/D still drive one 2-D grid at a time, so this says which
+   * one is currently under the cursor — the item cards, or the op bar below them.
+   * `navReforge` flips it walking off the bottom row of the cards or the top row of the
+   * bar; it's never true while there's no selected item for the bar to act on.
+   */
+  private workbenchFocus = false;
+  /**
    * Salvaging what you're wearing is allowed on purpose (`GameState.salvageItem`'s own
    * comment: "sell it, salvage it, or keep it" is the point of Ash having one source) —
    * but doing it by *accident* to the thing you're wearing isn't. Holds the armed item's
@@ -369,6 +378,7 @@ export class TownUI {
         this.cursor = 0;
         this.resetArmed = false;
         this.salvageArmed = null;
+        this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
         this.rebindPending = null;
@@ -400,6 +410,7 @@ export class TownUI {
         this.forgeMode = forgeModeEl.dataset.forgeMode as ForgeMode;
         this.cursor = 0;
         this.salvageArmed = null;
+        this.workbenchFocus = false;
         this.render();
         return;
       }
@@ -518,6 +529,7 @@ export class TownUI {
     this.cursor = 0;
     this.resetArmed = false;
     this.salvageArmed = null;
+    this.workbenchFocus = false;
     this.stashSelected.clear();
     this.massSalvageArmed = false;
     // A class is the first real decision in the game, so a new character lands on it
@@ -592,6 +604,7 @@ export class TownUI {
       this.cursor = 0;
       this.resetArmed = false;
       this.salvageArmed = null;
+      this.workbenchFocus = false;
       dirty = true;
     }
     if (this.tab === "Altar" && (input.wasPressed("tabNext") || input.wasPressed("tabPrev"))) {
@@ -607,6 +620,7 @@ export class TownUI {
         this.cursor = 0;
         this.resetArmed = false;
         this.salvageArmed = null;
+        this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
         dirty = true;
@@ -619,6 +633,7 @@ export class TownUI {
         this.cursor = 0;
         this.resetArmed = false;
         this.salvageArmed = null;
+        this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
         dirty = true;
@@ -912,20 +927,66 @@ export class TownUI {
   }
 
   /**
-   * 2-D movement across the Reforge card grid — the same column-stepping Stash uses,
-   * minus the rarity-filter bar Reforge doesn't have, so "up" from the top row simply
-   * stays put instead of walking onto a bar that isn't there.
+   * 2-D movement across the Reforge screen — the card grid, *and* the workbench bar
+   * beneath it, as one continuous space rather than a grid plus a separate sidebar.
+   * "Down" off the cards' last row drops onto the op bar; "up" off the bar's top row
+   * comes back to the cards. Left/right inside the cards is the same column-stepping
+   * Stash uses; inside the bar it's `navWorkbenchOps` below.
    */
   private navReforge(dx: number, dy: number): boolean {
+    if (this.workbenchFocus) {
+      if (dy < 0 && this.workbenchRow() === 0) {
+        this.workbenchFocus = false;
+        return true;
+      }
+      return this.navWorkbenchOps(dx, dy);
+    }
     const n = this.reforgeCandidates().length;
     if (n === 0) return false;
     const cols = this.stashColumns();
     let next = this.cursor;
     if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
     else if (dy < 0 && this.cursor >= cols) next = this.cursor - cols;
-    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    else if (dy > 0) {
+      if (this.cursor + cols >= n) {
+        this.workbenchFocus = true;
+        return true;
+      }
+      next = this.cursor + cols;
+    }
     if (next === this.cursor) return false;
     this.cursor = next;
+    return true;
+  }
+
+  /** Which row of its own cluster the current op sits in — 0 is the cluster's top button. */
+  private workbenchRow(): number {
+    const col = FORGE_OP_GROUPS.findIndex((g) => g.ops.includes(this.forgeOp));
+    return col < 0 ? 0 : Math.max(0, FORGE_OP_GROUPS[col]!.ops.indexOf(this.forgeOp));
+  }
+
+  /**
+   * 2-D movement across the workbench bar's clusters (UAT feedback: it reads as a grid
+   * of buttons, so it navigates like one). Columns are `FORGE_OP_GROUPS` in the order
+   * they're drawn (Reroll / Granted skill / Trigger / Rarity / Destroy); left/right
+   * jumps a cluster and clamps the row to whatever that cluster has, exactly the way
+   * `navHero`'s paper-doll columns work. The selected op *is* the focused button — there
+   * is no separate "highlighted but not armed" state, same as clicking one today.
+   */
+  private navWorkbenchOps(dx: number, dy: number): boolean {
+    const groups = FORGE_OP_GROUPS;
+    let col = groups.findIndex((g) => g.ops.includes(this.forgeOp));
+    if (col < 0) col = 0;
+    let row = Math.max(0, groups[col]!.ops.indexOf(this.forgeOp));
+    if (dx !== 0) {
+      col = clamp(col + dx, 0, groups.length - 1);
+      row = clamp(row, 0, groups[col]!.ops.length - 1);
+    }
+    if (dy !== 0) row = clamp(row + dy, 0, groups[col]!.ops.length - 1);
+    const next = groups[col]!.ops[row]!;
+    if (next === this.forgeOp) return false;
+    this.forgeOp = next;
+    this.salvageArmed = null;
     return true;
   }
 
@@ -2752,14 +2813,20 @@ export class TownUI {
     return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="stash-grid">${cards}</div></div>
       <aside class="side">
         ${sel ? this.renderCompare(sel) : `<p class="muted">Pick something to work on.</p>`}
-        ${sel ? this.renderWorkbench(sel) : ""}
-      </aside>`;
+      </aside>
+      ${sel ? this.renderWorkbench(sel) : ""}`;
   }
 
   /**
-   * The workbench (UAT §24/§26/§27): every operation the Forge can do to the selected
-   * item, priced, with the reason it can't when it can't. One currency, Ash, and it only
-   * comes from salvaging — so the balance sits right here next to the thing you'd break.
+   * The workbench (UAT §24/§26/§27, redone per direct owner feedback on a screenshot: it
+   * was "still messy, hard to read, I have to scroll to do anything"). Every operation
+   * the Forge can do to the selected item now lives in its own bar under the card grid —
+   * outside the reading sidebar entirely — laid out as real buttons in their five
+   * clusters (the same grouping as before, just horizontal instead of a stacked column).
+   * A button carries its own cost; what it *does* is a popup under that specific button,
+   * on hover or when it's the selected one, rather than prose pushing the rest of the
+   * screen off-screen. The sidebar goes back to only ever reading the item
+   * (`renderCompare`, called from `renderReforge`) — nothing here writes to it.
    */
   private renderWorkbench(item: Item): string {
     if (this.forgeAffix >= item.mods.length) this.forgeAffix = 0;
@@ -2767,7 +2834,8 @@ export class TownUI {
     const worn = this.wornItemIds().has(item.id);
     const salvagingWorn = this.forgeOp === "salvage" && worn;
     const armed = this.salvageArmed === item.id;
-    const opChip = (op: ForgeOp) => {
+
+    const opButton = (op: ForgeOp) => {
       const q = this.state.forgeQuote(item.id, op, this.forgeAffix);
       const info = FORGE_OP_INFO[op];
       const on = op === this.forgeOp;
@@ -2776,27 +2844,39 @@ export class TownUI {
         q.coins ? `${formatNumber(q.coins)}c` : "",
         q.scrap ? `${formatNumber(q.scrap)} scrap` : "",
       ].filter(Boolean).join(" · ") : "";
-      return `<span class="chip ${on ? "on" : ""} ${q?.blocker ? "dim" : ""}" data-forge-op="${op}"
-        title="${escapeHtml(info.blurb)}${q?.blocker ? `\n${escapeHtml(q.blocker)}` : ""}">${escapeHtml(info.label)}${cost ? ` <em>${escapeHtml(cost)}</em>` : ""}</span>`;
+      // The tooltip text still rides along as a native `title` too — a screen reader or
+      // a slow hover gets it even before the popup below has rendered.
+      return `<span class="chip op-btn ${on ? "on" : ""} ${q?.blocker ? "dim" : ""}" data-forge-op="${op}"
+          title="${escapeHtml(info.blurb)}${q?.blocker ? `\n${escapeHtml(q.blocker)}` : ""}">
+        <span class="op-btn-label">${escapeHtml(info.label)}</span>
+        ${cost ? `<span class="op-btn-cost">${escapeHtml(cost)}</span>` : ""}
+        <span class="op-tip"><b>${escapeHtml(info.label)}</b> ${escapeHtml(info.blurb)}${
+          q?.blocker ? `<br><span class="danger">${escapeHtml(q.blocker)}</span>` : ""}</span>
+      </span>`;
     };
-    // Eleven ops in one flat row read as a wall; splitting them into what they act on
-    // (reroll an affix, the granted-skill slot, the trigger slot, rarity, destruction)
-    // is the same read `docs/forge.md`'s table already gives them — this just puts it
-    // on screen. `FORGE_OP_GROUPS` is presentation only: cycling with `special` still
-    // walks the flat `FORGE_OPS` list underneath, unaffected.
-    const ops = FORGE_OP_GROUPS.map((g) =>
-      `<div class="op-group"><span class="op-group-label">${escapeHtml(g.label)}</span>
-        ${g.ops.map(opChip).join(" ")}</div>`,
+    // Same five clusters `docs/forge.md`'s table already gives the eleven ops — Reroll /
+    // Granted skill / Trigger / Rarity / Destroy — now arranged as columns in one row
+    // instead of stacked rows in a column. `FORGE_OP_GROUPS` stays presentation only:
+    // cycling with `special`, and `navWorkbenchOps`'s left/right, both still walk it as
+    // the flat `FORGE_OPS` list / the column layout respectively, never a second source
+    // of what ops exist.
+    const cols = FORGE_OP_GROUPS.map((g) =>
+      `<div class="op-col"><span class="op-col-label">${escapeHtml(g.label)}</span>
+        <div class="op-col-btns">${g.ops.map(opButton).join("")}</div></div>`,
     ).join("");
 
     const info = FORGE_OP_INFO[this.forgeOp];
     const quote = this.state.forgeQuote(item.id, this.forgeOp, this.forgeAffix);
+    // Everything below is specific to the *selected* op and can't be a per-button hover
+    // popup: picking an affix, arming a salvage confirm and the cost breakdown are things
+    // you do or read about the op that's actually about to run, not a preview of another
+    // one. It's the compact "acting" strip the bar keeps outside the sidebar for.
     const affixes = info.needsAffix && item.mods.length > 0
-      ? `<h4>Affix</h4><p>${item.mods.map((m, i) => {
+      ? `<div class="op-detail-row"><span class="op-detail-label">Affix</span>${item.mods.map((m, i) => {
           const range = affixRange(item, i);
           const span = range ? ` <span class="muted">(${fmtMod(m.key, range[0])}–${fmtMod(m.key, range[1])})</span>` : "";
           return `<span class="chip ${i === this.forgeAffix ? "on" : ""}" data-forge-affix="${i}">${escapeHtml(modShort(m))}${span}</span>`;
-        }).join(" ")}</p>`
+        }).join(" ")}</div>`
       : "";
     const components = this.forgeOp === "ascend" && quote && quote.components.length > 0
       ? `<p class="muted">Melts down: ${quote.components.map((c) => `<span style="color:${RARITY_COLORS[c.rarity]}">${escapeHtml(c.name)}</span>`).join(", ")}.</p>`
@@ -2820,23 +2900,26 @@ export class TownUI {
         </table>`
       : "";
     return `
-      <h3>Workbench <span class="muted">${formatNumber(this.state.ash)} ${ASH_NAME}</span>
-        <span class="chip" data-action="tertiary">${k(s, "special")} cycle</span></h3>
-      <div class="op-groups">${ops}</div>
-      <h4>${escapeHtml(info.label)}</h4>
-      <p class="muted">${escapeHtml(info.blurb)}</p>
-      ${affixes}
-      ${components}
-      ${salvage}
-      ${cost}
-      ${quote?.blocker ? `<p class="danger">${escapeHtml(quote.blocker)}</p>`
-        : salvagingWorn && armed
-          ? `<p class="danger">${k(s, "confirm")} again, or click the card again, to permanently salvage the item you're wearing.</p>`
-          : salvagingWorn
-            ? `<p class="muted">${k(s, "confirm")}, or click the card, to ask — salvaging what you're wearing needs a second confirm.</p>`
-            : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}.</p>`}
-      <p class="muted">${ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the same
-      ones everything else costs.</p>`;
+      <div class="workbench-bar">
+        <div class="workbench-bar-head">
+          <h3>Workbench <span class="muted">${formatNumber(this.state.ash)} ${ASH_NAME}</span></h3>
+          <span class="chip" data-action="tertiary">${k(s, "special")} cycle</span>
+        </div>
+        <div class="op-cols">${cols}</div>
+        <div class="op-detail">
+          ${affixes}
+          ${components}
+          ${salvage}
+          ${cost}
+          ${quote?.blocker ? `<p class="danger">${escapeHtml(quote.blocker)}</p>`
+            : salvagingWorn && armed
+              ? `<p class="danger">${k(s, "confirm")} again, or click the card again, to permanently salvage the item you're wearing.</p>`
+              : salvagingWorn
+                ? `<p class="muted">${k(s, "confirm")}, or click the card, to ask — salvaging what you're wearing needs a second confirm.</p>`
+                : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}. ${
+                    ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the same ones everything else costs.</p>`}
+        </div>
+      </div>`;
   }
 
   /** Confirm on the bench: run the selected op on the selected item and say what happened. */

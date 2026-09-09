@@ -257,6 +257,11 @@ html, body {
 .body {
   display: grid;
   grid-template-columns: 1fr 340px;
+  /* Every tab lays out exactly two children (a main pane and the `.side` reading
+     panel) and fills row 1 — the auto second row only exists for Reforge, whose third
+     child (`.workbench-bar`) spans both columns and auto-flows into it. `1fr` keeps
+     the cards + sidebar flexible above it instead of the two rows splitting evenly. */
+  grid-template-rows: 1fr auto;
   gap: 16px;
   min-height: 0;
 }
@@ -401,7 +406,10 @@ html, body {
 
 .side h3 + h3 { margin-top: 18px; }
 .side p { margin: 0 0 12px; color: #b6bfcc; }
-.side p.danger { color: var(--danger); }
+/* `.danger` used to only ever appear inside `.side`; the workbench bar's op-detail
+   strip (below) needed the same red-warning text outside it, so this is the bare,
+   unscoped rule — `.side p.danger` still matches everything it always did. */
+.danger { color: var(--danger); }
 
 .pulls { list-style: none; margin: 0 0 12px; padding: 0; }
 .pulls li { padding: 3px 0; font-size: 12px; }
@@ -1176,17 +1184,104 @@ html, body {
    choosing one is a click instead of cycling blind through eight with arrows. */
 .essence-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 
-/* The workbench's eleven ops, clustered by what they act on instead of one flat row —
-   a small caption per group, same chips underneath. */
-.op-groups { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; }
-.op-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.op-group-label {
+/* --- the workbench bar ------------------------------------------------
+   Redone per direct owner feedback: the eleven ops used to live at the bottom of the
+   right-hand *reading* sidebar, one flat scrolling column — "hard to read, I have to
+   scroll to do anything". They now sit in their own box under the item grid, outside
+   that sidebar entirely, laid out as buttons in the same five clusters
+   (`FORGE_OP_GROUPS`) arranged as columns instead of stacked rows. `grid-column: 1/-1`
+   is what spans the box under *both* of `.body`'s columns (the card grid and the
+   sidebar) — see `.body`'s `grid-template-rows` below, which is what keeps the top
+   half flexible and this box sized to its own content instead of stealing scroll room
+   from it. */
+.workbench-bar {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workbench-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.workbench-bar-head h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.op-cols { display: flex; flex-wrap: wrap; gap: 20px; }
+.op-col { display: flex; flex-direction: column; gap: 6px; }
+.op-col-label {
   font-size: 9px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--muted);
-  min-width: 82px;
 }
+.op-col-btns { display: flex; flex-direction: column; gap: 5px; }
+
+/* A cluster's button: label plus its own compact cost line, never a full-width row —
+   the cost has to be readable at a glance without turning the bar back into a list. */
+.op-btn {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 116px;
+  padding: 6px 10px;
+}
+.op-btn-label { font-size: 12px; }
+.op-btn-cost { font-size: 10px; color: var(--muted); }
+.op-btn.on .op-btn-cost { color: inherit; opacity: 0.85; }
+
+/* What the op does is a popup surfaced under the specific button it describes, on
+   hover or while it's the selected one — never prose sitting inline and pushing
+   everything else down. `pointer-events: none` so it can never itself block the click
+   it's floating over the button below it in the same column. */
+.op-tip {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  z-index: 20;
+  width: 210px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  pointer-events: none;
+}
+.op-btn:hover .op-tip,
+.op-btn.on .op-tip { display: block; }
+
+/* The bit of the selected op that's a real control, not a description — the affix
+   picker, the ascend/salvage specifics, the cost breakdown, the confirm line. This is
+   the one part of the old sidebar prose that has to stay visible and non-popup, because
+   picking an affix or reading "you're about to destroy your equipped item" isn't
+   something a hover should be able to hide. */
+.op-detail { border-top: 1px solid var(--line); padding-top: 10px; }
+.op-detail-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.op-detail-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.op-detail p { margin: 0 0 8px; }
+.op-detail p:last-child { margin-bottom: 0; }
+.op-detail .cmp { margin-bottom: 8px; }
 
 .stash-none {
   grid-column: 1 / -1;
