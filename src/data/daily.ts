@@ -21,7 +21,7 @@
  */
 
 import { Rng } from "../core/rng";
-import { challengerMultiplier } from "./challenger";
+import { CHALLENGER_GUARANTEE_TIER, challengerMultiplier } from "./challenger";
 import type { ChestTier } from "./chests";
 import { MODES, type RunConfig } from "./modes";
 
@@ -40,6 +40,15 @@ export const DAILY_KEY_ODDS: { readonly Legendary: number; readonly Elite: numbe
   Legendary: 1 / 12,
   Elite: 1 / 4,
 };
+/**
+ * At Challenger 0 the Vigil's whole reward is the key above, exactly as it always was.
+ * From `CHALLENGER_GUARANTEE_TIER` the clear cache also carries one item forced to this
+ * rarity (`challengerGuaranteedRarity` steps it to mythic there and holds it) — the same
+ * mechanism the Convergence already has, extended down to its daily sibling rather than
+ * invented twice. Off below the threshold on purpose: this must not move what a Vigil
+ * clear pays at ordinary difficulty.
+ */
+export const DAILY_GUARANTEED_RARITY = "legendary" as const;
 
 export const DAY_MS = 86_400_000;
 
@@ -202,4 +211,10 @@ export function dailyConfig(day: number, challengerTier = 0): RunConfig {
 
 export function dailyUnlocked(deepestDepth: number): boolean {
   return deepestDepth >= DAILY_UNLOCK_DEPTH;
+}
+
+/** Whether today's Challenger tier is high enough to add the forced-rarity item on top
+ *  of the day's guaranteed key. See `DAILY_GUARANTEED_RARITY`. */
+export function dailyGuaranteesItem(challengerTier: number): boolean {
+  return challengerTier >= CHALLENGER_GUARANTEE_TIER;
 }

@@ -9,6 +9,8 @@
  * Pure data.
  */
 
+import type { Rarity } from "./rarity";
+
 export const MAX_CHALLENGER_TIER = 20;
 
 /** Compounds per tier. Tier 5 lands close to the owner's own "five times harder." */
@@ -33,6 +35,39 @@ export function challengerRarityBias(tier: number): number {
 export function challengerRewardMult(tier: number): number {
   return 1 + Math.min(1.6, clampTier(tier) * 0.11);
 }
+
+/**
+ * The Challenger tier at which the Vigil's and the Convergence's one *guaranteed*
+ * clear-cache item steps up a rarity — Nightmare X, the top of the first band. Below
+ * this every guarantee reads exactly as it did before Challenger touched either mode.
+ */
+export const CHALLENGER_GUARANTEE_TIER = 10;
+
+/**
+ * Steps a *guaranteed* completion reward's rarity up by one at `CHALLENGER_GUARANTEE_
+ * TIER` and holds it there through every Death March tier after — for the Vigil's and
+ * the Convergence's one forced-rarity clear-cache item (`rollItem({ rarity, ... })`
+ * with no roll involved), never for anything the random drop table can produce. That
+ * ceiling belongs to `rewards.ts` and `rarity.ts`, not this dial, and this function
+ * doesn't touch it.
+ *
+ * Capped at mythic on purpose, the same ceiling `docs/forge.md` already puts on every
+ * *deterministic* path to an item — crafting, Ascend, a named recipe. Divine and
+ * unspoken are chest-only and explicitly meant to stay "absurd" (`rarity.ts`): a
+ * *guaranteed* one every week (or every day, once Vigil earns the same guarantee) would
+ * make Challenger a quieter, more reliable route to the top of the ladder than
+ * crafting is allowed to be anywhere else in the game. Moving this past mythic is an
+ * owner call, not a tuning pass — see docs/daily-dungeon.md / docs/weekly-dungeon.md.
+ */
+export function challengerGuaranteedRarity(base: Rarity, tier: number): Rarity {
+  if (clampTier(tier) < CHALLENGER_GUARANTEE_TIER) return base;
+  const idx = Math.min(RARITY_LADDER.indexOf("mythic"), RARITY_LADDER.indexOf(base) + 1);
+  return RARITY_LADDER[idx]!;
+}
+
+const RARITY_LADDER: readonly Rarity[] = [
+  "common", "uncommon", "rare", "epic", "legendary", "mythic", "divine", "unspoken",
+];
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"] as const;
 
