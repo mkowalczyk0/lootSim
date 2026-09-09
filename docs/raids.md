@@ -147,12 +147,16 @@ that ever does cross the wire is built by its own builder instead of collapsing 
 raid-shaped run with no raid in it. What stops one today is one branch in
 `main.ts#handleHubInteraction` — one place to delete.
 
-Two things a co-op pass will have to do, and they are not done here:
+**A co-op attempt was built and measured, and then not shipped.** `RAID_HEALTH` is the
+one-player fight; `partyScale` was assumed to be the multiplier a party pass would tune,
+but measuring a real co-op fight (`tools/bot.ts`'s `playFloorParty`) found it doesn't
+transfer to a single body at all — see `docs/raid-party-scaling.md` for the numbers and
+why. The wiring (the branch above, plus the War Table and Raid Portal joining the party's
+ready-spot flow) was built alongside a first attempt at a fix and reverted with it; it
+survives, unmerged, on `investigate/raid-party-scaling` for whoever picks this back up.
 
-- **`RAID_HEALTH` is the one-player fight.** `partyScale` already multiplies health by the
-  size of the group, so the multiplier is what a party pass tunes, not this constant.
-- **Loot is per-hero and physical**, which is already true of every other mode; a raid's
-  single-source exclusives have never been rolled for four people at once.
+**Loot is per-hero and physical**, which is already true of every other mode; a raid's
+single-source exclusives have never been rolled for four people at once.
 
 ## Where it is reached
 

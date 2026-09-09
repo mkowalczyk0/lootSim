@@ -18,12 +18,12 @@
  * Nothing in this file asserts anything: it is the instrument, not a test.
  */
 
-import { Input, type Action } from "../src/core/input";
+import { Input, type Action, type AvatarInput } from "../src/core/input";
 import { Rng } from "../src/core/rng";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import type { ClassId } from "../src/data/classes";
 import type { RunConfig } from "../src/data/modes";
-import { Dungeon, inTelegraph } from "../src/game/dungeon";
+import { Dungeon, inTelegraph, type Hero, type HeroSetup } from "../src/game/dungeon";
 import { itemScore, rollItem } from "../src/game/item";
 import { circleHitsWall, FlowField } from "../src/game/level";
 import { GameState, POTION_PRICE } from "../src/game/state";
@@ -52,13 +52,17 @@ export class FakeInput {
   }
 }
 
+/** Anything with an `{x, y, radius}` — a solo bot's `d.avatar` and one hero's
+ *  `Hero.avatar` in a party both satisfy this, which is what lets the steering/escape
+ *  helpers below serve one bot or several without knowing which. */
+interface Pos { x: number; y: number; radius: number }
+
 /**
  * Steers along a direction without walking into a wall: it tries the straight line
  * first, then progressively wider angles. Crude, but it's what a player does
  * instinctively, and without it the bot pins itself on a pillar and dies there.
  */
-export function steerAngle(d: Dungeon, base: number): { x: number; y: number } {
-  const a = d.avatar;
+export function steerAngleFor(d: Dungeon, a: Pos, base: number): { x: number; y: number } {
   for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3]) {
     const ang = base + off;
     const px = a.x + Math.cos(ang) * 34;
@@ -69,11 +73,16 @@ export function steerAngle(d: Dungeon, base: number): { x: number; y: number } {
   }
   return { x: Math.cos(base), y: Math.sin(base) };
 }
+export function steerAngle(d: Dungeon, base: number): { x: number; y: number } {
+  return steerAngleFor(d, d.avatar, base);
+}
 
-export function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
-  const a = d.avatar;
+export function steerFor(d: Dungeon, a: Pos, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
   const sign = retreat ? -1 : 1;
-  return steerAngle(d, Math.atan2((ty - a.y) * sign, (tx - a.x) * sign));
+  return steerAngleFor(d, a, Math.atan2((ty - a.y) * sign, (tx - a.x) * sign));
+}
+export function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x: number; y: number } {
+  return steerFor(d, d.avatar, tx, ty, retreat);
 }
 
 /**
@@ -82,8 +91,11 @@ export function steer(d: Dungeon, tx: number, ty: number, retreat: boolean): { x
  * in front of you." This is exactly the field monsters already chase the player with —
  * the bot gets the same eyes a human has (it can see the level), just no better.
  */
+export function approachDirFor(d: Dungeon, flow: FlowField, a: Pos, tx: number, ty: number): { x: number; y: number } {
+  return flow.direction(d.level, a.x, a.y) ?? steerFor(d, a, tx, ty, false);
+}
 export function approachDir(d: Dungeon, flow: FlowField, tx: number, ty: number): { x: number; y: number } {
-  return flow.direction(d.level, d.avatar.x, d.avatar.y) ?? steer(d, tx, ty, false);
+  return approachDirFor(d, flow, d.avatar, tx, ty);
 }
 
 /**
@@ -91,8 +103,7 @@ export function approachDir(d: Dungeon, flow: FlowField, tx: number, ty: number)
  * skill of a boss fight expressed as one function: get out of the circle, get into the
  * hole in the donut, step off the line.
  */
-export function escapeAngle(d: Dungeon): number | null {
-  const a = d.avatar;
+export function escapeAngleFor(d: Dungeon, a: Pos): number | null {
   for (const t of d.telegraphs) {
     if (!t.hitsPlayer) continue;
     if (!inTelegraph(t, a.x, a.y, a.radius + 10)) continue;
@@ -120,6 +131,9 @@ export function escapeAngle(d: Dungeon): number | null {
     }
   }
   return null;
+}
+export function escapeAngle(d: Dungeon): number | null {
+  return escapeAngleFor(d, d.avatar);
 }
 
 export interface FloorResult {
@@ -325,6 +339,205 @@ export function playFloor(
     d, seconds: t, peakEnemies, peakAilments, lowestMana, skillCasts, bossPhases,
     damageTaken, potionsDrunk: Math.max(0, potionsAtStart - state.potions),
     mechanicsEaten, mechanicsResolved, pinned: pinnedTicks * DT,
+  };
+}
+
+export interface PartyFloorResult {
+  d: Dungeon;
+  seconds: number;
+  cleared: boolean;
+  wiped: boolean;
+  /** Summed across every hero — a party's total damage bill, the same measure
+   *  `FloorResult.damageTaken` is for one. */
+  damageTaken: number;
+  /** Summed across every hero's own belt (potions are per-character in a party). */
+  potionsDrunk: number;
+  /** One reading per hero per resolving telegraph, same rate-not-count reasoning as
+   *  the solo harness: more heroes means more *opportunities* to eat a mechanic, not a
+   *  free pass on the ones that resolved while they were down. */
+  mechanicsEaten: number;
+  mechanicsResolved: number;
+  /** Times any hero went from standing to downed. Solo, this is just death count. */
+  downs: number;
+  bossPhases: number;
+}
+
+/**
+ * `playFloor`'s party sibling: N geared `GameState`s, each an independent attentive bot
+ * — chases, dodges telegraphs at the same `dodge` reaction rate, drinks its own potions,
+ * and walks to revive a downed ally before doing anything else. One `Dungeon` in `"host"`
+ * role simulates the whole party exactly the way a real host does; there is no wire here
+ * because the wire never changes what the simulation decides, only how a second screen
+ * hears about it (see `net/sync.ts`'s own comment to that effect).
+ *
+ * Built for measuring raid-boss party scaling (`partyScale` in `data/modes.ts`) against
+ * a *single enormous body*, which the solo-crowd assumptions it was tuned on were never
+ * checked against. Reuses every steering/escape helper above through their `*For`
+ * variants — see the file header for why a second copy of this logic is not the move.
+ */
+export function playFloorParty(
+  states: GameState[],
+  run: number | RunConfig,
+  maxSeconds = 300,
+  seed = 1000,
+  dodge = 0.85,
+): PartyFloorResult {
+  const heroSetups: HeroSetup[] = states.map((s, i) => ({
+    netId: i === 0 ? "" : `p${i + 1}`,
+    name: `Hero${i + 1}`,
+    player: s.player,
+    appearance: s.appearance,
+    potions: s.potions,
+    local: i === 0,
+  }));
+  const d = new Dungeon(states[0]!, run, { seed, role: "host", heroes: heroSetups });
+  const inputs = d.heroes.map(() => new FakeInput());
+  d.heroes.forEach((hero, i) => {
+    if (i > 0) hero.input = inputs[i] as unknown as AvatarInput;
+  });
+
+  const flows = d.heroes.map(() => new FlowField(d.level));
+  const flowTimer = d.heroes.map(() => 0);
+  const reflexes = d.heroes.map((_, i) => new Rng(((seed + i * 7919) ^ 0x5f3759df) >>> 0));
+  const threatSeen = d.heroes.map(() => false);
+  const willDodge = d.heroes.map(() => false);
+  const potionCooldown = d.heroes.map(() => 0);
+  const wasDowned = d.heroes.map(() => false);
+
+  const potionsAtStart = d.heroes.reduce((a, h) => a + h.potions, 0);
+  let t = 0;
+  let mechanicsEaten = 0;
+  let mechanicsResolved = 0;
+  let bossPhases = 0;
+  let damageTaken = 0;
+  let downs = 0;
+
+  while (t < maxSeconds && d.phase === "fighting") {
+    inputs.forEach((inp) => inp.beginTick());
+
+    d.heroes.forEach((hero: Hero, i) => {
+      const input = inputs[i]!;
+      for (const a of ["up", "down", "left", "right"] as Action[]) input.hold(a, false);
+      if (hero.downed) return; // waiting on an ally, nothing to steer
+
+      let target = null as (typeof d.enemies)[number] | null;
+      let gap = Infinity;
+      for (const e of d.enemies) {
+        if (e.state === "spawning") continue;
+        const dd = Math.hypot(e.x - hero.avatar.x, e.y - hero.avatar.y);
+        if (dd < gap) { gap = dd; target = e; }
+      }
+
+      // A downed ally beats everything else on the to-do list, exactly like a real
+      // player would — the whole reason a party doesn't just eat every down as a wipe.
+      const downedAlly = d.heroes.find((h) => h !== hero && h.downed && !h.departed);
+
+      const goal = d.completionPortal ?? d.level.portal;
+      const followX = downedAlly ? downedAlly.avatar.x : target ? target.x : goal.x;
+      const followY = downedAlly ? downedAlly.avatar.y : target ? target.y : goal.y;
+      flowTimer[i]! -= DT;
+      if (flowTimer[i]! <= 0) {
+        flows[i]!.update(d.level, followX, followY);
+        flowTimer[i] = 0.2;
+      }
+
+      const hurt = hero.player.health < hero.player.maxHealth * 0.4 && hero.potions > 0 && gap < 70;
+      const incoming = d.enemies.some(
+        (e) => e.windup > 0 && Math.hypot(e.x - hero.avatar.x, e.y - hero.avatar.y) < e.archetype.attackRange + 24,
+      );
+      if (incoming && !threatSeen[i]) willDodge[i] = reflexes[i]!.chance(dodge);
+      threatSeen[i] = incoming;
+      const threat = incoming && willDodge[i];
+
+      // Safety outranks everything, including reviving — walking a rescue into a live
+      // telegraph just makes two downs instead of one.
+      const escape = dodge > 0 ? escapeAngleFor(d, hero.avatar) : null;
+      if (escape !== null) {
+        const dir = steerAngleFor(d, hero.avatar, escape);
+        if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+        if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+        input.press("dash");
+        if (target && gap < 40) input.press("attack");
+      } else if (downedAlly) {
+        const dir = approachDirFor(d, flows[i]!, hero.avatar, downedAlly.avatar.x, downedAlly.avatar.y);
+        if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+        if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+        if (target && gap < 40) input.press("attack");
+      } else if (target) {
+        if (hurt || gap > 26) {
+          const dir = hurt
+            ? steerFor(d, hero.avatar, target.x, target.y, true)
+            : approachDirFor(d, flows[i]!, hero.avatar, target.x, target.y);
+          if (Math.abs(dir.x) > 0.25) input.hold(dir.x > 0 ? "right" : "left", true);
+          if (Math.abs(dir.y) > 0.25) input.hold(dir.y > 0 ? "down" : "up", true);
+        } else if (threat) {
+          const away = steerFor(d, hero.avatar, target.x, target.y, true);
+          if (Math.abs(away.x) > 0.25) input.hold(away.x > 0 ? "right" : "left", true);
+          if (Math.abs(away.y) > 0.25) input.hold(away.y > 0 ? "down" : "up", true);
+        }
+        input.press("attack");
+        if (hurt || threat) input.press("dash");
+      }
+
+      if (target && gap < 340 && !downedAlly) {
+        for (let slot = 0; slot < 3; slot++) {
+          if (!d.canCast(slot, hero)) continue;
+          const ab = hero.player.activeAbilities[slot];
+          if (!ab) continue;
+          const range = ab.range && ab.range > 0 ? ab.range : 110;
+          const defensive = ab.category === "support" || ab.category === "utility";
+          const closeRange = ab.targeting === "cone" || ab.targeting === "radius" || ab.category === "attack";
+          const useful = defensive
+            ? hero.player.health < hero.player.maxHealth * 0.75
+            : closeRange
+              ? gap < range * 0.9 + 60
+              : true;
+          if (!useful) continue;
+          input.press(slot === 0 ? "skill1" : slot === 1 ? "skill2" : "skill3");
+          break;
+        }
+      }
+
+      if (hero.specialCharge >= 1) input.press("special");
+      potionCooldown[i]! -= DT;
+      if (hero.player.health < hero.player.maxHealth * 0.5 && potionCooldown[i]! <= 0 && hero.potions > 0) {
+        input.press("potion");
+        potionCooldown[i] = 2;
+      }
+    });
+
+    // Same "was this hero standing in it when it resolved" measure `playFloor` takes,
+    // once per hero per resolution — a party of four gets four chances to eat a mechanic
+    // a solo run only had one chance to eat, so the rate is what stays comparable.
+    for (const tg of d.telegraphs) {
+      if (tg.remaining > DT || !tg.hitsPlayer) continue;
+      for (const hero of d.heroes) {
+        if (hero.downed) continue;
+        mechanicsResolved++;
+        if (inTelegraph(tg, hero.avatar.x, hero.avatar.y, hero.avatar.radius)) mechanicsEaten++;
+      }
+    }
+
+    d.update(DT, inputs[0] as unknown as Input);
+    for (const ev of d.drainEvents()) {
+      if (ev.kind === "bossPhase") bossPhases++;
+      if (ev.kind === "damage" && ev.onPlayer) damageTaken += ev.amount;
+    }
+    d.heroes.forEach((hero, i) => {
+      if (hero.downed && !wasDowned[i]) downs++;
+      wasDowned[i] = hero.downed;
+    });
+    t += DT;
+  }
+
+  const potionsAtEnd = d.heroes.reduce((a, h) => a + h.potions, 0);
+  return {
+    d, seconds: t,
+    cleared: d.phase === "cleared",
+    wiped: d.phase === "dead",
+    damageTaken,
+    potionsDrunk: Math.max(0, potionsAtStart - potionsAtEnd),
+    mechanicsEaten, mechanicsResolved, downs, bossPhases,
   };
 }
 
