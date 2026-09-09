@@ -44,7 +44,7 @@ import { universalPointsFor } from "../progression/universal";
 import {
   forgeNamedItem, primeItemIds, randomItemType, reforgeAffixes, rollItem, type Item, type ItemMod, type Stats,
 } from "./item";
-import { Player, emptyEquipment } from "./player";
+import { Player, emptyEquipment, type FixedChallengerModeId } from "./player";
 
 export interface RunStats {
   coinsEarned: number;
@@ -858,7 +858,7 @@ export class GameState {
     // `deepestDepth` would hand a climber the Proving and the rift ladders for free.
     if (config?.tower) {
       this.recordHeight(config.tower.height);
-      this.player.bankChallengerBadge("tower", config.challengerTier);
+      this.player.bankTowerChallengerBadge(config.challengerTier, config.tower.height);
       return;
     }
     if (depth > this.stats.deepestDepth) this.stats.deepestDepth = depth;
@@ -916,14 +916,18 @@ export class GameState {
       if (depth + 1 > this.maxUnlockedDepth) this.maxUnlockedDepth = depth + 1;
       // Reached for the plain delve only — the Tower's own `!isRift` floor already
       // returned above via its `config.tower` branch.
-      if (config) this.player.bankChallengerBadge("delve", config.challengerTier);
+      if (config) this.player.bankDelveChallengerBadge(config.challengerTier, depth);
       return;
     }
     if (!config.lastFloor) return;
     this.stats.riftsCleared[config.mode.id]++;
     const next = config.tier + 1;
     if (next > this.riftTiers[config.mode.id]) this.riftTiers[config.mode.id] = next;
-    this.player.bankChallengerBadge(config.mode.id, config.challengerTier);
+    // `raid`, `planet` and `memory` are rift-shaped too but each returned above through
+    // its own branch, and `delve`/`tower` can't reach here (`isRift` is false for both,
+    // and the Tower's own branch already returned) — every id still live at this point is
+    // a `FixedChallengerModeId` (currently `abyss`/`hoard`).
+    this.player.bankChallengerBadge(config.mode.id as FixedChallengerModeId, config.challengerTier);
   }
 
   /**
@@ -1255,6 +1259,10 @@ export function playerToJSON(p: Player) {
     // this blob is the whole character sheet, and an ally's trophies reaching the host is
     // free once they're here — nothing reads them for anything but display, on either side.
     challengerBadges: p.challengerBadges,
+    // The Delve/Tower rework (SAVE_VERSION 28): per-tier depth/height arrays rather than
+    // one number in `challengerBadges`, for the reason documented on the field itself.
+    delveChallengerBadges: p.delveChallengerBadges,
+    towerChallengerBadges: p.towerChallengerBadges,
     planetChallengerBadges: p.planetChallengerBadges,
     raidChallengerBadges: p.raidChallengerBadges,
   };
@@ -1317,10 +1325,25 @@ function applyPlayerJSON(
   // unearned, which is true. Same `{ ...fresh, ...saved }` shape `riftTiers` already uses,
   // so a fixed-map entry a newer build hasn't seen yet (or one absent from an older save)
   // both fall back to the field's own zeroed default rather than crashing the load.
+  //
+  // A save from v26 or v27 still carries `delve`/`tower` keys inside this same object —
+  // the shape those two replaced in the rework below. Dropped rather than migrated: an
+  // old badge means "cleared this tier at *some* depth", and there is no honest depth to
+  // credit that to, so inventing one would be exactly the unverifiable arithmetic the
+  // augment key refund was rejected for. The player keeps the badge only in the sense
+  // that `deepestDepth`/`highestHeight` (migrated separately, unaffected by this) already
+  // recorded how far they'd actually gotten.
+  const rawBadges = { ...(raw.challengerBadges as Record<string, number> | undefined) };
+  delete rawBadges.delve;
+  delete rawBadges.tower;
   p.challengerBadges = {
     ...p.challengerBadges,
-    ...(raw.challengerBadges as Record<RunModeId, number> | undefined),
-  };
+    ...rawBadges,
+  } as Record<FixedChallengerModeId, number>;
+  // The Delve/Tower rework (SAVE_VERSION 28): a save older than that has neither array,
+  // so every tier starts unbanked — true, for the reason above.
+  p.delveChallengerBadges = normalizeDepthBadges(raw.delveChallengerBadges);
+  p.towerChallengerBadges = normalizeDepthBadges(raw.towerChallengerBadges);
   p.planetChallengerBadges = { ...(raw.planetChallengerBadges as Record<string, number> | undefined) };
   p.raidChallengerBadges = { ...(raw.raidChallengerBadges as Record<string, number> | undefined) };
   p.xp = Number(raw.xp ?? 0);
@@ -1396,4 +1419,20 @@ function normalizeItem(raw: Item): Item {
 function readSkills(raw: unknown): (string | null)[] {
   if (!Array.isArray(raw)) return [null, null, null];
   return [0, 1, 2].map((i) => (typeof raw[i] === "string" ? (raw[i] as string) : null));
+}
+
+/**
+ * Validates a saved `delveChallengerBadges`/`towerChallengerBadges` array (see
+ * `Player`): the right length, every slot a finite non-negative number, anything else —
+ * missing, malformed, or from a save older than the rework — brought back to a fresh
+ * zeroed shelf rather than crashing the load.
+ */
+function normalizeDepthBadges(raw: unknown): number[] {
+  const fresh = new Array(MAX_CHALLENGER_TIER).fill(0);
+  if (!Array.isArray(raw)) return fresh;
+  for (let i = 0; i < MAX_CHALLENGER_TIER; i++) {
+    const v = Number(raw[i]);
+    if (Number.isFinite(v) && v > 0) fresh[i] = v;
+  }
+  return fresh;
 }

@@ -9,6 +9,7 @@ import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import {
   ELEMENT_RESIST_KEY, addMods, elementalFractions, zeroMods, type Mods,
 } from "../data/mods";
+import { MAX_CHALLENGER_TIER } from "../data/challenger";
 import { RUN_MODES, type RunModeId } from "../data/modes";
 import { WEAPONS, type WeaponFamily, type WeaponSpec } from "../data/weapons";
 import type { Ability } from "../combat/ability";
@@ -68,15 +69,37 @@ export function emptyEquipment(): Equipment {
 }
 
 /**
- * Zeroed Challenger trophy shelf for the fixed activities — same shape as `state.ts`'s
- * `freshTiers()`, one entry per `RunModeId`. Only `delve`, `tower`, `abyss`, `hoard`,
- * `vigil`, `convergence` and `memory` are ever written; `planet` and `raid` sit unused
- * here for exactly the reason they sit unused in `riftTiers` — each of those two rosters
- * is its own open-ended list, tracked instead by id on `planetChallengerBadges` /
+ * The `RunModeId`s a single "highest tier banked" number can honestly describe: a fixed
+ * run of floors where the tier itself sets the difficulty, with no depth the player
+ * separately chose. `delve` and `tower` are excluded on purpose — see
+ * `Player.delveChallengerBadges` for why an activity with no upper bound needs a
+ * different shape entirely.
+ */
+export type FixedChallengerModeId = Exclude<RunModeId, "delve" | "tower">;
+
+/**
+ * Zeroed Challenger trophy shelf for the fixed-length activities — same shape as
+ * `state.ts`'s `freshTiers()`, one entry per `FixedChallengerModeId`. Only `abyss`,
+ * `hoard`, `vigil`, `convergence` and `memory` are ever written; `planet` and `raid` sit
+ * unused here for exactly the reason they sit unused in `riftTiers` — each of those two
+ * rosters is its own open-ended list, tracked instead by id on `planetChallengerBadges` /
  * `raidChallengerBadges` below.
  */
-function freshChallengerBadges(): Record<RunModeId, number> {
-  return Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>;
+function freshChallengerBadges(): Record<FixedChallengerModeId, number> {
+  return Object.fromEntries(
+    RUN_MODES.filter((m): m is FixedChallengerModeId => m !== "delve" && m !== "tower")
+      .map((m) => [m, 0]),
+  ) as Record<FixedChallengerModeId, number>;
+}
+
+/**
+ * Zeroed per-tier depth shelf for the Delve or the Tower — see
+ * `Player.delveChallengerBadges`. One slot per Challenger tier (index `tier - 1`), tier 0
+ * (Challenger off) has no slot of its own since `deepestDepth`/`highestHeight` already
+ * answer "how far without the dial on."
+ */
+function freshDepthBadges(): number[] {
+  return new Array(MAX_CHALLENGER_TIER).fill(0);
 }
 
 /**
@@ -169,21 +192,53 @@ export class Player {
    * Challenger completion badges: the highest Challenger tier this class has *banked* a
    * clear at, per activity — a trophy, the same "banked, not died, not bailed out" rule
    * `recordDepth`/`GameState.completeLegend` already hold every other piece of progress
-   * to. Fixed activities (delve, the Tower, both rifts, the Vigil, the Convergence, a
-   * Memory) are keyed by `RunModeId`, the same split `GameState.riftTiers` uses; the
+   * to. Fixed-length activities (both rifts, the Vigil, the Convergence, a Memory) are
+   * keyed by `FixedChallengerModeId`, the same split `GameState.riftTiers` uses; the
    * Reliquary's sectors and the raid roster are each their own open-ended list, so they
    * get their own id-keyed maps below, mirroring `planetProgress`/`raidProgress`.
+   *
+   * **The Delve and the Tower are deliberately not in here** — see
+   * `delveChallengerBadges` just below for why a single "highest tier" number is worth
+   * nothing on an activity with no upper bound.
    *
    * Per-`Player` because the badge is meant to read as *this character's* record, not the
    * account's — the same call `legendComplete` already made. Read only by the UI; nothing
    * in the simulation ever asks for it (see `tools/badges.ts`).
    */
-  challengerBadges: Record<RunModeId, number> = freshChallengerBadges();
+  challengerBadges: Record<FixedChallengerModeId, number> = freshChallengerBadges();
+  /**
+   * Challenger completion badges for the Delve — one entry per Challenger tier (index
+   * `tier - 1`), holding the deepest depth this class has ever *banked* a clear at while
+   * running exactly that tier.
+   *
+   * This replaced a single "highest tier ever cleared" number (SAVE_VERSION 26) because
+   * the Delve has no upper bound — three passages of CLAUDE.md promise that, and
+   * `UNIVERSAL_POINT_CAP` is justified by it — so a single number can only ever record
+   * the *cheapest* depth a tier was cleared at: Death March X on depth 1 lights the exact
+   * same badge as Death March X on depth 30, which is the shape the owner rejected on
+   * sight. Keying credit on the pair (tier, depth) instead, with one array slot per tier,
+   * stays constant-size regardless of how deep the ladder goes and answers "do I have
+   * Death March X at depth 30" as one comparison: `delveChallengerBadges[19] >= 30`. Never
+   * goes backward, per slot, the same rule `bankChallengerBadge` already holds — a later
+   * clear at a lower tier leaves a higher tier's slot standing, and a lower depth at the
+   * *same* tier never overwrites a higher one already banked there.
+   */
+  delveChallengerBadges: number[] = freshDepthBadges();
+  /**
+   * Same shape and rule as `delveChallengerBadges`, for the Tower — holds the highest
+   * *height* banked at each Challenger tier, never a depth. `recordHeight` is kept
+   * separate from `recordDepth` for exactly this reason (a height must never qualify the
+   * Proving or a rift tier), and that separation holds here too.
+   */
+  towerChallengerBadges: number[] = freshDepthBadges();
   /** Challenger badges for the Reliquary's sectors, by planet id. Sparse — an entry only
-   *  exists once a tier of that sector has actually been banked. */
+   *  exists once a tier of that sector has actually been banked. A sector's floors are a
+   *  fixed run ending in a boss (mechanically rift-shaped), so — unlike the Delve/Tower —
+   *  a single "highest tier" number per sector is still an honest answer. */
   planetChallengerBadges: Record<string, number> = {};
   /** Challenger badges for raids, by raid id. Same shape and reasoning as the sector map
-   *  above. */
+   *  above — one floor, and that floor is the boss, so there's no depth range to hide the
+   *  cheap end of. */
   raidChallengerBadges: Record<string, number> = {};
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
@@ -205,13 +260,31 @@ export class Player {
   }
 
   /**
-   * Banks a Challenger badge for one of the fixed activities — never lowers a tier
-   * already earned, exactly like `deepestDepth`/`highestHeight`. Called only from
+   * Banks a Challenger badge for one of the fixed-length activities — never lowers a
+   * tier already earned, exactly like `deepestDepth`/`highestHeight`. Called only from
    * `GameState.recordDepth`, itself only reachable from a credited `bank(true)`, so a
    * death or an early extraction can never plant a badge that wasn't actually cleared.
    */
-  bankChallengerBadge(mode: RunModeId, tier: number): void {
+  bankChallengerBadge(mode: FixedChallengerModeId, tier: number): void {
     if (tier > this.challengerBadges[mode]) this.challengerBadges[mode] = tier;
+  }
+
+  /**
+   * Banks a per-tier Delve badge: `depth` at `tier` only ever raises
+   * `delveChallengerBadges[tier - 1]`, never lowers it. Tier 0 (Challenger off) has no
+   * slot — see `freshDepthBadges` — so it's a no-op rather than an out-of-range write.
+   */
+  bankDelveChallengerBadge(tier: number, depth: number): void {
+    if (tier < 1) return;
+    const idx = tier - 1;
+    if (depth > (this.delveChallengerBadges[idx] ?? 0)) this.delveChallengerBadges[idx] = depth;
+  }
+
+  /** Same rule as `bankDelveChallengerBadge`, for the Tower's own height ladder. */
+  bankTowerChallengerBadge(tier: number, height: number): void {
+    if (tier < 1) return;
+    const idx = tier - 1;
+    if (height > (this.towerChallengerBadges[idx] ?? 0)) this.towerChallengerBadges[idx] = height;
   }
 
   /** Same rule as `bankChallengerBadge`, for a planet's own Challenger ladder. */

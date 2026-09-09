@@ -62,7 +62,7 @@ import {
   ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
   REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
 } from "../data/settings";
-import { SKILL_SLOTS, type Player } from "../game/player";
+import { SKILL_SLOTS, type FixedChallengerModeId, type Player } from "../game/player";
 import {
   ALL_CLASSES, CLASS_BY_ID, classMatrixRow,
   categoryGloss, describeEffects, describeNode, describeNodeLong, pathPointsByName,
@@ -2167,7 +2167,10 @@ export class TownUI {
         a raid boss, and it will take a while.</p>
         <p class="danger">Die and you lose every coin, key and item you picked up on the
         way down. XP is always kept.</p>
-        ${this.challengerBadgeLine(this.state.player.challengerBadges.delve, "Challenger clears")}
+        ${this.challengerDepthBadgeLine(
+          challenger, this.state.player.deepestDepth, this.state.player.delveChallengerBadges,
+          "Challenger clears", "depth",
+        )}
         <h3>${escapeHtml(layer.name)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
         <h3>${escapeHtml(biome.name)}</h3>
@@ -2236,7 +2239,10 @@ export class TownUI {
         way up. XP is always kept.</p>
         <p class="muted">A height is not a depth. Climbing opens nothing down there — no
         rift tier, and no Proving.</p>
-        ${this.challengerBadgeLine(this.state.player.challengerBadges.tower, "Challenger clears")}
+        ${this.challengerDepthBadgeLine(
+          challenger, this.state.player.highestHeight, this.state.player.towerChallengerBadges,
+          "Challenger clears", "height",
+        )}
         <h3>${escapeHtml(layer.name)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
         <h3>${escapeHtml(biome.name)}</h3>
@@ -2314,7 +2320,12 @@ export class TownUI {
         <p class="muted">Clearing the boss opens the next tier. Extracting early keeps
         what you're carrying and opens nothing.</p>
         <p>Rifts closed: <b>${this.state.stats.riftsCleared[this.riftMode] ?? 0}</b></p>
-        ${this.challengerBadgeLine(this.state.player.challengerBadges[this.riftMode], "Challenger clears")}
+        <!-- RIFT_MODES is built from RunModeId but excludes delve/tower/planet/vigil/
+             convergence by construction, so this.riftMode is always a FixedChallengerModeId
+             in practice even though its field type stays the wider RunModeId. -->
+        ${this.challengerBadgeLine(
+          this.state.player.challengerBadges[this.riftMode as FixedChallengerModeId], "Challenger clears",
+        )}
       </aside>`;
   }
 
@@ -3142,7 +3153,9 @@ export class TownUI {
     }).join("");
   }
 
-  /** A commit-screen badge line: the pips, plus which tier they add up to. */
+  /** A commit-screen badge line for a fixed-length activity: the pips, plus which tier
+   *  they add up to. Rift, sector, raid, Vigil and Convergence screens only — the Delve
+   *  and the Tower use `challengerDepthBadgeLine` below instead. */
   private challengerBadgeLine(tier: number, label: string): string {
     const best = tier > 0
       ? ` — best <b style="color:${tier > 10 ? "#ff2d2d" : "#a78bfa"}">${escapeHtml(challengerName(tier))}</b>`
@@ -3152,16 +3165,62 @@ export class TownUI {
   }
 
   /**
+   * The Dive/Tower screens' commit-screen line for the per-tier depth badges. Unlike a
+   * fixed activity's pip row, "cleared at Death March X" says nothing on its own here —
+   * that's the whole defect the rework fixed — so this reads against the *currently
+   * selected* Challenger tier and says how far the badge at that specific tier actually
+   * reaches, next to how far this character has gotten overall.
+   *
+   * `badges` is `Player.delveChallengerBadges` or `.towerChallengerBadges`; `unit` is
+   * "depth" or "height" so the same line serves both screens without guessing which one
+   * it's on.
+   */
+  private challengerDepthBadgeLine(
+    challengerTier: number, currentBest: number, badges: readonly number[], label: string, unit: string,
+  ): string {
+    if (challengerTier <= 0) {
+      return `<p class="muted">${escapeHtml(label)} — Challenger is off.
+        Turn it on in Settings to start banking a tiered clear here.</p>`;
+    }
+    const banked = badges[challengerTier - 1] ?? 0;
+    const color = challengerTier > 10 ? "#ff2d2d" : "#a78bfa";
+    const name = `<b style="color:${color}">${escapeHtml(challengerName(challengerTier))}</b>`;
+    const status = banked > 0
+      ? `you have ${name} here at ${unit} <b>${banked}</b>`
+      : `no ${name} clear banked here yet`;
+    return `<p class="muted">${escapeHtml(label)} — ${status}, you're at ${unit} <b>${currentBest}</b>.</p>`;
+  }
+
+  /**
+   * The Path screen's per-tier answer for the Delve/Tower: twenty cells, one per
+   * Challenger tier, each the deepest depth (or height) actually banked there — a `·`
+   * where nothing's been banked yet — rather than a lit/unlit pip. A pip could only ever
+   * say "cleared" or not; this says how far, which is the entire point of keying credit
+   * on depth instead of on the activity (`Player.delveChallengerBadges`).
+   */
+  private depthBadgeCells(badges: readonly number[]): string {
+    return badges.map((depth, i) => {
+      const tier = i + 1;
+      const color = tier <= 10 ? "#a78bfa" : "#ff2d2d";
+      return depth > 0
+        ? `<span style="color:${color}" title="${escapeHtml(challengerName(tier))}">${depth}</span>`
+        : `<span style="color:#3a4150">·</span>`;
+    }).join(" ");
+  }
+
+  /**
    * The Path screen's full trophy shelf for one character: every activity, one row each.
    * Every value is a direct read off `Player` — nothing here is a second table that could
    * drift from what actually banked (`tools/badges.ts` pins that as a property).
    */
   private trophyRows(pc: Player): string {
-    const modeRow = (id: RunModeId, label: string) => `
+    const modeRow = (id: FixedChallengerModeId, label: string) => `
         <tr><td>${escapeHtml(label)}</td><td>${this.challengerPips(pc.challengerBadges[id])}</td></tr>`;
+    const depthRow = (label: string, badges: readonly number[]) => `
+        <tr><td>${escapeHtml(label)}</td><td>${this.depthBadgeCells(badges)}</td></tr>`;
     const rows = [
-      modeRow("delve", "The Delve"),
-      modeRow("tower", "The Tower"),
+      depthRow("The Delve", pc.delveChallengerBadges),
+      depthRow("The Tower", pc.towerChallengerBadges),
       modeRow("abyss", "Abyssal Rift"),
       modeRow("hoard", "Avarice Rift"),
       modeRow("vigil", "The Vigil"),
