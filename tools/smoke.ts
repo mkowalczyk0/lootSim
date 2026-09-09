@@ -2875,6 +2875,28 @@ console.log("\n=== hero portraits (§12 — one size, either composer) ===");
     console.log(`  ${name}: target ${target}px body — procedural ${proc}px (x${portraitScale(BODY_H, target)}), pipeline ${pipe}px (x${portraitScale(pipeH, target)})`);
   }
 
+  // The band of hero heights this bound actually admits, derived rather than remembered.
+  // `portraitScale` rounds to a whole factor, so the spread OSCILLATES with height instead
+  // of growing — the constraint is a set of windows, not a maximum, and the docs described
+  // it as a maximum ("57 is a ceiling") for as long as it existed. Printing it is the point:
+  // 59-77 is a dead zone, and it is exactly the range someone reaches for when they want a
+  // slightly bigger character, so the cost of not knowing is a wasted art generation.
+  const legal: number[] = [];
+  for (let h = 24; h <= 96; h++) {
+    if (portraitSpread(BODY_H, h, HERO_PORTRAIT_BODY_PX) <= MAX_SPREAD
+      && portraitSpread(BODY_H, h, STYLE_PORTRAIT_BODY_PX) <= MAX_SPREAD) legal.push(h);
+  }
+  const bands: string[] = [];
+  for (let i = 0; i < legal.length;) {
+    let j = i;
+    while (j + 1 < legal.length && legal[j + 1]! === legal[j]! + 1) j++;
+    bands.push(legal[i] === legal[j] ? `${legal[i]}` : `${legal[i]}-${legal[j]}`);
+    i = j + 1;
+  }
+  check("the shipped hero height sits in the legal portrait band", legal.includes(pipeH),
+    `hero is ${pipeH}px; legal ${bands.join(", ")}`);
+  console.log(`  legal hero heights (24-96, both portraits within ${(MAX_SPREAD * 100).toFixed(0)}%): ${bands.join(", ")}`);
+
   // The pinned box heights in the stylesheet have to clear the taller of the two canvases,
   // or the portrait it was pinned for gets cropped. CSS is out of reach of a typechecker,
   // so it is read as text — a rule that stops matching fails loudly rather than passing.

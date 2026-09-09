@@ -741,9 +741,19 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   v4 answers all three: one unified charcoal/ash mass, nothing bright anywhere, and a
   plain calm face with small dark eyes. The height went 48 → 57 because at 28px wide the
   face was ~7px and physically could not hold a calm expression — this is §17.1's "author
-  larger, for clarity", not detail for its own sake. **57 is a ceiling, not a preference:**
-  `tools/smoke.ts` bounds the Hero/Style portrait spread at 12%, both composers scale by
-  whole numbers, and 59+ puts the Style tab over it. World footprint unchanged —
+  larger, for clarity", not detail for its own sake. **57 is not a ceiling — it sits in a
+  band.** `tools/smoke.ts` bounds the Hero/Style portrait spread at 12% and `portraitScale`
+  rounds to a *whole* factor, so the spread oscillates rather than growing with height: the
+  constraint is a set of windows, not a maximum. As of this writing the legal heights are
+  **24–43, 46–50, 52–58 and 78–87**, but don't trust that list here — `npm run smoke` derives
+  and prints it next to the portrait sizes, which is the copy that cannot go stale. The fact
+  worth carrying in your head is the shape: **59–77 is a dead zone**, and it is exactly the
+  range you reach for when you want a slightly bigger hero, so it is the range that silently
+  wastes an art generation. (This paragraph previously read "57 is a ceiling … 59+ puts the
+  Style tab over it". The 59 figure was right and the word *ceiling* was wrong — the prose
+  read as monotonic and the bound is not. The first correction of it also hand-scanned a
+  too-narrow range and got both ends wrong, which is why the numbers now come from the
+  tool.) World footprint unchanged —
   `worldScale` 0.5614 lands the same 32-unit height every previous version had, so no
   hitbox, telegraph or camera geometry moves. 8 PixelLab rotations re-archived under
   `art/characters/` for the eventual animation runtime; only `south` is wired.
