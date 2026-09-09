@@ -126,4 +126,14 @@ export interface CombatHost extends TargetQueryHost {
   redirectDamage(protectorId: number, wardId: number, fraction: number, duration: number): void;
 
   emitFx(ref: string, x: number, y: number): void;
+  /**
+   * A hitscan tracer from `(x0,y0)` to `(x1,y1)` — the visible half of an ability that
+   * resolves damage instantly at range (`docs/ability-fx.md`).
+   *
+   * Purely an output. The implementation must not read or advance the simulation's rng,
+   * and nothing in `combat/` or `game/` may read anything back from it; `tools/abilityfx.ts`
+   * replays a seeded floor with tracers on and off and requires the outcomes to be
+   * byte-identical.
+   */
+  emitTracer(style: string, element: string, x0: number, y0: number, x1: number, y1: number): void;
 }

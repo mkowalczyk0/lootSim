@@ -76,6 +76,7 @@ export const REAPER_REAPING_ARC: Ability = {
   cooldown: 4,
   targeting: "cone",
   range: 150,
+  fx: { travel: "lance" },
   shape: { length: 150, arc: Math.PI },
   effects: [
     { kind: "damage", damage: { base: 1.4, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.2 }, to: "allTargets" },
@@ -94,6 +95,7 @@ export const REAPER_SOUL_BRAND: Ability = {
   cooldown: 4,
   targeting: "currentTarget",
   range: 240,
+  fx: { travel: "beam" },
   effects: [
     { kind: "status", status: "reaped", chance: 1, to: "target" },
   ],
@@ -162,6 +164,7 @@ export const REAPER_PALE_HOOK: Ability = {
   cooldown: 9,
   targeting: "direction",
   range: 260,
+  fx: { travel: "lance" },
   effects: [
     { kind: "pull", force: 180, to: "enemies" },
     { kind: "status", status: "reaped", chance: 1, to: "enemies" },

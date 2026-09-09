@@ -281,6 +281,7 @@ export const BERSERKER_WORLDBREAKER: Ability = {
   isUltimate: true,
   targeting: "radius",
   range: 160,
+  fx: { travel: "lance" },
   shape: { radius: 160 },
   effects: [
     { kind: "damage", damage: { base: 3, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },

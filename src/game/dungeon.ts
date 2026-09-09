@@ -190,6 +190,17 @@ export type RunEvent =
   | { kind: "bolt"; x1: number; y1: number; x2: number; y2: number; color: string }
   | { kind: "cast"; x: number; y: number; label: string; color: string }
   /**
+   * An ability's own flourish, with no text (`emitFx`). Distinct from `cast`, which is a
+   * *named* cast and prints its name deliberately — this one used to reuse `cast` and so
+   * rendered its raw ref id ("storm_nova") as floating text on screen.
+   */
+  | { kind: "abilityFx"; x: number; y: number; color: string }
+  /** A hitscan line (`docs/ability-fx.md`). Render-only; never crosses the wire. */
+  | {
+      kind: "tracer"; x: number; y: number; x1: number; y1: number;
+      style: string; color: string;
+    }
+  /**
    * A weapon went through the air. Purely for the renderer — the hits have already been
    * resolved by the time this is pushed — but the shape of the swing is simulation data,
    * so the arc a crescent is drawn along is the arc that actually connected.
@@ -4664,8 +4675,28 @@ export class Dungeon implements CombatHost, RuleHost {
   /** Re-entrancy guard so a redirected hit can't bounce back down the same path. */
   private inRedirect = false;
 
-  emitFx(ref: string, x: number, y: number): void {
-    this.events.push({ kind: "cast", x, y: y - 20, label: ref, color: "#ffffff" });
+  /**
+   * An ability's authored flourish. The `ref` names the effect; it is deliberately **not**
+   * rendered as text — it used to be pushed as a `cast` event whose label was the raw id,
+   * so any ability that authored one would print "storm_nova" on screen. That placeholder
+   * shipped and went unnoticed only because nothing authored an `fx` step.
+   */
+  emitFx(_ref: string, x: number, y: number): void {
+    // `_ref` is deliberately unused for now: the effect library it names does not exist
+    // yet, and printing it was the bug. When one does, look it up here — do not render it.
+    this.events.push({ kind: "abilityFx", x, y: y - 20, color: "#ffffff" });
+  }
+
+  /**
+   * A hitscan tracer (`docs/ability-fx.md`). Output only: it pushes a render event and
+   * touches nothing else — no rng draw, no entity, no counter. That is the property
+   * `tools/abilityfx.ts` asserts by replaying a seeded floor with FX on and off.
+   */
+  emitTracer(style: string, element: string, x0: number, y0: number, x1: number, y1: number): void {
+    this.events.push({
+      kind: "tracer", x: x0, y: y0, x1, y1, style,
+      color: ELEMENT_COLORS[element as Element] ?? "#ffffff",
+    });
   }
 }
 

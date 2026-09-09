@@ -145,6 +145,7 @@ export const BARD_DISSONANCE: Ability = {
   cooldown: 12,
   targeting: "radius",
   range: 200,
+  fx: { travel: "bolt" },
   shape: { radius: 160 },
   effects: [
     { kind: "damage", damage: { base: 0.4, scale: "spell", type: "arcane", canCrit: false }, to: "allTargets" },

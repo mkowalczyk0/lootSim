@@ -184,8 +184,23 @@ export type EffectStep =
  * and impact stars. Numbers where the renderer needs a magnitude. The point is that a
  * dangerous mechanic can be made *readable* from data.
  */
+/**
+ * The presentation half of an ability. **`travel` is live; the rest is still declared and
+ * unread** — this whole interface sat dead for the project's life (zero of 210 abilities
+ * authored one, nothing anywhere read one), which is what made wiring it cheap.
+ *
+ * `travel` is a `TracerStyle` (`render/fx.ts`): the hitscan line drawn from the caster to
+ * each target of an ability that resolves damage at range. It is drawn **instantly along
+ * its whole length**, because the damage has already landed — anything that appears to
+ * travel would be a lie the player can catch across a room. Genuinely travelling,
+ * dodgeable objects are `Projectile`s, which the simulation gives real travel time.
+ *
+ * Everything here is read by `render/` only. An entry may never change a number the
+ * simulation consumes.
+ */
 export interface FxProfile {
   cast?: string;
+  /** A `TracerStyle`: "beam" | "lance" | "bolt". Drawn instantly, never in flight. */
   travel?: string;
   impact?: string;
   ground?: string;

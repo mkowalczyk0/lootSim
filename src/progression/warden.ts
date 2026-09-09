@@ -146,6 +146,7 @@ export const WARDEN_VINE_SNARE: Ability = {
   cooldown: 11,
   targeting: "radius",
   range: 200,
+  fx: { travel: "lance" },
   shape: { radius: 120 },
   effects: [
     { kind: "damage", damage: { base: 0.8, scale: "attack", type: "nature", canCrit: true }, to: "allTargets" },

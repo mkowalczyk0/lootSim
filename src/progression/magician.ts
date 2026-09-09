@@ -161,6 +161,7 @@ export const MAGICIAN_PRISM_LANCE: Ability = {
   castTime: 0.3,
   targeting: "line",
   range: 320,
+  fx: { travel: "lance" },
   shape: { width: 24, length: 320 },
   effects: [
     { kind: "damage", damage: { base: 2.6, scale: "spell", type: "arcane", canCrit: true, inflict: { status: "shock", chance: 0.4 } }, to: "allTargets" },
@@ -256,6 +257,7 @@ export const MAGICIAN_MANA_BURN: Ability = {
   cooldown: 10,
   targeting: "cone",
   range: 200,
+  fx: { travel: "bolt" },
   shape: { length: 200, arc: Math.PI * 0.7 },
   effects: [
     { kind: "damage", damage: { base: 4.5, scale: "spell", type: "arcane", canCrit: true }, to: "allTargets" },

@@ -178,6 +178,7 @@ export const PALADIN_JUDGEMENT: Ability = {
   cooldown: 8,
   targeting: "enemy",
   range: 320,
+  fx: { travel: "beam" },
   effects: [
     { kind: "damage", damage: { base: 1.4, scale: "spell", type: "holy", canCrit: true }, to: "target" },
     { kind: "status", status: "judged", chance: 1, to: "target" },
@@ -251,6 +252,7 @@ export const PALADIN_VINDICATORS_CALL: Ability = {
   cooldown: 12,
   targeting: "radius",
   range: 260,
+  fx: { travel: "beam" },
   shape: { radius: 140 },
   effects: [
     { kind: "status", status: "judged", chance: 1, to: "allTargets" },
@@ -275,6 +277,7 @@ export const PALADIN_MARTYRS_GRACE: Ability = {
   cooldown: 20,
   targeting: "ally",
   range: 260,
+  fx: { travel: "beam" },
   effects: [
     { kind: "damage", damage: { base: 0.25, scale: "flat", type: "holy", channel: "environmental" }, to: "self" },
     { kind: "heal", amount: 0.4, scale: "spell", to: "allies", overTime: { duration: 4 } },
@@ -294,6 +297,7 @@ export const PALADIN_LAST_LIGHT: Ability = {
   isUltimate: true,
   targeting: "ally",
   range: 300,
+  fx: { travel: "beam" },
   effects: [
     { kind: "status", status: "under_oath", chance: 1, to: "allies" },
     { kind: "heal", amount: 0.2, scale: "spell", to: "allies" },

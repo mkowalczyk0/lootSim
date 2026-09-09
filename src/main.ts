@@ -22,7 +22,7 @@ import { AccountClient, type AccountInfo } from "./net/account";
 import { RemoteSaveStore } from "./net/savestore";
 import { showLogin } from "./ui/login";
 import { WorldRenderer } from "./render/draw";
-import { Fx } from "./render/fx";
+import { Fx, type TracerStyle } from "./render/fx";
 import { renderHub } from "./render/hub";
 import { buildSprites, preloadArt } from "./render/sprites";
 import { Hud } from "./ui/hud";
@@ -571,6 +571,17 @@ function start(state: GameState, who: AccountInfo): void {
           fx.text(ev.x, ev.y, ev.label, ev.color, 12);
           fx.ring(ev.x, ev.y, 40, ev.color, 3);
           fx.sparkle(ev.x, ev.y, ev.color, 10, 130);
+          break;
+        case "abilityFx":
+          // An ability's own flourish. No text: the ref names an effect library that does
+          // not exist yet, and printing it is what this replaced.
+          fx.ring(ev.x, ev.y, 40, ev.color, 3);
+          fx.sparkle(ev.x, ev.y, ev.color, 10, 130);
+          break;
+        case "tracer":
+          // A hitscan line (`docs/ability-fx.md`) — drawn whole, instantly, because the
+          // damage it stands for has already landed.
+          fx.tracer(ev.x, ev.y, ev.x1, ev.y1, ev.color, ev.style as TracerStyle);
           break;
         case "bossSpawn":
           fx.text(d.avatar.x, d.avatar.y - 70, ev.name.toUpperCase(), "#ff2d2d", 22);

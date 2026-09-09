@@ -155,6 +155,7 @@ export const JUGGERNAUT_TREMOR_BLOW: Ability = {
   cooldown: 9,
   targeting: "line",
   range: 200,
+  fx: { travel: "lance" },
   shape: { width: 60, length: 200 },
   effects: [
     { kind: "damage", damage: { base: 1.7, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },

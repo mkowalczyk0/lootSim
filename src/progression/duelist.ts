@@ -206,6 +206,7 @@ export const DUELIST_COUNTERMARK: Ability = {
   cooldown: 14,
   targeting: "currentTarget",
   range: 200,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "mark", chance: 1, to: "target" },
     { kind: "reactive", event: "damageTaken", window: 4, effects: [
@@ -226,6 +227,7 @@ export const DUELIST_FINAL_LESSON: Ability = {
   cooldown: 30,
   targeting: "currentTarget",
   range: 160,
+  fx: { travel: "beam" },
   effects: [
     { kind: "status", status: "opening", chance: 1, to: "target", durationMult: 3 },
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },

@@ -125,6 +125,7 @@ export const CORSAIR_CHAIN_DRAG: Ability = {
   cooldown: 9,
   targeting: "currentTarget",
   range: 140,
+  fx: { travel: "lance" },
   effects: [
     { kind: "status", status: "hooked", chance: 1, to: "target", durationMult: 2 },
     { kind: "pull", force: 60, to: "target" },
@@ -227,6 +228,7 @@ export const CORSAIR_PLUNDER: Ability = {
   cooldown: 15,
   targeting: "currentTarget",
   range: 240,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "bounty", chance: 1, to: "target" },
     { kind: "resource", resource: "crew", delta: 1, to: "self" },
@@ -246,6 +248,7 @@ export const CORSAIR_BROADSIDE: Ability = {
   isUltimate: true,
   targeting: "line",
   range: 400,
+  fx: { travel: "lance" },
   shape: { width: 260, length: 400 },
   telegraph: { shape: "line", windup: 0.6, width: 260 },
   effects: [

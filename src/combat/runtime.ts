@@ -24,6 +24,30 @@ import type { CombatHost, HostActor } from "./host";
 import type { ResourceEvent } from "./resources";
 import { resolveTargets, type TargetContext, type TargetResult } from "./targeting";
 
+/**
+ * Draws an ability's `fx.travel` line from the caster to each thing it reached.
+ *
+ * The colour is the ability's own damage type rather than the caster's gear element,
+ * because the line should say what is about to hurt you. An ability with no damage step
+ * (a pure debuff like `assassin.mark_for_death`) falls back to `physical`, which reads as
+ * a plain white line.
+ *
+ * **Output only.** No rng, no state, no return value anything reads — see `emitTracer`.
+ */
+function emitTravelFx(host: CombatHost, ability: Ability, ctx: EffectContext): void {
+  const style = ability.fx?.travel;
+  if (!style) return;
+  const caster = host.actor(ctx.casterId);
+  if (!caster) return;
+  const damage = ability.effects.find((s) => s.kind === "damage");
+  const element = damage && damage.kind === "damage" ? damage.damage.type : "physical";
+  for (const id of ctx.targets.actorIds) {
+    const victim = host.actor(id);
+    if (!victim || id === ctx.casterId) continue;
+    host.emitTracer(style, String(element), caster.x, caster.y, victim.x, victim.y);
+  }
+}
+
 export interface CastInput {
   aim?: { x: number; y: number };
   currentTargetId?: number;
@@ -377,6 +401,14 @@ export class AbilityRuntime {
 
     // --- run effects ---
     for (const step of ability.effects) runEffect(host, ctx, step, this);
+
+    // --- presentation ---
+    // A hitscan tracer per target, for any ability that authored one. Deliberately after
+    // the effects, so what is drawn is what actually resolved: an ability whose targets
+    // died or whose steps did nothing still drew the line, which is honest — the ability
+    // did reach across the room. Nothing here reads back into the simulation, and nothing
+    // here touches `host.random()`.
+    emitTravelFx(host, ability, ctx);
 
     // --- events ---
     const evtType = ability.isUltimate ? "ultimateUse" : "skillUse";
