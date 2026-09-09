@@ -12,6 +12,11 @@
  */
 
 import { Dungeon, type Hero } from "../src/game/dungeon";
+// The one bot stub, not a hand-rolled one. `Dungeon.update` does
+// `const source = hero.local ? input : hero.input; if (!source) continue;` — so calling
+// it without an input silently skips the local hero and ticks the floor around a player
+// who is not there. This file used to do exactly that.
+import { FakeInput } from "./bot";
 import { circleHitsWall } from "../src/game/level";
 import type { Element } from "../src/data/elements";
 import type { Enemy } from "../src/game/entities";
@@ -552,10 +557,18 @@ function walkSteps(steps: readonly EffectStep[], visit: (s: EffectStep) => void)
   const e = spawn(d, hero.avatar.x + 120, hero.avatar.y);
   hero.rt.castAbility(d, hero.index, lance, { attackDamage: 100, aim: { x: e.x, y: e.y } });
   const window = lance.followUp!.window;
+  const idle = new FakeInput();
   for (let t = 0; t < window + 1; t += 0.5) {
-    d.update(0.5);
+    idle.beginTick();
+    d.update(0.5, idle);
   }
-  check("a follow-up window nobody presses expires and is dropped", !hero.rt.followUpOpen(lance.id, d));
+  // Two halves, because the name claims two things. "Expires" is the clock, and
+  // `followUpOpen` compares against it — that half passed even when this loop was
+  // skipping the hero entirely. "Is dropped" is the pending list actually shrinking,
+  // which is what the comment above is about and what nothing here used to check.
+  check("a follow-up window nobody presses expires", !hero.rt.followUpOpen(lance.id, d));
+  check("…and is dropped rather than left on the pending list for the rest of the floor",
+    hero.rt.pending.length === 0, `${hero.rt.pending.length} pending`);
 }
 
 // --- ultimate-meter generation rules are reachable (Cluster 5b) ---------

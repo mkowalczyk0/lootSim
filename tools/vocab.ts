@@ -30,9 +30,11 @@ import {
   makeDamagePacket,
   registerStatus,
   type Ability,
+  type EffectStep,
   type CombatHost,
   type DamagePacket,
   type HostActor,
+  type MinionCommand,
   type MinionRequest,
   type MoveRequest,
   type ProjectileRequest,
@@ -86,10 +88,18 @@ class MockWorld implements CombatHost {
   // logs the test inspects
   damageLog: { targetId: number; packet: DamagePacket; dealt: number }[] = [];
   projectiles: ProjectileRequest[] = [];
-  zones: ZoneRequest[] = [];
+  /**
+   * Renamed from `zones` in Sept 2026. It used to collide with the `zones()` generator
+   * below — a class field overwrites the prototype method, so the field won and
+   * `host.zones()`, which `resolveTargets` calls to find existing zones, was not a
+   * function at all. Nothing noticed because no check here used zone targeting.
+   */
+  zoneLog: { id: number; req: ZoneRequest }[] = [];
   minions: MinionRequest[] = [];
   terrain: TerrainRequest[] = [];
   fx: { ref: string; x: number; y: number }[] = [];
+  commands: { ownerId: number; behavior: MinionCommand["behavior"]; targetId?: number }[] = [];
+  redirects: { protectorId: number; wardId: number; fraction: number; duration: number }[] = [];
   shields: { targetId: number; amount: number }[] = [];
   heals: { targetId: number; amount: number; overTime?: number }[] = [];
   threatOps: { targetId: number; op: string }[] = [];
@@ -134,12 +144,44 @@ class MockWorld implements CombatHost {
   *corpses() {
     for (const c of this.corpseList) yield c;
   }
-  *zones() {
-    yield* [];
+  *zones(): Iterable<{ id: number; x: number; y: number }> {
+    for (const z of this.zoneLog) yield { id: z.id, x: z.req.x, y: z.req.y };
   }
   *summonsOf(ownerId: number): Iterable<TargetActor> {
     for (const a of this.actorList) if (a.ownerId === ownerId) yield a;
   }
+  /**
+   * The four below were added to `CombatHost` after this mock was written, and their
+   * absence made `MockWorld` fail to satisfy the interface — invisibly, because nothing
+   * typechecked `tools/` until Sept 2026. They are implemented rather than stubbed so a
+   * check can be written against them, but NOTHING IN THIS FILE EXERCISES THEM YET: as
+   * of this commit `consumeCorpses`, `commandSummons`, `sacrificeSummons` and
+   * `redirectDamage` are reachable-but-untested, and so is zone targeting. That is a
+   * coverage gap, not a solved problem.
+   */
+  consumeCorpses(count: number | "all"): number {
+    const take = count === "all" ? this.corpseList.length : Math.min(count, this.corpseList.length);
+    this.corpseList.splice(0, take);
+    return take;
+  }
+
+  commandSummons(ownerId: number, behavior: MinionCommand["behavior"], targetId?: number): void {
+    this.commands.push({ ownerId, behavior, ...(targetId !== undefined ? { targetId } : {}) });
+  }
+
+  sacrificeSummons(ownerId: number, count: number): number {
+    let died = 0;
+    for (const a of this.actorList) {
+      if (died >= count) break;
+      if (a.ownerId === ownerId && a.alive) { a.alive = false; died++; }
+    }
+    return died;
+  }
+
+  redirectDamage(protectorId: number, wardId: number, fraction: number, duration: number): void {
+    this.redirects.push({ protectorId, wardId, fraction, duration });
+  }
+
   markOf(actorId: number) {
     return this.marks.get(actorId);
   }
@@ -235,8 +277,9 @@ class MockWorld implements CombatHost {
     return this.nextId++;
   }
   spawnZone(req: ZoneRequest) {
-    this.zones.push(req);
-    return this.nextId++;
+    const id = this.nextId++;
+    this.zoneLog.push({ id, req });
+    return id;
   }
   spawnMinion(req: MinionRequest) {
     this.minions.push(req);
@@ -472,8 +515,8 @@ console.log("\n=== 8. one terrain zone ===");
   };
   const rt = new AbilityRuntime();
   rt.castAbility(w, hero.id, brier, { ...CAST, aim: { x: 80, y: 0 } });
-  check("a mergeable damaging zone was placed at the point", w.zones.length === 1
-    && w.zones[0]!.mergeable && w.zones[0]!.damage!.channel === "periodic");
+  check("a mergeable damaging zone was placed at the point", w.zoneLog.length === 1
+    && w.zoneLog[0]!.req.mergeable && w.zoneLog[0]!.req.damage!.channel === "periodic");
   check("a wall was constructed", w.terrain.length === 1 && w.terrain[0]!.piece === "wall" && w.terrain[0]!.hp === 200);
 }
 
@@ -713,7 +756,9 @@ console.log("\n=== 13. one Ultimate — and THE ULTIMATE RULE ===");
       generation: [{ on: "kill", amount: 1, requireTags: ["melee"] }],
     });
     tagged.rateMultiplier = 3;
-    tagged.handleEvent({ type: "kill", tags: ["spell"] });
+    // A real tag that is not "melee". This read `["spell"]`, which is not in the tag
+    // union at all — so the gate was refusing something nothing could ever send it.
+    tagged.handleEvent({ type: "kill", tags: ["ranged"] });
     check("a requireTags gate still refuses a non-matching event at any rate",
       tagged.value === 0);
 
@@ -778,8 +823,8 @@ console.log("\n=== reactive re-entrancy: a counter that causes the event it coun
   /** Arms `n` counter windows, throws one hit, and reports what came back. */
   const provoke = (n: number): { threw: string; packets: number; left: number } => {
     const stance: Ability = {
-      id: "test.stance", name: "Counter Stance", description: "", category: "skill",
-      tags: ["melee"], cooldown: 0, targeting: "self", range: 60,
+      id: "test.stance", name: "Counter Stance", description: "",
+      tags: ["melee"], cooldown: 0, targeting: "self", range: 60, category: "attack",
       effects: Array.from({ length: n }, () => counter(4)),
     };
     rt.castAbility(w, hero.id, stance, aim);

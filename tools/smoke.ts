@@ -2353,7 +2353,7 @@ console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
     const rng = new Rng(4);
     d.loot.coins = 1000;
     d.loot.gems = 200;
-    d.loot.keys.basic = 4;
+    d.loot.keys.Basic = 4;
     d.loot.materials.fire = 30;
     d.loot.xp = 555;
     for (let i = 0; i < 3; i++) {
@@ -2362,7 +2362,7 @@ console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
     const coinsBefore = state.coins;
     const gemsBefore = state.gems;
     const bagBefore = state.inventory.length;
-    const keysBefore = state.keys.basic;
+    const keysBefore = state.keys.Basic;
     const fireBefore = state.materials.fire;
     const xpBefore = state.player.xp;
     const kept = d.earlyExtractLoot();
@@ -2370,8 +2370,14 @@ console.log("\n=== the floor objective and the two portals (UAT §5/§6) ===");
     check("bailing early forfeits every unbanked item",
       state.inventory.length === bagBefore && kept.itemsLost === 3,
       `bag ${bagBefore} -> ${state.inventory.length}, ${kept.itemsLost} lost`);
+    // Spelled out rather than compared bare: until Sept 2026 this read `keys.basic`
+    // against a `Record<ChestTier, number>` keyed `Basic`, so both sides were `undefined`
+    // and the keys half of the penalty was never tested at all. The detail string is the
+    // guard — a check that can only report "0 -> 0" can go quiet again without anyone
+    // seeing it.
     check("bailing early forfeits keys and materials",
-      state.keys.basic === keysBefore && state.materials.fire === fireBefore);
+      keysBefore === 0 && state.keys.Basic === 0 && state.materials.fire === fireBefore,
+      `4 keys carried, ${keysBefore} -> ${state.keys.Basic} banked; fire ${fireBefore} -> ${state.materials.fire}`);
     check("bailing early keeps only a slice of the coins",
       state.coins === coinsBefore + Math.floor(1000 * EARLY_EXTRACT_KEEP),
       `+${state.coins - coinsBefore} of 1000`);
