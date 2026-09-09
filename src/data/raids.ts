@@ -138,8 +138,16 @@ export interface RaidSpec {
   readonly unlockFrontier: number;
   /** The local element: what it fights with, and what it resists. */
   readonly element: Element;
-  /** An existing `BossSpec.id` to borrow — sprite, kit and phase shape, wholesale. */
+  /** An existing `BossSpec.id` to borrow — kit and phase shape, wholesale. */
   readonly templateId: string;
+  /**
+   * Its own sprite. A raid borrows its template's *kit*, but not its body: until the art
+   * pass (docs/art-manifest.md §2.1) every raid also drew the template's PNG, so the
+   * headline encounter of a whole layer was pixel-identical to an ordinary floor boss and
+   * a player could only tell them apart by the name plate. The silhouette is the first
+   * thing read (art-style-guide §1.5), so it is the one thing a raid does not borrow.
+   */
+  readonly sprite: BossSpec["sprite"];
   /**
    * The abilities that make this raid *this* raid, folded on top of the borrowed kit: the
    * first from phase one so the fight reads as itself immediately, all of them from phase
@@ -248,6 +256,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // weaponry with the serial numbers filed off. Nothing else in the roster reads as an
     // army firing on a position.
     templateId: "choir",
+    sprite: "bossTyrant",
     signature: ["starLance", "wall", "summon", "ringOut"],
     finalPhase: "The Argument, Concluded",
     biome: THE_FIRST_HEAVENS,
@@ -268,6 +277,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // The Colossus charges in a straight line down a corridor and quakes the room it is
     // standing in. A labyrinth is corridors.
     templateId: "colossus",
+    sprite: "bossLabyrinth",
     signature: ["wall", "charge", "meteor", "beam"],
     finalPhase: "No Further Turns",
     biome: THE_NINTH_LABYRINTH,
@@ -288,6 +298,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // The Warden: one enormous body, a pole, and no interest in moving. The shallowest
     // raid borrows the shallowest kit; its signature is what makes it a river.
     templateId: "warden",
+    sprite: "bossFerryman",
     signature: ["beam", "corruption", "ringOut", "summon"],
     finalPhase: "Both Banks At Once",
     biome: THE_CROSSING,
@@ -308,6 +319,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // The Herald already opens with cinders and a volley and closes with the room on
     // fire. A war goddess is that, with more of it arriving at once.
     templateId: "herald",
+    sprite: "bossWarQueen",
     signature: ["volley", "starLance", "meteor", "backlash"],
     finalPhase: "The Prayer Answered",
     biome: THE_SEVENTH_CIRCLE,
@@ -432,8 +444,9 @@ export function raidPhases(spec: RaidSpec, template: BossSpec): readonly BossPha
 /**
  * The raid's encounter, as a `BossSpec` the existing boss brain runs unmodified.
  *
- * Borrowed and reskinned per the `planetBossSpec` precedent — same sprite, same ability
- * vocabulary, same `game/boss.ts` — then rebuilt per `legendBossSpec`'s: the stat line
+ * Borrowed and reskinned per the `planetBossSpec` precedent — same ability
+ * vocabulary, same `game/boss.ts` — except the sprite, which is the raid's own (§1.5:
+ * the silhouette is what a player reads first, so it is not a thing to borrow) — then rebuilt per `legendBossSpec`'s: the stat line
  * comes off the reference encounter rather than the template, and the phases are
  * cumulative with a finale appended.
  *
@@ -449,6 +462,7 @@ export function raidBossSpec(spec: RaidSpec): BossSpec {
     name: spec.name,
     title: spec.title,
     element: spec.element,
+    sprite: spec.sprite,
     health: REFERENCE.health * RAID_HEALTH,
     damage: REFERENCE.damage * RAID_DAMAGE,
     selfResist: RAID_SELF_RESIST,

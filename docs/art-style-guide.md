@@ -84,6 +84,26 @@ you*: the eye, the visor slit, the maw-glow. That single hot cluster is what mak
 18-pixel creature read as a threat. Never a second bright colour. The hero has no hot
 accent at all.
 
+> **Pipeline note — PixelLab fights this rule, so clamp it in the prompt.** The generator
+> biases hard toward *clean heroic armour*, and the drift is reliable rather than unlucky:
+> both armoured raid bosses (§2 of `docs/art-manifest.md`) came back on the first pass as
+> bright polished gold-and-white — the Queen of the Seventh Circle with a saturated red
+> plume, i.e. a **second** hot colour, and the Tyrant of the First Heavens as a clean
+> paladin rather than a cast-out one. Neither read as a threat, because when the whole body
+> is bright nothing is the part looking at you.
+>
+> So for **any armoured subject** (boss, elite, humanoid enemy, armoured named item),
+> write the clamp into the prompt explicitly rather than hoping: *matte, blackened,
+> soot-stained, heavily desaturated, no gold, no shine, no highlights, no white*, and then
+> **name the accent as the only saturated value in the image** — "the only bright thing in
+> the entire image is a thin \<element\> light in the helm slit".
+>
+> Expect to still finish by hand sometimes. A re-prompt fixed both palettes, but the Tyrant
+> then came back with *no* lit region at all; its accent was painted in afterwards by
+> `art/bosses/finish.ts`, which is the "aseprite adds the hot accent" step of §17.5 done as
+> a reproducible script. **This is a prompting rule, not a claim about what is committed** —
+> check the PNGs for that.
+
 ### 1.5 Silhouette carries the meaning
 A player identifies a monster's *threat and role* from its black silhouette alone, before
 any colour or detail. A sniper is not a recoloured grunt — it is a different shape. This
