@@ -34,7 +34,11 @@ export type HubStationKind =
   // picks one, and the portal that picking spawns. The Reliquary Gate's shape exactly,
   // because a Memory is chosen the same way a sector is — you configure it at a terminal
   // and then walk into what that opens.
-  | "altar" | "memoryPortal";
+  | "altar" | "memoryPortal"
+  // The build-tester room: the first second room the deck has ever had. One station,
+  // one dummy, no config screen — walking in and confirming is the whole interaction,
+  // the same as `dive`.
+  | "training";
 
 /**
  * The hall. One character per 32-unit tile; `#` is stone you cannot cross.
@@ -53,23 +57,30 @@ export type HubStationKind =
  * Abyss in the north archway — snapped onto the lattice. The three that were standing on
  * painted wall (the War Table, the Convergence and the Raid Portal, all added after the
  * deck was baked and placed by eye) moved onto floor.
+ *
+ * **The build-tester room is the first second room** — exactly the "a handful of rows"
+ * the header above promised: a doorway punched through the hall's own east wall at row
+ * 8 (where the Comms/Quartermaster band already sat, so nothing else moved), a short
+ * corridor, and a small walled room holding the training dummy's own station (`P`). It
+ * is drawn from the painted deck's interior wall list the way every station already is
+ * (`DECK_INTERIOR_WALLS`) rather than needing a rendering special case.
  */
 const DECK: readonly string[] = [
-  "####################",
-  "####################",
-  "#########.A#########",
-  "####T...........####",
-  "###.....L....H...###",
-  "###.W............###",
-  "###..........Q..R###",
-  "###C.............###",
-  "###.....E........###",
-  "###...D....M...G.###",
-  "###..............###",
-  "###.V...........F###",
-  "####..X.........####",
-  "#########.@#########",
-  "####################",
+  "##############################",
+  "##############################",
+  "#########.A###################",
+  "####T...........##############",
+  "###.....L....H...#############",
+  "###.W............#############",
+  "###..........Q..R#############",
+  "###C.............######......#",
+  "###.....E................P...#",
+  "###...D....M...G.######......#",
+  "###..............#############",
+  "###.V...........F#############",
+  "####..X.........##############",
+  "#########.@###################",
+  "##############################",
 ];
 
 const ROCK = "#";
@@ -85,12 +96,23 @@ const STATION_GLYPH: Record<HubStationKind, string> = {
   dive: "D", abyss: "A", hoard: "H", starmap: "R", expedition: "E",
   forge: "F", quartermaster: "Q", comms: "C", warTable: "W", raidPortal: "X",
   tower: "T", vigil: "V", convergence: "G", altar: "L", memoryPortal: "M",
+  training: "P",
 };
 
 export const DECK_COLS = DECK[0]!.length;
 export const DECK_ROWS = DECK.length;
 export const DECK_WIDTH = DECK_COLS * TILE;
 export const DECK_HEIGHT = DECK_ROWS * TILE;
+
+/**
+ * How wide the deck was before the build-tester room extended it east — exactly the
+ * width `hub.citadel-deck` (the painted scene, §4) was authored for. `render/hub.ts`
+ * stretches that image to fill the painted look, and the image itself did not grow when
+ * the grid did, so it draws at this width rather than `DECK_WIDTH` — stretching it over
+ * the wider grid would squash every relic already painted into it. The room past this
+ * line always draws flat, the same look the whole hall has before any art loads.
+ */
+export const PAINTED_HALL_WIDTH = 20 * TILE;
 
 /** The glyph at a cell, or `#` off the edge of the deck. */
 export function deckGlyph(cx: number, cy: number): string {

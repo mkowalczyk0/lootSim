@@ -236,5 +236,10 @@ export function layerFor(config: RunConfig): WorldLayer {
     case "vigil":
     case "convergence":
       return RIFT_LAYERS.threshold;
+    // The build-tester room doesn't even pretend to be elsewhere — it's a second room
+    // off the Citadel hall itself (`game/deck.ts`), the most literally-Threshold place
+    // on either ladder.
+    case "training":
+      return RIFT_LAYERS.threshold;
   }
 }
