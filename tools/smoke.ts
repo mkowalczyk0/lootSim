@@ -21,6 +21,10 @@ import { Dungeon, type Hero } from "../src/game/dungeon";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
 import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
+import {
+  DECK_COLS, DECK_ROWS, DECK_SPAWN, DECK_WALLS, deckIsRock, deckProblems,
+} from "../src/game/deck";
+import { RAIDS } from "../src/data/raids";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
 import { Player, xpForLevel } from "../src/game/player";
@@ -1367,6 +1371,106 @@ console.log("\n=== reforging (UAT §26) ===");
     poor.reforgeItem(poorItem.id) === null && poor.coins === 0 && poor.materials.physical === 0);
 }
 
+console.log("\n=== the Citadel deck (the hub, on the tile lattice) ===");
+{
+  // The deck is authored the way a floor is (`game/deck.ts`), so it is held to the same
+  // promises: walls on the lattice, painted rock *is* the collision volume, and every
+  // station is somewhere you can actually walk to. These used to be unfalsifiable —
+  // a station was a pair of numbers measured off a painting by eye.
+  const problems = deckProblems();
+  check("the deck is well-formed — one glyph per station, one spawn, nothing stray",
+    problems.length === 0, problems.slice(0, 4).join("; "));
+
+  check("every wall is on the 32-unit lattice and exactly one tile thick",
+    DECK_WALLS.every((w) => w.x % TILE === 0 && w.y % TILE === 0 && w.h === TILE && w.w % TILE === 0
+      && w.w > 0),
+    DECK_WALLS.filter((w) => w.x % TILE || w.y % TILE || w.h !== TILE || w.w % TILE).length + " off-lattice");
+
+  // The exact predicate `render/tilemap.ts` stamps rock with: a cell is rock when its
+  // centre is inside a wall. If that ever disagrees with the authored grid, the hall you
+  // see stops being the hall that stops you — the "I can walk through walls" bug the
+  // dungeon had twice, arriving in the hub.
+  let mismatch = 0;
+  for (let cy = 0; cy < DECK_ROWS; cy++) {
+    for (let cx = 0; cx < DECK_COLS; cx++) {
+      const x = cx * TILE + TILE / 2;
+      const y = cy * TILE + TILE / 2;
+      const inWall = DECK_WALLS.some((w) => x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h);
+      if (inWall !== deckIsRock(cx, cy)) mismatch++;
+    }
+  }
+  check("the rock the stamper paints is exactly the rock that stops you", mismatch === 0,
+    `${mismatch} cells disagree`);
+
+  // Every station, with everything unlocked at once. This is the parity list: the deck
+  // must still hold all fifteen doors it held before the refactor.
+  const all = new Hub();
+  all.setExpedition(PLANETS[0]!.id, 1);
+  all.raidOpen = true;
+  all.setRaid(RAIDS[0]!.id, 1);
+  all.altarOpen = true;
+  all.setMemory("any-memory-id");
+  all.towerOpen = true;
+  all.vigilOpen = true;
+  all.weeklyOpen = true;
+  const kinds = all.stations.map((s) => s.kind).sort();
+  const expected = ([
+    "abyss", "altar", "comms", "convergence", "dive", "expedition", "forge", "hoard",
+    "memoryPortal", "quartermaster", "raidPortal", "starmap", "tower", "vigil", "warTable",
+  ] as string[]).sort();
+  check("every station the deck used to hold is still on it",
+    kinds.length === expected.length && kinds.every((k, i) => k === expected[i]),
+    kinds.join(","));
+
+  check("every station stands on open floor, on its own tile",
+    all.stations.every((st) => !deckIsRock(Math.floor(st.x / TILE), Math.floor(st.y / TILE))),
+    all.stations.filter((st) => deckIsRock(Math.floor(st.x / TILE), Math.floor(st.y / TILE)))
+      .map((st) => st.label).join(","));
+
+  // The generator's one hard promise, for the hall: you can walk from where you arrive to
+  // everything the hall offers. A room graph gets this by construction; a hand-authored
+  // grid does not, so it is checked.
+  const seen = new Uint8Array(DECK_COLS * DECK_ROWS);
+  const sx = Math.floor(DECK_SPAWN.x / TILE);
+  const sy = Math.floor(DECK_SPAWN.y / TILE);
+  const queue = [sy * DECK_COLS + sx];
+  seen[queue[0]!] = 1;
+  for (let i = 0; i < queue.length; i++) {
+    const cell = queue[i]!;
+    const cx = cell % DECK_COLS;
+    const cy = (cell - cx) / DECK_COLS;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= DECK_COLS || ny >= DECK_ROWS) continue;
+      const at = ny * DECK_COLS + nx;
+      if (seen[at] || deckIsRock(nx, ny)) continue;
+      seen[at] = 1;
+      queue.push(at);
+    }
+  }
+  const stranded = all.stations.filter(
+    (st) => !seen[Math.floor(st.y / TILE) * DECK_COLS + Math.floor(st.x / TILE)]);
+  check("every station is walkable from where you arrive", stranded.length === 0,
+    stranded.map((st) => st.label).join(","));
+
+  // Movement resolves against those walls now, not against a rectangle drawn around the
+  // art. Shove the hero at each wall for a couple of seconds and it must still be in the
+  // hall — and, because the resolver works on the real rects, out of the stone.
+  const walker = new Hub();
+  let escaped = 0;
+  for (const [mx, my] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as [number, number][]) {
+    walker.x = DECK_SPAWN.x;
+    walker.y = DECK_SPAWN.y;
+    const push = { moveVector: () => ({ x: mx, y: my }) } as unknown as Input;
+    for (let i = 0; i < 240; i++) walker.update(DT, push);
+    if (walker.x <= 0 || walker.x >= HUB_WIDTH || walker.y <= 0 || walker.y >= HUB_HEIGHT) escaped++;
+    if (deckIsRock(Math.floor(walker.x / TILE), Math.floor(walker.y / TILE))) escaped++;
+  }
+  check("walking flat into the walls never leaves the hall or ends up inside the stone",
+    escaped === 0, `${escaped} of 8 directions`);
+}
+
 console.log("\n=== the ship hub ===");
 {
   const hub = new Hub();
@@ -1411,7 +1515,8 @@ console.log("\n=== the ship hub ===");
   const abyss = hub.stations.find((s) => s.kind === "abyss")!;
   hub.x = abyss.x + abyss.radius;
   hub.y = abyss.y;
-  check("standing in the picked portal is being ready", hub.inPartyPortal && hub.partyStation === abyss);
+  check("standing in the picked portal is being ready",
+    hub.inPartyPortal && hub.partyStation?.kind === "abyss");
   hub.x = abyss.x + abyss.radius + HUB_PLAYER_RADIUS + 40;
   check("…standing next to it isn't", !hub.inPartyPortal);
   const dive = hub.stations.find((s) => s.kind === "dive")!;

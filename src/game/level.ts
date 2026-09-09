@@ -39,6 +39,19 @@ export interface Wall {
   readonly h: number;
 }
 
+/**
+ * The part of a space the wall queries and the tile stamper actually read. A `Level`
+ * satisfies it, and so does the Citadel deck (`game/deck.ts`), which is authored on the
+ * same 32-unit lattice — which is what lets the hub reuse the dungeon's own collision
+ * and its own floor stamper instead of keeping a second copy of either.
+ */
+export interface TiledSpace {
+  readonly width: number;
+  readonly height: number;
+  readonly seed: number;
+  readonly walls: readonly Wall[];
+}
+
 export type TrapState = "idle" | "warn" | "active";
 
 export interface Trap {
@@ -1209,10 +1222,10 @@ function cellIndexAt(level: Level, x: number, y: number): number {
  * corner resolves against both faces instead of popping through one of them.
  */
 export function resolveCircle(
-  level: Level, x: number, y: number, r: number,
+  space: Pick<TiledSpace, "walls">, x: number, y: number, r: number,
 ): { x: number; y: number } {
   for (let pass = 0; pass < 2; pass++) {
-    for (const w of level.walls) {
+    for (const w of space.walls) {
       const nx = clamp(x, w.x, w.x + w.w);
       const ny = clamp(y, w.y, w.y + w.h);
       const dx = x - nx;

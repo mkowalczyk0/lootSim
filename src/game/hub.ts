@@ -10,25 +10,23 @@
  *
  * Pure simulation, same as `game/dungeon.ts` and `game/level.ts` — no DOM, so it can be
  * driven headlessly by the smoke test exactly like a dive can.
+ *
+ * **The hall itself is authored on the tile lattice** (`game/deck.ts`), the same 32-unit
+ * grid every dungeon floor is built on. This file no longer knows where anything is: it
+ * asks the deck for a station's anchor tile and resolves movement against the deck's
+ * walls with the dungeon's own `resolveCircle`. Moving the Forge is editing one character
+ * in `deck.ts`, and there is no second collision model to keep in step with the first.
  */
 
 import type { Input } from "../core/input";
-import { clamp } from "../core/math";
 import type { Appearance } from "../data/cosmetics";
 import { MODES, type RunModeId } from "../data/modes";
+import {
+  DECK_HEIGHT, DECK_SPACE, DECK_SPAWN, DECK_WIDTH, deckAnchor, type HubStationKind,
+} from "./deck";
+import { resolveCircle } from "./level";
 
-export type HubStationKind =
-  | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms" | "vigil" | "convergence" | "tower"
-  // The raid pair (UAT §15): a terminal that picks one, and the portal that picking spawns
-  // — the Reliquary Gate's shape exactly, because a raid is chosen the same way a sector
-  // is (which one, at which tier) and there are four of them to choose between.
-  | "warTable" | "raidPortal"
-  // The Memory pair (`data/memories.ts`, `docs/memories.md`): an altar that shapes and
-  // picks one, and the portal that picking spawns. The Reliquary Gate's shape exactly,
-  // because a Memory is chosen the same way a sector is — you configure it at a terminal
-  // and then walk into what that opens.
-  | "altar" | "memoryPortal";
+export type { HubStationKind };
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -71,66 +69,61 @@ export interface HubMate {
   appearance: Appearance | null;
 }
 
-export const HUB_WIDTH = 640;
-export const HUB_HEIGHT = 460;
+/** The hall's world size, straight off the deck grid — 20 x 15 tiles. */
+export const HUB_WIDTH = DECK_WIDTH;
+export const HUB_HEIGHT = DECK_HEIGHT;
 
 const PLAYER_SPEED = 150;
 export const HUB_PLAYER_RADIUS = 9;
 /** How close counts as "at" a station — generous, since there's nothing to dodge here. */
 const INTERACT_RANGE = 34;
 
-// Positions are tuned against the Citadel deck art (render/atlas/scenes/hub.citadel-deck),
-// where PixelLab painted the four relic stations directly into the hall: the Comms shrine
-// on the left wall, the Quartermaster's rack and the Reliquary Gate on the right, the
-// Forge in the bottom-right corner. The Abyssal Rift sits in the central archway and the
-// Delve and Avarice rifts fall on the two glowing cracks torn into the flagstone. Each
-// coordinate is the centre of its painted structure. See render/hub.ts for how each draws.
-const FIXED_STATIONS: readonly HubStation[] = [
-  { kind: "dive", label: "The Delve", x: 200, y: 300, radius: 24 },
-  { kind: "abyss", label: "Abyssal Rift", x: 322, y: 50, radius: 24 },
-  { kind: "hoard", label: "Avarice Rift", x: 424, y: 150, radius: 24 },
-  { kind: "starmap", label: "Reliquary Gate", x: 548, y: 212, radius: 20 },
-  { kind: "forge", label: "The Forge", x: 508, y: 372, radius: 20 },
-  { kind: "quartermaster", label: "Quartermaster", x: 430, y: 214, radius: 20 },
-  { kind: "comms", label: "Comms Relay", x: 95, y: 236, radius: 20 },
-  // The War Table (UAT §15) — where the Keepers keep the list of things too large to
-  // contain. Left wall below the Comms shrine, clear of the Delve's crack in the floor.
-  // Position unverified by eye: nobody working on this branch has a browser.
-  { kind: "warTable", label: "The War Table", x: 62, y: 330, radius: 20 },
+/**
+ * What each station is called, and how big its footprint is. The two tables are
+ * exhaustive over `HubStationKind`, so a new station is a label, a radius and a glyph in
+ * `deck.ts` — never a coordinate measured off a painting.
+ *
+ * Radius is the station's own presence on the floor: a portal you step into is wider than
+ * a terminal you walk up to, and the Delve and the two rifts are the widest because they
+ * are the permanent doors the hall was built around.
+ */
+const STATION_LABEL: Record<HubStationKind, string> = {
+  dive: "The Delve", abyss: "Abyssal Rift", hoard: "Avarice Rift",
+  starmap: "Reliquary Gate", expedition: "Reliquary Portal",
+  forge: "The Forge", quartermaster: "Quartermaster", comms: "Comms Relay",
+  warTable: "The War Table", raidPortal: "Raid Portal",
+  altar: "The Altar", memoryPortal: "Memory Portal",
+  tower: "The Tower", vigil: "The Vigil", convergence: "The Convergence",
+};
+
+const STATION_RADIUS: Record<HubStationKind, number> = {
+  dive: 24, abyss: 24, hoard: 24,
+  starmap: 20, expedition: 22,
+  forge: 20, quartermaster: 20, comms: 20,
+  warTable: 20, raidPortal: 22,
+  altar: 20, memoryPortal: 22,
+  tower: 22, vigil: 22, convergence: 22,
+};
+
+/** A station, placed on its anchor tile. */
+function station(kind: HubStationKind): HubStation {
+  const at = deckAnchor(kind);
+  return { kind, label: STATION_LABEL[kind], x: at.x, y: at.y, radius: STATION_RADIUS[kind] };
+}
+
+/** The stations that are always on the deck. Everything else is conditional — see
+ *  `Hub.stations`, which is the one place that decides what is open right now. */
+const ALWAYS_OPEN: readonly HubStationKind[] = [
+  "dive", "abyss", "hoard", "starmap", "forge", "quartermaster", "comms", "warTable",
 ];
 
-/** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
- *  floor left of the central seal. */
-const EXPEDITION_SPOT = { x: 270, y: 250 };
-/** Where the Altar stands once a character has banked both ends of the war — open
- *  flagstone in the upper left, between the Tower's ring and the Abyss's archway, since
- *  a Memory is a recollection of everywhere the war has been rather than one direction of
- *  it. Position unverified by eye: nobody working on this branch has a browser. */
-const ALTAR_SPOT = { x: 255, y: 125 };
-/** Where a chosen Memory's portal stands once the Altar has shaped one — open floor in
- *  the middle right of the deck, clear of the Delve, the Quartermaster and the Forge. */
-const MEMORY_SPOT = { x: 365, y: 300 };
-/** Where the Vigil's portal opens once it's unlocked — the open flagstone bottom-left,
- *  a short walk from the spawn, since it's meant to be the first thing you do each day. */
-const VIGIL_SPOT = { x: 150, y: 390 };
-/** Where the Tower's portal opens once the first Warden is behind you (UAT §21) — the
- *  open flagstone top-left, opposite the Delve's crack in the floor and clear of the
- *  Abyss's central archway. The two directions of the war stand at opposite ends of the
- *  deck on purpose; the Citadel is the pivot between them. Position unverified by eye. */
-const TOWER_SPOT = { x: 150, y: 110 };
-/** Where a chosen raid's portal stands once the War Table has picked one (UAT §15) — open
- *  flagstone across the bottom of the deck, clear of the Delve, the Forge and the Vigil. */
-const RAID_SPOT = { x: 330, y: 392 };
-/** Where the Convergence's portal opens once it's unlocked — open flagstone on the
- *  opposite side of the deck from the Vigil, clear of the Forge and the Reliquary Gate. */
-const CONVERGENCE_SPOT = { x: 580, y: 330 };
 /** How far past a portal's own radius still counts as standing in it for the party
  *  ready check — generous, since four people have to fit. */
 const READY_PAD = 12;
 
 export class Hub {
-  x = HUB_WIDTH / 2;
-  y = HUB_HEIGHT - 40;
+  x = DECK_SPAWN.x;
+  y = DECK_SPAWN.y;
   facing = -Math.PI / 2;
   /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
@@ -183,41 +176,15 @@ export class Hub {
   mates: HubMate[] = [];
 
   get stations(): readonly HubStation[] {
-    const stations = [...FIXED_STATIONS];
-    if (this.expedition) {
-      stations.push({
-        kind: "expedition", label: "Reliquary Portal",
-        x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
-      });
-    }
-    if (this.raid && this.raidOpen) {
-      stations.push({
-        kind: "raidPortal", label: "Raid Portal",
-        x: RAID_SPOT.x, y: RAID_SPOT.y, radius: 22,
-      });
-    }
-    if (this.altarOpen) {
-      stations.push({ kind: "altar", label: "The Altar", x: ALTAR_SPOT.x, y: ALTAR_SPOT.y, radius: 20 });
-    }
-    if (this.memoryPlan) {
-      stations.push({
-        kind: "memoryPortal", label: "Memory Portal",
-        x: MEMORY_SPOT.x, y: MEMORY_SPOT.y, radius: 22,
-      });
-    }
-    if (this.towerOpen) {
-      stations.push({ kind: "tower", label: "The Tower", x: TOWER_SPOT.x, y: TOWER_SPOT.y, radius: 22 });
-    }
-    if (this.vigilOpen) {
-      stations.push({ kind: "vigil", label: "The Vigil", x: VIGIL_SPOT.x, y: VIGIL_SPOT.y, radius: 22 });
-    }
-    if (this.weeklyOpen) {
-      stations.push({
-        kind: "convergence", label: "The Convergence",
-        x: CONVERGENCE_SPOT.x, y: CONVERGENCE_SPOT.y, radius: 22,
-      });
-    }
-    return stations;
+    const open = [...ALWAYS_OPEN];
+    if (this.expedition) open.push("expedition");
+    if (this.raid && this.raidOpen) open.push("raidPortal");
+    if (this.altarOpen) open.push("altar");
+    if (this.memoryPlan) open.push("memoryPortal");
+    if (this.towerOpen) open.push("tower");
+    if (this.vigilOpen) open.push("vigil");
+    if (this.weeklyOpen) open.push("convergence");
+    return open.map(station);
   }
 
   /** The station the party dives from, if the host has picked one and it's on the deck. */
@@ -249,8 +216,17 @@ export class Hub {
   update(dt: number, input: Input): void {
     const move = input.moveVector();
     if (move.x !== 0 || move.y !== 0) this.facing = Math.atan2(move.y, move.x);
-    this.x = clamp(this.x + move.x * PLAYER_SPEED * dt, HUB_PLAYER_RADIUS + 20, HUB_WIDTH - HUB_PLAYER_RADIUS - 20);
-    this.y = clamp(this.y + move.y * PLAYER_SPEED * dt, HUB_PLAYER_RADIUS + 20, HUB_HEIGHT - HUB_PLAYER_RADIUS - 20);
+    // The hall stops you with its walls, not with a rectangle drawn around the art. Same
+    // resolver the dungeon uses on the same lattice, so a wall added to `deck.ts` is solid
+    // the moment it is typed — and the stone you see is the stone you hit.
+    const next = resolveCircle(
+      DECK_SPACE,
+      this.x + move.x * PLAYER_SPEED * dt,
+      this.y + move.y * PLAYER_SPEED * dt,
+      HUB_PLAYER_RADIUS,
+    );
+    this.x = next.x;
+    this.y = next.y;
   }
 
   setExpedition(planetId: string, tier: number): void {
