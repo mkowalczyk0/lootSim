@@ -127,8 +127,18 @@
  * moves, so `playerToJSON` — which is both the save format and the co-op wire payload —
  * is untouched. An older save loads with an empty Vault, and a Memory naming a place or
  * an encounter that no longer exists is dropped on load rather than kept as a ghost.
+ *
+ * Version 26 adds Challenger completion badges: per-character trophies for the highest
+ * Challenger tier banked (never died, never bailed out) at each activity. Three new
+ * per-character fields — `challengerBadges` (fixed, keyed by `RunModeId`, the same shape
+ * `riftTiers` uses), `planetChallengerBadges` and `raidChallengerBadges` (id-keyed, the
+ * same shape `planetProgress`/`raidProgress` use) — so `playerToJSON` gains three fields
+ * and, since that blob is also the co-op wire payload, an ally's trophies now reach the
+ * host too. Powerless, like `legendComplete`: read by the UI and by nothing in the
+ * simulation. An older save loads with every badge unearned, which is the truth — none of
+ * these floors were ever banked with a badge system watching.
  */
-export const SAVE_VERSION = 25;
+export const SAVE_VERSION = 26;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to
