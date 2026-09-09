@@ -148,6 +148,31 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "prop.reliquary-casket":   { id: "prop.reliquary-casket",   w: 77, h: 45, worldScale: 0.44, feet: 0.06 },
   "prop.reliquary-wargrave": { id: "prop.reliquary-wargrave", w: 46, h: 86, worldScale: 0.42, feet: 0.03 },
 
+  // --- The Citadel of the Threshold (§4) --- the deck's tiled-rung relics. Every station
+  // whose glyph is walkable rock on a stamped floor needs a real prop or the tiled Citadel
+  // is six identical terminals with different words under them (`STATION_PROP` in
+  // `game/deck.ts`, drawn by `drawDeckProp` in `render/hub.ts`). The two portrait-shaped
+  // ones (forge, rack, shrine, starmap, altar, dummy, pillar, statue) worldScale to a
+  // deliberate stand height per the same convention as the Delve/Reliquary set above; the
+  // war table and the rubble pile are landscape footprints, scaled by their width instead.
+  // Collage-of-eras per the worldbuilding doc's Citadel section: ash/bone stone, ancient
+  // weapons and statuary from every civilization, one weak-gold accent at most (Threshold
+  // wards and Keeper sigils only — the palette table's "nothing else saturated").
+  "prop.citadel-forge":    { id: "prop.citadel-forge",    w: 68, h: 86, worldScale: 0.47, feet: 0.03 },
+  "prop.citadel-rack":     { id: "prop.citadel-rack",     w: 57, h: 72, worldScale: 0.53, feet: 0.03 },
+  "prop.citadel-shrine":   { id: "prop.citadel-shrine",   w: 48, h: 73, worldScale: 0.49, feet: 0.03 },
+  "prop.citadel-starmap":  { id: "prop.citadel-starmap",  w: 44, h: 70, worldScale: 0.49, feet: 0.03 },
+  "prop.citadel-wartable": { id: "prop.citadel-wartable", w: 78, h: 42, worldScale: 0.57, feet: 0.05 },
+  "prop.citadel-altar":    { id: "prop.citadel-altar",    w: 55, h: 75, worldScale: 0.45, feet: 0.05 },
+  "prop.citadel-dummy":    { id: "prop.citadel-dummy",    w: 33, h: 82, worldScale: 0.41, feet: 0.03 },
+  // Floor dressing (§17.7b) — same idiom as `DECK_DRESSING`'s brazier/rubble/statue/
+  // pillar/banner glyphs: purely visual, placed blind on the text grid, wants an eye.
+  "prop.citadel-brazier":  { id: "prop.citadel-brazier",  w: 22, h: 35, worldScale: 0.69, feet: 0.03 },
+  "prop.citadel-rubble":   { id: "prop.citadel-rubble",   w: 52, h: 26, worldScale: 0.54, feet: 0.06 },
+  "prop.citadel-statue":   { id: "prop.citadel-statue",   w: 50, h: 85, worldScale: 0.45, feet: 0.03 },
+  "prop.citadel-pillar":   { id: "prop.citadel-pillar",   w: 25, h: 96, worldScale: 0.42, feet: 0.03 },
+  "prop.citadel-banner":   { id: "prop.citadel-banner",   w: 34, h: 90, worldScale: 0.38, feet: 0.03 },
+
   // --- item / drop icons (§12) --- drawn through pickupSprite at `worldScale` (fixed
   // 1.4 before). Legacy icon grids ~8–12 wide. In UI they flow through pixelImageFit,
   // which normalises by width, so worldScale here is only the in-world drop size.
