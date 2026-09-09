@@ -15,3 +15,4 @@ art-sheet.png
 # blackholed any *new* file added there (already-tracked files were unaffected, which is
 # why this went unnoticed) until this rule was scoped down.
 /data/
+inworld-sheet.png
