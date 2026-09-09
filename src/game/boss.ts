@@ -21,6 +21,7 @@ import {
   BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, type BossAbility, type BossAbilityId,
 } from "../data/bosses";
 import { ELEMENT_COLORS } from "../data/elements";
+import { raidThreatRate } from "../data/raids";
 import { resolveCircle } from "./level";
 import type { Dungeon } from "./dungeon";
 import type { BossState, Enemy } from "./entities";
@@ -368,8 +369,12 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
   b.ability = null;
   const phase = b.spec.phases[b.phase]!;
   // An enrage buys a tighter rotation on top of whatever the phase already asks for.
+  // A raid boss asks a party more questions rather than harder ones — the third lever in
+  // `docs/raid-party-scaling.md`, scoped to raids and exactly 1 solo. The wind-up is
+  // untouched; only the gap between casts shrinks.
   b.actionTimer = BOSS_ACTION_GAP * phase.haste * d.profile.aggression * b.buffHasteMult
-    * crescendoHaste(b);
+    * crescendoHaste(b)
+    * (d.config.raid ? raidThreatRate(d.config.players ?? 1) : 1);
   if (!id) return;
 
   const ability = BOSS_ABILITIES[id];

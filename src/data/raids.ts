@@ -511,6 +511,68 @@ export function raidBossSpec(spec: RaidSpec): BossSpec {
   };
 }
 
+// --- threat rate: the third lever -------------------------------------------
+
+/**
+ * How much faster a raid boss's rotation runs for a party of this size.
+ *
+ * `docs/raid-party-scaling.md` measured the problem and rejected two fixes for it. The
+ * problem: **a growing party dilutes threat.** A raid boss is one body running one
+ * rotation, so it delivers a roughly fixed amount of danger per second no matter how many
+ * people are standing in the room — and that danger is then divided among them. Measured
+ * on the shipped `partyScale`, damage taken *per player* nearly halves from solo to a full
+ * party on the Ferryman at tier 1, while a fight already past the party's power just gets
+ * bloodier without getting more winnable.
+ *
+ * Health scaling was tried and failed (a longer fight is not a harder one, it is the same
+ * fight for longer). Damage scaling was tried and failed (it makes a caught telegraph a
+ * one-shot without making the fight ask more of anybody). Both are in that document.
+ *
+ * This is the third lever and the one that actually names the measured problem: if the
+ * complaint is *danger per second, divided*, then the answer is *more seconds' worth of
+ * danger*. The rotation runs faster, so a party of four is asked more questions than a
+ * solo player is, rather than the same questions with more people available to answer
+ * each one.
+ *
+ * Three things it deliberately does not do:
+ *
+ * - **It does not touch the wind-up.** Only the gap *between* casts shrinks. Every
+ *   telegraph is exactly as long and exactly as readable as it is solo, which is the one
+ *   rule none of this may cost. A boss with a short gap stands and casts almost
+ *   continuously, and since a cast locks the body, that is still the window to hit it.
+ * - **It is not a second difficulty curve.** It multiplies the same `BOSS_ACTION_GAP` the
+ *   one rotation already uses, and it is exactly 1 at one player — so nothing about a solo
+ *   raid moves, and `tools/raids.ts`'s same-depth-same-danger comparison against a Delve
+ *   floor is untouched (that check always runs at the default `players: 1`).
+ * - **It does not pay more.** `danger` is not involved, so §16's reward curve never sees
+ *   it. A party is asked more; it is not paid more for being a party.
+ *
+ * **Scoped to raids and only raids.** The Delve's own boss floors are the same *shape* of
+ * encounter and are shipped and played; retuning their co-op difficulty is a live balance
+ * change needing the owner's sign-off, and `docs/raid-party-scaling.md` already declined
+ * to extend its finding there for the same reason.
+ */
+export function raidThreatRate(players: number): number {
+  const n = Math.max(1, Math.floor(players));
+  if (n <= 1) return 1;
+  // Sub-linear on purpose. Fully linear (1/n) would hold damage-per-player exactly
+  // constant on paper, but a party genuinely does bring something a solo player does not
+  // — revives, and the ability to be in two places — so charging the full headcount would
+  // make a party strictly worse than the sum of its players. `RAID_THREAT_PER_PLAYER` is
+  // the share of a headcount actually charged, and the measurement is what set it.
+  return Math.max(RAID_THREAT_FLOOR, 1 / (1 + RAID_THREAT_PER_PLAYER * (n - 1)));
+}
+
+/** How much of each extra player's headcount is charged back as rotation speed. */
+export const RAID_THREAT_PER_PLAYER = 0.42;
+/**
+ * The tightest the threat-rate term alone may squeeze the gap between casts.
+ *
+ * Separate from `RAID_HASTE_FLOOR`, which floors the *phase*'s haste — this floors the
+ * party term on top of it, so the two cannot multiply into a rotation with no gap at all.
+ */
+export const RAID_THREAT_FLOOR = 0.45;
+
 // --- the run ----------------------------------------------------------------
 
 /**
