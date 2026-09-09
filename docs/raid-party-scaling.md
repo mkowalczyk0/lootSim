@@ -71,6 +71,13 @@ single-body attempt's numbers.
   headcount (`dmgBill/player`) — the fairness measure, since a party of four naturally
   racks up more total damage just from having more bodies present — clear rate, downs
   (times any hero went from standing to downed), and potions drunk.
+- **Baseline and treatment are compared at the same seed count.** The first report on this
+  finding compared a 12-seed baseline against a 24-seed treatment — reasonable in the
+  moment (only the treatment had shown a surprise worth widening), but it risked crediting
+  the treatment for a difference that was partly sample size rather than the change itself.
+  Every table below is the baseline and the fix re-run at the same 24 seeds, which is what
+  found that Ferryman T1's "improvement" mostly wasn't one — the baseline was already close
+  to as trivial at that sample size. **Compare like sample sizes, not just like seeds.**
 
 ## Baseline: `partyScale`, unmodified (this is what's shipped on `master` today)
 
@@ -157,21 +164,32 @@ same-depth-same-danger comparison (which always runs at the default `players: 1`
 
 **Reading it against the baseline, apples to apples:**
 
-- **Ferryman T1 (easy fight): barely changed.** dmgBill/player still nearly halves from
-  solo to a full party (3369 → ~1950-2100, both versions), and clear rate still climbs
-  sharply either way. The fix did not meaningfully touch this failure mode.
+- **Ferryman T1 (easy fight): not actually a failure of the fix — there was nothing there
+  for it to win.** The *baseline* already trivializes this fight nearly as hard as the fix
+  does: dmgBill/player nearly halves from solo to a full party either way (baseline
+  3369 → 2086, fix 3369 → 1952), and clear rate climbs sharply in both versions. Health
+  scaling was never going to touch this, because the mechanism behind it isn't on the
+  health axis at all — see "fixed-output dilution" below. Reading this case as "the fix
+  didn't fix it" would be the wrong lesson; the right one is that this specific failure
+  mode was never reachable through health or damage, by either version.
 - **Queen T1 (edge fight): roughly a wash.** dmgBill/player was already close to flat in
   the baseline (~5000-5400) and stays there. Downs climb similarly in both versions. Clear
   rate is noisy in both (baseline peaks at 3 players then drops; the fix climbs
   monotonically to a similar peak at 4) — not a clean win either way.
-- **Ferryman T4 (already-too-hard fight): measurably worse.** dmgBill/player at 4 players
-  went from 6310 (baseline) to 7020 (fix); downs from 7.50 to 7.88; the average fight
-  before an inevitable wipe took noticeably longer (49s → 74s at 4 players, from the raw
-  measurement runs). Giving the boss more health did not help a fight the party was going
-  to lose regardless — it just made losing it slower and bloodier.
+- **Ferryman T4 (already-too-hard fight): measurably, unambiguously worse, and this is the
+  one real regression.** dmgBill/player at 4 players went from 6310 (baseline) to 7020
+  (fix); downs from 7.50 to 7.88; the average fight before an inevitable wipe took
+  noticeably longer (49s → 74s at 4 players, from the raw measurement runs). Giving the
+  boss more health did not help a fight the party was going to lose regardless — it just
+  made losing it slower and bloodier.
 
-**Conclusion: neither term, alone or replaced, is the lever.** The fix's own premise —
-"the extra bodies supply their own difficulty" — was wrong, not just its constants.
+**Conclusion: the fix's one real failure is T4, not T1 — and that distinction matters
+for the diagnosis.** The health-scaling change did what it could do (T4 got worse from
+having more health to burn through on a fight already lost) but couldn't do what it was
+meant to do (T1's trivialization survived unchanged, because the leak it needed to close
+was never a health-axis problem). The fix's premise — "the extra bodies supply their own
+difficulty" — was wrong for T1's failure mode specifically, not merely under-tuned; no
+choice of health/damage constants closes a gap that health and damage don't cause.
 
 ## Why: two mechanisms, not one
 
