@@ -52,3 +52,13 @@ The account has since moved off the 40-generation trial onto a paid tier (check
 `get_balance` for the current cycle's count and reset date). Don't spend generations on
 throwaways regardless of how many are left — each test should target a real
 style-guide deliverable (§18 backlog in the style guide).
+
+## Known gotcha: `create_topdown_tileset` will pass your eye and fail the gate
+
+Two colours that look clearly different in a preview thumbnail can still be close in
+*luminance*, and the §17.7 floor/wall contrast gate (`npm run smoke`) measures luminance,
+not hue — after the render grade desaturates by 50%, only value survives. A prompt built
+from colour-family names ("ash grey" floor, "bone-grey" wall) is exactly the failure
+mode: describe darkness/brightness explicitly ("dark ... in deep shadow" vs. "pale ...
+bright") instead of trusting a colour name to imply a value. Full writeup and the numbers
+that moved (raw delta 5.5 → 148) are in `art-style-guide.md` §17.7.
