@@ -4,7 +4,7 @@ import { MemorySaveStore, serializeSave, type SavedGame, type SaveStore } from "
 import { MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHESTS, CHEST_TIERS, RETIRED_CHEST_TIERS, type ChestTier } from "../data/chests";
 import {
-  AUGMENT_BY_ID, augmentedPull, emptyLoadout, isAugmentId, loadoutIds, loadoutProblems,
+  augmentedPull, emptyLoadout, isAugmentId, loadoutIds, loadoutProblems,
   type AugmentLoadout,
 } from "../data/augments";
 import {
@@ -41,7 +41,7 @@ import {
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { RAIDS } from "../data/raids";
-import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
+import { RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { universalPointsFor } from "../progression/universal";
@@ -828,7 +828,7 @@ export class GameState {
         ? this.rng.pick(pull.types)
         : randomItemType(this.rng, affinity, info.classAdaptive);
       const item = rollItem({
-        rarity, type, ilvl, rng: this.rng, favorElement, ensureMod: pull.ensureMod,
+        rarity, type, ilvl, rng: this.rng, favorElement, ensureMods: pull.ensureMods,
       });
       found.push(item);
       this.stats.raritiesFound[rarity]++;
@@ -1213,8 +1213,47 @@ export class GameState {
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
       // A save from before the Tower has climbed nothing, which is the fresh value anyway.
       state.maxUnlockedHeight = Number(d.maxUnlockedHeight ?? 1);
-      state.keys = { ...state.keys, ...(d.keys as Record<ChestTier, number>) };
+      // Version 27 added augments (`docs/augments.md`); an older save holds none. A
+      // retired id is dropped rather than kept as a ghost the chest screen can't draw —
+      // the same rule `normalizeAppearance` follows for a retired cosmetic.
+      state.augments = {};
+      const savedAugments = d.augments as Record<string, unknown> | undefined;
+      if (savedAugments && typeof savedAugments === "object") {
+        for (const [id, n] of Object.entries(savedAugments)) {
+          const count = Math.max(0, Math.floor(Number(n)) || 0);
+          if (isAugmentId(id) && count > 0) state.augments[id] = count;
+        }
+      }
+      // Version 27 also retired nineteen chest tiers (the weapon and elemental caches,
+      // replaced one for one by form and element augments). Keys for a retired tier are
+      // refunded as coins at **full purchase price** rather than converted at a ratio into
+      // a surviving tier: a ratio is arithmetic nobody can check and it loses value at the
+      // edges, and a migration players cannot verify is how trust in a save format dies.
+      const savedKeys = (d.keys ?? {}) as Record<string, number>;
+      let refund = 0;
+      for (const [tier, retired] of Object.entries(RETIRED_CHEST_TIERS)) {
+        const held = Math.max(0, Math.floor(Number(savedKeys[tier])) || 0);
+        if (held > 0) refund += held * retired.price;
+      }
+      // Only tiers that still exist survive the merge, so an unknown id in an old save is
+      // dropped rather than left in the record as an undrawable row.
+      state.keys = { ...state.keys };
+      for (const t of CHEST_TIERS) {
+        state.keys[t] = Math.max(0, Math.floor(Number(savedKeys[t])) || 0);
+      }
+      if (refund > 0) state.coins += refund;
       state.stats = { ...freshStats(), ...(d.stats as RunStats) };
+      state.stats.augmentsFound = { ...(state.stats.augmentsFound ?? {}) };
+      // Lifetime opened-counts fold into the surviving tier that shared a retired chest's
+      // odds grade, so a record does not silently shrink under the player.
+      const savedOpened = (state.stats.chestsOpened ?? {}) as Record<string, number>;
+      state.stats.chestsOpened = Object.fromEntries(
+        CHEST_TIERS.map((t) => [t, Math.max(0, Math.floor(Number(savedOpened[t])) || 0)]),
+      ) as Record<ChestTier, number>;
+      for (const [tier, retired] of Object.entries(RETIRED_CHEST_TIERS)) {
+        const opened = Math.max(0, Math.floor(Number(savedOpened[tier])) || 0);
+        if (opened > 0) state.stats.chestsOpened[retired.openedInto] += opened;
+      }
       // Saves from before rifts existed have neither of these.
       state.stats.riftsCleared = { ...freshStats().riftsCleared, ...state.stats.riftsCleared };
       state.riftTiers = { ...freshTiers(), ...(d.riftTiers as Record<RunModeId, number> | undefined) };

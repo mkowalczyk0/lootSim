@@ -252,20 +252,24 @@ export function rollOne<T extends TableEntry>(
   defs: readonly T[],
   q: DropQuery,
   rng: { chance(p: number): boolean; next(): number },
-  rate: number,
   weightOf: (def: T) => number,
   danger = 1,
 ): T | null {
-  if (!rng.chance(dropChance(rate, danger))) return null;
   // Deduplicated: `forSource` returns one match per source, and a definition reachable two
   // ways is not twice as likely to be the one that dropped.
   const seen = new Set<string>();
   const pool: T[] = [];
+  let rate = 0;
   for (const m of forSource(defs, q)) {
+    // The event's own rate, read off the table rather than passed in beside it: whether
+    // anything drops is a property of the source that matched, so a caller cannot state a
+    // rate that disagrees with what the definitions say.
+    rate = Math.max(rate, m.src.chance);
     if (seen.has(m.def.id)) continue;
     seen.add(m.def.id);
     pool.push(m.def);
   }
+  if (rate <= 0 || !rng.chance(dropChance(rate, danger))) return null;
   let total = 0;
   for (const d of pool) total += Math.max(0, weightOf(d));
   if (total <= 0) return null;

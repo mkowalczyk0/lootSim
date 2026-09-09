@@ -138,7 +138,7 @@
  * simulation. An older save loads with every badge unearned, which is the truth — none of
  * these floors were ever banked with a badge system watching.
  */
-export const SAVE_VERSION = 26;
+export const SAVE_VERSION = 27;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

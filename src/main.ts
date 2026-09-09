@@ -7,6 +7,7 @@ import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { memoryConfig } from "./data/memories";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
+import { AUGMENT_BY_ID } from "./data/augments";
 import { RARITY_COLORS } from "./data/rarity";
 import { RAIDS, RAID_BY_ID, raidConfig, raidUnlocked } from "./data/raids";
 import { RELIC_BY_ID, RELIC_TIER_INFO } from "./data/relics";
@@ -498,6 +499,22 @@ function start(state: GameState, who: AccountInfo): void {
           fx.sparkle(ev.x, ev.y, "#ffffff", 30, 260);
           fx.addShake(18);
           if (ev.owner === d.localHero.index) lootBanner.showRelic(def);
+          break;
+        }
+        case "augment": {
+          // An augment (`docs/augments.md`) is rarer than most relics and, at the top of
+          // the ladder, the rarest object in the game — so it takes the screen on exactly
+          // the same terms, scaled by its grade through the shared halt rule.
+          const def = AUGMENT_BY_ID[ev.id];
+          if (!def) break;
+          const color = RARITY_COLORS[def.grade];
+          fx.text(ev.x, ev.y, def.name, color, 12);
+          fx.ring(ev.x, ev.y, 140, color, 5);
+          fx.ring(ev.x, ev.y, 80, "#ffffff", 2);
+          fx.burst(ev.x, ev.y, color, 50, 320);
+          fx.sparkle(ev.x, ev.y, "#ffffff", 30, 260);
+          fx.addShake(18);
+          if (ev.owner === d.localHero.index) lootBanner.showAugment(def);
           break;
         }
         case "levelUp":

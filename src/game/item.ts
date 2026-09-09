@@ -101,14 +101,18 @@ export interface RollOptions {
   /** Crafting only: weights the roll pool toward this element's damage/resist mod. */
   readonly favorElement?: Element;
   /**
-   * An augment (`data/augments.ts`): reserves one affix slot for this `ModRoll` id.
+   * Augments (`data/augments.ts`): each inner list is a group of `ModRoll` ids of which
+   * **one** is reserved an affix slot — the first that this type and rarity can carry.
+   * A group rather than a bare id because an element augment's guarantee is satisfied by
+   * either of its two rolls (`dmg-fire` on a weapon, `res-fire` on armor), and which one
+   * is decided by `modAllowed` rather than authored.
    *
    * The one place item rolling *forces* rather than weights, and deliberately so — nobody
    * spends the rarest object in the game to find out it probably worked. It stays honest
-   * because the augment tab refuses the combine when the roll is unreachable, rather than
+   * because the augment tab refuses the combine when a roll is unreachable, rather than
    * accepting it and quietly doing nothing here.
    */
-  readonly ensureMod?: string;
+  readonly ensureMods?: readonly (readonly string[])[];
 }
 
 /** Sell/reforge-cost basis: rarity and item level plus what the affix list carries. */
@@ -130,7 +134,7 @@ export function levelScaleFor(ilvl: number): number {
   return 1 + (ilvl - 1) * 0.033;
 }
 
-export function rollItem({ rarity, type, ilvl, rng, favorElement, ensureMod }: RollOptions): Item {
+export function rollItem({ rarity, type, ilvl, rng, favorElement, ensureMods }: RollOptions): Item {
   const names = ITEM_NAMES[rarity][type];
   const baseName = rng.pick(names);
   const tier = rarityIndex(rarity);
@@ -140,7 +144,7 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement, ensureMod }: R
   const variance = rng.range(0.85, 1.15);
 
   const stats = baseStats(type, mult, levelScale, variance);
-  const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement, ensureMod);
+  const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement, ensureMods);
   const grant = rollGrant(type, tier, rng);
   const trigger = rollTrigger(tier, rng);
   const value = computeValue(rarity, levelScale, rolls.length, grant, trigger);
@@ -283,7 +287,7 @@ export function reforgeAffixes(item: Item, rng: Rng): Item {
  */
 export function rollMods(
   type: ItemType, rarity: Rarity, tier: number, levelScale: number, rng: Rng, favorElement?: Element,
-  ensureMod?: string,
+  ensureMods?: readonly (readonly string[])[],
 ): { mod: ItemMod; roll: ModRoll }[] {
   const [lo, hi] = MOD_COUNTS[rarity];
   const want = rng.int(lo, hi);
@@ -315,16 +319,17 @@ export function rollMods(
   // is not allowed on this type at this rarity the augment simply does not apply — which
   // `loadoutProblems` has already refused at authoring time, so it cannot be reached from
   // the chest screen; the guard is here for every other caller.
-  if (ensureMod) {
-    const forced = MOD_POOL.find((m) => m.id === ensureMod);
-    if (forced && modAllowed(forced, type, tier)) {
-      used.add(forced.key);
-      const raw = modValue(forced, rarity, levelScale, rng.range(0.85, 1.15));
-      out.push({
-        mod: { id: forced.id, key: forced.key, value: forced.scale === "flat" ? raw : Math.round(raw * 1000) / 1000 },
-        roll: forced,
-      });
-    }
+  for (const group of ensureMods ?? []) {
+    const forced = group
+      .map((id) => MOD_POOL.find((m) => m.id === id) ?? RESERVED_ELEMENTAL_MODS.find((m) => m.id === id))
+      .find((m): m is ModRoll => m !== undefined && !used.has(m.key) && modAllowed(m, type, tier));
+    if (!forced) continue;
+    used.add(forced.key);
+    const raw = modValue(forced, rarity, levelScale, rng.range(0.85, 1.15));
+    out.push({
+      mod: { id: forced.id, key: forced.key, value: forced.scale === "flat" ? raw : Math.round(raw * 1000) / 1000 },
+      roll: forced,
+    });
   }
   // Only so many attempts: a small pool with a high mod count shouldn't spin forever.
   for (let attempt = 0; attempt < want * 8 && out.length < want; attempt++) {

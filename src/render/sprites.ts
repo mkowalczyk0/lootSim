@@ -618,6 +618,21 @@ export function relicArt(def: { art?: string; rarity: Rarity }): HTMLCanvasEleme
   return relicSprite(def).canvas;
 }
 
+/**
+ * An augment (`data/augments.ts`). Deliberately **not** a second art decision: an augment
+ * has no authored art and its grade is an ordinary `Rarity`, so it runs the relic ladder
+ * unchanged and comes out as the gem glyph washed toward its grade. Forking the executor
+ * to draw an augment "specially" is the exact drift `npm run itemart` exists to catch, so
+ * every surface that draws one calls this.
+ */
+export function augmentSprite(def: { grade: Rarity }): ItemSprite {
+  return relicSprite({ rarity: def.grade });
+}
+
+export function augmentArt(def: { grade: Rarity }): HTMLCanvasElement {
+  return augmentSprite(def).canvas;
+}
+
 /** Cache key for `pixelImageFit` over `relicArt` — the same inputs, so the same image. */
 export function relicArtKey(def: { id: string; art?: string; rarity: Rarity }): string {
   return `relic:${def.id}:${def.rarity}:${def.art ?? "-"}`;

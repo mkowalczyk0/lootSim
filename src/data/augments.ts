@@ -46,6 +46,12 @@ export type AugmentEffect =
   /** Multiplied into the chest's own weights. Zero removes a rarity, exactly as a chest does. */
   | { readonly axis: "rarity"; readonly weights: Record<Rarity, number> }
   | { readonly axis: "form"; readonly type: ItemType }
+  /**
+   * Weights the affix pool toward the element **and** guarantees one of its two rolls is
+   * present — the owner's "same for the bow augment would be a guaranteed bow, etc."
+   * applied to this axis. Which of the two (`dmg-` on an offensive slot, `res-` on a
+   * defensive one) is decided by `modAllowed`, not authored here.
+   */
   | { readonly axis: "element"; readonly element: Element }
   /**
    * Reserves one affix slot for this `ModRoll` id. The rarity it needs and the item types
@@ -78,43 +84,46 @@ export interface AugmentDef {
  *
  * There is no Common or Uncommon Augment — a floor of common is what a Basic chest is.
  */
-function floorMask(floor: Rarity, extra: Partial<Record<Rarity, number>> = {}): Record<Rarity, number> {
+function floorMask(floor: Rarity): Record<Rarity, number> {
   const min = rarityIndex(floor);
   const out = {} as Record<Rarity, number>;
-  for (const r of RARITIES) out[r] = rarityIndex(r) < min ? 0 : (extra[r] ?? 1);
+  for (const r of RARITIES) out[r] = rarityIndex(r) < min ? 0 : 1;
   return out;
 }
 
 /**
- * **The ceiling, and the one open question in this system (docs/augments.md §5.3).**
+ * **The ceiling. Ruled by the owner: every axis guarantees, all the way to unspoken.**
  *
- * The floor ladder stops at **mythic**, matching the crafting cap exactly, so the game
- * keeps one rule: *nothing you can choose reaches past mythic.* Divine and Unspoken
- * Augments still exist and are still the rarest objects in the game — but they **weight**
- * the roll on top of a mythic floor rather than guaranteeing it. A miss still hands you a
- * mythic item of exactly the shape you asked for, which is why the moment lands either way.
+ * The design shipped conservatively first (a mythic floor with divine/unspoken as heavy
+ * weights) and the owner overturned it:
  *
- * The owner has been asked whether they instead want the literal reading, where an Unspoken
- * Augment guarantees an unspoken item. **That change is these two constants becoming
- * `floorMask("divine")` and `floorMask("unspoken")` and nothing else** — which is precisely
- * why the conservative version shipped first: loosening later is a patch, tightening later
- * takes items out of people's stashes.
+ * > "Yes the unspoken augment would be a guaranteed unspoken, same for the bow augment
+ * > would be a guaranteed bow, etc. But they should be 2x harder to get dropped from the
+ * > avarice rifts because they guarantee it. It adds this fun 'crafting' element."
  *
- * Against `BASE_RARITY_WEIGHTS` above a mythic floor these land at roughly 70% divine and
- * 1-in-3 unspoken. `tools/augments.ts` measures them rather than trusting the arithmetic.
+ * **What the player buys is agency, not a discount.** That is the whole justification and
+ * it is the sentence that should stop the next person widening this. The cost of reaching
+ * the ceiling is *unchanged* — `AUGMENT_RATES` was halved to pay for the guarantee, and
+ * `tools/augments.ts` asserts as a direct comparison that farming Avarice for augments
+ * never beats farming it for coins and buying chests. What changes is that the ceiling,
+ * when you finally reach it, arrives as the bow you wanted rather than gloves for a class
+ * you do not play.
+ *
+ * This is **not** a repeal of the crafting cap. Crafting still stops at mythic on every
+ * path. The guarantee lives only on a rare *dropped* object, and all four restrictions
+ * below are load-bearing rather than incidental — an augment cannot be bought, forged,
+ * salvaged or traded. Anything that gives one a price turns a chase into a purchase order.
  */
-export const DIVINE_AUGMENT_WEIGHT = 36;
-export const UNSPOKEN_AUGMENT_WEIGHT = 24;
 
-/** The floors, in ladder order. `divine`/`unspoken` are weights, per the note above. */
-const RARITY_AUGMENT_MASKS: Partial<Record<Rarity, Record<Rarity, number>>> = {
-  rare: floorMask("rare"),
-  epic: floorMask("epic"),
-  legendary: floorMask("legendary"),
-  mythic: floorMask("mythic"),
-  divine: floorMask("mythic", { divine: DIVINE_AUGMENT_WEIGHT }),
-  unspoken: floorMask("mythic", { unspoken: UNSPOKEN_AUGMENT_WEIGHT }),
-};
+/**
+ * The floors, in ladder order. Each is a pure floor: an Unspoken Augment leaves exactly one
+ * rung standing, which is what "guaranteed" means expressed as a weight mask. A floor never
+ * *caps* — a Legendary Augment can still produce a mythic, because the mask above the floor
+ * is the chest's own curve.
+ */
+const RARITY_AUGMENT_MASKS: Record<string, Record<Rarity, number>> = Object.fromEntries(
+  (["rare", "epic", "legendary", "mythic", "divine", "unspoken"] as const).map((r) => [r, floorMask(r)]),
+);
 
 export const RARITY_AUGMENT_GRADES: readonly Rarity[] = ["rare", "epic", "legendary", "mythic", "divine", "unspoken"];
 
@@ -143,12 +152,24 @@ export const AUGMENT_GRADE_WEIGHTS: Record<Rarity, number> = {
 /** Avarice tier a grade needs before it can drop at all — §16's "tier 8 drops what tier 1 cannot". */
 const GRADE_MIN_TIER: Partial<Record<Rarity, number>> = { divine: 5, unspoken: 8 };
 
-/** How often each tap pays anything at all, before `dropChance` lifts it by danger. */
+/**
+ * How often each tap pays anything at all, before `dropChance` lifts it by danger.
+ *
+ * **These are the pre-guarantee rates halved, literally.** The owner's reason was causal —
+ * *"because they guarantee it"* — and every augment guarantees its axis, so every augment
+ * pays, not just the top of the rarity ladder.
+ *
+ * This is deliberately the one place the standing "a multiplier in a brief means a
+ * meaningful increase, never a literal factor" rule does **not** apply. That rule is about
+ * gameplay modifiers on content, where a literal 5x is unbalanceable. This is the drop rate
+ * of an object, where a factor is the correct unit and is checkable — and
+ * `tools/augments.ts` checks exactly what it bought.
+ */
 export const AUGMENT_RATES = {
   /** Floors 1-3 of an Avarice Rift. Keeps the run paying without being the reason to run it. */
-  avariceFloor: 0.09,
+  avariceFloor: 0.045,
   /** The cache that closes an Avarice Rift — the main tap, and the reason to kill the boss. */
-  avariceBoss: 0.5,
+  avariceBoss: 0.25,
 } as const;
 
 /**
@@ -174,6 +195,34 @@ function augmentSources(grade: Rarity): FoundSource[] {
 /** The best grade the Vigil and the Convergence will ever hand out. */
 export const DAILY_AUGMENT_CAP: Rarity = "epic";
 export const WEEKLY_AUGMENT_CAP: Rarity = "legendary";
+
+/**
+ * Picks one augment at or below `cap`, weighted by grade — how the Vigil and the
+ * Convergence pay theirs.
+ *
+ * Deliberately *not* a `DropSource`: those two pay a **guaranteed** augment, and a
+ * guarantee is not a chance and should not be written as one. A source with `chance: 1`
+ * would be a lie the moment `dropChance` scaled it, and it would put the daily's payout
+ * on the §16 danger curve, which is exactly the double-dip the Vigil's own modifier split
+ * exists to prevent.
+ */
+export function augmentsUpTo(cap: Rarity): readonly AugmentDef[] {
+  const max = rarityIndex(cap);
+  return AUGMENTS.filter((a) => rarityIndex(a.grade) <= max);
+}
+
+/** Weighted pick over a pool, by grade. Shared by the guaranteed payouts and the tool. */
+export function pickAugment(pool: readonly AugmentDef[], roll: number): AugmentDef | null {
+  let total = 0;
+  for (const a of pool) total += AUGMENT_GRADE_WEIGHTS[a.grade];
+  if (total <= 0) return null;
+  let r = roll * total;
+  for (const a of pool) {
+    r -= AUGMENT_GRADE_WEIGHTS[a.grade];
+    if (r < 0) return a;
+  }
+  return pool[pool.length - 1] ?? null;
+}
 
 // --- the roster ---------------------------------------------------------------
 
@@ -226,7 +275,7 @@ const ELEMENT_AUGMENTS: readonly AugmentDef[] = ELEMENTS.filter((e) => e !== "ph
     `element-${element}`,
     `${element.charAt(0).toUpperCase() + element.slice(1)} Augment`,
     reserved ? "legendary" : "epic",
-    `Still carrying the charge it was made with. Everything requisitioned around it leans ${element}.`,
+    `Still carrying the charge it was made with. Whatever comes out carries ${element} with it.`,
     { axis: "element", element },
   );
 });
@@ -322,7 +371,8 @@ export interface AugmentedPull {
   /** Undefined means "anything", exactly as `ChestTierInfo.types` does. */
   readonly types: readonly ItemType[] | undefined;
   readonly favorElement: Element | undefined;
-  readonly ensureMod: string | undefined;
+  /** Groups of `ModRoll` ids, one reserved slot each. See `RollOptions.ensureMods`. */
+  readonly ensureMods: readonly (readonly string[])[];
 }
 
 /**
@@ -352,6 +402,13 @@ export function augmentedPull(load: AugmentLoadout): AugmentedPull {
   const affixDef = load.affix ? AUGMENT_BY_ID[load.affix] : undefined;
   const ensureMod = affixDef?.effect.axis === "affix" ? affixDef.effect.modId : undefined;
 
+  // Every axis guarantees (the owner's ruling), so both the element and the affix augment
+  // reserve a slot. An element's guarantee is satisfied by either of its two rolls; which
+  // one depends on the slot, so both are offered and `rollMods` takes the allowed one.
+  const ensureMods: string[][] = [];
+  if (element) ensureMods.push([`dmg-${element}`, `res-${element}`]);
+  if (ensureMod) ensureMods.push([ensureMod]);
+
   let types: readonly ItemType[] | undefined = form ? [form] : info.types;
   // An affix augment implies the form constraint it needs. `savage` is `where: "weapon"`,
   // so a Crit Damage Augment on a bare Basic chest narrows the pull to weapons rather than
@@ -370,7 +427,7 @@ export function augmentedPull(load: AugmentLoadout): AugmentedPull {
     weights,
     types,
     favorElement: element ?? info.favorElement,
-    ensureMod,
+    ensureMods,
   };
 }
 
@@ -436,7 +493,8 @@ export function loadoutSummary(load: AugmentLoadout): string {
   const what = pull.types && pull.types.length === 1 ? pull.types[0]! : pull.types ? "piece of gear" : "anything";
   const rarity = load.rarity ? `${rarityLabel(floor)} or better` : "any rarity";
   const element = pull.favorElement ? `, ${pull.favorElement}-weighted affixes` : "";
-  const mod = pull.ensureMod ? modRollById(pull.ensureMod) : undefined;
+  const affixDef = load.affix ? AUGMENT_BY_ID[load.affix] : undefined;
+  const mod = affixDef?.effect.axis === "affix" ? modRollById(affixDef.effect.modId) : undefined;
   const affix = mod ? `, guaranteed ${mod.label.replace(/^of the |^of /, "").toLowerCase()}` : "";
   return `A ${rarity} ${what}${element}${affix}.`;
 }

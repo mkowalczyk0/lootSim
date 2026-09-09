@@ -25,6 +25,7 @@ import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { RELICS } from "../data/relics";
+import { AUGMENTS } from "../data/augments";
 import { REGARD_WATCH } from "../data/traps";
 import { RAID_BY_ID, raidConfig } from "../data/raids";
 import { towerConfig } from "../data/tower";
@@ -52,7 +53,7 @@ const TICK = 1 / 60;
 const ENEMY_KINDS = Object.keys(ARCHETYPES) as EnemyKind[];
 const STATUS_KINDS = Object.keys(STATUSES) as StatusKind[];
 const SHAPES = ["circle", "donut", "cone", "line", "none"] as const;
-const PICKUP_KINDS = ["coin", "key", "item", "potion", "xp", "gem", "material", "relic"] as const;
+const PICKUP_KINDS = ["coin", "key", "item", "potion", "xp", "gem", "material", "relic", "augment"] as const;
 
 /** Two decimals is more precision than a 2.2x zoom can show. */
 function r2(n: number): number {
@@ -262,7 +263,10 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       p.element ? ELEMENTS.indexOf(p.element) : -1,
       // A relic on the floor is its registry index — both ends run the same build, and
       // the client only needs to draw it; the id itself arrives reliably in `got`.
-      p.relicId ? RELICS.findIndex((r) => r.id === p.relicId) : -1,
+      // A relic or an augment on the floor is its registry index — both ends run the same
+      // build, so an index is the whole payload. Which registry is read is decided by the
+      // pickup's kind, the same way the `defId` slot itself is.
+      p.defId ? (p.kind === "augment" ? AUGMENTS : RELICS).findIndex((d) => d.id === p.defId) : -1,
     ]),
     tg: d.telegraphs.map((t) => [
       SHAPES.indexOf(t.shape), Math.round(t.x), Math.round(t.y), r2(t.angle),
@@ -614,14 +618,19 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
   }
 
   d.pickups.length = 0;
-  for (const [kindIndex, x, y, value, rarityIndex, elementIndex, relicIndex] of s.k) {
+  for (const [kindIndex, x, y, value, rarityIndex, elementIndex, defIndex] of s.k) {
+    const kind = PICKUP_KINDS[kindIndex!] ?? "coin";
+    // Which registry the `defId` index is read out of is decided by the pickup's kind, on
+    // both sides of the wire. Encoding against one registry and decoding against another
+    // is a silent mis-draw rather than a crash, so the two reads are written to mirror.
+    const registry = kind === "augment" ? AUGMENTS : kind === "relic" ? RELICS : null;
     d.pickups.push({
-      kind: PICKUP_KINDS[kindIndex!] ?? "coin",
+      kind,
       x: x!, y: y!, px: x!, py: y!, radius: 6,
       value: value!, item: null, keyTier: null,
       rarity: rarityIndex! >= 0 ? RARITIES[rarityIndex!] ?? null : null,
       element: elementIndex! >= 0 ? ELEMENTS[elementIndex!] ?? null : null,
-      relicId: relicIndex !== undefined && relicIndex >= 0 ? RELICS[relicIndex]?.id ?? null : null,
+      defId: registry && defIndex !== undefined && defIndex >= 0 ? registry[defIndex]?.id ?? null : null,
       vx: 0, vy: 0, life: 1, magnet: false,
     });
   }

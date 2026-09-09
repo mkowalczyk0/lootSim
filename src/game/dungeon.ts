@@ -68,8 +68,12 @@ import type { AvatarInput } from "../core/input";
 import type { Player } from "./player";
 import { forgeNamedItem, randomItemType, rollItem, type Item } from "./item";
 import { rollNamedDrops } from "../data/named";
-import type { DropQuery } from "../data/drops";
+import { rollOne, type DropQuery } from "../data/drops";
 import { rollRelicDrops } from "../data/relics";
+import {
+  AUGMENTS, AUGMENT_BY_ID, AUGMENT_GRADE_WEIGHTS, DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP,
+  augmentsUpTo, pickAugment,
+} from "../data/augments";
 import {
   circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
   type Level, type ResourceNode, type Trap,
@@ -154,6 +158,8 @@ export interface RunLoot {
   materials: MaterialBag;
   /** Relics and artifacts found this dive, by id (UAT §19). Banked into the collection, lost like items. */
   relics: string[];
+  /** Augments (`docs/augments.md`) carried this run — physical, and lost the same ways. */
+  augments: string[];
 }
 
 export type RunEvent =
@@ -169,6 +175,8 @@ export type RunEvent =
   | { kind: "loot"; x: number; y: number; item: Item; owner: number }
   /** A relic or artifact (`data/relics.ts`) — always a screen-taking event, whoever found it. */
   | { kind: "relic"; x: number; y: number; id: string; owner: number }
+  /** An augment (`data/augments.ts`) — a screen-taking event too, and rarer than most relics. */
+  | { kind: "augment"; x: number; y: number; id: string; owner: number }
   | { kind: "levelUp"; levels: number; owner: number }
   | { kind: "shake"; amount: number }
   | { kind: "nova"; x: number; y: number; radius: number }
@@ -257,7 +265,7 @@ export class Hero {
   /** One more than you equipped, for the slot a piece of gear can grant you. */
   readonly skillCooldowns = [0, 0, 0, 0];
   readonly loot: RunLoot = {
-    coins: 0, gems: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0, materials: emptyMaterials(), relics: [],
+    coins: 0, gems: 0, xp: 0, keys: emptyKeys(), items: [], kills: 0, materials: emptyMaterials(), relics: [], augments: [],
   };
   /** Damage the Ward Veil will eat before health does, and how long it holds. */
   ward = 0;
@@ -2896,8 +2904,27 @@ export class Dungeon implements CombatHost, RuleHost {
       ? new Set([...this.state.relics, ...source.loot.relics])
       : new Set(source.loot.relics);
     for (const def of rollRelicDrops(q, this.rng, this.config.danger, owned)) {
-      this.dropPickup(x, y, { kind: "relic", relicId: def.id, rarity: def.rarity });
+      this.dropPickup(x, y, { kind: "relic", defId: def.id, rarity: def.rarity });
     }
+    // Augments (`docs/augments.md`) come off the same shared table, but through `rollOne`
+    // rather than `rollTable`: you are hunting "an augment", and which one it turns out to
+    // be is a second, weighted question. Rolling forty-three definitions independently
+    // would drop four an evening. The tier gate that keeps divine and unspoken grades off
+    // the low tiers lives on each definition's own source, so it is `sourceMatches` that
+    // enforces it and not a branch here.
+    const augment = rollOne(AUGMENTS, q, this.rng, (def) => AUGMENT_GRADE_WEIGHTS[def.grade], this.config.danger);
+    if (augment) this.dropAugment(x, y, augment.id);
+  }
+
+  /**
+   * One augment onto the floor. Physical, like a relic: lost on death, forfeit on a
+   * bail-out, banked only by finishing. The rarest objects in the game are still the
+   * reward for closing the floor, and never make death free.
+   */
+  private dropAugment(x: number, y: number, id: string): void {
+    const def = AUGMENT_BY_ID[id];
+    if (!def) return;
+    this.dropPickup(x, y, { kind: "augment", defId: id, rarity: def.grade });
   }
 
   /**
@@ -2998,6 +3025,12 @@ export class Dungeon implements CombatHost, RuleHost {
     // extended to its daily sibling rather than invented twice.
     if (this.config.daily) {
       this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
+      // ...and one augment, guaranteed and capped (`docs/augments.md` §4.2). A guarantee is
+      // not a chance, so this is a direct pick rather than a `DropSource` with `chance: 1`
+      // — a source would be scaled by `dropChance` and would put the daily's payout on the
+      // §16 danger curve, the exact double-dip the Vigil's modifier split exists to stop.
+      const daily = pickAugment(augmentsUpTo(DAILY_AUGMENT_CAP), this.rng.next());
+      if (daily) this.dropAugment(x, y, daily.id);
       if (dailyGuaranteesItem(this.config.challengerTier)) {
         const rarity = challengerGuaranteedRarity(DAILY_GUARANTEED_RARITY, this.config.challengerTier);
         const item = rollItem({
@@ -3016,6 +3049,8 @@ export class Dungeon implements CombatHost, RuleHost {
     // farmed piecemeal.
     if (this.config.weekly && this.config.lastFloor) {
       this.dropPickup(x, y, { kind: "key", keyTier: this.config.weekly.keyTier });
+      const weekly = pickAugment(augmentsUpTo(WEEKLY_AUGMENT_CAP), this.rng.next());
+      if (weekly) this.dropAugment(x, y, weekly.id);
       const rarity = challengerGuaranteedRarity(WEEKLY_GUARANTEED_RARITY, this.config.challengerTier);
       const item = rollItem({
         rarity,
@@ -3032,7 +3067,7 @@ export class Dungeon implements CombatHost, RuleHost {
     x: number, y: number,
     opts: {
       kind: Pickup["kind"]; value?: number; item?: Item; keyTier?: string; rarity?: Rarity;
-      element?: Element; relicId?: string;
+      element?: Element; defId?: string;
     },
   ): void {
     const angle = this.rng.angle();
@@ -3045,7 +3080,7 @@ export class Dungeon implements CombatHost, RuleHost {
       keyTier: opts.keyTier ?? null,
       rarity: opts.rarity ?? null,
       element: opts.element ?? null,
-      relicId: opts.relicId ?? null,
+      defId: opts.defId ?? null,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 0,
@@ -3859,11 +3894,17 @@ export class Dungeon implements CombatHost, RuleHost {
           this.events.push({ kind: "loot", x: p.x, y: p.y, item: p.item, owner: hero.index });
         }
         break;
+      case "augment":
+        if (p.defId) {
+          hero.loot.augments.push(p.defId);
+          this.events.push({ kind: "augment", x: p.x, y: p.y, id: p.defId, owner: hero.index });
+        }
+        break;
       case "relic":
-        if (p.relicId) {
-          hero.loot.relics.push(p.relicId);
-          hero.relicsPending.push(p.relicId);
-          this.events.push({ kind: "relic", x: p.x, y: p.y, id: p.relicId, owner: hero.index });
+        if (p.defId) {
+          hero.loot.relics.push(p.defId);
+          hero.relicsPending.push(p.defId);
+          this.events.push({ kind: "relic", x: p.x, y: p.y, id: p.defId, owner: hero.index });
         }
         break;
       case "xp":
@@ -3944,6 +3985,7 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     this.state.addToInventory(this.loot.items);
     this.state.bankRelics(this.loot.relics);
+    this.state.bankAugments(this.loot.augments);
     if (credit) {
       this.state.recordDepth(this.profile.depth, this.config);
       this.state.stats.runsCompleted++;
@@ -3956,6 +3998,7 @@ export class Dungeon implements CombatHost, RuleHost {
     this.loot.gems = 0;
     this.loot.items = [];
     this.loot.relics = [];
+    this.loot.augments = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
   }
@@ -3973,9 +4016,10 @@ export class Dungeon implements CombatHost, RuleHost {
    * valuable loot: the decision has to be "risk finishing, or lose the drops".
    */
   earlyExtractLoot(): { coins: number; gems: number; itemsLost: number } {
-    const itemsLost = this.loot.items.length + this.loot.relics.length;
+    const itemsLost = this.loot.items.length + this.loot.relics.length + this.loot.augments.length;
     this.loot.items = [];
     this.loot.relics = [];
+    this.loot.augments = [];
     this.loot.keys = emptyKeys();
     this.loot.materials = emptyMaterials();
     this.loot.coins = Math.floor(this.loot.coins * EARLY_EXTRACT_KEEP);
