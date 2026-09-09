@@ -315,7 +315,11 @@ picks a raid and a tier and spawns a Raid Portal — the Reliquary Gate's exact 
   the account frontier, so a climb counts.
 - **Solo in v1**, the same call the Vigil and the Proving made, but the seam is *open*: the
   wire carries `raidId`/`raidTier` and `configFromWire` rebuilds through `raidConfig`, so one
-  branch in `handleHubInteraction` is all that stops a party raid.
+  branch in `handleHubInteraction` is all that stops a party raid. A co-op attempt was built
+  and measured, then **not shipped**: `partyScale` (tuned for a crowd) doesn't transfer to
+  one enormous body, and neither of the two obvious fixes tried (health, damage) closed the
+  gap without a new regression elsewhere. See `docs/raid-party-scaling.md` — the finding, not
+  the fix, is what landed.
 - **Weekly rotation is deliberately not built.** §15 calls raids weekly events, but the game
   already has a weekly (the Convergence), and a roster only open one week in four is four
   pieces of content nobody can test. Raids are always open. A featured-raid read is cheap if
@@ -1097,8 +1101,15 @@ in now. What's still genuinely open:
   but there's no chat, no host migration, no reconnect (a departed player is out for the
   rest of the run), and no joining a run already in progress. Scope left out on purpose —
   ask before building any of it.
-- **Party balance is a guess, not a measurement.** `partyScale` was reasoned about and
-  checked by the smoke test, never by four people actually playing.
+- **Party balance is still mostly a guess, not a measurement** — `partyScale` (the crowd
+  term the Delve, every rift and planet expeditions use) was reasoned about and checked by
+  the smoke test, never by four people actually playing. One shape of it has now been
+  measured rather than guessed: `docs/raid-party-scaling.md` finds `partyScale` doesn't
+  transfer to a single-body encounter (a raid boss) at all, via `tools/bot.ts`'s
+  `playFloorParty`, a real co-op fight simulated headlessly. That finding is unresolved —
+  written up, not fixed, and deliberately not extended to the Delve's own boss floors
+  (the same *shape* of encounter, unmeasured) without the owner's sign-off, since retuning
+  an already-shipped boss floor's co-op difficulty is a live balance change.
 - **Planet floor pacing wants a real balance pass** — bigger and slower than an
   equivalent-depth delve floor, needed noticeably more generous gearing in the smoke
   test to reliably clear.
