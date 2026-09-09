@@ -54,7 +54,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
 | 19 | Relics & artifacts | **done** | `src/data/relics.ts` + `tools/relics.ts` (~330 checks). A relic is a tree node you wear — same `NodeEffect` vocabulary, no third effect language. 3 slots, **at most 1 relic-tier worn** (`MAX_RELICS_WORN`, an owner-overturnable constant), artifacts fill the rest. 12 relics / 18 artifacts, 2 stat sticks. Artifacts 100% Abyssal per §19; relics from the Proving (by element), the Nameless, the depth-30 cache and Abyss tier 8+. `raid`/`tower` source kinds reserved and refused as an item's only source. Shared table in `src/data/drops.ts`. See `docs/relics.md`. |
 | 20 | Endgame drop previews | **done** | `feat/drop-previews`. `src/data/previews.ts` + `tools/previews.ts`, wired into `npm test`. Every commit screen (Dive, Rifts, Star Map, Vigil, Path) renders one `previewForRun`. Holds **no** table of its own: reads `namedMatchesFor`, `namedDropChance`, `bossSpecForRun` and the `RunMode`. The gate proves the preview lists exactly what the sim's own `rollNamedDrops` can produce, dice rigged, across 13 activities. §17's "clear rewards preview" and §19's "where does this drop?" are the same read. See `docs/drop-previews.md`. |
-| 21 | Titan rush / tower | **done** (reward commit in flight) | `src/data/tower.ts`. Endless ascent through the **one** curve (`tools/world.ts` pins height N == depth N across 1–60). Holy roster, five borrowed encounters, bone-gold portal at deepest depth 5, height records structurally separate from depth. The **regard ward** is its unique mechanic: no cycle, marks ground under anyone still for 0.8s inside 170u, sears 0.85s later. Hold time measured (`npm run regard`), not assumed — see findings. Tilesets deliberately undeclared and **unassigned**; floors fall back to a flat fill in the §6 palette. |
+| 21 | Titan rush / tower | **done** (reward commit in flight) | `src/data/tower.ts`. Endless ascent through the **one** curve (`tools/world.ts` pins height N == depth N across 1–60). Holy roster, five borrowed encounters, bone-gold portal at deepest depth 5, height records structurally separate from depth. The **regard ward** is its unique mechanic: no cycle, marks ground under anyone still for 0.8s inside 170u, sears 0.85s later. Hold time measured (`npm run regard`), not assumed — see findings. Tilesets deliberately undeclared and **unassigned**; floors fall back to a flat fill in the §6 palette. The reserved `tower` drop kind went live in `db4652e` — the ascent's clear cache pays its own table keyed on height (Sandals at 15, Hymn at 30), with the §20 preview asking the same query and `npm run relics` guarding it as gate-below/gate-at pairs. |
 | 22 | Rifts / war concept | **done** | One field, not a system: every `RunMode` carries `lore` beside `blurb` — mechanics stay in `blurb`, the world's reason lives in `lore`. Six lines, all quotation from `game_story_worldbuilding.md`. Reaches the player on every Dive/Rifts/StarMap/Vigil/Convergence aside and on each hub portal via `stationLore`. Checked in `tools/previews.ts`: lore must name the war, differ from the blurb, avoid payout words and hardcode no keys. |
 | 23 | Planets / materials layers | **done** | `src/data/layers.ts` — four bands down (Surface / Deep Delve / Hell Layers / Hell Endgame), three up (Tower Base / Heaven Layers / Celestial Endgame), three off both ladders. Every run answers "where in the war am I" via `DepthProfile.layer`; nothing in the sim *reads* a layer, it is legibility not mechanics. Band edges sit on depths `biomeFor` already changes at. Also widens the Reliquary — a sector opens on its ladder OR the account frontier — with monotonicity in the frontier asserted, so no existing save can lose access. `tools/world.ts` in `npm test`. |
 | 24 | Forge overhaul | **done** | The Reforge grid became a workbench: Temper, Recast, Augment, Inscribe, Awaken, Ascend, Salvage. `src/game/forge.ts` + `tools/forge.ts` in `npm test`. Inscribe *rolls* the grant from the pool rather than letting you pick it — a deterministic choice would collapse every character onto the strongest grant. See `docs/forge.md`. |
@@ -297,6 +297,12 @@ use — identical numbers by construction, so "kept out of the pool" cannot quie
 / 0.0% favoured to 0.0% / 47.3%, against fire's 16.4% / 50.1%. Both halves matter — the
 essence works, and an ordinary drop still never rolls holy.
 
+**Shipped 2026-09-09 in `2b8e79b`, guarded.** `tools/forge.ts` section 8 asserts it as a
+comparison over *all eight* essences — "every element the Forge sells changes the roll",
+never "five of them do" — with the paired assertion that an ordinary drop still can't roll
+a reserved element. The Forge's essence list is now one constant (`CRAFT_ESSENCES`) so the
+seller and the test cannot disagree again, which is what let this hide.
+
 **The regard ward's hold time: the measurement contradicted the approved remedy.** The
 ranged tax is real (×1.29 marks per minute in reach) but *lengthening the hold makes it
 monotonically worse* — ×1.49 at 0.55s, ×1.29 at 0.80s, ×2.71 at 1.10s, ×2.67 at 1.40s.
@@ -305,3 +311,27 @@ stillness is one long park (still ~67%, markable ~50%), so a longer hold filters
 the short melee pauses and leaves the long ranged park untouched. The hold is not a fairness
 dial. 0.8s stands as the minimum of both ratios in the shippable window — the opposite of
 the reason it was approved.
+
+---
+
+## Handoff, 2026-09-09
+
+Master is green (`npm test`, 2532 checks) with `feat/world-structure` merged: the Forge
+essence fix and the `tower` drop kind.
+
+**One item is written down and unwritten:** a single relic-tier Heaven exclusive for the
+height-25+ Tower cache — the third customer for that cache, so a destination whose deep
+cache only pays out other places' relics stops being one. Flavour direction from the
+owner's cosmology: Heaven's identity is *imposed order*, nothing is allowed to deviate, so
+the relic should be about order applied to **you**, not to your enemies.
+
+**Name it after the Thrones, not the Dominions.** "Dominion" is Hell's one-word identity in
+the three-sided cosmology — *creation belongs to those strong enough to claim it* — so a
+Heaven relic carrying it reads as the wrong side entirely. Thrones are the doc's
+manifestations of divine law, which is the right register. (Caught by lootsim-97 on the way
+out; `docs/game_story_worldbuilding.md` is the tiebreaker, as always.)
+
+**Also open:** the three Tower tilesets (`tiles.tower-lower`/`-mid`/`-upper`), unassigned
+since the Sonnet session exited; `recommendedLevel` (`src/data/depth.ts:182`), confirmed
+wrong on two instruments, fix not landed; the corrected power and roster sweeps, which
+have to run before the curve-retune ruling can be re-answered; and §15 raids, an owner call.
