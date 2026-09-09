@@ -388,11 +388,15 @@ console.log("\n=== a mode says what it is a consequence of, not only what it pay
   hub.setExpedition(PLANETS[0]!.id, 1);
   hub.raidOpen = true;
   hub.setRaid(RAIDS[0]!.id, 1);
+  hub.altarOpen = true;
+  hub.setMemory("m1");
   const kinds = new Set<HubStationKind>(hub.stations.map((s) => s.kind));
   const doors: HubStationKind[] = [
     "dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence", "tower",
     // The raid pair (UAT §15): the terminal that picks one and the portal picking spawns.
     "warTable", "raidPortal",
+    // The Memory pair: the Altar and the portal it opens, on the same contract.
+    "altar", "memoryPortal",
   ];
   const notDoors: HubStationKind[] = ["forge", "quartermaster", "comms"];
   check("every station kind is on the deck under test", [...doors, ...notDoors].every((k) => kinds.has(k)),
@@ -402,6 +406,8 @@ console.log("\n=== a mode says what it is a consequence of, not only what it pay
   check("the stations that aren't doors to the war say nothing", notDoors.every((k) => stationLore(k) === null));
   check("the Reliquary Gate and the portal it opens speak for the same place",
     stationLore("starmap") === MODES.planet.lore && stationLore("expedition") === MODES.planet.lore);
+  check("the Altar and the portal it opens speak for the same place",
+    stationLore("altar") === MODES.memory.lore && stationLore("memoryPortal") === MODES.memory.lore);
 }
 
 console.log(`\n${failures === 0 ? "ALL PREVIEW CHECKS PASSED" : `${failures} PREVIEW CHECK(S) FAILED`}\n`);

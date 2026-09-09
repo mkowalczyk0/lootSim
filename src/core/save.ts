@@ -110,18 +110,25 @@
  * `Player` (the three slots), and a `relicsFound` counter on the stats. An older save
  * loads owning none and wearing none, which is what a new account has.
  *
+ * Version 23 opens the second ladder (UAT §21, the Tower). `RunStats.riftsCleared` and
+ * `GameState.riftTiers` are keyed by `RunModeId` and gain a `tower` entry, which both
+ * already fill in through `{ ...fresh, ...saved }`; the climb's own records arrive with
+ * the mode itself. An older save loads having climbed nothing, which is true.
+ *
  * Version 24 adds raids (UAT §15). `RunStats.riftsCleared` and `GameState.riftTiers` are
  * keyed by `RunModeId` and gain a `raid` entry the same way version 23's `tower` did, and
  * `GameState.raidProgress` is a new id-keyed ladder alongside `planetProgress`. Both load
  * through `{ ...fresh, ...saved }`, so an older save arrives with every raid at tier 1 —
  * which is what it has actually cleared. Nothing existing changes shape.
  *
- * Version 23 opens the second ladder (UAT §21, the Tower). `RunStats.riftsCleared` and
- * `GameState.riftTiers` are keyed by `RunModeId` and gain a `tower` entry, which both
- * already fill in through `{ ...fresh, ...saved }`; the climb's own records arrive with
- * the mode itself. An older save loads having climbed nothing, which is true.
+ * Version 25 adds the Vault (Memories — `docs/memories.md`): one account-wide list,
+ * `memories`, and the counter that hands out its ids. `riftsCleared` / `riftTiers` gain a
+ * `memory` entry the same way version 23's `tower` did. Nothing on a character sheet
+ * moves, so `playerToJSON` — which is both the save format and the co-op wire payload —
+ * is untouched. An older save loads with an empty Vault, and a Memory naming a place or
+ * an encounter that no longer exists is dropped on load rather than kept as a ghost.
  */
-export const SAVE_VERSION = 24;
+export const SAVE_VERSION = 25;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

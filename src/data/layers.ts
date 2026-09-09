@@ -227,6 +227,11 @@ export function layerFor(config: RunConfig): WorldLayer {
     // on its own spec (UAT §15). Read out of the config rather than looked up in the raid
     // table, which is what keeps this file free of an import back from `data/raids.ts`.
     case "raid": return LAYER_BY_ID[config.raid?.spec.layerId ?? ""] ?? RIFT_LAYERS.threshold;
+    // A Memory is a recollection pinned down in the Citadel (`data/memories.ts`), so it
+    // sits where the Citadel does — in the Threshold, off both ladders — however deep the
+    // place it remembers used to be. The place is the biome; the layer is where the
+    // remembering happens.
+    case "memory":
     case "planet":
     case "vigil":
     case "convergence":

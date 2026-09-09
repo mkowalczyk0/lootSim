@@ -11,8 +11,10 @@ import { clamp } from "../core/math";
 import { biomeFor, type BiomeStyle } from "./biomes";
 import { layerFor, type WorldLayer } from "./layers";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
+import { BASE_RARITY_BIAS, rarityLabel } from "./rarity";
 import { DAILY_MODIFIERS, dailyEffects } from "./daily";
 import type { Element } from "./elements";
+import { memoryEffects, memoryPlace } from "./memories";
 import { delveConfig, partyScale, type RunConfig } from "./modes";
 import { rewardCurve } from "./rewards";
 import { towerBiomeFor } from "./tower";
@@ -86,6 +88,10 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   // which nothing else reads. On any other run every one of these is exactly 1 (or 0
   // for the elite bump).
   const weekly = weeklyEffects(run.weekly?.modifiers ?? []);
+  // A Memory's own burdens and boons (`data/memories.ts`), folded in exactly where the two
+  // rotating activities' are and reaching exactly the same fields. On any other run every
+  // one of these is 1 (or 0 for the elite bump and the rarity bias).
+  const memory = memoryEffects(run.memory);
   /**
    * What this floor's difficulty is worth (UAT §16) — keyed on the danger the player
    * **chose**, which is `danger` with the daily's and weekly's own twists divided back out.
@@ -100,6 +106,12 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
    * So both weathers are divided out — each is 1 on any run that isn't its own activity,
    * and on one whose roll included no danger modifier. The dial still stacks on top of
    * either normally, because the dial is a choice.
+   *
+   * A **Memory's** danger is deliberately *not* divided out, and the distinction is the
+   * whole point: the Vigil's difficulty is the day's weather, while a Memory's is the most
+   * deliberately chosen difficulty in the game — the player built it at an altar and paid
+   * materials for it. §16 is about paying for difficulty you chose, so a Merciless Memory
+   * climbs this curve like a rift tier does. See `docs/memories.md` §5.3.
    */
   const reward = rewardCurve(danger / (daily.danger * weekly.danger));
   // A co-op floor is scaled by how many people walked into it. One player leaves every
@@ -114,7 +126,7 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   // and the ultimates together put roughly 70% more damage in the player's hands, and
   // the smoke test caught it immediately: a careless bot was walking to depth 17 and a
   // raid boss was dying in eighteen seconds. Enemies got the difference back.
-  const enemyHealth = 48 * Math.pow(1.22, d - 1) * danger * party.health * daily.health * weekly.health;
+  const enemyHealth = 48 * Math.pow(1.22, d - 1) * danger * party.health * daily.health * weekly.health * memory.health;
   // Damage starts gentle and accelerates: the first few floors have to be learnable
   // with no gear at all, while depth 20 should genuinely frighten a geared character.
   // Rift danger is applied at a lower exponent so a high tier is a longer fight before
@@ -131,7 +143,7 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
   const deep = Math.max(0, d - 8);
   const enemyDamage =
     (5 + 3.6 * (d - 1) + 0.32 * (d - 1) * (d - 1) + 0.06 * deep * deep) * Math.pow(danger, 0.8) * party.damage;
-  const enemySpeed = (54 + Math.min(52, 2.4 * (d - 1))) * Math.min(1.25, Math.pow(danger, 0.15)) * weekly.speed;
+  const enemySpeed = (54 + Math.min(52, 2.4 * (d - 1))) * Math.min(1.25, Math.pow(danger, 0.15)) * weekly.speed * memory.speed;
   // More bodies at high tiers, but only slowly — a screen full of monsters stops being
   // a fight and starts being a wall.
   const crowd = Math.min(1.6, Math.pow(danger, 0.28));
@@ -154,25 +166,29 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // Hordes, not a trickle: a wave throws 2-3x the bodies the old drip-feed did. Individual
     // trash gets a bit softer to pay for it (see WAVE_HEALTH_MULT in dungeon.ts), so the
     // total work per wave grows more modestly than the headcount alone suggests.
-    enemiesPerWave: Math.min(60, Math.round((3 + Math.floor(d * 0.5)) * crowd * 2.5 * party.count * daily.count * weekly.count)),
-    maxAlive: Math.min(110, Math.round((5 + Math.floor(d * 0.9)) * crowd * 2.2 * party.count * daily.count * weekly.count)),
+    enemiesPerWave: Math.min(60, Math.round((3 + Math.floor(d * 0.5)) * crowd * 2.5 * party.count * daily.count * weekly.count * memory.count)),
+    maxAlive: Math.min(110, Math.round((5 + Math.floor(d * 0.9)) * crowd * 2.2 * party.count * daily.count * weekly.count * memory.count)),
     crowd,
-    coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier) * daily.coins * weekly.coins,
-    xpMultiplier: Math.pow(1.22, d - 1) * mode.xpMult,
+    coinMultiplier: Math.pow(1.22, d - 1) * mode.coinMult * challengerRewardMult(run.challengerTier) * daily.coins * weekly.coins * memory.coins,
+    xpMultiplier: Math.pow(1.22, d - 1) * mode.xpMult * memory.xp,
     // Numbers alone can't threaten a player who dodges well, so the deeper floors
     // squeeze the thing skill actually spends: reaction time. The slopes are unchanged;
     // the post-playtest pass (UAT §8) only lowered the floors these clamp at, so the
     // deepest floors (roughly depth 30+) keep getting more aggressive and tighter-
     // telegraphed instead of plateauing. Nothing at or above those clamps in normal play
     // is affected.
-    aggression: clamp(1 - (d - 1) * 0.016, 0.4, 1) * daily.aggression * weekly.aggression,
-    telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1) * daily.telegraph * weekly.telegraph,
+    aggression: clamp(1 - (d - 1) * 0.016, 0.4, 1) * daily.aggression * weekly.aggression * memory.aggression,
+    telegraph: clamp(1 - (d - 1) * 0.014, 0.48, 1) * daily.telegraph * weekly.telegraph * memory.telegraph,
     isBoss,
-    rarityBias: 0.06 + mode.rarityBias + challengerRarityBias(run.challengerTier) + daily.rarityBias + weekly.rarityBias,
+    // A Memory's Luminous boon adds here and nowhere else — the same composed sum, not a
+    // multiplier and not a `rewardCurve` axis, so it cannot route around the Challenger
+    // cap. Its own contribution is bounded by `MEMORY_RARITY_CAP` inside `memoryEffects`.
+    rarityBias: BASE_RARITY_BIAS + mode.rarityBias + challengerRarityBias(run.challengerTier) + daily.rarityBias + weekly.rarityBias
+      + memory.rarityBias,
     // §16's "number of possible drops": the mode's own volume, a rotating activity's
     // modifier, and now difficulty itself. Every roll site that already respected
     // `quantity` gets this for free.
-    quantity: mode.quantity * daily.quantity * weekly.quantity * reward.dropCount,
+    quantity: mode.quantity * daily.quantity * weekly.quantity * memory.quantity * reward.dropCount,
     itemPower: reward.itemPower,
     // A floor whose local element is plain physical has no variant to offer — the same
     // reason `rollElement` skips infusing monsters on one.
@@ -212,6 +228,13 @@ export function biomeForRun(run: RunConfig): BiomeStyle {
   // Ferryman's crossing looks like itself at every tier rather than like whichever Delve
   // biome its effective depth happens to land in.
   if (run.raid) return run.raid.spec.biome;
+  // A Memory *is* a place — one the game already owns, pinned down (`memoryPlaces`). It
+  // wins over the depth bucket for the reason a sector's does: the player was shown this
+  // place at the Altar and that is the one they are owed.
+  if (run.memory) {
+    const place = memoryPlace(run.memory.placeId);
+    if (place) return place;
+  }
   if (run.planet) return run.planet.spec.biome;
   if (run.tower) return towerBiomeFor(run.tower.height);
   return biomeFor(run.depth);
@@ -223,6 +246,10 @@ function buildTag(run: RunConfig): string {
   if ((run.players ?? 1) > 1) parts.push(`${run.players} players`);
   if (run.raid) {
     parts.push(`${run.raid.spec.name} · T${run.raid.tier}`);
+  } else if (run.memory) {
+    parts.push(
+      `${rarityLabel(run.memory.rarity)} Memory · ${run.memory.placeId} · Floor ${run.floor}/${run.mode.floors}`,
+    );
   } else if (run.planet) {
     parts.push(`${run.planet.spec.name} · T${run.planet.tier} · Floor ${run.floor}/${run.planet.spec.floors}`);
   } else if (run.daily) {
@@ -245,6 +272,9 @@ function floorName(biomeName: string, d: number, run: RunConfig): string {
     const h = run.tower.height;
     return run.bossFloor ? `${biomeName} — Hall of Judgment` : `${biomeName} ${romanize(((h - 1) % 5) + 1)}`;
   }
+  // A Memory names its floors after the place it is a memory of, because that is the
+  // whole product: you are standing in somewhere specific, on purpose.
+  if (run.memory) return run.bossFloor ? `${biomeName} — As It Ended` : `${biomeName} — Remembered`;
   if (run.bossFloor) return `${biomeName} — Warden's Hall`;
   if (run.mode.isRift) return `${biomeName} — Rift Fracture`;
   return `${biomeName} ${romanize(((d - 1) % 5) + 1)}`;

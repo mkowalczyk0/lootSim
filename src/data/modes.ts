@@ -43,11 +43,14 @@
 
 import { challengerMultiplier } from "./challenger";
 import type { DailyRun } from "./daily";
+import type { MemoryInstance } from "./memories";
 import type { PlanetSpec } from "./planets";
 import type { RaidSpec } from "./raids";
 import type { WeeklyRun } from "./weekly";
 
-export const RUN_MODES = ["delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower", "raid"] as const;
+export const RUN_MODES = [
+  "delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower", "raid", "memory",
+] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
 export interface RunMode {
@@ -281,6 +284,35 @@ export const MODES: Record<RunModeId, RunMode> = {
     rarityBias: 0.14, quantity: 1.3,
     coinMult: 0.9, keyMult: 1.2, gemMult: 0.9, xpMult: 1.5, unlockDepth: 0,
   },
+  /**
+   * A Memory — the custom-rift endgame (`data/memories.ts`, `docs/memories.md`).
+   *
+   * Rift-shaped: three floors, the last one the encounter. Everything that makes one
+   * Memory different from another rides on `RunConfig.memory` exactly as a sector rides
+   * on `planet`, so `baseDepth`/`depthPerTier`/`depthPerFloor` here are nominal and
+   * unused — `memoryConfig` sets the depth and the danger from the instance itself.
+   *
+   * **Every axis below is deliberately neutral**, and that is the load-bearing part: an
+   * unmodified Memory at depth N is a Delve floor at depth N, which is what lets
+   * `tools/memories.ts` state "there is no second curve" as an equality rather than as a
+   * bound. A Memory's variation is its own burdens and boons, never the mode's.
+   *
+   * `unlockDepth` is 0 because the Altar is not gated on this axis: it opens when the
+   * *character* has banked both ends of the war (`memoryUnlocked`), which is a pair of
+   * per-class records rather than the account's deepest floor.
+   */
+  memory: {
+    id: "memory", name: "A Memory", short: "Memory",
+    blurb: "Three floors of somewhere that already happened, held exactly as you shaped it.",
+    lore: "Purgatory is built out of what it remembers, and it never remembers the same "
+      + "way twice. The Keepers learned to pin one down: a place the war went through, "
+      + "made to come back whole. It comes back angry about being asked.",
+    color: "#67e8f9",
+    isRift: true, floors: 3,
+    baseDepth: 1, depthPerTier: 0, depthPerFloor: 1,
+    dangerPerTier: 1, rarityBias: 0, quantity: 1,
+    coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1, unlockDepth: 0,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -326,6 +358,15 @@ export interface RunConfig {
    * entry. Built only by `raidConfig`.
    */
   readonly raid?: { readonly spec: RaidSpec; readonly tier: number };
+  /**
+   * Set only for a Memory (`data/memories.ts`) — the instance being spent on this run.
+   *
+   * The same shape and the same reasoning as `planet` and `tower`: everything that differs
+   * between two Memories (the place, the encounter, the depth, and both modifier lists)
+   * lives on the instance rather than on `MODES.memory`, which stays neutral. A type-only
+   * import so `data/memories.ts` can depend on this file and not the other way round.
+   */
+  readonly memory?: MemoryInstance;
   /** Set only for the daily Vigil — the day, its seed, its modifiers and its key. */
   readonly daily?: DailyRun;
   /** Set only for the weekly Convergence — the week, its base seed, its modifiers and

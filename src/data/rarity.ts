@@ -61,7 +61,9 @@ export function rarityLabel(r: Rarity): string {
  * `(1 + depth * bias)^tier`, so deep floors shift mass toward the top end without ever
  * making the rare stuff guaranteed.
  */
-export function depthWeights(depth: number, bias = 0.06): Record<Rarity, number> {
+export const BASE_RARITY_BIAS = 0.06;
+
+export function depthWeights(depth: number, bias = BASE_RARITY_BIAS): Record<Rarity, number> {
   const out = {} as Record<Rarity, number>;
   for (const r of RARITIES) {
     const tier = rarityIndex(r);

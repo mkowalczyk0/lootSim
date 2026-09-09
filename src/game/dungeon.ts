@@ -11,8 +11,10 @@ import {
   zeroResists, type Element,
 } from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
+import { memoryEffects } from "../data/memories";
 import {
-  affixCountFor, affixPrefix, foldAffixSpawn, rollMonsterAffixes,
+  AFFIX_BY_ID, affixCountFor, affixPrefix, foldAffixSpawn, rollMonsterAffixes,
+  type MonsterAffix,
 } from "../data/monster-affixes";
 import {
   BOLT_LIFE, BOLT_SPEED, TALISMAN_ARC_DAMAGE, TALISMAN_ARC_RANGE, type AttackPattern,
@@ -423,6 +425,13 @@ export class Dungeon implements CombatHost, RuleHost {
    * the main stream byte-identical and every calibrated test still lines up.
    */
   readonly affixRng: Rng;
+  /**
+   * Monster affixes every wave monster on this floor carries no matter what it rolled —
+   * a Memory's Armored / Spiteful burdens (`data/memories.ts`). Empty on every other
+   * floor in the game, which is why nothing else had to change. Resolved once here rather
+   * than per spawn, and off no rng at all: a forced affix is not a roll.
+   */
+  private readonly forcedAffixes: MonsterAffix[];
   /** The typed combat event bus the `src/combat` executor and resource rules ride on.
    *  Wired to `fireTriggers` so item triggers still see hits and kills. */
   readonly bus = new EventBus();
@@ -528,11 +537,17 @@ export class Dungeon implements CombatHost, RuleHost {
           // The Vigil's Elite Hunt and the Convergence's Purge ask for more (UAT §17);
           // still clamped to what the floor can make.
           + dailyEffects(this.config.daily?.modifiers ?? []).elites
-          + weeklyEffects(this.config.weekly?.modifiers ?? []).elites,
+          + weeklyEffects(this.config.weekly?.modifiers ?? []).elites
+          // A Memory's Hunted burden asks for more of them, the same way and through the
+          // same clamp (`data/memories.ts`).
+          + memoryEffects(this.config.memory).elites,
         0,
         this.eliteCapForFloor(),
       );
     }
+    this.forcedAffixes = memoryEffects(this.config.memory).affixes
+      .map((id) => AFFIX_BY_ID[id])
+      .filter((a): a is MonsterAffix => a !== undefined);
     this.rng = new Rng(seed);
     this.defenseRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
     this.affixRng = new Rng((seed ^ 0x85ebca6b) >>> 0);
@@ -707,7 +722,8 @@ export class Dungeon implements CombatHost, RuleHost {
       // *makes* as well as what they ask for — otherwise the quota bump would clamp
       // straight back to the cap.
       + dailyEffects(this.config.daily?.modifiers ?? []).elites
-      + weeklyEffects(this.config.weekly?.modifiers ?? []).elites;
+      + weeklyEffects(this.config.weekly?.modifiers ?? []).elites
+      + memoryEffects(this.config.memory).elites;
   }
 
   /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
@@ -835,16 +851,26 @@ export class Dungeon implements CombatHost, RuleHost {
 
     // Modular monster affixes (UAT §3). Boss bodies, boss-summoned chaff and the split
     // spawn of a Splitting monster never roll them; everything else on a wave can.
-    const affixes = opts.noAffixes || opts.summoned || archetype.kind === "boss"
-      ? []
-      : rollMonsterAffixes(
+    // A Memory's Armored / Spiteful burdens force affix ids onto every wave monster
+    // (`data/memories.ts`) — the brief's "all enemies Armored", and the one place the
+    // Memory system reaches into the simulation. Forced on top of whatever the roll
+    // produced and de-duplicated, so a monster that happened to roll `stony` anyway is
+    // not carrying it twice. Boss bodies, boss-summoned chaff and split spawns are
+    // excluded here exactly as they already are below.
+    const canAffix = !(opts.noAffixes || opts.summoned || archetype.kind === "boss");
+    const rolled = canAffix
+      ? rollMonsterAffixes(
           archetype.kind,
           this.profile.depth,
           this.config.danger,
           affixCountFor(this.profile.depth, this.config.danger, elite !== null, this.affixRng),
           this.affixRng,
           { elite: elite !== null },
-        );
+        )
+      : [];
+    const affixes = canAffix && this.forcedAffixes.length > 0
+      ? [...this.forcedAffixes.filter((a) => !rolled.some((r) => r.id === a.id)), ...rolled]
+      : rolled;
     const aff = foldAffixSpawn(affixes);
 
     const element = this.rollElement(archetype.element, elite !== null);

@@ -43,6 +43,7 @@ import type { ClassId } from "./classes";
 import type { Element } from "./elements";
 import { bossSpecForRun } from "./encounters";
 import { MATERIAL_NAMES } from "./materials";
+import { MEMORY_FLOORS, memoryConfig, memoryEffects } from "./memories";
 import { MODES, riftConfig, type RunConfig } from "./modes";
 import {
   namedDropChance, namedForSource, namedMatchesFor, namedSourceLines,
@@ -101,6 +102,14 @@ function isExclusive(def: NamedItemDef, matched: NamedSource): boolean {
 function floorsOf(config: RunConfig): RunConfig[] {
   const mode = config.mode;
   if (!mode.isRift || mode.floors <= 1) return [config];
+  // A Memory is three floors of one instance, so the whole run is previewable before it
+  // is spent — and it must be built through `memoryConfig`, not `riftConfig`, or the
+  // preview would walk floors with no Memory on them and quietly under-report.
+  if (config.memory) {
+    const memory = config.memory;
+    return Array.from({ length: MEMORY_FLOORS }, (_, i) =>
+      memoryConfig(memory, i + 1, config.challengerTier));
+  }
   if (config.planet) {
     const { spec, tier } = config.planet;
     return Array.from({ length: spec.floors }, (_, i) =>
@@ -215,6 +224,7 @@ function lineFor(def: NamedItemDef, src: NamedSource): string {
 function titleFor(config: RunConfig, proving: ClassId | null): string {
   if (proving) return bossSpecForRun(config, proving).name;
   if (config.raid) return `${config.raid.spec.name} · tier ${config.raid.tier}`;
+  if (config.memory) return `Memory of ${config.memory.placeId}`;
   if (config.planet) return `${config.planet.spec.name} · tier ${config.planet.tier}`;
   if (config.daily) return MODES.vigil.name;
   if (config.mode.isRift) return `${config.mode.name} · tier ${config.tier}`;
@@ -236,6 +246,20 @@ function otherRewards(config: RunConfig): string[] {
   }
   if (config.daily) {
     out.push(`one guaranteed ${chestName(config.daily.keyTier)} key in the clear cache, once a day`);
+  }
+  // A Memory's own boons, read off `memoryEffects` — the *same function* `profileFor`
+  // folds in, never a restatement. If a boon is retuned this sentence retunes with it,
+  // which is the one rule this file exists to obey.
+  if (config.memory) {
+    const fx = memoryEffects(config.memory);
+    if (fx.quantity !== 1) out.push(`${pct(fx.quantity)} the usual number of drops`);
+    if (fx.rarityBias > 0) {
+      out.push(fx.rarityBias >= 0.1
+        ? "the loot table bent hard toward the top end"
+        : "the loot table nudged toward the top end");
+    }
+    if (fx.coins !== 1) out.push(`${pct(fx.coins)} coins`);
+    if (fx.xp !== 1) out.push(`${pct(fx.xp)} XP`);
   }
   if (mode.quantity !== 1) out.push(`${pct(mode.quantity)} the usual number of drops`);
   if (mode.rarityBias > 0) {
