@@ -12,6 +12,7 @@
  * Pure data. `game/state.ts` spends the materials and calls `game/item.ts#rollItem`.
  */
 
+import { MAGIC_ELEMENTS, type Element } from "./elements";
 import type { EquipSlot, ItemType } from "./items";
 import { RARITIES, RARITY_VALUE, rarityIndex, type Rarity } from "./rarity";
 import { WEAPON_FAMILIES } from "./weapons";
@@ -38,6 +39,19 @@ export const CRAFTABLE_RARITIES: readonly Rarity[] = RARITIES.slice(0, rarityInd
 export function craftBulkCost(rarity: Rarity): number {
   return Math.round(8 * Math.pow(2, rarityIndex(rarity)));
 }
+
+/**
+ * The essences the Forge sells — every magic element, physical excluded because it is the
+ * bulk material rather than a flavour.
+ *
+ * One list, so the screen that offers an essence and the acceptance test that proves an
+ * essence works are talking about the same set. They weren't: the Craft screen cycled
+ * `MAGIC_ELEMENTS` while `MOD_POOL` only ever authored affixes for `LOOT_ELEMENTS`, so
+ * three of the eight essences on offer charged their material and changed nothing at all
+ * (see `RESERVED_ELEMENTAL_MODS` in `data/items.ts`). A list the seller and the test both
+ * read is what stops that shape of bug coming back.
+ */
+export const CRAFT_ESSENCES: readonly Exclude<Element, "physical">[] = MAGIC_ELEMENTS;
 
 /** Cost of the chosen essence's material, to bias the roll toward that element. */
 export function craftEssenceCost(rarity: Rarity): number {

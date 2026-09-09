@@ -9,7 +9,7 @@ import {
 } from "../data/cosmetics";
 import {
   ASH_NAME, CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, FORGE_OPS, FORGE_OP_INFO,
-  craftBulkCost, craftEssenceCost, requirementLabel, type CraftCategory, type ForgeOp,
+  CRAFT_ESSENCES, craftBulkCost, craftEssenceCost, requirementLabel, type CraftCategory, type ForgeOp,
 } from "../data/crafting";
 import { affixRange, salvageYield } from "../game/forge";
 import { itemMeetsRequirement } from "../data/crafting";
@@ -17,7 +17,7 @@ import { modShort } from "../game/item";
 import { biomeFor } from "../data/biomes";
 import { profileFor } from "../data/depth";
 import {
-  ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS, MAGIC_ELEMENTS, resistFraction, type Element,
+  ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS, resistFraction, type Element,
 } from "../data/elements";
 import { MATERIALS } from "../data/materials";
 import {
@@ -638,7 +638,9 @@ export class TownUI {
       return true;
     }
     if (this.tab === "Craft" && this.forgeMode === "craft") {
-      const options: (Element | null)[] = [null, ...MAGIC_ELEMENTS];
+      // `CRAFT_ESSENCES`, not a list of our own: what the screen offers and what the
+      // acceptance gate proves works have to be the same set. See `data/crafting.ts`.
+      const options: (Element | null)[] = [null, ...CRAFT_ESSENCES];
       const i = options.indexOf(this.craftEssence);
       this.craftEssence = options[(i + dir + options.length) % options.length] ?? null;
       return true;
