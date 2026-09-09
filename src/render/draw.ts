@@ -3,6 +3,7 @@ import type { PropKind } from "../data/biomes";
 import { COSMETICS_BY_ID } from "../data/cosmetics";
 import { ELEMENT_COLORS } from "../data/elements";
 import { RARITY_COLORS } from "../data/rarity";
+import { AUGMENT_BY_ID } from "../data/augments";
 import { RELIC_BY_ID } from "../data/relics";
 import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
@@ -15,6 +16,7 @@ import { gradedTileset, paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, itemSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
   tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
+  augmentSprite,
   relicSprite,
 } from "./sprites";
 
@@ -1179,9 +1181,17 @@ function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
     case "relic": {
       // Same rule as items below: one decision (`chooseRelicArt`), one executor, so the
       // relic on the floor is the picture in the Hero slot and on the banner.
-      const def = p.relicId ? RELIC_BY_ID[p.relicId] : undefined;
+      const def = p.defId ? RELIC_BY_ID[p.defId] : undefined;
       if (!def) return named("gem");
       const art = relicSprite(def);
+      return { canvas: art.canvas, scale: art.worldScale };
+    }
+    case "augment": {
+      // Same rule as relics and items: one decision, one executor, so the augment on the
+      // floor is the picture on the banner and in the chest screen's grid.
+      const def = p.defId ? AUGMENT_BY_ID[p.defId] : undefined;
+      if (!def) return named("capsule");
+      const art = augmentSprite(def);
       return { canvas: art.canvas, scale: art.worldScale };
     }
     case "item": {

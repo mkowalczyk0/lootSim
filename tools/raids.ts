@@ -361,7 +361,7 @@ section("7. it pays out in a live dungeon");
     return priv;
   };
   const droppedIds = (d: Dungeon) => [
-    ...d.pickups.filter((p) => p.kind === "relic").map((p) => p.relicId!),
+    ...d.pickups.filter((p) => p.kind === "relic").map((p) => p.defId!),
     ...d.pickups.filter((p) => p.kind === "item" && p.item?.named).map((p) => p.item!.named!),
   ];
   const spawnBoss = (d: Dungeon) => { for (let t = 0; t < 900 && !d.boss; t++) d.update(1 / 60, IDLE); return d.boss; };
@@ -433,10 +433,10 @@ section("7. it pays out in a live dungeon");
       droppedIds(abyss).every((id) => !raidIds.has(id)));
   }
   // Rolled directly, so the relic table is exercised as itself rather than through pickups.
-  const relicIds = rollRelicDrops({ kind: "raid", raidId: spec.id, tier: 9 }, { chance: () => true }, 1)
+  const defIds = rollRelicDrops({ kind: "raid", raidId: spec.id, tier: 9 }, { chance: () => true }, 1)
     .map((r) => r.id);
   check("the relic table answers a raid query on its own",
-    relicIds.length >= 2, relicIds.join(", "));
+    defIds.length >= 2, defIds.join(", "));
 }
 
 // =========================================================================

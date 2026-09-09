@@ -26,8 +26,9 @@
 
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import { RELIC_TIER_INFO, type RelicDef } from "../data/relics";
+import { augmentAxisLabel, type AugmentDef } from "../data/augments";
 import { statLine, type Item } from "../game/item";
-import { itemArt, itemArtKey, relicArt, relicArtKey } from "../render/sprites";
+import { augmentArt, itemArt, itemArtKey, relicArt, relicArtKey } from "../render/sprites";
 import { pixelImageFit } from "./pixelimage";
 import { atLeast, CINEMATIC_FLOOR, HALT_FLOOR, PUNCH, RARITY_CLASS, RarityFx } from "./rarityfx";
 
@@ -121,8 +122,22 @@ export class LootBanner {
   }
 
   /**
-   * The one card. Everything cinematic the game announces — an item, a relic — comes
-   * through here so the halt rule, the fx and the dismiss hint can never disagree.
+   * An augment (`docs/augments.md`). Goes through the same card as an item and a relic
+   * deliberately: an unspoken augment is the rarest object in the game and the moment the
+   * whole system was designed around, so it must not be quieter than a legendary sword.
+   * `grade` is a real `Rarity`, so the halt rule applies to it unchanged.
+   */
+  showAugment(def: AugmentDef): void {
+    this.showCard({
+      rarity: def.grade, color: RARITY_COLORS[def.grade], name: def.name,
+      line: `${augmentAxisLabel(def.effect.axis)} Augment — ${def.blurb}`,
+      art: pixelImageFit(augmentArt(def), 120, 120, `augment.${def.id}`),
+    });
+  }
+
+  /**
+   * The one card. Everything cinematic the game announces — an item, a relic, an augment —
+   * comes through here so the halt rule, the fx and the dismiss hint can never disagree.
    */
   private showCard(card: { rarity: Rarity; color: string; name: string; line: string; art: string }): void {
     const halt = atLeast(card.rarity, HALT_FLOOR);

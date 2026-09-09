@@ -520,7 +520,7 @@ section("11. live: the drop sites really ask the table, and a bank lands it");
     });
     return priv;
   };
-  const relicsOnFloor = (d: Dungeon) => d.pickups.filter((p) => p.kind === "relic").map((p) => p.relicId!);
+  const relicsOnFloor = (d: Dungeon) => d.pickups.filter((p) => p.kind === "relic").map((p) => p.defId!);
   const spawnBoss = (d: Dungeon) => { for (let t = 0; t < 900 && !d.boss; t++) d.update(1 / 60, IDLE); return d.boss; };
   const fresh = (seed: number, classId: "swordsman" | "stormcaller" = "swordsman", level = 40, deepest = 0) => {
     const s = new GameState(seed);
@@ -544,18 +544,18 @@ section("11. live: the drop sites really ask the table, and a bank lands it");
     check(`killing the Abyss ${spec} drops every artifact it lists (${wanted.length})`,
       wanted.length >= 5 && wanted.every((id) => dropped.includes(id)), dropped.join(", ") || "nothing");
     check("...and no relic-tier item at tier 1", dropped.every((id) => RELIC_BY_ID[id]!.tier === "artifact"));
-    check("...each glowing its tier's rarity", abyss.pickups.filter((p) => p.kind === "relic").every((p) => p.rarity === RELIC_BY_ID[p.relicId!]!.rarity));
+    check("...each glowing its tier's rarity", abyss.pickups.filter((p) => p.kind === "relic").every((p) => p.rarity === RELIC_BY_ID[p.defId!]!.rarity));
 
     // Pick one up, bank the floor, own it. Then a re-roll skips what you own.
     const first = abyss.pickups.find((p) => p.kind === "relic")!;
     priv.collect(abyss.localHero, first);
-    check("picking one up puts it in the run's unbanked loot", abyss.loot.relics.includes(first.relicId!));
-    check("...and announces it as a relic event", abyss.drainEvents().some((ev) => ev.kind === "relic" && ev.id === first.relicId));
+    check("picking one up puts it in the run's unbanked loot", abyss.loot.relics.includes(first.defId!));
+    check("...and announces it as a relic event", abyss.drainEvents().some((ev) => ev.kind === "relic" && ev.id === first.defId));
     abyss.bankLoot();
-    check("banking the floor puts it in the collection", abyssState.ownsRelic(first.relicId!) && abyss.loot.relics.length === 0);
+    check("banking the floor puts it in the collection", abyssState.ownsRelic(first.defId!) && abyss.loot.relics.length === 0);
     abyss.pickups.length = 0;
     priv.killEnemy(boss, abyss.localHero);
-    check("a second kill never drops what the account already owns", !relicsOnFloor(abyss).includes(first.relicId!) && relicsOnFloor(abyss).length === wanted.length - 1);
+    check("a second kill never drops what the account already owns", !relicsOnFloor(abyss).includes(first.defId!) && relicsOnFloor(abyss).length === wanted.length - 1);
   }
 
   // The same encounter in the Delve drops no artifact — they are Abyssal, full stop.

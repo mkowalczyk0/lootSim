@@ -138,9 +138,13 @@
  * simulation. An older save loads with every badge unearned, which is the truth — none of
  * these floors were ever banked with a badge system watching.
  *
- * Version 27 is claimed by the in-flight augment/chest rework (`feat/augments`) — not
- * shipped from this branch. Following the version-20 precedent above: if that branch
- * merges, its own commit fills in this paragraph with what it actually changed.
+ * Version 27 was claimed by the augment/chest rework while it was in flight and then
+ * never shipped under that number: `feat/badges-rework` took 28 first, so the augment
+ * work landed at 29 rather than renumbering downward into a gap. **27 is a hole and must
+ * stay one.** Reusing a burned number is the one thing this counter cannot survive — two
+ * saves that claim the same version and hold different shapes are indistinguishable, and
+ * that ambiguity is precisely what the counter exists to prevent. Skipping a number costs
+ * nothing; colliding on one costs a save.
  *
  * Version 28 reworks the Delve and Tower's Challenger badges from version 26's single
  * "highest tier ever cleared" number to a per-tier depth (or height) shelf, because the
@@ -159,7 +163,17 @@
  * this codebase has already rejected once. `deepestDepth`/`highestHeight` are untouched
  * and still say how far that character actually got, badges or not.
  */
-export const SAVE_VERSION = 28;
+/**
+ * Version 29 is the augment/chest rework (`docs/augments.md`): `GameState.augments`, the
+ * 28-tier chest table collapsed to 10, and the refund of keys for the tiers that went
+ * away — at full purchase price, deliberately, rather than a ratio into a surviving tier,
+ * because a ratio is arithmetic a player cannot check. The migration is version-agnostic
+ * on purpose: it always reads `d.augments` and always sweeps for retired tier ids rather
+ * than gating on a version number, so it is correct regardless of which of 26/28/29 a
+ * given save was written at. Unknown tier ids are dropped rather than thrown on, the
+ * `normalizeAppearance` rule.
+ */
+export const SAVE_VERSION = 29;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

@@ -2,7 +2,11 @@ import { clamp } from "../core/math";
 import { Rng } from "../core/rng";
 import { MemorySaveStore, serializeSave, type SavedGame, type SaveStore } from "../core/save";
 import { MAX_CHALLENGER_TIER } from "../data/challenger";
-import { CHESTS, CHEST_TIERS, type ChestTier } from "../data/chests";
+import { CHESTS, CHEST_TIERS, RETIRED_CHEST_TIERS, type ChestTier } from "../data/chests";
+import {
+  augmentedPull, emptyLoadout, isAugmentId, loadoutIds, loadoutProblems,
+  type AugmentLoadout,
+} from "../data/augments";
 import {
   BASE_COSMETIC_WEIGHTS, CAPSULES, COSMETICS, COSMETICS_BY_ID,
   DUPE_REFUND, defaultAppearance, normalizeAppearance, normalizeOwned,
@@ -37,7 +41,7 @@ import {
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { RAIDS } from "../data/raids";
-import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
+import { RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { universalPointsFor } from "../progression/universal";
@@ -76,6 +80,8 @@ export interface RunStats {
   ashEarned: number;
   /** Times each relic or artifact was banked, by id (UAT §19). Above one means a co-op duplicate. */
   relicsFound: Record<string, number>;
+  /** Lifetime augments found, by id (`data/augments.ts`). */
+  augmentsFound: Record<string, number>;
 }
 
 function freshStats(): RunStats {
@@ -100,6 +106,7 @@ function freshStats(): RunStats {
     itemsSalvaged: 0,
     ashEarned: 0,
     relicsFound: {},
+    augmentsFound: {},
   };
 }
 
@@ -202,6 +209,13 @@ export class GameState {
    * earned. Which three a character *wears* is `Player.relics`.
    */
   relics: string[] = [];
+  /**
+   * Every augment this account holds (`data/augments.ts`, `docs/augments.md`), by id and
+   * count — account-wide like the stash and the relic collection, because a fragment does
+   * not care which Legend requisitions with it. Not a currency: nothing sells one, nothing
+   * crafts one, and the only thing that spends one is opening a chest around it.
+   */
+  augments: Record<string, number> = {};
   /**
    * The player's own difficulty dial — zero is plain. Set at a portal or the star map
    * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
@@ -502,6 +516,28 @@ export class GameState {
     return fresh;
   }
 
+  /**
+   * Banks augments carried out of a run. Unlike a relic there is no "already owned" skip:
+   * a second Bow Augment is a second Bow Augment, and stacking two on one axis is
+   * impossible by the shape of `AugmentLoadout` rather than by making dupes worthless.
+   */
+  bankAugments(ids: readonly string[]): void {
+    for (const id of ids) {
+      if (!isAugmentId(id)) continue;
+      this.augments[id] = (this.augments[id] ?? 0) + 1;
+      this.stats.augmentsFound[id] = (this.stats.augmentsFound[id] ?? 0) + 1;
+    }
+  }
+
+  augmentCount(id: string): number {
+    return this.augments[id] ?? 0;
+  }
+
+  /** Ids the account currently holds at least one of, in registry order. */
+  ownedAugments(): string[] {
+    return Object.keys(this.augments).filter((id) => isAugmentId(id) && this.augments[id]! > 0);
+  }
+
   /** Puts an owned relic in one of the active character's slots. False with the reason otherwise. */
   socketRelic(slot: number, id: string): { ok: true; replaced: string | null } | { ok: false; reason: string } {
     if (!this.ownsRelic(id)) return { ok: false, reason: "You don't have that one yet." };
@@ -747,23 +783,53 @@ export class GameState {
    * gear the class opening it can actually catch up to and equip.
    */
   openChests(tier: ChestTier, count = 1): Item[] {
-    const available = Math.min(count, this.keys[tier]);
+    return this.openAugmented({ ...emptyLoadout(), base: tier }, count);
+  }
+
+  /**
+   * The one chest-opening path (`docs/augments.md`). An un-augmented pull is the empty
+   * loadout, so there is no second code path to keep in agreement — `openChests` above is
+   * literally this function with nothing slotted.
+   *
+   * Everything the loadout decides is decided by `augmentedPull`, which the augment tab's
+   * outcome panel also calls. That is UAT §20 in its literal form: the preview is not
+   * describing this roll, it is running this roll's own composition and not throwing dice.
+   *
+   * Augments are consumed whatever comes out. A rarity augment that "missed" still floored
+   * the roll and still forced the form, element and affix it was stacked with.
+   */
+  openAugmented(load: AugmentLoadout, count = 1): Item[] {
+    if (loadoutProblems(load).length > 0) return [];
+    const ids = loadoutIds(load);
+    // An augmented pull is always 1x, and the tab does not offer the bulk button — ten
+    // simultaneous augmented opens is exactly the "routine currency" failure mode this
+    // system is designed against.
+    const want = ids.length > 0 ? 1 : count;
+    for (const id of ids) if (this.augmentCount(id) <= 0) return [];
+
+    const tier = load.base;
+    const available = Math.min(want, this.keys[tier]);
     if (available <= 0) return [];
     this.keys[tier] -= available;
+    for (const id of ids) this.augments[id] = this.augmentCount(id) - 1;
 
     const info = CHESTS[tier];
-    const weights = {} as Record<Rarity, number>;
-    for (const r of RARITIES) weights[r] = BASE_RARITY_WEIGHTS[r] * info.weights[r];
-
+    const pull = augmentedPull(load);
     const ilvl = Math.max(1, this.player.frontier);
     const affinity = this.player.heroClass.affinity;
+    // Declared on the chest row rather than switched on its id, so the Legend's Cache is
+    // data like every other chest (`ChestTierInfo.classElement`).
+    const favorElement = pull.favorElement
+      ?? (info.classElement ? this.heroClass.element : undefined);
     const found: Item[] = [];
     for (let i = 0; i < available; i++) {
-      const rarity = this.rng.weighted(weights);
-      const type = info.types && info.types.length > 0
-        ? this.rng.pick(info.types)
+      const rarity = this.rng.weighted(pull.weights);
+      const type = pull.types && pull.types.length > 0
+        ? this.rng.pick(pull.types)
         : randomItemType(this.rng, affinity, info.classAdaptive);
-      const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: info.favorElement });
+      const item = rollItem({
+        rarity, type, ilvl, rng: this.rng, favorElement, ensureMods: pull.ensureMods,
+      });
       found.push(item);
       this.stats.raritiesFound[rarity]++;
       // Named items (UAT §28) ride alongside the ordinary pull rather than replacing it, so
@@ -1076,6 +1142,7 @@ export class GameState {
       materials: this.materials,
       ash: this.ash,
       relics: this.relics,
+      augments: this.augments,
       memories: this.memories,
       memorySeq: this.memorySeq,
       challengerTier: this.challengerTier,
@@ -1150,8 +1217,47 @@ export class GameState {
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
       // A save from before the Tower has climbed nothing, which is the fresh value anyway.
       state.maxUnlockedHeight = Number(d.maxUnlockedHeight ?? 1);
-      state.keys = { ...state.keys, ...(d.keys as Record<ChestTier, number>) };
+      // Version 27 added augments (`docs/augments.md`); an older save holds none. A
+      // retired id is dropped rather than kept as a ghost the chest screen can't draw —
+      // the same rule `normalizeAppearance` follows for a retired cosmetic.
+      state.augments = {};
+      const savedAugments = d.augments as Record<string, unknown> | undefined;
+      if (savedAugments && typeof savedAugments === "object") {
+        for (const [id, n] of Object.entries(savedAugments)) {
+          const count = Math.max(0, Math.floor(Number(n)) || 0);
+          if (isAugmentId(id) && count > 0) state.augments[id] = count;
+        }
+      }
+      // Version 27 also retired nineteen chest tiers (the weapon and elemental caches,
+      // replaced one for one by form and element augments). Keys for a retired tier are
+      // refunded as coins at **full purchase price** rather than converted at a ratio into
+      // a surviving tier: a ratio is arithmetic nobody can check and it loses value at the
+      // edges, and a migration players cannot verify is how trust in a save format dies.
+      const savedKeys = (d.keys ?? {}) as Record<string, number>;
+      let refund = 0;
+      for (const [tier, retired] of Object.entries(RETIRED_CHEST_TIERS)) {
+        const held = Math.max(0, Math.floor(Number(savedKeys[tier])) || 0);
+        if (held > 0) refund += held * retired.price;
+      }
+      // Only tiers that still exist survive the merge, so an unknown id in an old save is
+      // dropped rather than left in the record as an undrawable row.
+      state.keys = { ...state.keys };
+      for (const t of CHEST_TIERS) {
+        state.keys[t] = Math.max(0, Math.floor(Number(savedKeys[t])) || 0);
+      }
+      if (refund > 0) state.coins += refund;
       state.stats = { ...freshStats(), ...(d.stats as RunStats) };
+      state.stats.augmentsFound = { ...(state.stats.augmentsFound ?? {}) };
+      // Lifetime opened-counts fold into the surviving tier that shared a retired chest's
+      // odds grade, so a record does not silently shrink under the player.
+      const savedOpened = (state.stats.chestsOpened ?? {}) as Record<string, number>;
+      state.stats.chestsOpened = Object.fromEntries(
+        CHEST_TIERS.map((t) => [t, Math.max(0, Math.floor(Number(savedOpened[t])) || 0)]),
+      ) as Record<ChestTier, number>;
+      for (const [tier, retired] of Object.entries(RETIRED_CHEST_TIERS)) {
+        const opened = Math.max(0, Math.floor(Number(savedOpened[tier])) || 0);
+        if (opened > 0) state.stats.chestsOpened[retired.openedInto] += opened;
+      }
       // Saves from before rifts existed have neither of these.
       state.stats.riftsCleared = { ...freshStats().riftsCleared, ...state.stats.riftsCleared };
       state.riftTiers = { ...freshTiers(), ...(d.riftTiers as Record<RunModeId, number> | undefined) };
