@@ -427,6 +427,12 @@ export const TILESETS: Record<string, AtlasTileset> = {
 
   // The Abyssal Rift (§7) — null-black, one wrong colour, geometry that doesn't close.
   "tiles.abyss": { id: "tiles.abyss", w: 64, h: 64, tile: 16 },
+
+  // The Citadel of the Threshold (§4) — the deck's tiled rung (`DECK_TILESET` in
+  // `render/hub.ts`). Ash-black flagstone under pale bone-white collage masonry —
+  // §17.7's "author to the Citadel palette" recipe, at the same DECK_TINT (`#3d3a47`)
+  // the painted scene and the flat bake both use, so all three rungs read as one hall.
+  "tiles.citadel": { id: "tiles.citadel", w: 64, h: 64, tile: 16 },
 };
 
 export const SCENES: Record<string, AtlasScene> = {

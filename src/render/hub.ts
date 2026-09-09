@@ -5,10 +5,10 @@
  * The hall is authored on the tile lattice (`game/deck.ts`) exactly like a dungeon floor,
  * and its floor is drawn the same three ways a floor is, in this order:
  *
- * 1. **Stamped** from a corner-Wang tileset by the dungeon's own `paintTilemap`, once the
- *    Citadel's sheet exists. `DECK_TILESET` is a reserved id and deliberately absent from
- *    `TILESETS` until its PNG is committed — the precedent the Tower biomes set — so this
- *    branch is dark today and lights up the moment the art lands, with no code change.
+ * 1. **Stamped** from a corner-Wang tileset by the dungeon's own `paintTilemap` —
+ *    `tiles.citadel`, ash-black flagstone under pale bone-white collage masonry, on the
+ *    same Tower-biome precedent (named, absent from `TILESETS`, then wired the moment the
+ *    PNG lands with no other code change) the comment here used to describe as future work.
  * 2. **The painted scene** (`hub.citadel-deck`, §4), stretched over the hall. That image
  *    has the Forge furnace, the Reliquary Gate doorway, the Comms shrine and the
  *    Quartermaster's rack painted into it as relics, which is why those four don't draw a
