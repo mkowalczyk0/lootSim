@@ -3854,6 +3854,43 @@ console.log("\n=== multiplayer ===");
       check(`${label} is identical on both ends of the wire`, fingerprint(h) === fingerprint(c),
         `${h.level.walls.length} walls, ${h.level.traps.length} traps, quota ${h.killsRequired}/${h.elitesRequired}`);
     }
+
+    // Generating the same floor is not the same as agreeing about it once it moves. A saw
+    // is the one hazard that travels, and its position is *derived* on both ends from the
+    // `t` the snapshot carries rather than being sent — so this is the check that the
+    // deriving actually happens. It didn't: the wire moved the number and nothing moved
+    // the blade, and a client drew every saw parked at its track start while the host's
+    // patrolled somewhere else and hurt them from there.
+    let sawSeed = 0;
+    for (let seed = 900; seed < 1000 && sawSeed === 0; seed++) {
+      const probe = new Dungeon(hostSide, delveConfig(14, 0, 2), { seed, role: "host", heroes: pair });
+      if (probe.level.traps.some((t) => t.kind === "saw")) sawSeed = seed;
+    }
+    if (sawSeed === 0) {
+      check("a floor with a saw on it exists to test", false, "no saw in seeds 900-999 at depth 14");
+    } else {
+      const cfg = delveConfig(14, 0, 2);
+      const h = new Dungeon(hostSide, cfg, { seed: sawSeed, role: "host", heroes: pair });
+      const c = new Dungeon(clientSide, configFromWire(configToWire(cfg)), {
+        seed: sawSeed, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+      });
+      const idle = new FakeInput();
+      const sawIndex = h.level.traps.findIndex((t) => t.kind === "saw");
+      const home = { x: c.level.traps[sawIndex]!.x, y: c.level.traps[sawIndex]!.y };
+      for (let i = 0; i < 120; i++) {
+        idle.beginTick();
+        h.update(DT, idle as unknown as AvatarInput);
+        h.drainEvents();
+      }
+      const hostSaw = h.level.traps[sawIndex]!;
+      applySnapshot(c, JSON.parse(JSON.stringify(encodeSnapshot(h))) as Snapshot);
+      const clientSaw = c.level.traps[sawIndex]!;
+      check("the saw actually travelled on the host", Math.hypot(hostSaw.x - home.x, hostSaw.y - home.y) > 20,
+        `${Math.hypot(hostSaw.x - home.x, hostSaw.y - home.y).toFixed(0)}u from its track start`);
+      check("a client draws the saw where the host's blade actually is",
+        Math.hypot(clientSaw.x - hostSaw.x, clientSaw.y - hostSaw.y) < 1,
+        `client ${clientSaw.x.toFixed(0)},${clientSaw.y.toFixed(0)} vs host ${hostSaw.x.toFixed(0)},${hostSaw.y.toFixed(0)}`);
+    }
   }
 
   // 9. What a client sees between snapshots (UAT §1 B1): a body the client already had

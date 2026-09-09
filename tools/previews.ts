@@ -120,6 +120,13 @@ console.log("\n=== every mode answers the question ===");
 for (const id of RUN_MODES) {
   // Built the way each mode really builds one, so a mode that grows its own config shape
   // shows up here rather than being quietly skipped.
+  //
+  // The `riftConfig` fallback is the trap here, and the next non-rift mode is when it
+  // bites again: `riftConfig(id, 1, MODES[id].floors)` on a mode with `isRift: false` and
+  // `floors: 0` falls all the way back to `delveConfig(0)` and returns a perfectly valid
+  // config for the wrong activity. The Tower spent a commit in that state — this walk was
+  // green while previewing a Delve floor and calling it the Tower. Give a new non-rift
+  // mode its own branch above; do not let it reach the fallback.
   const config = id === "delve" ? delveConfig(10)
     : id === "tower" ? towerConfig(10)
       : id === "vigil" ? dailyConfig(dayNumber())
