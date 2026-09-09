@@ -270,6 +270,11 @@ class World implements CombatHost {
   applyImpulse() {}
   interruptCasts() {}
   emitFx(ref: string) { this.fx.push(ref); }
+  /** Recorded rather than ignored, so `tools/abilityfx.ts` can assert a real cast drew one. */
+  readonly tracers: { style: string; element: string; x0: number; y0: number; x1: number; y1: number }[] = [];
+  emitTracer(style: string, element: string, x0: number, y0: number, x1: number, y1: number) {
+    this.tracers.push({ style, element, x0, y0, x1, y1 });
+  }
 
   advance(seconds: number, rt: AbilityRuntime, step = 1 / 60) {
     for (let t = 0; t < seconds - 1e-9; t += step) {

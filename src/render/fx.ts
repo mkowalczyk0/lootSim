@@ -14,6 +14,13 @@ import type { AuraKind } from "../data/cosmetics";
 /** How a mote is drawn. The shape is chosen at spawn and never changes. */
 type Shape = "square" | "star" | "petal" | "bubble" | "snow" | "shard";
 
+/**
+ * How a hitscan line is drawn. Authored on an ability as `fx.travel`; `data/ability-fx.ts`
+ * is where each ability picks one and why.
+ */
+export type TracerStyle = "beam" | "lance" | "bolt";
+export const TRACER_STYLES: readonly TracerStyle[] = ["beam", "lance", "bolt"];
+
 interface Particle {
   x: number; y: number; vx: number; vy: number;
   life: number; maxLife: number; size: number; color: string;
@@ -43,6 +50,24 @@ interface Slash {
   thrust: boolean;
 }
 
+/**
+ * A hitscan tracer: the visible half of an ability that resolves instantly at range.
+ *
+ * **It appears along its whole length in one frame and then fades.** That is the entire
+ * design constraint and it is not a stylistic choice — the damage these abilities deal has
+ * already landed by the time this is drawn, so anything that *travels* would be telling the
+ * player a lie they can catch at 300 units. A beam that simply is there is telling the
+ * truth. Arcing, dodgeable objects are the four real `Projectile` spawn sites, which have
+ * travel time because the simulation actually gives them travel time.
+ */
+interface Tracer {
+  x0: number; y0: number; x1: number; y1: number;
+  life: number; maxLife: number; color: string;
+  style: TracerStyle;
+  /** Jag offsets for `bolt`, picked once at spawn so the line doesn't crawl as it fades. */
+  jag: readonly number[];
+}
+
 /** The four-pointed flash on a landed hit. Cheap, and it sells every impact. */
 interface Star {
   x: number; y: number; size: number; rot: number;
@@ -55,6 +80,7 @@ export class Fx {
   private rings: Ring[] = [];
   private slashes: Slash[] = [];
   private stars: Star[] = [];
+  private tracers: Tracer[] = [];
   private shake = 0;
   /** Cosmetic switches from the settings menu. Both default on. */
   private shakeEnabled = true;
@@ -172,6 +198,24 @@ export class Fx {
   }
 
   /** A four-pointed flash where something got hit. */
+  /**
+   * One hitscan line, whole and instant. `jag` is drawn from `fxRng` — the renderer's own
+   * generator, never the simulation's — so a tracer can never perturb the floor's rng
+   * stream. `tools/abilityfx.ts` proves that by replaying a seeded floor with FX on and off.
+   */
+  tracer(x0: number, y0: number, x1: number, y1: number, color: string, style: TracerStyle = "beam"): void {
+    const jag: number[] = [];
+    if (style === "bolt") {
+      for (let i = 0; i < 5; i++) jag.push((fxRng.next() - 0.5) * 26);
+    }
+    this.tracers.push({
+      x0, y0, x1, y1, color, style, jag,
+      // Short: it is a flash, not an object. Long enough to register at 60fps and read as
+      // a direction, short enough that two casts never overlap into a smear.
+      life: 0.22, maxLife: 0.22,
+    });
+  }
+
   star(x: number, y: number, size: number, color: string): void {
     this.stars.push({
       x, y, size, rot: fxRng.range(-0.4, 0.4),
@@ -186,6 +230,14 @@ export class Fx {
 
   update(dt: number): void {
     this.shake = Math.max(0, this.shake - dt * 42);
+
+    // Tracers only age. Nothing about one moves, because a hitscan line is already
+    // everywhere it is ever going to be the frame it is drawn.
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      const t = this.tracers[i]!;
+      t.life -= dt;
+      if (t.life <= 0) this.tracers.splice(i, 1);
+    }
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i]!;
@@ -253,6 +305,7 @@ export class Fx {
       ctx.stroke();
     }
 
+    for (const t of this.tracers) drawTracer(ctx, t);
     for (const s of this.slashes) drawSlash(ctx, s);
     for (const p of this.particles) drawParticle(ctx, p);
     for (const s of this.stars) drawStar(ctx, s);
@@ -275,6 +328,7 @@ export class Fx {
   }
 
   clear(): void {
+    this.tracers.length = 0;
     this.particles.length = 0;
     this.texts.length = 0;
     this.rings.length = 0;
@@ -412,6 +466,67 @@ function drawSlash(ctx: CanvasRenderingContext2D, s: Slash): void {
 }
 
 /** The impact flash: a hard four-pointed star with a white centre. */
+/**
+ * A hitscan line: a wide soft glow, a solid core, and a bright head where it lands.
+ *
+ * Three styles, and the difference is silhouette rather than colour, because colour is
+ * already carrying the element. `beam` is a straight even line; `lance` tapers from a wide
+ * base to a point, which reads as thrown rather than shone; `bolt` breaks the line into
+ * jagged segments using offsets fixed at spawn, so it flickers out rather than crawling.
+ */
+function drawTracer(ctx: CanvasRenderingContext2D, t: Tracer): void {
+  const life = clamp(t.life / t.maxLife, 0, 1);
+  const dx = t.x1 - t.x0;
+  const dy = t.y1 - t.y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.shadowColor = t.color;
+  ctx.shadowBlur = 14 * life;
+
+  const points: { x: number; y: number }[] = [];
+  const segments = t.style === "bolt" ? t.jag.length + 1 : 1;
+  for (let i = 0; i <= segments; i++) {
+    const f = i / segments;
+    const off = t.style === "bolt" && i > 0 && i < segments ? (t.jag[i - 1] ?? 0) : 0;
+    points.push({ x: t.x0 + dx * f + nx * off, y: t.y0 + dy * f + ny * off });
+  }
+
+  // Two passes: a wide translucent glow, then a narrow opaque core.
+  for (const pass of [{ w: 9, a: 0.28 }, { w: 3, a: 0.95 }]) {
+    ctx.globalAlpha = pass.a * life;
+    ctx.strokeStyle = pass.w > 5 ? t.color : "#ffffff";
+    if (t.style === "lance") {
+      // Tapered: drawn as a filled sliver rather than a stroke, so it can narrow.
+      const w = pass.w * life;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.moveTo(t.x0 + nx * w, t.y0 + ny * w);
+      ctx.lineTo(t.x1, t.y1);
+      ctx.lineTo(t.x0 - nx * w, t.y0 - ny * w);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.lineWidth = pass.w * life;
+      ctx.beginPath();
+      ctx.moveTo(points[0]!.x, points[0]!.y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i]!.x, points[i]!.y);
+      ctx.stroke();
+    }
+  }
+
+  // The head, where the damage actually landed — the one part the player should read.
+  ctx.globalAlpha = life;
+  ctx.fillStyle = t.color;
+  ctx.beginPath();
+  ctx.arc(t.x1, t.y1, 6 * life, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawStar(ctx: CanvasRenderingContext2D, s: Star): void {
   const t = 1 - s.life / s.maxLife;
   const r = s.size * (0.5 + t * 0.9);

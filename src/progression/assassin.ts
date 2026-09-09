@@ -134,6 +134,7 @@ export const ASSASSIN_MARK_FOR_DEATH: Ability = {
   cooldown: 12,
   targeting: "currentTarget",
   range: 300,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "contract", chance: 1, to: "target" },
   ],
@@ -186,6 +187,7 @@ export const ASSASSIN_EXPOSE_WEAKNESS: Ability = {
   cooldown: 16,
   targeting: "currentTarget",
   range: 260,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "exposed", chance: 1, to: "target", durationMult: 1.6 },
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },

@@ -132,6 +132,7 @@ export const ALCHEMIST_ADRENAL_COMPOUND: Ability = {
   cooldown: 12,
   targeting: "lowestHealthAlly",
   range: 200,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "catalyzed", chance: 1, to: "allies" },
     { kind: "cleanse", category: "cc", to: "allies" },

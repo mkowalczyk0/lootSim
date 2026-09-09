@@ -127,6 +127,7 @@ export const WARLOCK_SOUL_TAX: Ability = {
   cooldown: 10,
   targeting: "currentTarget",
   range: 240,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "hex", chance: 1, to: "target" },
     { kind: "status", status: "weakened", chance: 1, to: "target" },
@@ -146,6 +147,7 @@ export const WARLOCK_RUPTURE_VEIN: Ability = {
   cooldown: 6,
   targeting: "currentTarget",
   range: 200,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "consumeStatus", status: "hex", to: "target", then: [
       { kind: "damage", damage: { base: 2.6, scale: "spell", type: "void", canCrit: true }, to: "target" },
@@ -184,6 +186,7 @@ export const WARLOCK_LIFE_LEECH: Ability = {
   channel: { duration: 3, ticks: 6 },
   targeting: "currentTarget",
   range: 180,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "damage", damage: { base: 0.5, scale: "spell", type: "void", channel: "periodic" }, to: "target" },
     { kind: "heal", amount: 0.2, scale: "spell", to: "self" },
@@ -202,6 +205,7 @@ export const WARLOCK_MALEDICT: Ability = {
   cooldown: 4,
   targeting: "currentTarget",
   range: 240,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "hex", chance: 1, stacks: 2, to: "target" },
     { kind: "damage", damage: { base: 0.7, scale: "spell", type: "void", canCrit: true }, to: "target" },
@@ -220,6 +224,7 @@ export const WARLOCK_GRASP_BEYOND: Ability = {
   cooldown: 13,
   targeting: "radius",
   range: 200,
+  fx: { travel: "bolt" },
   shape: { radius: 110 },
   effects: [
     { kind: "damage", damage: { base: 0.9, scale: "spell", type: "void", canCrit: true }, to: "allTargets" },
@@ -256,6 +261,7 @@ export const WARLOCK_SOUL_DETONATION: Ability = {
   cooldown: 18,
   targeting: "markedTarget",
   range: 260,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "damage", damage: { base: 3.4, scale: "spell", type: "void", canCrit: true }, to: "allTargets" },
     { kind: "spreadStatus", status: "hex", radius: 180, to: "marked" },

@@ -314,6 +314,10 @@ class MockWorld implements CombatHost {
   emitFx(ref: string, x: number, y: number) {
     this.fx.push({ ref, x, y });
   }
+  readonly tracers: { style: string; x0: number; y0: number; x1: number; y1: number }[] = [];
+  emitTracer(style: string, _element: string, x0: number, y0: number, x1: number, y1: number) {
+    this.tracers.push({ style, x0, y0, x1, y1 });
+  }
 
   advance(seconds: number, rt: AbilityRuntime, step = 1 / 60) {
     for (let t = 0; t < seconds - 1e-9; t += step) {

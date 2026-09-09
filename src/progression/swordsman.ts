@@ -134,6 +134,7 @@ export const SWORDSMAN_SEVERING_ARC: Ability = {
   cooldown: 7,
   targeting: "cone",
   range: 110,
+  fx: { travel: "lance" },
   shape: { length: 110, arc: Math.PI * 0.9 },
   effects: [
     {
@@ -212,6 +213,7 @@ export const SWORDSMAN_KINGS_CHALLENGE: Ability = {
   cooldown: 16,
   targeting: "currentTarget",
   range: 200,
+  fx: { travel: "beam" },
   effects: [
     { kind: "status", status: "mark", chance: 1, to: "target" },
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },
@@ -252,6 +254,7 @@ export const SWORDSMAN_SWORD_ECLIPSE: Ability = {
   isUltimate: true,
   targeting: "radius",
   range: 160,
+  fx: { travel: "lance" },
   shape: { radius: 160 },
   effects: [
     { kind: "damage", damage: { base: 0.6, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },

@@ -95,6 +95,7 @@ export const SHAMAN_BONE_TALISMAN: Ability = {
   cooldown: 5,
   targeting: "currentTarget",
   range: 220,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "mark", chance: 1, to: "target" },
     { kind: "status", status: "withering", chance: 1, to: "target" },
@@ -146,6 +147,7 @@ export const SHAMAN_HEX_OF_WITHERING: Ability = {
   cooldown: 4,
   targeting: "currentTarget",
   range: 200,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "status", status: "withering", chance: 1, stacks: 2, to: "target" },
     { kind: "damage", damage: { base: 0.6, scale: "spell", type: "void", canCrit: true }, to: "target" },
@@ -179,6 +181,7 @@ export const SHAMAN_ROOTCALLER: Ability = {
   cooldown: 9,
   targeting: "line",
   range: 180,
+  fx: { travel: "bolt" },
   shape: { width: 50, length: 180 },
   effects: [
     { kind: "damage", damage: { base: 1.2, scale: "spell", type: "nature", canCrit: true }, to: "allTargets" },

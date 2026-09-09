@@ -179,6 +179,7 @@ export const NECROMANCER_CORPSE_BOMB: Ability = {
   cooldown: 3,
   targeting: "corpse",
   range: 180,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "consumeStatus", status: "mark", to: "corpse" },
     { kind: "damage", damage: { base: 3, scale: "spell", type: "void", canCrit: true }, to: "enemies" },
@@ -259,6 +260,7 @@ export const NECROMANCER_COMMAND_RAVAGE: Ability = {
   cooldown: 10,
   targeting: "enemy",
   range: 400,
+  fx: { travel: "bolt" },
   effects: [
     { kind: "commandSummons", command: "commandTarget", to: "target" },
     { kind: "status", status: "exposed", chance: 1, to: "target" },

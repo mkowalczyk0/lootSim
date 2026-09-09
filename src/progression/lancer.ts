@@ -104,6 +104,7 @@ export const LANCER_IMPALING_THRUST: Ability = {
   castTime: 0.15,
   targeting: "line",
   range: 220,
+  fx: { travel: "lance" },
   shape: { width: 22, length: 220 },
   effects: [{ kind: "damage", damage: { base: 1.4, scale: "attack", type: "physical", canCrit: true } }],
   mutationHooks: [
@@ -165,6 +166,7 @@ export const LANCER_DRAGOON_LINE: Ability = {
   cooldown: 6,
   targeting: "line",
   range: 150,
+  fx: { travel: "lance" },
   shape: { width: 60, length: 150 },
   effects: [
     { kind: "pull", force: 120, to: "allTargets" },
