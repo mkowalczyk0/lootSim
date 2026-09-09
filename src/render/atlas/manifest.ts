@@ -412,7 +412,9 @@ export interface AtlasTileset {
  * fails any cross-set overlap that is not declared here.
  */
 export const SHARED_MONSTER_SETS: readonly (readonly [string, string])[] = [
-  // Until the Reliquary's sectors get art of their own. See the `delve` note below.
+  // Permanent, not "until" — see the `delve` note below. The Reliquary sector question
+  // was asked and closed (docs/art-manifest.md §3.3): a sector is a place, not a
+  // population, and per-sector rosters are not coming.
   ["delve", "reliquary"],
 ];
 
@@ -439,13 +441,22 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
    * by realm. So the Delve does not have a five-sprite backlog; it has the right art under
    * a misleading name, and pointing at it here is the honest expression of that.
    *
-   * **This set and `reliquary` are identical today, and that is the finding rather than a
-   * mistake.** Two realms are drawing one roster. The seam does not fix that on its own —
-   * it makes it *visible and deliberate* instead of a global default nobody chose. The
-   * Reliquary is the one that should eventually diverge: its sectors are a frozen basilica,
-   * a rotting garden and a wargrave, which are places, whereas the Delve is where this art
-   * already looks at home. Declared in `SHARED_MONSTER_SETS` so it cannot happen by
-   * accident.
+   * **This set and `reliquary` are identical, and that is settled rather than pending.**
+   * Two realms draw one roster, on purpose: declared in `SHARED_MONSTER_SETS` so it can't
+   * happen by accident, and permanent rather than a placeholder waiting on the Reliquary's
+   * sectors to get art of their own — they aren't going to.
+   *
+   * This comment used to say the opposite — that the Reliquary "should eventually
+   * diverge" into its own sector rosters — and that was a real, asked, and closed
+   * question (docs/art-manifest.md §3.3, the load-bearing rule this comment used to
+   * contradict). The ruling: `docs/game_story_worldbuilding.md` describes each Reliquary
+   * sector purely as a *place* — architecture, terrain, what's embedded in the walls —
+   * and is silent on what walks around in it. Every sector gets exactly one labelled
+   * differentiator ("Fire-heavy", "Cold-heavy", "Void-heavy", ...), which names the
+   * elemental-infusion lever that already exists, not a monster roster that doesn't. A
+   * sector reads as itself through its tileset, its props and dressing, its elemental
+   * infusion, `enemyNames`, and — per the Black Archive's `blink`/`sunder` boss kit —
+   * mechanics, same eleven silhouettes underneath throughout. See §3.3 for the rest.
    */
   delve: {
     grunt: "reliquary.monster.rot-imp",
