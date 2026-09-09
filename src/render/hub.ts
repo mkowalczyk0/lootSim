@@ -2,12 +2,23 @@
  * Draws the Citadel of the Threshold — the hub deck. A small fixed space, so unlike the
  * dungeon it never scrolls: the whole hall is scaled to fit the viewport and drawn once.
  *
- * The hall and its stations are **one baked image** (`hub.citadel-deck`, §4): the Forge
- * furnace, the Reliquary Gate doorway, the Comms shrine and the Quartermaster's rack are
- * painted into it as relics from dead civilisations, at the deck's own pixel pitch, so
- * nothing is composited at runtime and nothing reads as pasted on. This module only adds
- * what has to move: an animated summoning ring over each portal point, and the hero and
- * co-op mates. A station is just an `{x, y, radius}` hotspot on that image.
+ * The hall is authored on the tile lattice (`game/deck.ts`) exactly like a dungeon floor,
+ * and its floor is drawn the same three ways a floor is, in this order:
+ *
+ * 1. **Stamped** from a corner-Wang tileset by the dungeon's own `paintTilemap`, once the
+ *    Citadel's sheet exists. `DECK_TILESET` is a reserved id and deliberately absent from
+ *    `TILESETS` until its PNG is committed — the precedent the Tower biomes set — so this
+ *    branch is dark today and lights up the moment the art lands, with no code change.
+ * 2. **The painted scene** (`hub.citadel-deck`, §4), stretched over the hall. That image
+ *    has the Forge furnace, the Reliquary Gate doorway, the Comms shrine and the
+ *    Quartermaster's rack painted into it as relics, which is why those four don't draw a
+ *    terminal while it's showing. It also paints the hall's outer wall, so only the walls
+ *    authored *inside* the ring are drawn over it.
+ * 3. **A flat bake** — ash floor, drawn wall blocks — for the frames before either loads.
+ *
+ * Either way the floor is baked once into an offscreen canvas and blitted; this module
+ * only adds per-frame what has to move: a summoning ring over each portal, and the hero
+ * and the co-op mates. A station is an `{x, y, radius}` sitting on its anchor tile.
  */
 
 import type { Appearance } from "../data/cosmetics";
@@ -16,7 +27,10 @@ import { drawPortalGlyph, drawSprite } from "./draw";
 import {
   HUB_HEIGHT, HUB_WIDTH, stationLore, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
-import { atlasCanvas } from "./atlas/index";
+import { atlasCanvas, atlasTileset } from "./atlas/index";
+import { DECK_INTERIOR_WALLS, DECK_SPACE, DECK_WALLS } from "../game/deck";
+import type { Wall } from "../game/level";
+import { gradedTileset, paintTilemap } from "./tilemap";
 import { heroSprite } from "./sprites";
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -54,6 +68,9 @@ const PORTAL_KINDS = new Set<HubStationKind>([
  * alternative is a floating caption with nothing underneath it.
  */
 const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable", "altar"]);
+/** Note this only means anything while the *painted* scene is what's showing. A stamped
+ *  floor has no relics in it at all, so on that ladder rung every terminal draws itself —
+ *  which is the art bill the tileset pass has to pay: relic props for all six terminals. */
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
@@ -101,8 +118,13 @@ export function renderHub(
   ctx.scale(scale, scale);
   ctx.imageSmoothingEnabled = false;
 
-  const deckLoaded = drawDeck(ctx);
-  for (const s of hub.stations) drawStation(ctx, s, time, s === near, deckLoaded);
+  const look = drawDeck(ctx);
+  // Compared by *kind*, not by identity: `hub.stations` builds its list fresh on every
+  // read, so the object `nearStation()` returned is never the same object this loop is
+  // holding. It used to be for the eight permanent stations (they came out of a shared
+  // constant array) and never for the conditional portals — which is why the Vigil, the
+  // Tower and the rest have never lit up when you walked to them.
+  for (const s of hub.stations) drawStation(ctx, s, time, s.kind === near?.kind, look);
   // The party's portal (UAT §1 D1): whichever one the host picked gets a wide pulsing
   // ring, so "everyone walk into it" has an obvious "it".
   const target = hub.partyStation;
@@ -193,37 +215,129 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
 }
 
 /**
- * The Citadel deck (§4) — the whole hall with its stations, baked. Stretched to fill the
- * fixed hub viewport. Returns whether the image was actually there; a plain ash fill
- * stands in for the first frames, and the stations draw a marker until it loads.
+ * The Citadel's own corner-Wang floor sheet. Reserved, and deliberately **not** listed in
+ * `TILESETS` until its PNG is committed: `npm run smoke` decodes every declared sheet off
+ * disk, so naming art the repo doesn't have is a failing test rather than a TODO. The
+ * Tower's biomes set the same precedent. `atlasTileset` returns null for it today and the
+ * deck falls back — see the module header for the ladder.
  */
-function drawDeck(ctx: CanvasRenderingContext2D): boolean {
-  const deck = atlasCanvas("hub.citadel-deck");
-  if (deck) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(deck, 0, 0, HUB_WIDTH, HUB_HEIGHT);
+const DECK_TILESET = "tiles.citadel";
+
+/** Purgatory/Citadel from the art guide's palette table (§2): ash floor, ink shadow, and
+ *  a stone a shade above the floor so walkable and solid read apart before anything else. */
+const DECK_TINT = "#3d3a47";
+const DECK_FLOOR_ALT = "#443f52";
+const DECK_WALL = "#4a4657";
+const DECK_WALL_SIDE = "#2a2733";
+
+/** Which of the three ways the floor came out — the stations need to know, because the
+ *  painted scene is the only one with relics already in it. */
+type DeckLook = "tiled" | "painted" | "flat";
+
+let deckCanvas: HTMLCanvasElement | null = null;
+let deckLook: DeckLook = "flat";
+let deckKey = "";
+
+/**
+ * Bakes the hall once. The atlas loads asynchronously, so the bake is keyed on *what was
+ * available* and redone the single time that changes — the first frames are the flat bake
+ * and everything after is the real thing.
+ */
+function bakeDeck(): { canvas: HTMLCanvasElement; look: DeckLook } {
+  const ts = atlasTileset(DECK_TILESET);
+  const scene = atlasCanvas("hub.citadel-deck");
+  const key = `${ts ? "t" : "-"}${scene ? "s" : "-"}`;
+  if (deckCanvas && key === deckKey) return { canvas: deckCanvas, look: deckLook };
+
+  const canvas = document.createElement("canvas");
+  canvas.width = HUB_WIDTH;
+  canvas.height = HUB_HEIGHT;
+  const c = canvas.getContext("2d")!;
+  c.imageSmoothingEnabled = false;
+  // The floor tone behind everything, so a half-transparent tile edge reads as dim stone
+  // rather than a hole to the void — the same reason `bakeFloor` does it.
+  c.fillStyle = DECK_TINT;
+  c.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+
+  let look: DeckLook = "flat";
+  if (ts && paintTilemap(c, DECK_SPACE, gradedTileset(DECK_TILESET, ts, DECK_TINT))) {
+    // Stamped from real stone, walls and all — nothing left to draw.
+    look = "tiled";
+  } else if (scene) {
+    c.drawImage(scene, 0, 0, HUB_WIDTH, HUB_HEIGHT);
+    // The painting already shows the hall's outer wall. Anything authored inside the ring
+    // is not in it and has to be drawn, or it would be an invisible obstacle.
+    drawDeckWalls(c, DECK_INTERIOR_WALLS);
+    look = "painted";
   } else {
-    ctx.fillStyle = "#2a2733";
-    ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    flatDeck(c);
+    drawDeckWalls(c, DECK_WALLS);
   }
+
+  deckCanvas = canvas;
+  deckLook = look;
+  deckKey = key;
+  return { canvas, look };
+}
+
+/** Blits the baked hall and frames it. Returns how it was drawn. */
+function drawDeck(ctx: CanvasRenderingContext2D): DeckLook {
+  const { canvas, look } = bakeDeck();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(canvas, 0, 0);
 
   // A thin dark vignette frame so the deck reads as an enclosed hall at any viewport size.
   ctx.strokeStyle = "rgba(0,0,0,0.5)";
   ctx.lineWidth = 8;
   ctx.strokeRect(2, 2, HUB_WIDTH - 4, HUB_HEIGHT - 4);
-  return !!deck;
+  return look;
+}
+
+/** Ash flagstone with a scatter of darker tiles, for the frames before anything loads.
+ *  Deterministic, so the hall doesn't shimmer if it is ever re-baked. */
+function flatDeck(ctx: CanvasRenderingContext2D): void {
+  let hash = DECK_SPACE.seed >>> 0;
+  const rand = (): number => {
+    hash = (hash * 1664525 + 1013904223) >>> 0;
+    return hash / 4294967296;
+  };
+  ctx.fillStyle = DECK_FLOOR_ALT;
+  for (let y = 0; y < HUB_HEIGHT; y += 24) {
+    for (let x = 0; x < HUB_WIDTH; x += 24) {
+      if (rand() < 0.22) ctx.fillRect(x, y, 24, 24);
+    }
+  }
+}
+
+/** Wall blocks, drawn the way the dungeon draws them (`drawWalls` in `render/draw.ts`) —
+ *  a lit top face over a darker side, so a slab reads as having height. */
+function drawDeckWalls(ctx: CanvasRenderingContext2D, walls: readonly Wall[]): void {
+  for (const w of walls) {
+    ctx.fillStyle = "rgba(0,0,0,0.38)";
+    ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h);
+    ctx.fillStyle = DECK_WALL_SIDE;
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+    ctx.fillStyle = DECK_WALL;
+    ctx.fillRect(w.x, w.y, w.w, Math.max(4, w.h - 7));
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(w.x, w.y, w.w, 2);
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1);
+  }
 }
 
 function drawStation(
-  ctx: CanvasRenderingContext2D, s: HubStation, time: number, active: boolean, deckLoaded: boolean,
+  ctx: CanvasRenderingContext2D, s: HubStation, time: number, active: boolean, look: DeckLook,
 ): void {
   const color = STATION_COLORS[s.kind];
 
   if (PORTAL_KINDS.has(s.kind)) {
     drawPortalPad(ctx, s, color, time);
-  } else if (!deckLoaded || UNPAINTED_KINDS.has(s.kind)) {
-    // The relic lives in the deck image; if that hasn't loaded — or was never painted —
-    // leave a marker so the station isn't just a floating word.
+  } else if (look !== "painted" || UNPAINTED_KINDS.has(s.kind)) {
+    // The relic only exists inside the painted scene. On a stamped or flat floor there is
+    // nothing under any of these, so every one of them draws its own — otherwise the
+    // station is a floating word with nothing beneath it.
     deckShadow(ctx, s.x, s.y, s.radius * 1.1);
     drawTerminal(ctx, s.x, s.y, color, time);
   }
@@ -305,7 +419,9 @@ function portalBloom(
   ctx.restore();
 }
 
-/** Fallback marker for a relic station in the frames before the deck image loads. */
+/** A terminal, drawn for any station the floor underneath doesn't already show as a
+ *  relic — every non-portal station on a stamped or flat floor, and the two the painted
+ *  deck never had. Salvaged-stone plinth, one lit face. */
 function drawTerminal(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, time: number): void {
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.35)";

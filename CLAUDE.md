@@ -142,6 +142,31 @@ host walks into and confirms — the Delve, a rift, the Reliquary — becomes th
 ready spot for as long as that plan stands. `Esc` backs out of any of those all the way
 to the ship, the same key that pauses a dive.
 
+**The deck is authored on the tile lattice, like every other floor in the game**
+(`src/game/deck.ts`). The Citadel used to be one painted image with every station's
+coordinate hand-tuned against it, which made rearranging the hall a guessing game and left
+each station added after the bake drawing its own terminal because the painting didn't
+know it existed. Now the hall is a block of text — one character per 32-unit tile, `#`
+rock, `.` floor, `@` where you arrive, a letter per station — and everything else is read
+off it: `DECK_WALLS` are merged on the same lattice `game/level.ts` authors on, movement
+resolves through the dungeon's own `resolveCircle`, and `render/hub.ts` stamps the floor
+with the dungeon's own `paintTilemap`. **Moving the Forge is moving one letter.** Adding a
+station is a glyph plus a row in `STATION_GLYPH` — which is `Record<HubStationKind, …>`,
+so a new station cannot exist without being given somewhere to stand.
+
+Two consequences worth keeping. First, **the stone that stops you is the stone you see**:
+the wall band is authored where the deck painting shows masonry, so the old rectangular
+clamp that let you stand a tile inside the wall is gone, and `npm run smoke` asserts the
+lattice and the rock mask for the deck exactly as it does for a generated floor, plus that
+every station is walkable from the entrance. Second, **a second room is now cheap** — rows
+in `deck.ts` and nothing else. It is deliberately still one hall.
+
+The floor is drawn down a three-rung ladder: a corner-Wang tileset if the Citadel's sheet
+exists (`DECK_TILESET` is reserved and deliberately absent from `TILESETS` until its PNG is
+committed, the precedent the Tower biomes set), else the painted scene `hub.citadel-deck`,
+else a flat ash bake. Only the painted rung has relics in it, which is why the terminals
+draw themselves on the other two.
+
 `src/ui/town.ts`'s `TownUI` still owns every one of those DOM screens exactly as before
 — the original call that menu-heavy UI belongs in DOM, not canvas, hasn't changed. What
 changed is *how you arrive*: `Dive`, `Rifts`, `StarMap` and `Craft` are opened only by
@@ -992,7 +1017,8 @@ src/
             Proving (legends.ts), which boss a
             floor spawns (encounters.ts), drop previews (previews.ts), cosmetics
   game/     state, player, level generation + pathfinding, the dungeon run and the party
-            of heroes in it, the ship hub (hub.ts), ailment bookkeeping (combat.ts), the
+            of heroes in it, the ship hub (hub.ts) and the tile grid it is authored on
+            (deck.ts), ailment bookkeeping (combat.ts), the
             rule engine (rules.ts — behaviour-tree-authored keystone/hybrid/archetype
             effects reacting to hit/cast/kill/damage/ultimate events), the boss brain
             (boss.ts)

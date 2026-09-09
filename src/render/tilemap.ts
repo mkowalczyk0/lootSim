@@ -32,7 +32,7 @@
  */
 
 import type { LoadedTileset } from "./atlas/index";
-import type { Level } from "../game/level";
+import type { TiledSpace } from "../game/level";
 import { gradeSheet } from "./grade";
 
 const gradedCache = new Map<string, LoadedTileset>();
@@ -73,7 +73,7 @@ const STAMP = 32;
  * tileset isn't the 16-texel corner-Wang sheet this stamper expects, so the
  * caller can fall back to the flat bake.
  */
-export function paintTilemap(ctx: CanvasRenderingContext2D, level: Level, ts: LoadedTileset): boolean {
+export function paintTilemap(ctx: CanvasRenderingContext2D, level: TiledSpace, ts: LoadedTileset): boolean {
   const SRC = ts.tile;
   // The stamper reads a 16-texel sheet tile; anything else can't be a corner-Wang
   // sheet from the pipeline, so bail rather than draw it askew.
