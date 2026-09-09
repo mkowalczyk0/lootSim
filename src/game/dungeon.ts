@@ -30,7 +30,10 @@ import { bossSpecForRun } from "../data/encounters";
 import { provingFloor } from "../data/legends";
 import { WEEKLY_GUARANTEED_RARITY, weeklyEffects, weeklyFloorSeed } from "../data/weekly";
 import { depthWeights, RARITIES, rarityIndex, type Rarity } from "../data/rarity";
-import { MIRE_SLOW, TRAP_ENEMY_COOLDOWN, type TrapKind } from "../data/traps";
+import {
+  MIRE_SLOW, REGARD_HOLD, REGARD_RECOVER, REGARD_STILL_SPEED, REGARD_WATCH,
+  TRAP_ENEMY_COOLDOWN, type TrapKind,
+} from "../data/traps";
 import { updateBoss } from "./boss";
 import { mitigateWithResists } from "./combat";
 import {
@@ -1360,6 +1363,16 @@ export class Dungeon implements CombatHost, RuleHost {
           }
           break;
         }
+        case "regard": {
+          // The only aimed hazard in the game, so it is the only one that isn't on a
+          // clock. `t.ax`/`t.ay` are where the ward itself sits (placeTraps writes the
+          // spot there for everything that doesn't patrol); `t.x`/`t.y` are where it is
+          // currently looking. Between them, `t.t` and `t.angle` are the mark as a polar
+          // offset — which is exactly the two spare numbers the snapshot already carries
+          // per hazard, so the ward crosses the wire without growing it.
+          this.updateRegard(t, dt);
+          break;
+        }
         default: {
           const { cycle, warn, active } = t.spec;
           t.timer += dt;
@@ -1381,10 +1394,65 @@ export class Dungeon implements CombatHost, RuleHost {
     }
   }
 
+  /**
+   * A regard ward: watch, mark, sear, blink.
+   *
+   * `idle` — looking. The instant a living hero inside `REGARD_WATCH` has held still for
+   * `REGARD_HOLD`, the ward marks the ground under them and enters `warn`.
+   * `warn` — the telegraph, `spec.warn` long and the longest in the game. The mark does
+   * not follow: walking out of it is the answer, and a dash beats it like anything else.
+   * `active` — one sear, once, on whatever is standing there. Everything is fair game,
+   * so baiting a pack onto your own mark and stepping off it is a real play.
+   * Then it blinks for `REGARD_RECOVER` and goes back to looking, so one ward can pin a
+   * doorway but never a whole fight.
+   */
+  private updateRegard(t: Trap, dt: number): void {
+    t.timer += dt;
+    if (t.state === "idle") {
+      if (t.timer < REGARD_RECOVER && t.fired) return;
+      const seen = this.heroes.find(
+        (h) => h.alive && !h.downed
+          && h.avatar.stillTime >= REGARD_HOLD
+          && dist(h.avatar.x, h.avatar.y, t.ax, t.ay) <= REGARD_WATCH,
+      );
+      if (!seen) return;
+      t.x = seen.avatar.x;
+      t.y = seen.avatar.y;
+      t.t = Math.min(1, dist(t.x, t.y, t.ax, t.ay) / REGARD_WATCH);
+      t.angle = Math.atan2(t.y - t.ay, t.x - t.ax);
+      t.state = "warn";
+      t.fired = false;
+      t.timer = 0;
+      return;
+    }
+    if (t.state === "warn") {
+      if (t.timer < t.spec.warn) return;
+      t.state = "active";
+      t.timer = 0;
+      t.fired = true;
+      this.events.push({ kind: "trap", x: t.x, y: t.y, trap: t.kind, radius: t.radius });
+      this.applyTrapDamage(t);
+      return;
+    }
+    if (t.timer >= t.spec.active) {
+      t.state = "idle";
+      t.timer = 0;
+      // Back to the ward's own spot, so an idle ward is drawn where it stands rather
+      // than lingering on the last place it burned.
+      t.x = t.ax;
+      t.y = t.ay;
+      t.t = 0;
+    }
+  }
+
   /** Hits everything standing in a live hazard, the player included. */
   private applyTrapDamage(t: Trap): void {
     const damage = this.profile.enemyDamage * t.spec.damage;
-    const element: Element = t.kind === "flame" ? "fire" : t.kind === "mire" ? "poison" : "physical";
+    const element: Element =
+      t.kind === "flame" ? "fire"
+        : t.kind === "mire" ? "poison"
+          : t.kind === "regard" ? "holy"
+            : "physical";
     for (const hero of this.heroes) {
       if (!hero.alive) continue;
       const a = hero.avatar;
@@ -1678,6 +1746,10 @@ export class Dungeon implements CombatHost, RuleHost {
     a.y = fixed.y;
     if (!live) return;
     const travelled = dist(beforeX, beforeY, a.x, a.y);
+    // Stillness is measured as ground actually covered, not as buttons not pressed: a hero
+    // shoved into a wall, rooted, or holding a channel is standing still whatever their
+    // input says, and that is exactly what a regard ward is looking for.
+    a.stillTime = travelled > REGARD_STILL_SPEED * dt ? 0 : a.stillTime + dt;
     if (travelled > 0.01) hero.resources.broadcast({ type: "move", distance: travelled });
     hero.posHistory.unshift({ x: a.x, y: a.y });
     if (hero.posHistory.length > 90) hero.posHistory.length = 90;
@@ -4396,7 +4468,7 @@ function makeAvatar(x: number, y: number): Avatar {
     vx: 0, vy: 0, facing: -Math.PI / 2,
     attackTimer: 0, swingTimer: 0, swingAngle: 0,
     dashTimer: 0, dashCooldown: 0, dashStock: 1, invulnTimer: 0, dashInvuln: 0, hitFlash: 0,
-    buffAttackSpeed: 0, buffLifeOnHit: 0,
+    buffAttackSpeed: 0, buffLifeOnHit: 0, stillTime: 0,
   };
 }
 

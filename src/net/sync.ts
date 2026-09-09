@@ -25,6 +25,7 @@ import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { RELICS } from "../data/relics";
+import { REGARD_WATCH } from "../data/traps";
 import { towerConfig } from "../data/tower";
 import { StatusContainer } from "../combat/status";
 import type { Dungeon, Hero } from "../game/dungeon";
@@ -386,6 +387,15 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
     if (trap.kind === "saw") {
       trap.x = trap.ax + (trap.bx - trap.ax) * trap.t;
       trap.y = trap.ay + (trap.by - trap.ay) * trap.t;
+    }
+    // A regard ward's mark travels the same way, for the same reason: the ward's own spot
+    // is generated from the seed, so `t` (distance, as a fraction of its reach) and
+    // `angle` (bearing) are the whole mark and no new wire field was needed for the
+    // Tower's hazard. Deciding *whether* to mark is the host's alone — a client only ever
+    // learns that it happened, which is what makes the ward one telegraph rather than two.
+    if (trap.kind === "regard") {
+      trap.x = trap.ax + Math.cos(trap.angle) * trap.t * REGARD_WATCH;
+      trap.y = trap.ay + Math.sin(trap.angle) * trap.t * REGARD_WATCH;
     }
   }
   d.level.resourceNodes.forEach((node, i) => {

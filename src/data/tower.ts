@@ -66,7 +66,7 @@ const LOWER_TOWER: BiomeStyle = {
   accent: "#fde047",
   props: ["torch", "rock"],
   layouts: ["open", "pillars", "chambers"],
-  traps: ["spike", "turret"],
+  traps: ["regard", "spike", "turret"],
   element: "holy",
   enemyNames: {
     grunt: "Lesser Power", archer: "Gate Cherub", brute: "Gilded Bulwark",
@@ -86,7 +86,7 @@ const MID_TOWER: BiomeStyle = {
   accent: "#fde047",
   props: ["torch", "crystal"],
   layouts: ["pillars", "ring", "chambers", "gauntlet"],
-  traps: ["turret", "flame", "saw"],
+  traps: ["regard", "turret", "flame", "saw"],
   element: "holy",
   enemyNames: {
     grunt: "Power-at-Arms", archer: "Virtue Lancer", brute: "Throne-Bearer",
@@ -106,7 +106,7 @@ const UPPER_HEAVEN: BiomeStyle = {
   accent: "#fde047",
   props: ["crystal", "torch"],
   layouts: ["ring", "pillars", "gauntlet", "open"],
-  traps: ["turret", "flame", "saw"],
+  traps: ["regard", "turret", "flame", "saw"],
   element: "holy",
   enemyNames: {
     grunt: "Perfected Form", archer: "Lance of Correction", brute: "Seamless Colossus",

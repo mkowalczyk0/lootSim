@@ -53,6 +53,13 @@ export interface Avatar extends Body {
    */
   buffAttackSpeed: number;
   buffLifeOnHit: number;
+  /**
+   * Seconds this hero has been standing still, reset the moment they actually travel.
+   * Read by the Tower's regard wards, which mark whoever has held still long enough.
+   * Host-side only and off the wire: the ward is the host's decision and the client
+   * learns the mark from the snapshot like any other telegraph.
+   */
+  stillTime: number;
 }
 
 export type EnemyState = "spawning" | "active" | "windup";

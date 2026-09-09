@@ -1055,6 +1055,78 @@ function drawTrap(ctx: CanvasRenderingContext2D, t: Trap, time: number): void {
       ctx.fill();
       break;
     }
+    case "regard": {
+      // Two things are drawn, always, and that is the point: the ward itself so you know
+      // one is watching this room, and — once it has marked you — the circle it is about
+      // to sear, which is somewhere else entirely. Every other hazard is dangerous where
+      // it sits; this one is dangerous where it is looking, so the eye has to be readable
+      // from across a room and the mark has to be unmistakably a countdown.
+      //
+      // Divine gold `#fde047` throughout (art guide §6's accent) — the only hazard in that
+      // colour, so it never reads as one of Hell's.
+      const looking = t.state !== "idle";
+
+      // The eye. A ring at the ward's own spot, open when it is watching.
+      ctx.strokeStyle = looking ? "rgba(253,224,71,0.75)" : "rgba(253,224,71,0.3)";
+      ctx.lineWidth = looking ? 2 : 1.5;
+      ctx.beginPath();
+      ctx.arc(t.ax, t.ay, 9, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = looking ? "#fde047" : "rgba(253,224,71,0.35)";
+      ctx.beginPath();
+      ctx.arc(t.ax, t.ay, looking ? 3.6 : 2.4, 0, TAU);
+      ctx.fill();
+      if (!looking) break;
+
+      // The line from the eye to the mark, so "that circle belongs to that ward" needs no
+      // explaining the first time it happens.
+      ctx.globalAlpha = 0.28;
+      ctx.strokeStyle = "#fde047";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(t.ax, t.ay);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      if (t.state === "warn") {
+        // The countdown is the ring closing, not a flash: a shrinking arc reads as "time
+        // left" at a glance and keeps reading it while you are looking at something else.
+        // The pulse is on top of that, never instead of it.
+        ctx.strokeStyle = "#fde047";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, TAU);
+        ctx.stroke();
+        const left = Math.max(0, 1 - t.timer / t.spec.warn);
+        ctx.globalAlpha = 0.3 + Math.sin(time * 22) * 0.12;
+        ctx.fillStyle = "#fde047";
+        ctx.beginPath();
+        ctx.arc(x, y, radius * (1 - left), 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Four ticks around the rim, closing like a shutter.
+        ctx.strokeStyle = "#fff8d0";
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * TAU + left * 0.9;
+          ctx.beginPath();
+          ctx.moveTo(x + Math.cos(a) * radius * 1.18, y + Math.sin(a) * radius * 1.18);
+          ctx.lineTo(x + Math.cos(a) * radius * 0.92, y + Math.sin(a) * radius * 0.92);
+          ctx.stroke();
+        }
+      }
+      if (t.state === "active") {
+        for (let i = 3; i >= 1; i--) {
+          ctx.globalAlpha = 0.3 * i;
+          ctx.fillStyle = i === 1 ? "#ffffff" : i === 2 ? "#fff8d0" : "#fde047";
+          ctx.beginPath();
+          ctx.arc(x, y, radius * (i / 3), 0, TAU);
+          ctx.fill();
+        }
+      }
+      break;
+    }
     case "mire": {
       ctx.globalAlpha = 0.72;
       ctx.fillStyle = "#141018";
