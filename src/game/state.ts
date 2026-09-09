@@ -474,7 +474,10 @@ export class GameState {
     const type = category === "weapon" && affinity.length > 0 && this.rng.chance(0.6)
       ? this.rng.pick(affinity)
       : this.rng.pick(pool);
-    const ilvl = Math.max(1, this.player.frontier);
+    // Item level tracks the active character's own level, not the account's frontier — a
+    // level-30 alt who has never banked a deep floor still needs its own gear, and the
+    // frontier reads as 1 until they do (owner ruling, docs/handoff.md's addendum).
+    const ilvl = Math.max(1, this.player.level);
     const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: usedEssence ?? undefined });
     this.stats.raritiesFound[rarity]++;
     this.addToInventory([item]);
@@ -575,7 +578,9 @@ export class GameState {
     // The components go in whole (UAT §24): out of the stash, into the item.
     const eaten = new Set(components.flat().map((it) => it.id));
     this.inventory = this.inventory.filter((it) => !eaten.has(it.id));
-    const item = this.forgeNamed(def, Math.max(1, this.player.frontier));
+    // Same axis as craftItem/openChests — a named forge is still gear for the active
+    // character, not a reward for the account's lifetime frontier.
+    const item = this.forgeNamed(def, Math.max(1, this.player.level));
     this.addToInventory([item]);
     return item;
   }
@@ -815,7 +820,9 @@ export class GameState {
 
     const info = CHESTS[tier];
     const pull = augmentedPull(load);
-    const ilvl = Math.max(1, this.player.frontier);
+    // owner override - this should be based on the active character's level, not the
+    // account's record. chests and crafting are bricked otherwise
+    const ilvl = Math.max(1, this.player.level);
     const affinity = this.player.heroClass.affinity;
     // Declared on the chest row rather than switched on its id, so the Legend's Cache is
     // data like every other chest (`ChestTierInfo.classElement`).

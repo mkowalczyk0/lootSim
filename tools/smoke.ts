@@ -268,11 +268,25 @@ console.log("\n=== the first raid boss (depth 5) ===");
  * isn't the right measure here — a bot that kites and drinks potions can survive a
  * great deal of bad play — but the damage bill has to be brutally different, or the
  * mechanics aren't mechanics.
+ *
+ * Seed count is derived, not guessed (2026-09-09 power analysis, master only — no
+ * balance change anywhere near this commit). At 5 seeds — the original count — 8
+ * independent 5-seed blocks landed as low as a 1.92x blind/read ratio against the >2x
+ * promise this check makes: the check was failing master itself on unlucky seed draws,
+ * not measuring the design promise. Sweeping 5/10/15/20/30/40/60/80 across 8 blocks
+ * each, then re-running 40/60/80 on a second, entirely disjoint set of seed blocks to
+ * rule out the first sweep having gotten lucky at any one size, the margin above 2.0x
+ * plateaus at 40 seeds (min 2.08x across both sweeps) and does not improve further at
+ * 60 or 80 (2.09x, 2.08x) — the noise floor is structural, not something more seeds
+ * average away, so there is nothing to buy past 40. 30 seeds still isn't safely past
+ * it (min dropped to 2.05x on the second sweep). 40 is the smallest size that reaches
+ * the plateau instead of sitting on its edge.
  */
 console.log("\n=== standing in boss mechanics costs you ===");
 {
-  const attentive = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0.85));
-  const reckless = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0));
+  const TELEGRAPH_SEEDS = Array.from({ length: 40 }, (_, i) => 11 * (i + 1));
+  const attentive = TELEGRAPH_SEEDS.map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0.85));
+  const reckless = TELEGRAPH_SEEDS.map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0));
   const avg = (rs: typeof reckless, f: (r: (typeof rs)[number]) => number) =>
     rs.reduce((a, r) => a + f(r), 0) / rs.length;
 
@@ -286,12 +300,12 @@ console.log("\n=== standing in boss mechanics costs you ===");
     `${readHits.toFixed(1)}/${avg(attentive, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
     `${avg(attentive, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
     `${avg(attentive, (r) => r.seconds).toFixed(0)}s, ` +
-    `${attentive.filter((r) => r.d.phase === "dead").length}/5 died`);
+    `${attentive.filter((r) => r.d.phase === "dead").length}/${TELEGRAPH_SEEDS.length} died`);
   console.log(
     `  stands in it:    ${blindDamage.toFixed(0)} damage taken, ` +
     `${blindHits.toFixed(1)}/${avg(reckless, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
     `${avg(reckless, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
-    `${avg(reckless, (r) => r.seconds).toFixed(0)}s, ${deaths}/5 died`);
+    `${avg(reckless, (r) => r.seconds).toFixed(0)}s, ${deaths}/${TELEGRAPH_SEEDS.length} died`);
 
   // The rate, not the count: a player who dodges is alive longer and therefore sees more
   // mechanics, so comparing totals would flatter the one who stood still and died faster.
@@ -1028,19 +1042,29 @@ console.log("\n=== per-class saves and the shared stash ===");
     state.player.level === 30 && state.player.equipment.weapon?.id === highItem.id);
 
   // Regression: chests and the forge used to roll item level off the account-wide
-  // deepest-depth record, so a fresh alt buying a chest right after a deep-diving main
-  // got gear rolled at the main's depth — gear the level lock then correctly refused to
-  // let it wear. Item level has to track the *active character's* own depth instead.
+  // frontier (the max of the depth and height records), so a fresh alt buying a chest
+  // right after a deep-diving main got gear rolled at the main's frontier — gear the
+  // level lock then correctly refused to let it wear, bricking the alt's chests. Item
+  // level tracks the *active character's own level* instead (owner ruling,
+  // docs/handoff.md). This needs a genuinely fresh third class, not berserker — its
+  // level was bumped to 30 above for the equip-catchup check, so by the time this runs
+  // it is levelled and would pass under either rule, proving nothing.
   state.keys.Basic += 20;
   const shamanChest = state.openChests("Basic", 20);
-  check("a deep-diving character's chests roll near its own depth",
+  check("a deep-diving character's chests roll near its own level",
     shamanChest.every((it) => it.ilvl >= 20), `ilvls: ${shamanChest.map((it) => it.ilvl).join(",")}`);
 
-  state.chooseClass("berserker");
+  state.chooseClass("paladin");
+  check("the second alt really is fresh", state.player.level === 1);
   state.keys.Basic += 20;
   const freshChest = state.openChests("Basic", 20);
-  check("a fresh alt's chests roll for its own (level 1) depth, not the main's",
-    freshChest.every((it) => it.ilvl === 1), `ilvls: ${freshChest.map((it) => it.ilvl).join(",")}`);
+  // A comparison, not a bound: prove the axis is the fresh alt's *own* level rather than
+  // pin a magic "1" that would keep passing if the formula moved onto some other constant.
+  check("a fresh alt's chests roll at its own level, not a fixed floor",
+    freshChest.every((it) => it.ilvl === state.player.level), `ilvls: ${freshChest.map((it) => it.ilvl).join(",")}`);
+  check("a fresh alt's chests roll well below the levelled main's",
+    Math.max(...freshChest.map((it) => it.ilvl)) < Math.min(...shamanChest.map((it) => it.ilvl)),
+    `fresh max ${Math.max(...freshChest.map((it) => it.ilvl))} vs main min ${Math.min(...shamanChest.map((it) => it.ilvl))}`);
   check("a fresh alt can equip what its own chests roll", freshChest.every((it) => state.player.canEquip(it)));
 
   // Regression: XP for a floor lands as its monsters die, so clearing depth N often

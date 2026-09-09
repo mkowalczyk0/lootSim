@@ -247,9 +247,12 @@ local element, and its own rewards.
 `recordHeight` — which `recordDepth` dispatches to as its first statement, before any
 depth write, so a banked tower floor can never open a rift tier or qualify a class for the
 Proving. `GameState.frontier` and `Player.frontier` are the max of a side's two records:
-the account frontier is what `universalPointsFor` reads (a climb pays for the basics), the
-per-class one is what both item-level sites read (an alt still rolls off its own
-progress). The Tower's *own* gate is the descent's — account `deepestDepth` 5 — so the
+the account frontier is what `universalPointsFor` reads (a climb pays for the basics).
+Chests and crafting are **not** on this axis — see the per-class-save section below, they
+read the active character's own `level` instead, on an owner ruling that overturned an
+earlier `frontier` design (a level-30 alt with a frontier of 0 got bricked: every chest
+rolled ilvl 1 no matter how far the character had actually levelled). The Tower's *own*
+gate is the descent's — account `deepestDepth` 5 — so the
 climb can't unlock itself, and `maxUnlockedHeight` is its ladder after that. The tower
 tilesets are named on the biomes but deliberately absent from `TILESETS` until the sheets
 exist; `atlasTileset` returns null and the floor falls back to `bakeFloor` in the §6
@@ -667,9 +670,13 @@ single-class playthrough would routinely find its own newest drops locked for a 
 
 Each `Player` also tracks its own `deepestDepth`, separate from the account-wide record
 on `GameState.stats` (lifetime best-of-all-classes, used for rift unlocks and Records).
-Chests and the forge roll item level off the *active character's* `deepestDepth`, not
-the account record — a fresh alt's first chest purchase must not roll gear at whatever
-depth the main reached.
+Chests and the forge (`craftItem`, `craftNamed`) roll item level off the *active
+character's own* `level`, not `frontier` and not the account record — a level-30 alt with
+a frontier of 0 (levelled through play without ever banking a deep floor) was rolling
+ilvl-1 chests under the frontier rule, which after `requiredLevel()`'s one-level grace
+pays out gear far beneath what the character can equip. A fresh alt's first chest
+purchase must not roll gear at whatever depth (or level) the main reached, and now
+doesn't either way.
 
 ### Weapons decide what your attack button does
 
