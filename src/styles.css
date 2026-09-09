@@ -1223,7 +1223,10 @@ html, body {
 }
 
 .op-cols { display: flex; flex-wrap: wrap; gap: 20px; }
-.op-col { display: flex; flex-direction: column; gap: 6px; }
+/* Positioned so `.op-tip` (below) anchors to the whole cluster rather than to whichever
+   button in it happens to be hovered — every op in a multi-button column pops its tip in
+   the same place, above the column, instead of covering its own siblings. */
+.op-col { position: relative; display: flex; flex-direction: column; gap: 6px; }
 .op-col-label {
   font-size: 9px;
   letter-spacing: 0.5px;
@@ -1235,7 +1238,6 @@ html, body {
 /* A cluster's button: label plus its own compact cost line, never a full-width row —
    the cost has to be readable at a glance without turning the bar back into a list. */
 .op-btn {
-  position: relative;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -1246,18 +1248,23 @@ html, body {
 .op-btn-cost { font-size: 10px; color: var(--muted); }
 .op-btn.on .op-btn-cost { color: inherit; opacity: 0.85; }
 
-/* What the op does is a popup surfaced under the specific button it describes, on
-   hover or while it's the selected one — never prose sitting inline and pushing
-   everything else down. `pointer-events: none` so it can never itself block the click
-   it's floating over the button below it in the same column. */
+/* What the op does is a popup surfaced above the cluster it belongs to, on hover only —
+   never on the selected op just for being selected. Stacking two of these was the
+   original owner-reported bug (the selected op's popup and a hovered op's popup both
+   open, covering each other and the strip below); the selected op's own description
+   lives as a plain line in `.op-detail` now (`renderWorkbench`'s `blurb`), so there is
+   never more than one `.op-tip` in play. It opens *upward* (`bottom: 100%`) specifically
+   so it can never cover `.op-detail`, which sits below the whole row. `pointer-events:
+   none` so it can never itself block the click it's floating over. */
 .op-tip {
   display: none;
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   left: 0;
-  margin-top: 6px;
+  margin-bottom: 6px;
   z-index: 20;
   width: 210px;
+  max-width: 60vw;
   padding: 8px 10px;
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -1267,15 +1274,19 @@ html, body {
   color: var(--text);
   pointer-events: none;
 }
-.op-btn:hover .op-tip,
-.op-btn.on .op-tip { display: block; }
+.op-btn:hover .op-tip { display: block; }
+/* The rightmost cluster's tip would otherwise run off the bar's right edge (it's wider
+   than a column) — open it leftward instead of rightward. */
+.op-col:last-child .op-tip { left: auto; right: 0; }
 
 /* The bit of the selected op that's a real control, not a description — the affix
-   picker, the ascend/salvage specifics, the cost breakdown, the confirm line. This is
-   the one part of the old sidebar prose that has to stay visible and non-popup, because
+   picker, the ascend/salvage specifics, the cost breakdown, the confirm line, and (as
+   of the popup-overlap fix above) the op's own blurb line, `.op-detail-blurb`. This is
+   the part of the old sidebar prose that has to stay visible and non-popup, because
    picking an affix or reading "you're about to destroy your equipped item" isn't
    something a hover should be able to hide. */
 .op-detail { border-top: 1px solid var(--line); padding-top: 10px; }
+.op-detail-blurb { color: var(--muted); }
 .op-detail-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .op-detail-label {
   font-size: 9px;

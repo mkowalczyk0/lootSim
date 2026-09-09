@@ -2823,10 +2823,18 @@ export class TownUI {
    * the Forge can do to the selected item now lives in its own bar under the card grid —
    * outside the reading sidebar entirely — laid out as real buttons in their five
    * clusters (the same grouping as before, just horizontal instead of a stacked column).
-   * A button carries its own cost; what it *does* is a popup under that specific button,
-   * on hover or when it's the selected one, rather than prose pushing the rest of the
-   * screen off-screen. The sidebar goes back to only ever reading the item
-   * (`renderCompare`, called from `renderReforge`) — nothing here writes to it.
+   * A button carries its own cost; what it *does* is a popup under that specific button
+   * on hover, opening upward so it can never cover the strip below. The sidebar goes
+   * back to only ever reading the item (`renderCompare`, called from `renderReforge`) —
+   * nothing here writes to it.
+   *
+   * Owner feedback on a second screenshot: the selected op's blurb used to live in this
+   * same hover popup, kept open by an `.on` rule so keyboard-only play could still read
+   * it — which meant hovering a *different* op stacked a second popup on top of the
+   * first, and both spilled over the cost strip below. The fix is to stop the selected
+   * op's description from ever being a popup at all: it's the first line of `.op-detail`
+   * now, a real static line, not a floating box. `.op-tip` is hover-only after that, so
+   * at most one is ever on screen, and it can't cover the strip because it opens upward.
    */
   private renderWorkbench(item: Item): string {
     if (this.forgeAffix >= item.mods.length) this.forgeAffix = 0;
@@ -2845,7 +2853,7 @@ export class TownUI {
         q.scrap ? `${formatNumber(q.scrap)} scrap` : "",
       ].filter(Boolean).join(" · ") : "";
       // The tooltip text still rides along as a native `title` too — a screen reader or
-      // a slow hover gets it even before the popup below has rendered.
+      // a slow hover gets it even before the CSS popup has rendered.
       return `<span class="chip op-btn ${on ? "on" : ""} ${q?.blocker ? "dim" : ""}" data-forge-op="${op}"
           title="${escapeHtml(info.blurb)}${q?.blocker ? `\n${escapeHtml(q.blocker)}` : ""}">
         <span class="op-btn-label">${escapeHtml(info.label)}</span>
@@ -2871,6 +2879,12 @@ export class TownUI {
     // popup: picking an affix, arming a salvage confirm and the cost breakdown are things
     // you do or read about the op that's actually about to run, not a preview of another
     // one. It's the compact "acting" strip the bar keeps outside the sidebar for.
+    //
+    // The blurb line is the one piece that *used* to be a hover popup — see the class
+    // doc comment above `renderWorkbench`. It's a plain line here now, always visible,
+    // so keyboard-only play still reads what the selected op does with nothing to hover.
+    // No label prefix: the selected chip right above already names it in `.chip.on`.
+    const blurb = `<p class="op-detail-blurb">${escapeHtml(info.blurb)}</p>`;
     const affixes = info.needsAffix && item.mods.length > 0
       ? `<div class="op-detail-row"><span class="op-detail-label">Affix</span>${item.mods.map((m, i) => {
           const range = affixRange(item, i);
@@ -2907,6 +2921,7 @@ export class TownUI {
         </div>
         <div class="op-cols">${cols}</div>
         <div class="op-detail">
+          ${blurb}
           ${affixes}
           ${components}
           ${salvage}
