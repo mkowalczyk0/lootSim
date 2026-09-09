@@ -1157,6 +1157,10 @@ html, body {
   background: color-mix(in srgb, var(--r, var(--accent)) 16%, transparent);
 }
 
+/* Craft's essence picker: every option laid out at once, `.sf-pill`'s exact look, so
+   choosing one is a click instead of cycling blind through eight with arrows. */
+.essence-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+
 .stash-none {
   grid-column: 1 / -1;
   text-align: center;
@@ -1212,6 +1216,32 @@ html, body {
 }
 
 .item-card .ic-mark { position: absolute; top: 5px; right: 6px; font-size: 11px; }
+
+/* "WORN" needs to read at a glance, not be spotted — it's what the salvage/sell
+   confirm gate is protecting. */
+.item-card .ic-mark.worn {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  border-radius: 2px;
+  padding: 1px 4px;
+}
+
+/* The Stash's mass-salvage checkbox — bottom-left, the one corner the rarity/grant/
+   trigger dots and the upgrade arrow don't already use. */
+.item-card .ic-select {
+  position: absolute;
+  bottom: 7px;
+  left: 7px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+.item-card .ic-select:hover { color: var(--text); }
+.item-card .ic-select.on { color: var(--accent); }
 
 .item-card .ic-lock {
   position: absolute;

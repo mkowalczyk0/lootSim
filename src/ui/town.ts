@@ -237,6 +237,13 @@ export class TownUI {
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
+  /** The Stash's mass-salvage: which ids the mouse has checked, and whether the "salvage
+   *  them" chip has already been pressed once. `salvageArmed` below is the same idea for
+   *  a single worn item on the workbench; this is its bulk, checkbox-driven twin. Cleared
+   *  whenever the Stash tab is left, but *not* by ordinary cursor movement inside it —
+   *  browsing more cards to add to the pile is the point. */
+  private stashSelected = new Set<string>();
+  private massSalvageArmed = false;
   /** The Forge is two screens sharing a station: craft something new, or reforge
    *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
    *  on a station tab. */
@@ -244,6 +251,14 @@ export class TownUI {
   /** The workbench: which op the Reforge screen will apply, and to which affix when it needs one. */
   private forgeOp: ForgeOp = "reforge";
   private forgeAffix = 0;
+  /**
+   * Salvaging what you're wearing is allowed on purpose (`GameState.salvageItem`'s own
+   * comment: "sell it, salvage it, or keep it" is the point of Ash having one source) —
+   * but doing it by *accident* to the thing you're wearing isn't. Holds the armed item's
+   * id; a second confirm on the same id runs it. Any navigation, or changing the op or
+   * affix, disarms it — same "you have to mean it right now" rule as `resetArmed`.
+   */
+  private salvageArmed: string | null = null;
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /** Which owned relic the Hero screen's relic slot has highlighted (UAT §19). */
@@ -295,6 +310,9 @@ export class TownUI {
         this.tab = tabEl.dataset.tab as Tab;
         this.cursor = 0;
         this.resetArmed = false;
+        this.salvageArmed = null;
+        this.stashSelected.clear();
+        this.massSalvageArmed = false;
         this.rebindPending = null;
         this.render();
         return;
@@ -310,12 +328,14 @@ export class TownUI {
       if (forgeModeEl) {
         this.forgeMode = forgeModeEl.dataset.forgeMode as ForgeMode;
         this.cursor = 0;
+        this.salvageArmed = null;
         this.render();
         return;
       }
       const opEl = target.closest<HTMLElement>("[data-forge-op]");
       if (opEl) {
         this.forgeOp = opEl.dataset.forgeOp as ForgeOp;
+        this.salvageArmed = null;
         this.render();
         return;
       }
@@ -335,6 +355,22 @@ export class TownUI {
       if (filterEl) {
         this.rarityFilter = filterEl.dataset.filter as Rarity | "all";
         this.cursor = 0;
+        this.render();
+        return;
+      }
+      const essenceEl = target.closest<HTMLElement>("[data-essence]");
+      if (essenceEl) {
+        const v = essenceEl.dataset.essence!;
+        this.craftEssence = v === "none" ? null : (v as Element);
+        this.render();
+        return;
+      }
+      const selectEl = target.closest<HTMLElement>("[data-select]");
+      if (selectEl) {
+        const id = selectEl.dataset.select!;
+        if (this.stashSelected.has(id)) this.stashSelected.delete(id);
+        else this.stashSelected.add(id);
+        this.massSalvageArmed = false;
         this.render();
         return;
       }
@@ -413,6 +449,9 @@ export class TownUI {
     }
     this.cursor = 0;
     this.resetArmed = false;
+    this.salvageArmed = null;
+    this.stashSelected.clear();
+    this.massSalvageArmed = false;
     // A class is the first real decision in the game, so a new character lands on it
     // no matter which station sent them here.
     this.tab = !this.state.classChosen ? "Path" : (tab ?? this.tab);
@@ -484,6 +523,7 @@ export class TownUI {
       this.forgeMode = FORGE_MODES[(FORGE_MODES.indexOf(this.forgeMode) + step + FORGE_MODES.length) % FORGE_MODES.length]!;
       this.cursor = 0;
       this.resetArmed = false;
+      this.salvageArmed = null;
       dirty = true;
     }
     if (input.wasPressed("tabNext")) {
@@ -492,6 +532,9 @@ export class TownUI {
         this.tab = CYCLE_TABS[(i + 1) % CYCLE_TABS.length]!;
         this.cursor = 0;
         this.resetArmed = false;
+        this.salvageArmed = null;
+        this.stashSelected.clear();
+        this.massSalvageArmed = false;
         dirty = true;
       }
     }
@@ -501,6 +544,9 @@ export class TownUI {
         this.tab = CYCLE_TABS[(i - 1 + CYCLE_TABS.length) % CYCLE_TABS.length]!;
         this.cursor = 0;
         this.resetArmed = false;
+        this.salvageArmed = null;
+        this.stashSelected.clear();
+        this.massSalvageArmed = false;
         dirty = true;
       }
     }
@@ -517,7 +563,7 @@ export class TownUI {
         const moved = this.tab === "Stash" ? this.navStash(dx, dy)
           : reforgeGrid ? this.navReforge(dx, dy)
           : this.navHero(dx, dy);
-        if (moved) { this.resetArmed = false; dirty = true; }
+        if (moved) { this.resetArmed = false; this.salvageArmed = null; dirty = true; }
       };
       if (input.wasPressedOrRepeated("up")) walk(0, -1);
       if (input.wasPressedOrRepeated("down")) walk(0, 1);
@@ -1356,6 +1402,7 @@ export class TownUI {
     if (this.tab === "Craft" && this.forgeMode === "reforge") {
       const i = FORGE_OPS.indexOf(this.forgeOp);
       this.forgeOp = FORGE_OPS[(i + 1) % FORGE_OPS.length]!;
+      this.salvageArmed = null;
       this.render();
       return;
     }
@@ -2033,6 +2080,16 @@ export class TownUI {
       `<tr><td style="color:${MATERIALS[e].color}">${escapeHtml(MATERIALS[e].name)}</td><td>${formatNumber(this.state.materials[e])}</td></tr>`,
     ).join("");
 
+    // Every essence at once, rather than cycling blind through eight with left/right —
+    // the ◀▶ chips still work (a click here or a keypress land on the same field), this
+    // is just also visible without touching either.
+    const essenceOptions: (Element | null)[] = [null, ...CRAFT_ESSENCES];
+    const essenceBar = `<div class="essence-bar">
+        ${essenceOptions.map((e) => `<span class="sf-pill ${e === essence ? "sel" : ""}"
+              data-essence="${e ?? "none"}"
+              style="--r:${e ? ELEMENT_COLORS[e] : "var(--accent)"}">${e ? ELEMENT_LABELS[e] : "None"}</span>`).join("")}
+      </div>`;
+
     return `<div class="forge-pane">${this.renderForgeSwitcher()}<div class="list">${rows}</div></div>
       <aside class="side">
         <h3>Craft: <b>${CRAFT_CATEGORY_LABELS[category]}</b>
@@ -2040,16 +2097,15 @@ export class TownUI {
         <p class="muted">Divine and unspoken stay chest-only — everything from common to
         mythic is fair game here, at a price that climbs steeply with the rarity.</p>
         <h3>Essence: <b style="color:${essence ? ELEMENT_COLORS[essence] : "#9aa4b2"}">
-          ${essence ? ELEMENT_LABELS[essence] : "None"}</b>
-          <span class="chip" data-action="left">◀</span>
-          <span class="chip" data-action="right">▶</span>
-          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} clear</span></h3>
+          ${essence ? ELEMENT_LABELS[essence] : "None"}</b></h3>
+        ${essenceBar}
         <p class="muted">Biases the roll toward that element's damage or resist affix,
         instead of only ever hoping for it.</p>
         <h3>Materials</h3>
         <table class="cmp">${bag}<tr><td>${ASH_NAME}</td><td>${formatNumber(this.state.ash)}</td></tr></table>
-        <p class="muted">Dropped by monsters and mined from resource nodes — planets
-        only. The dive and the rifts never pay in these. ${ASH_NAME} comes from salvaging at the Reforge bench.</p>
+        <p class="muted">Dropped by monsters and mined from resource nodes — Reliquary
+        sectors only. The dive and the rifts never pay in these. ${ASH_NAME} comes from
+        salvaging at the Reforge bench.</p>
       </aside>`;
   }
 
@@ -2134,6 +2190,14 @@ export class TownUI {
     return [...worn, ...this.state.inventory];
   }
 
+  /** Every item id currently worn on the active character — the one set both the
+   *  Reforge grid's badge and the salvage-confirm gate read, so they can't disagree. */
+  private wornItemIds(): Set<string> {
+    return new Set(
+      EQUIP_SLOTS.map((slot) => this.state.player.equipment[slot]?.id).filter((id): id is string => !!id),
+    );
+  }
+
   /**
    * Reforge: the other half of the Forge. Same card grid Stash uses, so a piece of gear
    * still reads the same way it does everywhere else — clicking (or confirming) a card
@@ -2151,9 +2215,7 @@ export class TownUI {
         granted skill or a trigger.</p></aside>`;
     }
 
-    const wornIds = new Set(
-      EQUIP_SLOTS.map((slot) => this.state.player.equipment[slot]?.id).filter((id): id is string => !!id),
-    );
+    const wornIds = this.wornItemIds();
     const cards = items.map((it, i) => {
       // The lock badge answers "could the *current* op run on this one?" — same quote the
       // side panel prices from, so the grid and the panel can never disagree.
@@ -2162,7 +2224,7 @@ export class TownUI {
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(quote?.blocker ?? "")}">
-          ${wornIds.has(it.id) ? `<span class="ic-mark" title="equipped">E</span>` : ""}
+          ${wornIds.has(it.id) ? `<span class="ic-mark worn" title="equipped — the current character has this on">WORN</span>` : ""}
           ${quote?.blocker ? `<span class="ic-lock">✕</span>` : ""}
           <div class="ic-art"><img src="${icon}" alt=""></div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
@@ -2186,6 +2248,9 @@ export class TownUI {
   private renderWorkbench(item: Item): string {
     if (this.forgeAffix >= item.mods.length) this.forgeAffix = 0;
     const s = this.state.settings;
+    const worn = this.wornItemIds().has(item.id);
+    const salvagingWorn = this.forgeOp === "salvage" && worn;
+    const armed = this.salvageArmed === item.id;
     const ops = FORGE_OPS.map((op) => {
       const q = this.state.forgeQuote(item.id, op, this.forgeAffix);
       const info = FORGE_OP_INFO[op];
@@ -2216,7 +2281,10 @@ export class TownUI {
           const y = salvageYield(item);
           const mats = (Object.entries(y.materials) as [Element, number][]).filter(([, n]) => n > 0)
             .map(([e, n]) => `${n} ${MATERIALS[e].name}`);
-          return `<p>Returns <b>${formatNumber(y.ash)} ${ASH_NAME}</b>${mats.length ? ` and ${escapeHtml(mats.join(", "))}` : ""}. The item is gone.</p>`;
+          const warning = salvagingWorn
+            ? `<p class="danger">⚠ ${escapeHtml(item.name)} is currently equipped. Salvaging it unequips and destroys it — this can't be undone.</p>`
+            : "";
+          return `${warning}<p>Returns <b>${formatNumber(y.ash)} ${ASH_NAME}</b>${mats.length ? ` and ${escapeHtml(mats.join(", "))}` : ""}. The item is gone.</p>`;
         })()
       : "";
     const cost = quote && (quote.ash || quote.coins || quote.scrap)
@@ -2237,7 +2305,11 @@ export class TownUI {
       ${salvage}
       ${cost}
       ${quote?.blocker ? `<p class="danger">${escapeHtml(quote.blocker)}</p>`
-        : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}.</p>`}
+        : salvagingWorn && armed
+          ? `<p class="danger">${k(s, "confirm")} again, or click the card again, to permanently salvage the item you're wearing.</p>`
+          : salvagingWorn
+            ? `<p class="muted">${k(s, "confirm")}, or click the card, to ask — salvaging what you're wearing needs a second confirm.</p>`
+            : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}.</p>`}
       <p class="muted">${ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the same
       ones everything else costs.</p>`;
   }
@@ -2253,6 +2325,15 @@ export class TownUI {
       return;
     }
     if (op === "salvage") {
+      // Salvaging what you're wearing is allowed on purpose — but the first press only
+      // arms it. A second press on the same item is what actually runs it, so an
+      // accidental confirm can't destroy the thing on your back.
+      if (this.wornItemIds().has(item.id) && this.salvageArmed !== item.id) {
+        this.salvageArmed = item.id;
+        this.notify(`${item.name} is equipped. Press confirm again to salvage it anyway.`, "#ef4444");
+        return;
+      }
+      this.salvageArmed = null;
       const y = this.state.salvageItem(item.id);
       if (y) {
         this.notify(`Salvaged ${item.name} for ${formatNumber(y.ash)} ${ASH_NAME}`, "#fbbf24");
