@@ -94,6 +94,23 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
   "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },
 
+  // --- raid bosses (docs/art-manifest.md §2.1) --- Raids shipped reusing a floor boss's
+  // PNG wholesale, so the headline encounter of a whole layer was pixel-identical to an
+  // ordinary depth-16 fight and only the name plate told you otherwise. `RaidSpec.sprite`
+  // now carries the silhouette (the borrow was always meant to be cheap *kit* reuse — the
+  // `planetBossSpec` precedent already overrides id/name/title/element for exactly this
+  // reason, and silhouette was an omission from that list, not a design).
+  //
+  // Every `worldScale` below is `targetWorldHeight / h`, and the target is the world
+  // height the encounter *already had* while it was borrowing. They look arbitrary because
+  // they are preserving numbers tuned elsewhere: telegraph radii, arena sizing and camera
+  // framing are all set against them, and none may move because a sprite got redrawn.
+  // `art/bosses/finish.ts` recomputes these from the raw generations and prints these rows.
+  "boss.ferryman":            { id: "boss.ferryman",            w: 75,  h: 107, worldScale: 0.9318, feet: 0.03 },
+  "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 108, worldScale: 1.0185, feet: 0.03 },
+  "boss.labyrinth-minotaur":  { id: "boss.labyrinth-minotaur",  w: 102, h: 106, worldScale: 1.2642, feet: 0.03 },
+  "boss.exiled-tyrant":       { id: "boss.exiled-tyrant",       w: 100, h: 103, worldScale: 0.9738, feet: 0.03 },
+
   // --- props (§4, §8) --- drawn through drawProps at `worldScale × p.scale`. Legacy
   // grids ~6–16 wide at the old fixed 1.25; worldScale ≈ old world width / new art width,
   // nudged up ~1.1× for legibility. feet ≈ 0 (trimmed, on the ground).
@@ -252,6 +269,10 @@ export const SPRITE_OVERRIDES: Record<string, string> = {
   ring: "icon.ring",
   gloves: "icon.gloves",
   necklace: "icon.necklace",
+  bossFerryman: "boss.ferryman",
+  bossWarQueen: "boss.war-queen",
+  bossLabyrinth: "boss.labyrinth-minotaur",
+  bossTyrant: "boss.exiled-tyrant",
 };
 
 // --- scenes -------------------------------------------------------------

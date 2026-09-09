@@ -73,6 +73,7 @@ function bake(grid: Grid, palette: Palette): HTMLCanvasElement {
 export type SpriteName =
   | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster"
   | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
+  | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant"
   | "coin" | "key" | "potion" | "gem" | "capsule" | "chest"
   | "torch" | "bones" | "mushroom" | "crystal" | "rock"
   | "armor" | "shield" | "ring" | "gloves" | "necklace";
@@ -95,6 +96,10 @@ export function buildSprites(): void {
     bossColossus: bake(BOSS_GRIDS.bossColossus!, P.colossus),
     bossHerald: bake(BOSS_GRIDS.bossHerald!, P.herald),
     bossNameless: bake(BOSS_GRIDS.bossNameless!, P.nameless),
+    bossFerryman: bake(BOSS_GRIDS.bossFerryman!, P.ferryman),
+    bossWarQueen: bake(BOSS_GRIDS.bossWarQueen!, P.warQueen),
+    bossLabyrinth: bake(BOSS_GRIDS.bossLabyrinth!, P.labyrinth),
+    bossTyrant: bake(BOSS_GRIDS.bossTyrant!, P.tyrant),
     coin: bake(ICON_COIN, P.coin),
     key: bake(ICON_KEY, P.key),
     potion: bake(ICON_POTION, P.potion),

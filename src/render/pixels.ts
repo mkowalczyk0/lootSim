@@ -1209,12 +1209,143 @@ export const PROP_CHEST: Grid = [
  * Boss grids under the names `data/bosses.ts` uses for them, so a typo in a `sprite`
  * field is a failed smoke test rather than a blank monster in somebody's raid.
  */
+/** The Ferryman: a drowned column of rotting robe under a hood, poling a boat that
+ * isn't there. Narrow and vertical — nothing else in the roster has that silhouette. */
+export const BOSS_FERRYMAN: Grid = [
+  "..........OOOO............",
+  ".........O2222O...........",
+  "........O222222O.....OO...",
+  "........O22eeee2O....O1O..",
+  "........O22eeee2O....O1O..",
+  ".......O222222222O...O1O..",
+  ".......O222222222O...O1O..",
+  "......O33222222233O..O1O..",
+  ".....O3332222222333OOO1O..",
+  "....O33332222222333O11O...",
+  "....O333332222233333OO1O..",
+  "....O33333333333333OOO1O..",
+  "...O333333333333333OOO1O..",
+  "...O3333333333333333OO1O..",
+  "...O33333333333333333O1O..",
+  "...O3333333333333333O.O1O.",
+  "..O33333333333333333O.O1O.",
+  "..O33333333333333333O.O1O.",
+  "..O3333333333333333O..O1O.",
+  "..O333333333333333O...O1O.",
+  "..O33333333333333O....O1O.",
+  "..O3333333333333O.....O1O.",
+  "..O333O3333O333O......O1O.",
+  "..OOO..OOO..OOO.......O1O.",
+  "......................O1O.",
+  "......................OOO.",
+];
+
+/** Queen of the Seventh Circle: a war goddess wearing the regalia of five dead
+ * civilisations at once. Crested, and the widest shoulders in the game. */
+export const BOSS_WARQUEEN: Grid = [
+  "............OO............",
+  "...........O55O...........",
+  "..........O5555O..........",
+  "..........O5555O..........",
+  ".........O111111O.........",
+  "........O11111111O........",
+  "........O1eeeeee1O........",
+  "........O11111111O........",
+  ".......O2211111122O.......",
+  "....OO222222222222222OO...",
+  "..OO2222222222222222222OO.",
+  ".O222222222222222222222222",
+  ".O332222222222222222223333",
+  ".O33322222211112222233333O",
+  ".O3332222211111122223333O.",
+  "..O33222211111111222333O..",
+  "..O3322221111111122233O...",
+  "...O22221111111112222O....",
+  "...O2222211111112222O.....",
+  "...O2222221111O22222O.....",
+  "...O3333322222222333O.....",
+  "...O33333322222233333O....",
+  "...O33333O22222OO3333O....",
+  "...O333O..O222O..O333O....",
+  "...OOO....O222O....OOO....",
+  "..........OOOOO...........",
+];
+
+/** Minotaur of the Ninth Labyrinth: horns first — the spread is the read — over a body
+ * of maze masonry that doesn't quite line up with itself. */
+export const BOSS_LABYRINTH: Grid = [
+  "OO......................OO",
+  "O11O..................O11O",
+  "O111O................O111O",
+  ".O111O..............O111O.",
+  ".O1111O....OOOO....O1111O.",
+  "..O1111O..O2222O..O1111O..",
+  "..O11111OO222222OO11111O..",
+  "...O1111O22eeee22O1111O...",
+  "...O111OO2222222OO111O....",
+  "....OOO.O2222222O.OOO.....",
+  ".......O222222222O........",
+  "....OOO333333333333OOO....",
+  "..OO33333333333333333OO...",
+  ".O3333333333333333333333O.",
+  "O333333333333333333333333O",
+  "O333322222222222222333333O",
+  "O333322222222222222333333O",
+  "O333333222222222233333333O",
+  ".O3333333333333333333333O.",
+  ".O3333333333333333333333O.",
+  "..O33333333333333333333O..",
+  "..O3333O33333333O333333O..",
+  "..O333O..O3333O..O3333O...",
+  "..O333O..O3333O..O333O....",
+  "..OOOO...OOOOO...OOOO.....",
+  "..........................",
+];
+
+/** Tyrant of the First Heavens: rigid bilateral symmetry, a faceless slit helm and a
+ * greatsword planted point-down. Heaven's geometry, tarnished. */
+export const BOSS_TYRANT: Grid = [
+  "...........OO.............",
+  "..........O44O............",
+  "..........O44O............",
+  ".........O4444O...........",
+  ".........O4444O...........",
+  "........O411114O..........",
+  "........O4eeee4O..........",
+  "........O411114O..........",
+  "........OO4444OO..........",
+  ".....OOO44444444OOO.......",
+  "...OO4444444444444OO......",
+  "..O44444111111144444O.....",
+  "..O444111111111111444O....",
+  ".O444111111111111111444O..",
+  ".O44111111111111111114OOO.",
+  ".O4411111111111111111O7O..",
+  ".O441111177711111111O7O...",
+  "..O4411117771111114O7O....",
+  "..O44111177711111O7O......",
+  "...O4411111111114O7O......",
+  "...O441111111111447O......",
+  "...O44411111111447O.......",
+  "...O444O11111O444O....O7..",
+  "...O444O.....O444O...O7...",
+  "...OOOO.......OOOO...O7...",
+  ".....................OOO..",
+];
+
 export const BOSS_GRIDS: Record<string, Grid> = {
   boss: BOSS_WARDEN,
   bossChoir: BOSS_CHOIR,
   bossColossus: BOSS_COLOSSUS,
   bossHerald: BOSS_HERALD,
   bossNameless: BOSS_NAMELESS,
+  // The four raid encounters (§2.1 of docs/art-manifest.md). Raids shipped reusing a
+  // floor boss's sprite wholesale, so "an enormous mythological event" looked like an
+  // ordinary depth-16 fight; these give each one a silhouette of its own.
+  bossFerryman: BOSS_FERRYMAN,
+  bossWarQueen: BOSS_WARQUEEN,
+  bossLabyrinth: BOSS_LABYRINTH,
+  bossTyrant: BOSS_TYRANT,
 };
 
 // --- palettes -------------------------------------------------------------
@@ -1283,6 +1414,21 @@ export const PALETTES = {
   },
   nameless: {
     O: OUTLINE, "2": "#0e0518", "3": "#37195c", "7": "#ff4ab0", e: "#08020e",
+  },
+  // The four raids. Each keeps §1.4: everything low and dirty, and `e` — the part that is
+  // looking at you — is the only saturated colour, in the raid's own element.
+  ferryman: {
+    O: OUTLINE, "1": "#4a4036", "2": "#3f4a44", "3": "#2b332f", e: "#7dd3fc",
+  },
+  warQueen: {
+    O: OUTLINE, "1": "#5a4632", "2": "#3a3630", "3": "#241f1c", "5": "#4a2f28",
+    e: "#ff7a2f",
+  },
+  labyrinth: {
+    O: OUTLINE, "1": "#4a4238", "2": "#2a2733", "3": "#35313b", e: "#c084fc",
+  },
+  tyrant: {
+    O: OUTLINE, "1": "#8a836f", "4": "#6f6139", "7": "#5f6772", e: "#fde047",
   },
   coin: { O: "#6b4a10", W: "#fff6d0", "1": "#f0c040", J: "#c88a10" },
   key: { O: "#41474f", W: "#f4f8ff", "1": "#b7c2cf" },

@@ -47,7 +47,7 @@ or a reskin with no visual identity.
 
 | # | What | Why it's here | Section |
 |---|---|---|---|
-| 1 | **Raid content has zero bespoke art** — 4 raid bosses are undifferentiated reskins of existing floor bosses, 8 raid named items + 8 raid relics/artifacts have no icon, 1 raid arena has no tileset | Just shipped (446b44d); "the bosses are one of the main attractions" and raids are the newest, highest-profile boss content in the game | §2 |
+| 1 | **Raid content art** — the 4 raid boss silhouettes are **done** (§2.1); still open: 8 raid named items + 8 raid relics/artifacts have no icon, 1 raid arena has no tileset | Just shipped (446b44d); "the bosses are one of the main attractions" and raids are the newest, highest-profile boss content in the game | §2 |
 | 2 | **6 of 11 monster archetypes have no sprite of their own** — charger/bomber/shieldbearer/summoner/sniper/leech literally redraw an unrelated archetype's silhouette (`render/draw.ts` `ENEMY_SPRITES`) | Directly violates the style guide's own §1.5 rule ("a sniper is not a recoloured grunt — it is a different shape"); this is the single highest-leverage monster-art gap in the game | §3 |
 | 3 | **The Tower's monsters are re-labelled Hell monsters** — a "Gate Cherub" draws the identical rot-imp/bone-archer/iron-brute sprite Hell uses, just renamed | Heaven is a distinct visual force (§1.2 of the style guide) with zero pixels of its own yet; an open decision, not a queued task — see §4 | §4 |
 | 4 | **Named items and relics/artifacts (non-raid)** — fully authored, nothing to do | Already complete; listed for completeness only | §5 |
@@ -70,11 +70,49 @@ Source: `src/data/raids.ts`, `src/data/named.ts` (the 8 `raid`-sourced entries),
 with **zero new art** — everything below reuses an existing sprite/icon or falls back to
 a generic glyph.
 
-### 2.1 Raid boss identity — the open call to make first
+### 2.1 Raid boss identity — **DONE** (branch `art/raid-bosses`)
 
-Every raid boss (`raidBossSpec` in `raids.ts`) borrows a template's sprite wholesale via
+**Resolved.** All four raid bosses now have bespoke art and their own silhouette.
+
+The fix was not only art: `RaidSpec` gained a `sprite` field and `raidBossSpec` no longer
+inherits the template's. The borrow was always meant to be cheap *kit* reuse — the
+`planetBossSpec` precedent it copies already overrides `id`/`name`/`title`/`element` for
+exactly this reason — so silhouette missing from that list was an omission, not a design.
+New art alone would not have fixed it, because the borrow lived in the spec.
+
+| Raid | Sprite (`SpriteName` -> atlas id) | Native px | `worldScale` | World height (unchanged) |
+|---|---|---|---|---|
+| The Ferryman | `bossFerryman` -> `boss.ferryman` | 75x107 | 0.9318 | 99.7 (was `boss.warden`) |
+| Queen of the Seventh Circle | `bossWarQueen` -> `boss.war-queen` | 98x108 | 1.0185 | 110.0 (was `boss.herald-unspoken`) |
+| Minotaur of the Ninth Labyrinth | `bossLabyrinth` -> `boss.labyrinth-minotaur` | 102x106 | 1.2642 | 134.0 (was `boss.gravebound-colossus`) |
+| Tyrant of the First Heavens | `bossTyrant` -> `boss.exiled-tyrant` | 100x103 | 0.9738 | 100.3 (was `boss.corrupted-saint`) |
+
+Each `worldScale` is `targetWorldHeight / h`, where the target is the world height the
+encounter already had while borrowing — telegraph radii, arena sizing and camera framing
+are tuned against those numbers, so none of them moved. `art/bosses/finish.ts` rebuilds
+every PNG from its `.raw.png` and prints these rows.
+
+**Also authored: four 26x26 procedural fallback grids** (`BOSS_FERRYMAN` /
+`BOSS_WARQUEEN` / `BOSS_LABYRINTH` / `BOSS_TYRANT` in `render/pixels.ts`). These are not
+optional: `BossSpec.sprite` is a closed union and `buildSprites` is an exhaustive Record,
+so a new boss sprite needs a grid as well as a PNG — and the grid is what `npm run art`
+contact-sheets and what the fallback ladder shows if a PNG ever fails to load.
+
+**Two findings worth carrying forward** (the palette one is now also in the style guide
+under §1.4, as a prompting rule):
+- PixelLab biases hard toward clean heroic armour. Both armoured subjects came back bright
+  and polished on the first pass, the Queen with a saturated red plume — a *second* hot
+  colour, which §1.4 forbids. Clamp it explicitly in the prompt for any armoured subject.
+- Measure the accent rather than eyeballing it. The Queen's rival red still outnumbered her
+  ember 362px to 55 after a successful re-prompt; `muteRivalHue` in `finish.ts` pulled 293
+  of those to dried blood. The Tyrant came back with no lit region at all and had its accent
+  painted in by `hotAccent`.
+
+*The original finding, for the record:*
+
+Every raid boss (`raidBossSpec` in `raids.ts`) borrowed a template's sprite wholesale via
 `SPRITE_OVERRIDES` — same PNG, same silhouette, only name/title/element and its ability
-*rotation* change. Concretely:
+*rotation* changed. Concretely:
 
 | Raid | Borrows sprite of | Element | Arena tileset |
 |---|---|---|---|

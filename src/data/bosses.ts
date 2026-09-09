@@ -168,7 +168,9 @@ export interface BossSpec {
   /** The line under the name on the boss frame. Deadpan, please. */
   readonly title: string;
   readonly element: Element;
-  readonly sprite: "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless";
+  readonly sprite:
+    | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
+    | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant";
   /** Multiples of the floor's baseline enemy stats. */
   readonly health: number;
   readonly damage: number;
