@@ -208,11 +208,95 @@ does not build monotonically and end at its extreme.
 Idles are unaffected — a loop-shaped motion is exactly what an idle wants, which is why
 `boss.ferryman`'s shipped fine.
 
+## Picking this up: the method, in order
+
+Everything below is a thing that cost a session to find. Doing them out of order wastes
+generations rather than failing loudly, which is why the order is written down.
+
+**1. Measure the boss's accent BEFORE you animate it, and leave HEADROOM.** `npm run chroma`
+is the check. If the sprite is missing or weak on §1.4's hot accent, fix it on the **source
+sprite** and only then generate — the generator carries the accent through into every frame.
+
+Headroom is the part that is easy to miss. **The generator does not preserve an accent's
+intensity; it dims it.** Measured on the Minotaur: violet eyes at 45.5 on the still came
+back at 27.8 across four of five frames — a 39% drop, and 27.8 is *below* the hero's own
+skin at 30.2, so the accent had dimmed until it was no longer an accent. A still that merely
+passes the gate can therefore produce a strip that fails it. Start near 50 or above, so a
+39% drop still clears the hero's floor. Note the element palette entry is not always enough
+on its own: void is `#c084fc`, a *light* violet that only reads 47.1, so the Minotaur uses
+the saturated step of the same ramp (`#a855f7`, 63.5) instead. Repairing
+a finished strip is a treadmill: the eye *moves between frames* because the head drifts
+through the animation (rows 15/16/18/19/17 on the Ferryman), so it is per-frame coordinate
+work, and it invalidates the moment anything is regenerated. `art/bosses/warden-accent.py`
+and `art/bosses/ferryman-accent.py` are the worked examples; both assert every target pixel's
+current value before painting, so a redrawn sprite fails loudly instead of getting two bright
+pixels somewhere in its robe.
+
+**2. Convert the sprite with `art/pixellab-upload.py`, never by hand.** Sending a committed
+PNG's bytes inline fails, and the error blames truncation, which is misleading — the RGBA
+original arrives at the *right byte count* and still will not decode. It is corruption, and
+what corrupts is **long runs of identical base64 characters**. An indexed PNG with PIL's
+default 256-entry palette fails for that reason (its unused entries are zeros); the same
+image with the palette trimmed to the colours actually used goes through. Padding after
+`IEND` does not help. The script does the conversion, asserts pixel-exactness, and refuses
+rather than silently sending altered art. It is still occasionally rejected — retry, it is
+intermittent.
+
+**3. Generate with `animate_image`, `no_background: true`.** Passing `false` flattens a
+transparent sprite onto **white**. `animate_character`/`animate_object` are not options here:
+they need an id of something PixelLab generated, and the committed boss art is not that.
+
+**4. Run `art/anim/windup-check.py` on any cast candidate BEFORE stripping it.** It rejects
+a sequence that does not build monotonically and end at its extreme — see the section above
+for why that shape is the whole requirement, and why three prompted attempts all failed it.
+Idles do not need this; loop-shaped motion is what an idle wants.
+
+**5. Assemble with `art/anim/strip.py`,** which trims the frames as a set and prints the
+`ATLAS` row including the `worldScale` that keeps the world footprint fixed.
+
+**6. `npm test`.** The gate checks the strip is `w * cols` wide, the tags name frames that
+exist, the frame rects tile the strip, and — for an animated monster or boss — that the hot
+accent is present in **every** frame rather than only the strip as a whole.
+
+## A sprite whose accent is too small to survive generation
+
+`boss.labyrinth-minotaur` is deliberately **not** animated, and the reason is worth knowing
+before someone spends generations rediscovering it.
+
+Its hot accent is two violet eye pixels. Two attempts at an idle both came back with those
+eyes dimmed below the hero's own skin in several frames — 45.5 -> 27.8 on the first, and on
+the second, starting from a much brighter `#a855f7` at 63.5, still 22.4 and 23.1 in two
+frames of five, one of them a different hue entirely. Starting brighter did not help enough:
+the generator is not scaling the accent down proportionally, it is losing a two-pixel
+feature.
+
+So the headroom rule above has a limit: **an accent carried by only a pixel or two may not
+survive generation at any starting intensity.** The options, in order of preference, are to
+enlarge the accent on the source sprite first (more pixels, not just brighter), to pin the
+animation with a target frame, or to leave the boss static. Leaving it static is a hold, not
+a regression — an un-animated boss is exactly what ships today, and the `chroma` gate
+catching this is the gate doing its job rather than an obstacle to route around.
+
 ## Known open ends
 
-- **No art yet.** Phase 2 is the PixelLab pass, raid bosses first. Of the eight new boss
-  ability tags, only `blink` and `sanctuary` were judged to want new art; the rest resolve
-  through the existing telegraph pipeline and need nothing from the render side to work.
+- **The top open item is the wind-up pipeline, and it needs a step nobody has built.** No
+  boss has a `cast` animation. The fix for the failure documented above is
+  `last_frame_base64` — pin the ending so the generator interpolates between two poses —
+  which requires a **target pose authored or generated per boss**. That is a real piece of
+  work and a different pipeline from the one here; re-rolling the open-ended call is not a
+  fix and no prompt wording moved it across three attempts. `windup-check.py` and the three
+  rejected generations are in the repo so the next attempt starts from a measurement rather
+  than from an argument.
+- **The Minotaur has no idle** — see the section above. Enlarging its eyes on the source
+  sprite (more pixels, not just brighter) is the cheapest thing to try next, but it is a
+  change to shipped art and wants the owner's eye rather than a session's judgement.
+- **A boss with an idle and no wind-up is safe, not half-finished.** The fallback ladder
+  resolves an un-drawn `cast` to `idle`, so the boss keeps breathing through a wind-up
+  exactly as a static sprite sits still today. No regression, and the floor telegraph is
+  still the primary cue. That is only true because the fallback does nothing clever.
+- Of the eight new boss ability tags, only `blink` and `sanctuary` were judged to want their
+  own art; the rest resolve through the existing telegraph pipeline and need nothing from the
+  render side to work.
 - **`blink` moves the body discontinuously.** Nothing in this module assumes position
   continuity — it resolves a frame and nothing else — but any *interpolation* added later
   (the snapshot lerp in `net/sync.ts` already interpolates non-local entities every tick)
