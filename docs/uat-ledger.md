@@ -173,29 +173,35 @@ or earlier grants, because those would tread on the Forge bench's `augment`/`ins
 its stated invariant that nothing an op produces is something a chest couldn't have
 dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
 
-**RETRACTED 2026-09-09: the endgame ruling, and the 6/21 roster spread.** Both came from
-`docs/difficulty-curves.md` §2/§3/§4, and **those characters were wearing nothing.**
-`requiredLevel` is `ilvl - 1`, and `tools/curves.ts` rolled every rung's gear at an ilvl
-above what the character could legally equip, so `equipFromInventory` silently refused all
-of it; the affinity safety net never fired because `weaponFamily` reports an empty hand as
-`"sword"`. §3 was a level sweep with no equipment. §2 has a *cliff* exactly where it
-reported a wall — the character loses maxHP from depth 12 to depth 15 because that is
-where its kit stopped being wearable. §4's 6/21 is a spread between 19 characters wearing
-one item and 2 (swordsman and paladin, the sword-affinity classes) wearing none. **Do not
-put 6/21 in front of the owner.** Found by the session that wrote the document, catching
-itself building the same bug a second time. See the banner on `docs/difficulty-curves.md`.
+**The roster spread stands: 6 of 21 classes clear the depth-30 boss floor.** At level 60,
+Legendary, filled trees: 6/21 clear the boss floor, 12/21 clear trash, progress spans
+3%–100% at identical gearing. Briefly retracted on 2026-09-09 and **un-retracted the same
+day** — §4 of the curves document passes `DELVE_BOTTOM` at level 60 (ilvl 30 against a
+required level of 29), so every one of those 21 characters was fully equipped. Verified at
+the call site, not taken on report. The spread between classes is larger than the effect of
+depth, and it overlaps `npm run builds` being red for eight hybrid pairs. **Held for the
+owner** — twenty-one classes of tuning is a direction call, not a defect fix.
 
-**What survives: `recommendedLevel` is wrong.** Independently reconfirmed on the corrected
-harness — at depth 20 at the advised level a character in Basic gear reaches 15% of the
-objective while one in Legendary clears 3/3. That was always the headline and it holds.
-The corrected power and roster sweeps are running; the ruling on a curve retune is
-**reopened and unanswered** until they land, and "no curve retune" should not be quoted
-as settled in the meantime.
+**The power sweep stands too, minus its two cheapest rungs.** "Every depth clears given
+enough power" was measured on the four rungs from lv35 up, all fully equipped at every
+depth. So the **no-curve-retune ruling holds**: depth 30 is a wall in the power curve
+leading to it, not in the content. Bosses cost about one power rung more than trash at the
+same depth, consistently at both ends.
 
-*The lesson, sixth of the day:* the instrument produced a plausible monotone-looking grid,
-and plausibility was doing the work verification should have. The fix is the standing one
-— the corrected harness now prints how many items each character has on, flagged when
-short of six. An assertion that names its own subject cannot rot into a tautology.
+**What is genuinely retracted is §2 — the recommended-power comparison, below depth 15.**
+It builds its character at `recordDepth = depth` and `level ≈ 0.9 × depth`, which falls
+below the equip cap on the floor's own loot, so all eight rows past depth 15 measured a
+character wearing nothing; `weaponFamily` reports an empty hand as `"sword"`, so the
+affinity safety net never fired for the sword classes. It has a cliff where it reports a
+wall — 504 maxHP at depth 12 with six items worn, 380 at depth 15. §2a's five-depth
+boss/trash gap and §2b's "past depth 18 difficulty is the wrong word" are unsafe as stated.
+
+*The lesson, twice over:* the instrument produced a plausible grid and plausibility was
+doing the work verification should have — but the correction then generalised from one
+probe of a *default* to four call sites that each pass an explicit value, and briefly pulled
+two sound findings with it. **Read the call sites before retracting the callers.** The
+corrected harness now throws, naming the class, level, tier, ilvl and required level, rather
+than reporting a number nobody can tell is empty.
 
 **RETRACTED earlier the same day: a "floors stall constantly" finding** (25–67% of floors).
 It was an instrument fault — the measurement bot called `FlowField.direction(x, y)` against
@@ -211,7 +217,10 @@ spawn clipping a wall at ~1.9% at depth 35.
 level and gear the game advises, floors from depth 18 down killed the character in 6–22
 seconds having completed 0–3% of the objective; the corrected harness reproduces the same
 verdict from the other direction (depth 20, advised level: Basic gear 15% of the objective,
-Legendary 3/3). A number shown in the UI is actively misleading. Fix in flight on
+Legendary 3/3). **And the one-line argument that needs no harness at all: at depth 20 the
+game advises level 18, and depth-20 loot has `requiredLevel` 19 — the advised character
+cannot equip the floor's own drops.** That is in `src/data/depth.ts` and `src/game/item.ts`,
+not in an instrument. A number shown in the UI is actively misleading. Fix in flight on
 lootsim-26's branch — measurement first, then `src/data/depth.ts:182`.
 
 **`tools/` has never been typechecked, and the gate was full of checks that measure

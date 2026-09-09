@@ -1,107 +1,45 @@
 # Difficulty curves: bosses, trash, and why depth 30 is a wall
 
-> ## ⚠ SECTIONS 2, 3 AND 4 ARE SUSPENDED — THE CHARACTERS WERE WEARING NOTHING
+> ## ⚠ SECTION 2 IS SUSPENDED — ITS DEEP ROWS MEASURED A CHARACTER WEARING NOTHING
 >
-> Found 2026-09-09 by the session that wrote this document, while building the same bug a
-> second time and catching it. **Do not act on a number in §2, §3 or §4, and do not quote
-> the 6/21 roster spread.** The corrected measurements are in flight; this banner is the
-> interim so nothing is read straight in the meantime.
+> Found 2026-09-09, then narrowed the same day. **§3 and §4 are fine — an earlier, wider
+> banner over all three was over-retraction and has been withdrawn.**
 >
-> **The mechanism, three silent failures deep.** `requiredLevel(item)` is `ilvl - 1` and
-> `Player.canEquip` refuses anything above it, so a level-*L* character may wear nothing
-> past ilvl *L+1*. `character()` in `tools/curves.ts` defaulted `recordDepth` to
-> `round(level / 0.9)` — **the inverse of the very formula under investigation** — and
-> chests roll ilvl from `recordDepth`, so above about level 10 every rolled item landed
-> one to eleven levels above the cap and `equipFromInventory` silently refused all of it.
-> The safety net (`if (!state.player.hasAffinity) equip(a weapon)`) never fired, because
-> `weaponFamily` is `this.equipment.weapon?.family ?? "sword"` — **a character holding
-> nothing reports as holding a sword**, so for a sword-affinity class the fallback saw
-> affinity it did not have.
+> **The mechanism.** `requiredLevel(item)` is `ilvl - 1` and `Player.canEquip` enforces it,
+> so a level-*L* character may wear nothing above ilvl *L+1*. Chests roll ilvl from
+> `recordDepth`. §2 builds its character with `recordDepth = depth` at
+> `level = recommendedLevel(depth)` ≈ `0.9 × depth`, so past depth ~15 the level falls
+> below the equip cap on the floor's own loot and `equipFromInventory` silently refuses all
+> of it. The safety net never fired, because `weaponFamily` is
+> `this.equipment.weapon?.family ?? "sword"` — **a character holding nothing reports as
+> holding a sword** — so for a sword-affinity class the fallback saw affinity it did not
+> have.
 >
-> Measured, not reasoned — §3's six power rungs as §3 actually builds them:
+> **§2 is equipped through depth 15 and naked on all eight deeper rows.** It has a cliff
+> exactly where it reports a wall: 504 maxHP at depth 12 with six items worn, 380 at depth
+> 15 — the character gets *weaker* where its kit stops being wearable. Its "wall at 18+" is
+> substantially that boundary, so §2a's five-depth boss/trash gap and §2b's "past depth 18
+> difficulty is the wrong word" are both unsafe as stated. Rows 5–15 are sound.
 >
-> ```
->    rung                  record  ilvl  reqLv  equippable  WORN  maxHP
->    lv15 Advanced x14         17    17     16        0/14     0    398
->    lv35 Elite x20            39    39     38        0/20     0    758
->    lv45 Legendary x20        50    50     49        0/20     0    938
->    lv60 Legendary x30        67    67     66        0/30     0   1208
->    lv90 Legendary x60       100   100     99        0/61     0   1748
-> ```
+> **§3 stands, with one caveat.** It passes an explicit `recordDepth` of
+> `max(depth, rung.level)`, so only its two cheapest rungs go bare — lv15 at depth 20+ and
+> lv25 at depth 28+, six cells of thirty. The four rungs from lv35 up were fully equipped at
+> every depth, which is where "every depth clears given enough power" was actually measured.
+> That conclusion is intact; discount the bottom two rows.
 >
-> Zero items worn on every rung. **§3 is not a power sweep, it is a level sweep with no
-> equipment**, and its maxHP column is pure level scaling at ~180 per ten levels. §2 is
-> worse, because it has a cliff exactly where it reports a wall: the character goes from
-> 504 maxHP at depth 12 (6 items worn) to 380 at depth 15 (0 worn) — it gets *weaker*
-> where its kit stops being wearable. And it landed unevenly across the roster: at lv60
-> Legendary x30, 19 of 21 classes went in holding one weapon and **two went in with
-> nothing — swordsman and paladin**, the two sword-affinity classes. §2, §3 and §4 all use
-> the swordsman, so the headline numbers came from the single worst-affected class.
+> **§4 is not contaminated at all.** It passes `DELVE_BOTTOM` at level 60 — ilvl 30,
+> required level 29 — so all 21 classes were fully geared. **The 6/21 roster spread stands.**
 >
-> **What still stands:** `recommendedLevel` is wrong (§ short version item 2). Confirmed
-> independently on the corrected harness — at depth 20 at the advised level, a character in
-> Basic gear reaches 15% of the objective while one in Legendary clears 3/3. That was
-> always the right headline and it survives.
+> **A finding that needs no harness at all**, and the cleanest single reason
+> `recommendedLevel` is wrong: at depth 20 the game advises level 18, and depth-20 loot has
+> `requiredLevel` 19. **The advised character cannot equip the floor's own drops.** That is
+> in `src/data/depth.ts` and `src/game/item.ts`, not in the instrument.
 >
-> **What does not:** the bracket "depth 20 needs between lv35 Elite and lv45 Legendary";
-> "every depth clears given enough power" as stated; "the wall is lethality rather than
-> gearing"; and the 6/21 roster spread, which is a spread between 19 characters wearing one
-> item and 2 wearing none — not evidence about class balance.
->
-> **The harness is already fixed.** §J now rolls every rung at `ilvl = level + 1`, the most
-> a character may legally wear, and every cell reports how many items its character has on,
-> flagged `!n` when short of six — a check that names its own subject cannot rot into a
-> tautology. With that in place the grid is monotone in rarity at every level, which it was
-> not before.
-
-
-A read-only investigation. **No tuning number was changed.** The harness is
-`tools/curves.ts` (`npm run curves`), deliberately *not* wired into `npm test` — it plays
-several hundred real floors and takes minutes, and it answers a question rather than
-guarding a promise.
-
-## Read this first: how the instrument was validated
-
-Every number below the analytic section comes from a scripted bot, so the bot is the first
-thing that has to be trusted, and on its first outing it did not deserve to be.
-
-The first version of this harness kept its own paraphrased copies of `tools/smoke.ts`'s
-steering helpers. One of them called `FlowField.direction(x, y)` where the signature is
-`direction(level, x, y)`. Called with two arguments it returns `null` for every query, so
-**the bot never pathfound at all** — it fell back to straight-line steering, could not walk
-around a wall, wandered on multi-room floors, and failed to reach monsters it could
-trivially have killed. That produced a crop of "floors that can never be completed" and an
-apparent 25–67% floor-stall rate, all of it the harness failing rather than the game. The
-same paraphrase had also quietly lost the donut, line, cone and burning-ground branches of
-`escapeAngle`, so it was not dodging what the real bot dodges.
-
-Two things came out of that, and they are the reason to believe anything here:
-
-1. **There is one bot now.** `tools/bot.ts` holds it and both harnesses import it, so
-   `curves.ts` and `smoke.ts` play the same game by construction rather than by care.
-2. **This file runs the published control before it measures anything.** Section 0 runs the
-   same twelve-seed campaign `smoke.ts` asserts on, through the same imported `campaign`:
-
-```
-   sharp    (dodges 55%): deepest 11.8  deaths 5.9  unfinished 0.00
-   reckless (never dodges): deepest 9.4  deaths 7.6  unfinished 0.00
-   margin 2.4 — smoke.ts publishes sharp 11.8 / reckless 9.4 / margin 2.4
-```
-
-Exact match on all three. If that ever stops matching, nothing further in this document
-should be believed until it is explained.
-
-That `unfinished 0.00` is also the retraction, stated in the harness's own output: across
-240 dives on both bots, **zero** floors ended without either a clear or a death. The
-campaign has always measured this and has always found almost none, which is the evidence
-the earlier stall claim should have been checked against before it was reported.
-
-### A gap this exposed, worth its own ticket
-
-`tsconfig.json` has `"include": ["src"]`, so **`tools/` is never typechecked**. The
-harnesses are bundled by esbuild, which strips types without checking them. A call with the
-wrong number of arguments survived to run. Every acceptance test in this repo lives in
-`tools/`, so the checking gate itself is unchecked.
+> **The harness is fixed** (`fix/engine-and-advice`): `character()` defaults `recordDepth`
+> to `level + 1`, the most a character may legally wear, and **throws** if a character ends
+> up wearing nothing — naming the class, level, tier, the ilvl rolled and the level it
+> required. A check that names its own subject cannot rot into a tautology, and one that
+> throws cannot be read past.
 
 ## The short version
 
@@ -176,7 +114,7 @@ table in places.
 
 ## 2. The same depth, both flavours, at the power the game recommends
 
-**SUSPENDED — the characters below wore nothing from depth 15 on. See the banner at the top.**
+**SUSPENDED below depth 15 — those rows measured a character wearing nothing. See the banner at the top.**
 
 The comparison nobody had run. The Delve only puts bosses on multiples of 5, and the
 Convergence deliberately puts its boss *shallower* than its trash, so every earlier reading
@@ -229,7 +167,7 @@ floors clearing comfortably with more power. The floor is fine; the advice is wr
 
 ## 3. Does more power fix it? Yes — completely
 
-**SUSPENDED — not a power sweep. Every rung below wore zero items. See the banner at the top.**
+**Stands.** Only the lv15 and lv25 rungs go bare (six cells of thirty, at depth 20+ and 28+); the four rungs from lv35 up were fully equipped at every depth. See the banner.
 
 The dimension none of the three earlier readings varied. Sweeping character power at fixed
 depth separates "this floor is tuned past what any character can do" from "characters
@@ -276,7 +214,7 @@ an artifact of the broken bot and does not survive.
 
 ## 4. Class spread — the finding hiding inside the depth finding
 
-**SUSPENDED — 19 of these 21 classes wore one item and 2 wore none. Do not quote 6/21.**
+**Stands, fully equipped** — `DELVE_BOTTOM` at level 60 is ilvl 30 against a required level of 29. An earlier banner wrongly suspended this; withdrawn.
 
 Level 60, 30 Legendary chests, both trees filled; all 21 classes; three seeds each.
 
