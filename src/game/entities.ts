@@ -95,6 +95,15 @@ export interface BossState {
   /** Enrage damage multiplier. */
   buffDamageMult: number;
   buffHasteMult: number;
+  /**
+   * How many times `crescendo` has gone off this fight.
+   *
+   * Deliberately not a timer. `buffTimer` above is a window you can wait out; this is a
+   * ratchet that never comes back down, which is the whole difference between the two
+   * abilities. Capped in `game/boss.ts` — "cannot be outlasted" still has to stop short
+   * of a rotation that overlaps its own wind-ups.
+   */
+  crescendo: number;
 }
 
 export interface Enemy extends Body {
@@ -314,10 +323,43 @@ export interface Telegraph {
   linger: number;
   /** Follows this enemy while winding up — used for anything centered on the boss. */
   followId: number | null;
+  /**
+   * Hero index this telegraph walks toward while it winds up, and how fast it may travel
+   * doing it. `null` means it stays where it was painted, which is every telegraph the
+   * game had before `hunt` and `mark`.
+   *
+   * Separate from `followId` on purpose: that one is welded to an enemy and reproduces
+   * its position exactly, which is what "centred on the boss" means. This one *pursues*,
+   * at a speed the player can beat, which is what makes it a mechanic rather than an
+   * unavoidable hit. A huge `chaseSpeed` degenerates to sticking to the hero — that is
+   * `mark`, and it is legitimate because a mark is beaten by moving away from other
+   * bodies rather than by outrunning the shape.
+   */
+  chaseId: number | null;
+  chaseSpeed: number;
+  /**
+   * Circles cut out of this telegraph: anything standing inside one is not hit.
+   *
+   * The room-wide sear (`sanctuary`) is the only thing that uses it, and it is how "get
+   * to specific ground" is expressed without inventing a shape. A donut's `inner` is the
+   * same idea with exactly one hole, in one place, concentric — which is a different
+   * question, because there is nothing to choose.
+   */
+  holes: readonly { readonly x: number; readonly y: number; readonly r: number }[];
+  /** Velocity the ground zone this leaves behind travels at, in units per second. */
+  driftVx: number;
+  driftVy: number;
 }
 
 /** Lingering floor left by a mechanic. Standing in it is your own fault. */
 export interface GroundZone extends Body {
+  /**
+   * Units per second this zone travels. Zero for every hazard the game had before
+   * `drift`: burning ground has always been a fact about a piece of floor, and a moving
+   * one is the point of that ability.
+   */
+  vx?: number;
+  vy?: number;
   element: Element;
   /** Damage per tick. Ticks are half a second apart. */
   damage: number;

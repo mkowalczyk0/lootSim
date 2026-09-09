@@ -136,8 +136,20 @@ export const PROVING_SELF_RESIST = 150;
  * vocabulary — it just refuses to let a class's final exam be a melee brawl it can walk
  * away from. Phase one is left template-pure on purpose: the fight opens reading as your
  * class, and what the Abyss kept arrives as the room closes in.
+ *
+ * **It used to also carry `meteor` and `starLance`, and it no longer does.** Those two
+ * were never part of the measured fix — the measurement was about *reach*, and the two
+ * abilities named above are the reach. What the extra two bought was convergence: four
+ * shared cards on top of five shared templates meant 21 classes resolved to five fights,
+ * measured at 71.8% mean pairwise overlap and 100% at worst (`tools/bossvariety.ts`).
+ * The Proving is the one encounter whose entire premise is that it is *your* Legend's
+ * missing half, so that was the worst number in the report.
+ *
+ * They are replaced one-for-one by `LegendSpec.signature`, which is per class. The
+ * anti-kite guarantee is untouched and the kit is the same size; what changed is that
+ * two of the four cards are now yours.
  */
-export const PROVING_CORE: readonly BossAbilityId[] = ["ringOut", "beam", "meteor", "starLance"];
+export const PROVING_CORE: readonly BossAbilityId[] = ["ringOut", "beam"];
 /**
  * The tightest the gap between casts is ever allowed to get. `BOSS_ACTION_GAP` times this
  * is that gap, and a rotation short enough to overlap its own wind-ups would break the
@@ -161,6 +173,22 @@ export interface LegendSpec {
   readonly template: string;
   /** The deadpan line under the name on the boss frame. */
   readonly title: string;
+  /**
+   * The two abilities that make this Proving *this class's* Proving, added from phase two
+   * alongside `PROVING_CORE`.
+   *
+   * Every entry is one of the eight abilities added in the boss-variety pass, and that is
+   * deliberate rather than incidental: an ability drawn from the original fifteen is
+   * already in some template, so half the roster would have "gained" a card it was
+   * holding anyway and the Provings would have re-converged on the templates. Drawing
+   * from the new eight guarantees the addition is real for every class whatever it
+   * borrowed.
+   *
+   * Chosen to read as the class rather than to fill a slot — the thing you fight is the
+   * part of your own Legend the Abyss kept, so it should fight like you. No two classes
+   * carry the same pair.
+   */
+  readonly signature: readonly [BossAbilityId, BossAbilityId];
 }
 
 /**
@@ -176,86 +204,132 @@ export const LEGENDS: Record<ClassId, LegendSpec> = {
   lancer: {
     classId: "lancer", template: "colossus",
     title: "It has your reach. It has had longer to practise.",
+    // Reach and momentum: it closes the distance itself, then strikes the same ground twice.
+    signature: ["hunt", "judgment"],
   },
   berserker: {
     classId: "berserker", template: "warden",
     title: "Same axe. None of the restraint.",
+    // Rage as a resource, and the resource never spends down. It only comes at you faster.
+    signature: ["crescendo", "hunt"],
   },
   swordsman: {
     classId: "swordsman", template: "warden",
     title: "Every duel you never finished, standing up.",
+    // Edge and tempo — the second beat, and a duel it insists on having alone.
+    signature: ["judgment", "mark"],
   },
   magician: {
     classId: "magician", template: "herald",
     title: "It remembers the spells you decided not to learn.",
+    // Mana and consequence: it spares the ground it chooses to, and it is still casting.
+    signature: ["crescendo", "sanctuary"],
   },
   shaman: {
     classId: "shaman", template: "colossus",
     title: "It has been patient. That was always the dangerous part.",
+    // Rot and patience. What it puts down does not stay where you left it.
+    signature: ["drift", "mark"],
   },
   ranger: {
     classId: "ranger", template: "choir",
     title: "It picked the range. You get to walk.",
+    // It picked the range. Now it picks where you are allowed to stand.
+    signature: ["hunt", "mark"],
   },
   juggernaut: {
     classId: "juggernaut", template: "colossus",
     title: "Immovable, and no longer on your side.",
+    // Immovable, so the room moves: it cuts the floor in half and gets louder.
+    signature: ["crescendo", "sunder"],
   },
   duelist: {
     classId: "duelist", template: "warden",
     title: "It knows the opening you keep leaving.",
+    // Precision and tempo, without the walking.
+    signature: ["blink", "judgment"],
   },
   warlock: {
     classId: "warlock", template: "nameless",
     title: "The debt, collected in person.",
+    // Debt and the void: it takes the room apart and steps through the gap. Deliberately
+    // not `crescendo` + `drift`, which the Queen of the Seventh Circle and the Ferryman
+    // between them already own — a Warlock's Proving holding a whole raid's signature is
+    // how the game's set piece stops being a set piece (`tools/bossvariety.ts` catches it).
+    signature: ["blink", "sunder"],
   },
   monk: {
     classId: "monk", template: "warden",
     title: "The form, perfected without you.",
+    // Flow and discipline: it decides which ground is correct, and who may stand on it.
+    signature: ["mark", "sanctuary"],
   },
   necromancer: {
     classId: "necromancer", template: "choir",
     title: "It kept everything you ever raised.",
+    // The kill is the point, and every body it leaves is somewhere you cannot stand.
+    signature: ["crescendo", "mark"],
   },
   corsair: {
     classId: "corsair", template: "herald",
     title: "It never put the weapon down.",
+    // Reach without the weight — it is never where the weight would have to be.
+    signature: ["blink", "sanctuary"],
   },
   trickster: {
     classId: "trickster", template: "choir",
     title: "Already somewhere else. Still hitting you.",
+    // Gone before it lands, and so is the floor.
+    signature: ["blink", "drift"],
   },
   reaper: {
     classId: "reaper", template: "warden",
     title: "The swing goes all the way around. It always did.",
+    // The widest swing in the game, left lying where it fell.
+    signature: ["drift", "sunder"],
   },
   stormcaller: {
     classId: "stormcaller", template: "choir",
     title: "Never where you left it, either.",
+    // Never where you left it. Always closer than it was.
+    signature: ["blink", "hunt"],
   },
   paladin: {
     classId: "paladin", template: "warden",
     title: "The last stand, held by somebody else.",
+    // The last stand, with the ground to make it on — and the sentence read twice.
+    signature: ["judgment", "sanctuary"],
   },
   bard: {
     classId: "bard", template: "choir",
     title: "It finished the song.",
+    // A battlefield conductor. It is keeping time, and the tempo only goes one way.
+    signature: ["crescendo", "judgment"],
   },
   alchemist: {
     classId: "alchemist", template: "herald",
     title: "It stopped labelling them.",
+    // An improviser: it throws something, then throws it again while the first is still spreading.
+    signature: ["drift", "judgment"],
   },
   engineer: {
     classId: "engineer", template: "herald",
     title: "It had the whole Delve to build.",
+    // A combat builder. It partitions the room and assigns you a piece of it.
+    signature: ["mark", "sunder"],
   },
   assassin: {
     classId: "assassin", template: "nameless",
     title: "You are the priority target.",
+    // Priority target killer. It names the target and then is already there.
+    signature: ["blink", "mark"],
   },
   warden: {
     classId: "warden", template: "colossus",
     title: "It is still guarding. Not you.",
+    // Guardian of the wild: the wild closes in and cuts off the way back. Not `drift` +
+    // `hunt` — that pair is the Ferryman's whole fight and a Proving must not be one.
+    signature: ["hunt", "sunder"],
   },
 };
 
@@ -284,12 +358,20 @@ export function legendName(classId: ClassId): string {
  * is a modest 1.35 because a longer health bar is not a harder fight; a rotation with
  * every ability in it, arriving faster, is.
  */
-export function provingPhases(template: BossSpec): readonly BossPhase[] {
+export function provingPhases(
+  template: BossSpec, signature: readonly BossAbilityId[] = [],
+): readonly BossPhase[] {
   const seen = new Set<BossAbilityId>();
   const phases: BossPhase[] = template.phases.map((phase, i) => {
     for (const id of phase.abilities) seen.add(id);
-    // Phase one is the template's alone; from the second, the Abyss brings its own.
-    if (i > 0) for (const id of PROVING_CORE) seen.add(id);
+    // Phase one is the template's alone; from the second, the Abyss brings its own —
+    // the shared reach that stops the fight being kiteable, and the two cards that are
+    // this class's. Phase one stays template-pure for the reason it always did: the
+    // fight opens reading as the kit you know, and what was kept arrives as it closes in.
+    if (i > 0) {
+      for (const id of PROVING_CORE) seen.add(id);
+      for (const id of signature) seen.add(id);
+    }
     // The borrowed body decides *what* it does; the bottom of the Delve decides how
     // relentlessly. Every phase is at least as dense as the reference encounter's phase
     // at the same index — never slower between casts, never fewer adds on entry.
@@ -354,7 +436,7 @@ export function legendBossSpec(classId: ClassId): BossSpec {
     health: REFERENCE.health * PROVING_HEALTH,
     damage: REFERENCE.damage * PROVING_DAMAGE,
     selfResist: PROVING_SELF_RESIST,
-    phases: provingPhases(template),
+    phases: provingPhases(template, legend.signature),
   };
 }
 

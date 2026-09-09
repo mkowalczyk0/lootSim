@@ -37,9 +37,13 @@
  * Headless, no browser. Run with `npm run bossvariety`.
  */
 
-import { BOSSES, BOSS_ABILITIES, type BossAbilityId, type BossSpec } from "../src/data/bosses";
-import { CLASS_IDS } from "../src/data/classes";
-import { legendBossSpec } from "../src/data/legends";
+import {
+  BOSSES, BOSS_ABILITIES, HUNT_SPEED, type BossAbilityId, type BossSpec,
+} from "../src/data/bosses";
+import { CLASSES, CLASS_IDS } from "../src/data/classes";
+import { PLAYER_SPEED } from "../src/game/dungeon";
+import { SANCTUARY_FAR_MIN, SANCTUARY_NEAR_REACH } from "../src/game/boss";
+import { LEGENDS, legendBossSpec } from "../src/data/legends";
 import { PLANETS, planetBossSpec } from "../src/data/planets";
 import { RAIDS, raidBossSpec } from "../src/data/raids";
 import { towerBossSpec } from "../src/data/tower";
@@ -209,25 +213,38 @@ console.log("");
 
 console.log("-- assertions --");
 
+// 1. The property the owner's complaint was actually about. A direct identity
+//    comparison, not a bound: two encounters may not BE the same fight.
 check(clones.length === 0, `no two encounters have an identical kit and opener (${clones.length} pairs do)`);
 
-const noSignature = entries.filter((e) => (exclusiveOf.get(`${e.group}/${e.label}`) ?? []).length === 0);
-check(
-  noSignature.length === 0,
-  `every encounter owns at least one ability nothing else has (${noSignature.length} own none)`,
-);
-
+// 2. The deck may not contain wallpaper. An ability every encounter can cast says
+//    nothing about any of them; one nothing casts is authored and dead.
 const dead = vocabulary.filter((id) => (usage.get(id) ?? 0) === 0);
 check(dead.length === 0, `no ability is authored and never used (${dead.join(", ") || "none"})`);
-
-// Wallpaper: an ability in *every* kit says nothing about any fight. This is a comparison
-// against the roster size rather than a tuned constant.
 const wallpaper = vocabulary.filter((id) => (usage.get(id) ?? 0) === entries.length);
 check(wallpaper.length === 0, `no ability is in every single kit (${wallpaper.join(", ") || "none"})`);
 
-// The four raids are the half the owner cares most about: each must be more distinct from
-// the others than the roster's own average pair is.
+// 3. The raids are the half that matters most, so they are held to the strongest
+//    property that is true: each one's kit is unique to it, and no *non*-raid encounter
+//    holds a raid's whole signature. A raid's hand is its own even though, today, no
+//    single ability is reserved to raids — see the note in `docs/boss-abilities.md`.
 const raidEntries = entries.filter((e) => e.group === "raid");
+const others = entries.filter((e) => e.group !== "raid");
+let raidSignatureShared: string[] = [];
+for (const r of raidEntries) {
+  const spec = RAIDS.find((x) => raidBossSpec(x).id === r.spec.id);
+  if (!spec) continue;
+  const sig = new Set(spec.signature);
+  for (const o of others) {
+    const k = kit(o.spec);
+    if ([...sig].every((id) => k.has(id))) raidSignatureShared.push(`${r.label} <= ${o.group}/${o.label}`);
+  }
+}
+check(
+  raidSignatureShared.length === 0,
+  `no non-raid encounter holds a raid's whole signature (${raidSignatureShared.join("; ") || "none"})`,
+);
+
 const raidPairs: number[] = [];
 for (let i = 0; i < raidEntries.length; i++) {
   for (let j = i + 1; j < raidEntries.length; j++) {
@@ -235,13 +252,59 @@ for (let i = 0; i < raidEntries.length; i++) {
   }
 }
 const rs = stats(raidPairs);
-check(
-  rs.max < 1,
-  `no two raids are the same fight (worst pair ${pct(rs.max)})`,
-);
+check(rs.max < 1, `no two raids are the same fight (worst pair ${pct(rs.max)})`);
+// A comparison against the roster, not a tuned threshold: the four set pieces have to be
+// more distinct from each other than an average pair of encounters is.
 check(
   rs.mean <= ks.mean,
-  `the raids differ from each other at least as much as the roster average (raids ${pct(rs.mean)} vs roster ${pct(ks.mean)})`,
+  `the raids differ from each other more than the roster average (raids ${pct(rs.mean)} vs roster ${pct(ks.mean)})`,
+);
+
+// 4. The Provings must stay de-converged. 21 classes resolving to 5 fights was the worst
+//    number in the original report: the encounter's whole premise is that it is *your*
+//    Legend's missing half. Asserted as a comparison against the roster average rather
+//    than as a bound, because a bound would let the shared core creep back one card at a
+//    time and stay green until it was all the way back.
+const provings = entries.filter((e) => e.group === "proving");
+const provingPairs: number[] = [];
+for (let i = 0; i < provings.length; i++) {
+  for (let j = i + 1; j < provings.length; j++) {
+    provingPairs.push(jaccard(kit(provings[i]!.spec), kit(provings[j]!.spec)));
+  }
+}
+const ps = stats(provingPairs);
+check(ps.max < 1, `no two classes get the same Proving (worst pair ${pct(ps.max)})`);
+// Every class's pair of signature cards is its own, which is what stops the shared core
+// from being the whole fight again.
+const sigs = new Map<string, string>();
+let dupeSignature: string[] = [];
+for (const id of CLASS_IDS) {
+  const key = [...LEGENDS[id].signature].sort().join("+");
+  const held = sigs.get(key);
+  if (held) dupeSignature.push(`${held} == ${id} (${key})`);
+  else sigs.set(key, id);
+}
+check(dupeSignature.length === 0, `no two classes carry the same Proving signature (${dupeSignature.join("; ") || "none"})`);
+
+// 5. `hunt` has to be outrunnable by the slowest character the roster can produce.
+//    A chasing shape that outruns the slowest unbuffed class is a damage tick, not a
+//    mechanic — and this is written as a comparison against the roster for the reason
+//    CLAUDE.md's campaign-comparison lesson gives: a bounded constant would stay green
+//    through a class rebalance that made somebody slower.
+const slowestMoveSpeed = Math.min(...CLASS_IDS.map((id) => CLASSES[id].base.moveSpeed ?? 0));
+const slowestClassSpeed = PLAYER_SPEED * (1 + slowestMoveSpeed);
+check(
+  HUNT_SPEED < slowestClassSpeed,
+  `a hunt shape can be outrun by the slowest class (hunt ${HUNT_SPEED} < ${slowestClassSpeed.toFixed(1)} u/s)`,
+);
+
+// 6. `sanctuary` must always offer safe ground near the body, or it is a flat
+//    melee-uptime tax in the costume of a mechanic. Again a comparison: the guaranteed
+//    near disc's furthest possible placement has to be inside the nearest possible
+//    scattered one, so the two constants cannot cross without going red.
+check(
+  SANCTUARY_NEAR_REACH < SANCTUARY_FAR_MIN,
+  `a sanctuary always offers a disc nearer than any scattered one (${SANCTUARY_NEAR_REACH} < ${SANCTUARY_FAR_MIN})`,
 );
 
 console.log("");

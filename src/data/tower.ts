@@ -187,14 +187,19 @@ const TOWER_BOSSES: readonly TowerBoss[] = [
   {
     templateId: "choir", name: "Virtue of the Second Ascent",
     title: "It is about to work a miracle. The miracle is aimed at you.",
-    // A miracle arrives from above and does not need a chorus to do it.
-    kit: { signature: ["meteor", "windmill"], drop: ["volley", "summon"] },
+    // A miracle is pronounced, not scattered: the same ground twice, and a sweep close
+    // in. `meteor` was the first draft and the A/B refused it — five lingering pools in
+    // place of a volley took this floor 40.8% up in damage taken across sixteen seeds,
+    // which is a difficulty change to shipped content and not this pass's to make.
+    kit: { signature: ["judgment", "windmill"], drop: ["volley", "summon"] },
   },
   {
     templateId: "colossus", name: "Power of the Third Rampart",
     title: "Built for the war. Nothing else was included.",
-    // Built for the war: fortification and reach. Nothing rots up here.
-    kit: { signature: ["wall", "windmill"], drop: ["corruption", "meteor"] },
+    // Built for the war: fortification and reach. Nothing rots up here — but the falling
+    // masonry stays. Dropping `meteor` as well as `corruption` took this floor from 9/16
+    // wins to 15/16 in the A/B, so only the rot goes.
+    kit: { signature: ["wall", "windmill"], drop: ["corruption", "charge"] },
   },
   {
     templateId: "herald", name: "Throne of the Fourth Judgment",

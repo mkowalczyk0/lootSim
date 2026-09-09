@@ -257,7 +257,13 @@ export const RAIDS: readonly RaidSpec[] = [
     // army firing on a position.
     templateId: "choir",
     sprite: "bossTyrant",
-    signature: ["starLance", "wall", "summon", "ringOut"],
+    // The doc's own list for this fight: angelic armies, giant celestial weapons, divine
+    // judgment attacks, battlefield-wide celestial abilities. Read straight off it —
+    // `summon` is the armies, `starLance` the celestial weapons, `sanctuary` the divine
+    // judgment (the room is found wanting apart from the ground it spares), and
+    // `judgment` the sentence pronounced twice on the same spot. It has been arguing
+    // since it was thrown out; it does not say a thing only once.
+    signature: ["sanctuary", "judgment", "starLance", "summon", "wall", "ringOut"],
     finalPhase: "The Argument, Concluded",
     biome: THE_FIRST_HEAVENS,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -278,7 +284,19 @@ export const RAIDS: readonly RaidSpec[] = [
     // standing in. A labyrinth is corridors.
     templateId: "colossus",
     sprite: "bossLabyrinth",
-    signature: ["wall", "charge", "meteor", "beam"],
+    // The doc asks for moving walls, multiple maze layouts, false exits, players becoming
+    // separated, and the boss appearing in different parts of the maze. Four of those five
+    // are now sayable: `sunder` cuts the room in half and leaves the cut standing, which
+    // is a wall that was not there before; `blink` is the body appearing somewhere else
+    // without crossing the floor between; `mark` is players being told apart and made to
+    // stand away from each other. `charge` stays because a labyrinth is corridors.
+    //
+    // The fifth — the arena itself relaying between layouts mid-fight — is deliberately
+    // not attempted: level geometry is the collision volume *and* the tile lattice *and*
+    // what the flow field is rebuilt against, so a room that rearranges itself is a change
+    // to `level.ts`'s hardest promise and not a boss ability. `sunder` is the honest
+    // subset of it, and it is a real one.
+    signature: ["sunder", "blink", "mark", "charge", "beam"],
     finalPhase: "No Further Turns",
     biome: THE_NINTH_LABYRINTH,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -299,7 +317,23 @@ export const RAIDS: readonly RaidSpec[] = [
     // raid borrows the shallowest kit; its signature is what makes it a river.
     templateId: "warden",
     sprite: "bossFerryman",
-    signature: ["beam", "corruption", "ringOut", "summon"],
+    // The Styx running through three realms at once, and a boat still being poled through
+    // all of them. `drift` is the river: the one hazard in the game whose ground travels
+    // after it lands, so safe footing is never a fact you can file away. `hunt` is the
+    // fare being collected — slow, certain, and it does not care where you go, only that
+    // you keep going. `corruption` is the water it leaves behind and `summon` the souls it
+    // is still trying to carry.
+    //
+    // The shallowest raid, and the only one whose signature is built entirely out of
+    // pressure rather than punishment: nothing here is a big hit. It is the fight that
+    // never lets you stand anywhere.
+    // `beam` is kept from the original signature deliberately, and the A/B is the reason:
+    // dropping it for `drift` + `hunt` took the Ferryman from 9/16 wins to 15/16 across
+    // sixteen seeds. Swapping a 3.5-damage line for two abilities that are mostly
+    // *pressure* is card-count-neutral and threat-negative, which is a live difficulty
+    // cut to a shipped raid wearing a variety commit's clothes. The pole is a line across
+    // the water; it stays.
+    signature: ["drift", "hunt", "beam", "corruption", "summon", "ringOut"],
     finalPhase: "Both Banks At Once",
     biome: THE_CROSSING,
     baseDepth: 12, depthPerTier: 2.0, dangerPerTier: 1.15,
@@ -320,7 +354,14 @@ export const RAIDS: readonly RaidSpec[] = [
     // fire. A war goddess is that, with more of it arriving at once.
     templateId: "herald",
     sprite: "bossWarQueen",
-    signature: ["volley", "starLance", "meteor", "backlash"],
+    // A war goddess assembled out of every tradition's leftovers, holding the circle where
+    // the violent are kept. Her signature is *everything at once*, which is what "every war
+    // anybody prayed about, answered simultaneously" has to mean mechanically: `crescendo`
+    // is the only ability in the game that never comes back down, so the longer the prayer
+    // goes on the louder it gets, and there is no waiting it out. `volley`, `starLance` and
+    // `meteor` are the answers arriving, and `backlash` is what standing in front of her
+    // costs while they do.
+    signature: ["crescendo", "volley", "starLance", "meteor", "backlash"],
     finalPhase: "The Prayer Answered",
     biome: THE_SEVENTH_CIRCLE,
     baseDepth: 16, depthPerTier: 2.2, dangerPerTier: 1.17,
