@@ -96,7 +96,12 @@ section("coverage");
     "every ranged ability that resolves harm authors an fx.travel",
     missing.length === 0,
     missing.length > 0
-      ? `${missing.length} missing: ${missing.slice(0, 4).map((a) => a.id).join(", ")}`
+      ? `${missing.length} missing: ${missing.map((a) => `${a.id} (range ${a.range})`).join(", ")}`
+        + `\n         Add fx: { travel: "beam" | "lance" | "bolt" } to each — see docs/ability-fx.md §4.`
+        + `\n         If one of these is really a melee swing authored just past the ${MELEE_RANGE}-unit`
+        + `\n         cutoff, the fix is to lower its range or make it self/melee-targeted explicitly.`
+        + `\n         Do not raise the cutoff: it is what stops a swing drawing a line across a room`
+        + `\n         it never reached.`
       : `${need.length} covered of ${ALL_ABILITIES.length} abilities`,
   );
 

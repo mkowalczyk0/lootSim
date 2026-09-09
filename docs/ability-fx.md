@@ -103,9 +103,21 @@ ability somebody adds fails this gate rather than silently shipping invisible. I
 *boundary*, not a floor: a melee ability that grows a tracer fails too, because it would
 draw a line across a room it never reached.
 
-That check earned its place on its first run. `corsair.broadside` was missing from the
-hand-built inventory, because that inventory counted an `fx` step as a visual and the
-ultimate has one. The stricter classifier caught it.
+**That check earned its place within a minute of existing, and how it did is the argument
+for writing this kind of check at all: a check that enumerates the table finds what a person
+who has already looked cannot.** `corsair.broadside` — an *ultimate*, range 400, firing a
+spectral broadside across the battlefield and drawing a ring at the caster's feet — was
+missing from a careful hand-built inventory of this exact defect. It was missed because the
+hand inventory counted an `fx` step as a visual and the ultimate has one. The person doing
+the counting had already decided what "has a visual" meant and then applied it consistently;
+the gate walks all 210 and applies the stricter rule without getting tired.
+
+The colour rule has the same shape of reasoning behind it and is worth preserving: the tracer
+takes its colour from **the ability's own damage type, never the caster's gear element**.
+Elemental attunement from gear is the player's business, but the line exists to tell you what
+is about to hurt you — and in co-op it is somebody else's ability coming at you, so the
+caster's gear is exactly the wrong source. Same instinct as the one-hot-accent rule in the
+art guide: the bright thing is the thing you need to read.
 
 **Byte-identical simulation.** `render/` and `ui/` read state and draw; they never mutate
 it. A tracer is emitted from inside `castAbility`, which *is* the simulation, so "it's only
@@ -134,6 +146,11 @@ comparison has gone blind, and the fix is a stronger injection rather than a shr
   snapshot, which is its own decision.
 - **`cast`, `impact`, `ground`, `trail`, `screenShake`, `hitStop`, `cameraEmphasis` and
   `palette` are still unread.** Declared, documented as unread, and available.
+- **The melee cutoff (`range > 90`) is a judgement constant.** It separates the swings and
+  cleaves from the ranged set cleanly today, but an ability authored at range 95 that is
+  really a swing will be asked for a tracer it does not need. That is a documented edge, and
+  the gate's own failure message says so — the fix is to lower that ability's range or to
+  declare it melee explicitly, never to weaken the gate.
 - **The 46 melee and self-targeted abilities that resolve harm with no visual are out of
   scope** and deliberately excluded from the coverage rule. A swing happens on your own
   character where you are already looking. If they ever want a flourish, it is `fx.cast`.
