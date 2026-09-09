@@ -14,7 +14,9 @@
 
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import type { Duplex } from "node:stream";
+// Node types the `upgrade` socket as a bare `Duplex`, but it is always a `net.Socket`
+// — which is where `setNoDelay` lives, and this relay calls it.
+import type { Socket } from "node:net";
 
 import {
   MAX_PARTY, NET_PATH, PROTOCOL_VERSION, randomRoomCode,
@@ -31,7 +33,7 @@ const HEARTBEAT_MS = 15_000;
 interface Peer {
   readonly id: string;
   name: string;
-  readonly socket: Duplex;
+  readonly socket: Socket;
   room: Room | null;
   alive: boolean;
 }
@@ -52,7 +54,7 @@ export function attachRelay(server: Server, log: (msg: string) => void = () => {
   server.on("upgrade", (req, socket, head) => {
     // Anything that isn't ours is left alone: Vite's own HMR socket shares this port.
     if (!isPartyRequest(req)) return;
-    handshake(req, socket as Duplex, head, log);
+    handshake(req, socket as Socket, head, log);
   });
   setInterval(heartbeat, HEARTBEAT_MS).unref?.();
 }
@@ -85,7 +87,7 @@ function isPartyRequest(req: IncomingMessage): boolean {
 
 // --- handshake -------------------------------------------------------------
 
-function handshake(req: IncomingMessage, socket: Duplex, head: Buffer, log: (m: string) => void): void {
+function handshake(req: IncomingMessage, socket: Socket, head: Buffer, log: (m: string) => void): void {
   const key = req.headers["sec-websocket-key"];
   if (typeof key !== "string") {
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
@@ -108,7 +110,7 @@ function handshake(req: IncomingMessage, socket: Duplex, head: Buffer, log: (m: 
 
 function attachFraming(peer: Peer, head: Buffer, log: (m: string) => void): void {
   const socket = peer.socket;
-  let buffer = head.length > 0 ? Buffer.from(head) : Buffer.alloc(0);
+  let buffer: Buffer = head.length > 0 ? Buffer.from(head) : Buffer.alloc(0);
   /** Reassembly for a message split across continuation frames. */
   let fragments: Buffer[] = [];
   let fragmentOp = 0;

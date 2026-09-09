@@ -27,7 +27,6 @@ import {
   UNIVERSAL_ROOT_ID,
   UNIVERSAL_TREE,
   UNIVERSAL_UNLOCKS,
-  canAllocateV2,
   isCrossLinked,
   pathPointsByName,
   pathPointsV2,
@@ -63,17 +62,6 @@ function chainTo(id: string): string[] {
   }
   return out;
 }
-/** Allocate a chain the way the game would, one legal step at a time. */
-function allocateChain(ids: readonly string[]): { allocated: string[]; ok: boolean } {
-  const allocated: string[] = [];
-  for (const id of ids) {
-    const node = byId.get(id)!;
-    if (!canAllocateV2(allocated, node, node.cost)) return { allocated, ok: false };
-    allocated.push(id);
-  }
-  return { allocated, ok: true };
-}
-
 // =========================================================================
 console.log("\n=== 1. the tree is a well-formed DAG ===");
 {

@@ -33,9 +33,9 @@ import {
   resolveBuild,
   spentPointsV2,
   validateUnlockDef,
-  type ResourceSpec,
   type SkillMutation,
 } from "../src/progression/index";
+import type { ResourceSpec } from "../src/combat/resources";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {

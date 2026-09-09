@@ -576,7 +576,7 @@ section("ultimate-meter generation rules are feedable (Cluster 5b)");
   const hero = d.localHero;
   const meter = hero.resources.ultimateMeter()!;
   const mark = hero.player.unlockedAbilities.find((a) => a.id === "assassin.mark_for_death");
-  const e = spawn(d, hero.avatar.x + 40, hero.avatar.y);
+  spawn(d, hero.avatar.x + 40, hero.avatar.y);
   meter.value = 0;
   if (!mark) {
     check("Mark for Death is unlocked", false);
