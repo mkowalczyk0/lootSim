@@ -63,9 +63,13 @@ export const ATLAS: Record<string, AtlasSprite> = {
   //
   // v4 answers all three: one unified charcoal/ash mass, no bright note anywhere, and a
   // plain calm face with small dark eyes. The extra 9 rows of height are what make that
-  // face drawable at all (§17.1's "author larger, for clarity"); 57 is also the tallest
-  // the Hero/Style portrait-spread bound in `tools/smoke.ts` permits — the two composers
-  // scale by whole numbers, and 59+ puts the Style tab over its 12%.
+  // face drawable at all (§17.1's "author larger, for clarity").
+  //
+  // 57 is not the tallest the Hero/Style portrait-spread bound in `tools/smoke.ts` permits;
+  // it is one of a set of legal heights. `portraitScale` rounds to a *whole* factor, so the
+  // spread oscillates instead of growing with height — the bound is a set of windows, not a
+  // maximum, and 59-77 is a dead zone. Don't copy the window list into a comment: `npm run
+  // smoke` derives it and prints it next to the portrait sizes.
   //
   // Footprint unchanged: 57 * 0.5614 = 32, the same height as v1/v2/v3, so no hitbox /
   // telegraph / camera moves. `feet` stays 0.03 because the sliver it describes is
