@@ -1,5 +1,6 @@
 /**
- * Renders every grid in `render/pixels.ts` to a PNG contact sheet.
+ * Renders every grid in `render/pixels.ts`, plus every pipeline prop and floor tileset,
+ * to a PNG contact sheet.
  *
  * There are no binary art assets in this project — the art is string grids — which is
  * lovely right up until you want to *look* at it, at which point the only viewer is the
@@ -9,6 +10,17 @@
  *
  *   npm run art            # writes art-sheet.png
  *   npm run art -- out.png
+ *
+ * Props and tilesets (both pipeline PNGs, not procedural grids) were a gap here until
+ * the Citadel art pass had to hand-compose a one-off sheet just to see its own work —
+ * this file is the fix, not that mockup. The tileset rows are the reason: a floor tile
+ * is meaningless alone, only the *seams* between floor and wall tell you whether a sheet
+ * reads at game zoom, and seams only exist once tiles are stamped by corner mask. So the
+ * tileset section runs the real dual-grid algorithm `render/tilemap.ts#paintTilemap`
+ * uses — same mask math, same uniform-tile orientation flips — reimplemented here on a
+ * raw pixel buffer instead of a canvas, because this tool has no DOM. A tiny fixed test
+ * room (an outer ring plus one floating interior rock) exercises most of the 16 corner
+ * masks without needing a real generated level.
  *
  * The PNG encoder is hand-rolled because pulling in an image library for a debug tool
  * would be the only runtime dependency in the entire project.
@@ -30,11 +42,14 @@ import { NAMED_ITEMS } from "../src/data/named";
 import { RELICS } from "../src/data/relics";
 import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
 import { RARITY_WASH } from "../src/render/itemart";
-import { ATLAS } from "../src/render/atlas/manifest";
+import { ATLAS, TILESETS } from "../src/render/atlas/manifest";
+import { BIOMES } from "../src/data/biomes";
+import { PLANETS } from "../src/data/planets";
+import { FLOOR_GRADE, gradeSheet } from "../src/render/grade";
 import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 2150;
+const H = 4200;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -258,6 +273,113 @@ strip(
     artifactTier.map((d) => decodePng(readFileSync(`src/render/atlas/relics/${d.art}.png`))),
     3, true, 12,
   );
+}
+
+// --- pipeline props (dungeon dressing, hub relics) -------------------------
+//
+// Every `prop.*` row in ATLAS, decoded and blitted for real — the same PNGs `drawProps`
+// and `drawDeckProp` load, not a re-derivation of them. One row, wrapping like every
+// other `stripPng` block; the set spans 22px (a brazier) to 105px (a pillar), so this
+// reads a little denser than the icon rows above, on purpose — a prop earns its keep by
+// standing next to its actual neighbors, not by being pre-sorted into tidy shelves.
+{
+  const propIds = Object.keys(ATLAS).filter((id) => id.startsWith("prop.")).sort();
+  stripPng(
+    propIds.map((id) => decodePng(readFileSync(`src/render/atlas/props/${id}.png`))),
+    2, true, 10,
+  );
+}
+
+// --- floor tilesets, stamped for real ---------------------------------------
+//
+// A single 16px tile tells you almost nothing — the whole point of a corner-Wang sheet
+// is the seam between floor and wall, and a seam only exists once tiles are picked by
+// corner mask and stamped edge to edge. This runs the exact algorithm
+// `render/tilemap.ts#paintTilemap` uses (dual-grid node sampling, the same mask math,
+// the same orientation flip on the two uniform tiles) on a raw pixel buffer instead of
+// a canvas, against a tiny fixed test room rather than a real generated level — an outer
+// ring plus one floating interior rock cell, which between them hit most of the 16
+// corner masks (straight edges, all four outer-corner turns, and all four corners
+// around the floating rock) without needing `game/level.ts`'s generator in a Node tool.
+// Each sheet is graded with the same tint its real callsite uses — the Citadel's own
+// `DECK_TINT` for `tiles.citadel` (duplicated here as a literal rather than imported,
+// since `render/hub.ts` pulls in the browser-only atlas loader and this tool is Node-only
+// — see the `tintFor` comment below), the owning biome's tint for everything else, falling
+// back to the first Delve tint for a sheet nothing has claimed yet.
+{
+  const ROOM_COLS = 11, ROOM_ROWS = 8;
+  const ROCK_X = 5, ROCK_Y = 3; // one floating interior rock cell
+
+  const isRock = (cx: number, cy: number): boolean => {
+    if (cx < 0 || cy < 0 || cx >= ROOM_COLS || cy >= ROOM_ROWS) return true;
+    if (cx === 0 || cy === 0 || cx === ROOM_COLS - 1 || cy === ROOM_ROWS - 1) return true;
+    if (cx === ROCK_X && cy === ROCK_Y) return true;
+    return false;
+  };
+
+  const DECK_TINT = "#3d3a47"; // src/render/hub.ts's own DECK_TINT — see comment above
+  const tintFor = (id: string): string => {
+    if (id === "tiles.citadel") return DECK_TINT;
+    const biome = BIOMES.find((b) => b.tileset === id);
+    if (biome) return biome.tint;
+    for (const p of PLANETS) if (p.biome.tileset === id) return p.biome.tint;
+    return BIOMES[0]!.tint;
+  };
+
+  /** The dual-grid stamp, ported from `paintTilemap` onto a flat RGBA buffer. Returns a
+   *  `DecodedPng`-shaped object so it can go straight through the existing `blitPng`. */
+  function stampRoom(sheetId: string): DecodedPng {
+    const sheet = decodePng(readFileSync(`src/render/atlas/tilesets/${sheetId}.png`));
+    const layout = JSON.parse(
+      readFileSync(`src/render/atlas/tilesets/${sheetId}.json`, "utf8"),
+    ) as { tile: number; boxes: [number, number][] };
+    const graded = new Uint8Array(sheet.rgba);
+    gradeSheet(graded, sheet.width, sheet.height, layout.tile, layout.boxes, tintFor(sheetId), FLOOR_GRADE);
+
+    const tile = layout.tile;
+    const roomW = ROOM_COLS * tile, roomH = ROOM_ROWS * tile;
+    const out = new Uint8Array(roomW * roomH * 4);
+    const seed = 0xC17ADE1;
+    const orient = (nx: number, ny: number): number => {
+      let h = (seed ^ (nx * 374761393) ^ (ny * 668265263)) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+      return h & 3;
+    };
+    const blitTile = (box: readonly [number, number], dx: number, dy: number, flipX: boolean, flipY: boolean): void => {
+      for (let y = 0; y < tile; y++) {
+        for (let x = 0; x < tile; x++) {
+          const sx = box[0] + (flipX ? tile - 1 - x : x);
+          const sy = box[1] + (flipY ? tile - 1 - y : y);
+          const si = (sy * sheet.width + sx) * 4;
+          const dxx = dx + x, dyy = dy + y;
+          if (dxx < 0 || dyy < 0 || dxx >= roomW || dyy >= roomH) continue;
+          const di = (dyy * roomW + dxx) * 4;
+          out[di] = graded[si]!; out[di + 1] = graded[si + 1]!;
+          out[di + 2] = graded[si + 2]!; out[di + 3] = graded[si + 3]!;
+        }
+      }
+    };
+    for (let ny = 0; ny <= ROOM_ROWS; ny++) {
+      for (let nx = 0; nx <= ROOM_COLS; nx++) {
+        const nw = isRock(nx - 1, ny - 1) ? 1 : 0, ne = isRock(nx, ny - 1) ? 1 : 0;
+        const sw = isRock(nx - 1, ny) ? 1 : 0, se = isRock(nx, ny) ? 1 : 0;
+        const mask = (nw << 3) | (ne << 2) | (sw << 1) | se;
+        const box = layout.boxes[mask];
+        if (!box) continue;
+        const dx = nx * tile - tile / 2, dy = ny * tile - tile / 2;
+        if (mask === 0 || mask === 15) {
+          const o = orient(nx, ny);
+          blitTile(box, dx, dy, (o & 1) !== 0, (o & 2) !== 0);
+        } else {
+          blitTile(box, dx, dy, false, false);
+        }
+      }
+    }
+    return { width: roomW, height: roomH, rgba: out };
+  }
+
+  const ids = Object.keys(TILESETS).sort();
+  stripPng(ids.map(stampRoom), 2, true, 14);
 }
 
 // --- PNG ------------------------------------------------------------------
