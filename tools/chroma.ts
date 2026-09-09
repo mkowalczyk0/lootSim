@@ -146,12 +146,20 @@ section("the rule (§1.4): the hero's accent stays below every monster's, one by
  * the four raid bosses; the five original floor-template bosses predate it.
  */
 const KNOWN_ACCENT_VIOLATIONS: readonly string[] = [
-  // boss.warden's 2+-pixel opaque palette has nothing that reads as a lit accent at all —
-  // its own "loudest" colour is #8e6142 (chroma 29.8), a skin/tan value, weaker than the
-  // hero's own legitimate exposed-skin chroma (30.2). Not a single-pixel edge case: that
-  // colour covers 72 pixels. This is §1.4's *other* failure mode ("zero and it's
-  // scenery"), just never counted before now.
-  "boss.warden",
+  // boss.warden was pinned here on this gate's first honest run: its loudest 2+-pixel
+  // colour was #8e6142 (chroma 29.8), a skin/tan value across 72 pixels, weaker than the
+  // hero's own legitimate exposed-skin chroma (30.2). §1.4's *other* failure mode — "zero
+  // and it's scenery" — on one of the five original floor-template bosses, which predate
+  // the accent discipline entirely.
+  //
+  // FIXED, and unpinned deliberately rather than silently (see the note above: fixing a
+  // pin without removing it fails this gate too). `art/bosses/warden-accent.py` lights
+  // four pixels — two two-pixel eyes in the shadow band under the helm rim — at #2ee6a6,
+  // chroma 72.2. Nothing else on the sprite was touched; it was given the one signal it
+  // was missing, not repainted. The Warden's element is `physical`, whose palette entry is
+  // deliberately desaturated, so unlike the Tyrant in `finish.ts` there was no element
+  // colour to lift to and a hue had to be chosen — teal-green, the Warden's own plate hue
+  // at roughly five times its chroma, and unclaimed by any other encounter.
 ];
 
 {
