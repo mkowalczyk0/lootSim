@@ -82,7 +82,23 @@ import type { GameState } from "./state";
 
 // --- tuning ---------------------------------------------------------------
 
-const PLAYER_SPEED = 155;
+/**
+ * Base move speed, before a class's own `moveMult` and any gear. Exported because the
+ * boss-variety gate has to compare `HUNT_SPEED` against the slowest character the roster
+ * can produce, and a mirrored copy of this number in the data layer would be the copy
+ * that drifted.
+ */
+export const PLAYER_SPEED = 155;
+/**
+ * How far a remote body may move between snapshots before it is treated as a teleport
+ * and snapped rather than blended.
+ *
+ * Comfortably above anything that travels: the fastest movement in the game is a boss
+ * gore charge at 640 units/sec, which covers well under this in one snapshot interval,
+ * and comfortably below a `blink`, which never moves less than 320. Between those two
+ * numbers there is nothing, which is what makes a distance test sufficient here.
+ */
+const TELEPORT_SNAP = 200;
 const PLAYER_RADIUS = 9;
 /** The build-tester room's dummy: high enough that a real testing session dents it
  *  visibly without ever running it out — `damageEnemy` clamps it at 1, the same way a
@@ -241,7 +257,15 @@ export interface TelegraphInit {
   hitsPlayer: boolean;
   hitsEnemies: boolean;
   linger: number;
-  followId: number | null;
+  followId: number | null;  /** Hero index to pursue while winding up, and how fast it may travel. Defaults to inert. */
+  chaseId?: number | null;
+  chaseSpeed?: number;
+  /** Circles cut out of the shape: standing in one is not being hit. Defaults to none. */
+  holes?: readonly { readonly x: number; readonly y: number; readonly r: number }[];
+  /** Velocity for the ground zone this leaves behind. Defaults to stationary. */
+  driftVx?: number;
+  driftVy?: number;
+
 }
 
 function emptyKeys(): Record<ChestTier, number> {
@@ -1068,6 +1092,7 @@ export class Dungeon implements CombatHost, RuleHost {
         phase: 0,
         actionTimer: BOSS_ACTION_GAP,
         ability: null,
+        crescendo: 0,
         castTimer: 0,
         castTotal: 0,
         cooldowns: {},
@@ -1275,6 +1300,18 @@ export class Dungeon implements CombatHost, RuleHost {
         body.y = target.y;
         continue;
       }
+      // A jump no legitimate movement could have made in one snapshot is a teleport, and
+      // blending through it would draw the body somewhere it never was. The boss's
+      // `blink` is the only thing that does this today; the check is written against the
+      // distance rather than against a flag on the wire so that anything else that ever
+      // moves discontinuously is handled without the protocol learning about it.
+      if (dist(body.x, body.y, target.x, target.y) > TELEPORT_SNAP) {
+        body.x = target.x;
+        body.y = target.y;
+        body.px = target.x;
+        body.py = target.y;
+        continue;
+      }
       const f = Math.min(1, dt / target.t);
       body.x += (target.x - body.x) * f;
       body.y += (target.y - body.y) * f;
@@ -1351,6 +1388,19 @@ export class Dungeon implements CombatHost, RuleHost {
       }
     }
     return best;
+  }
+
+  /**
+   * Which hero `nearestHero` picked, by index into `heroes`.
+   *
+   * A pursuing telegraph has to remember *who* it is chasing across the whole wind-up,
+   * and it cannot hold the `Hero` itself: the snapshot rebuilds heroes, so an object
+   * reference would go stale in co-op while an index stays correct.
+   */
+  nearestHeroIndex(x: number, y: number): number {
+    const target = this.nearestHero(x, y);
+    const i = this.heroes.indexOf(target);
+    return i >= 0 ? i : 0;
   }
 
   /** The avatar a monster or a boss should be pointing at from where it stands. */
@@ -1597,7 +1647,19 @@ export class Dungeon implements CombatHost, RuleHost {
 
   /** Paints a danger zone. Called by the boss brain, and by the floor for a big hit. */
   addTelegraph(init: TelegraphInit): Telegraph {
-    const t: Telegraph = { ...init, angleOffset: init.angleOffset ?? 0, remaining: init.total };
+    const t: Telegraph = {
+      ...init,
+      angleOffset: init.angleOffset ?? 0,
+      // Every telegraph the game had before `hunt`/`mark`/`sanctuary`/`drift` stays where
+      // it was painted, cuts no holes and leaves nothing that moves, so all four default
+      // to inert and no existing caller changes.
+      chaseId: init.chaseId ?? null,
+      chaseSpeed: init.chaseSpeed ?? 0,
+      holes: init.holes ?? [],
+      driftVx: init.driftVx ?? 0,
+      driftVy: init.driftVy ?? 0,
+      remaining: init.total,
+    };
     this.telegraphs.push(t);
     return t;
   }
@@ -1615,6 +1677,25 @@ export class Dungeon implements CombatHost, RuleHost {
         // The offset is what keeps several blades off one boss from collapsing onto
         // the same facing every time its rotation is refreshed.
         if (t.shape === "cone" || t.shape === "line") t.angle = owner.facing + t.angleOffset;
+      }
+      // A pursuing shape (`hunt`, `mark`). It walks toward its hero at its own speed
+      // rather than reproducing their position, which is what makes it beatable by
+      // moving: outrun it and it lands behind you. `mark` uses a speed high enough to
+      // stick, and is beaten by not standing near anybody rather than by outrunning it.
+      if (t.chaseId !== null) {
+        const hero = this.heroes[t.chaseId];
+        if (hero && hero.alive) {
+          const a = hero.avatar;
+          const dx = a.x - t.x;
+          const dy = a.y - t.y;
+          const away = Math.hypot(dx, dy);
+          const step = t.chaseSpeed * dt;
+          if (away > 0.001) {
+            const travel = Math.min(step, away);
+            t.x += (dx / away) * travel;
+            t.y += (dy / away) * travel;
+          }
+        }
       }
       t.remaining -= dt;
       if (t.remaining > 0) continue;
@@ -1653,6 +1734,7 @@ export class Dungeon implements CombatHost, RuleHost {
     if (t.linger > 0) {
       this.ground.push({
         x: t.x, y: t.y, px: t.x, py: t.y,
+        vx: t.driftVx, vy: t.driftVy,
         radius: t.shape === "line" ? Math.max(40, t.width * 2) : Math.max(30, t.radius * 0.75),
         element: t.element,
         damage: t.damage * GROUND_DAMAGE,
@@ -1678,6 +1760,14 @@ export class Dungeon implements CombatHost, RuleHost {
       if (g.follows !== undefined) {
         const owner = this.heroes[g.follows];
         if (owner) { g.x = owner.avatar.x; g.y = owner.avatar.y; }
+      }
+      // A drifting zone (`drift`) travels on its own, so ground you cleared stops being
+      // a fact about the room. Clamped to the floor rather than bounced: a hazard that
+      // ricocheted would be unpredictable, and the whole ability rests on being able to
+      // read where it is going.
+      if (g.vx || g.vy) {
+        g.x = clamp(g.x + g.vx! * dt, 30, this.width - 30);
+        g.y = clamp(g.y + g.vy! * dt, 30, this.height - 30);
       }
       g.tickTimer -= dt;
       if (g.tickTimer > 0) continue;
@@ -4702,6 +4792,14 @@ export class Dungeon implements CombatHost, RuleHost {
 
 /** Is a body inside a telegraph's danger zone? One test per shape, and that's the game. */
 export function inTelegraph(t: Telegraph, x: number, y: number, r: number): boolean {
+  // Cut-outs first: standing inside one is not being hit, whatever the shape says.
+  // `sanctuary` is the only ability that uses them — the room goes up apart from a few
+  // discs you have to reach. The body has to be *inside* the disc rather than merely
+  // touching it, exactly as a donut's hole has to be entered, so a hair of overlap is
+  // not safety.
+  for (const hole of t.holes) {
+    if (dist(hole.x, hole.y, x, y) + r <= hole.r) return false;
+  }
   switch (t.shape) {
     case "circle":
       return dist(t.x, t.y, x, y) <= t.radius + r;

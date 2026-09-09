@@ -341,8 +341,40 @@ check("the climb has no top", [1, 30, 200].every((h) => !towerConfig(h).lastFloo
 // The encounters are borrowed and reskinned, exactly as a sector's are — so they are
 // audited by the same boss rules `tools/legends.ts` already walks, by being those specs.
 const towerSpecs = [5, 10, 15, 20, 25, 30, 60].map((h) => towerBossSpec(h));
-check("every Tower encounter is a real encounter wearing Heaven's name",
-  towerSpecs.every((spec) => BOSSES.some((b) => b.phases === spec.phases && b.health === spec.health)));
+// This asserted `b.phases === spec.phases` — reference identity — until the Tower's
+// bosses were given their own kits. That was the right check for the code as it stood
+// (`towerBossSpec` spread the template and never touched `phases`, so the object really
+// was shared) and the wrong check for the promise: §21's promise is *no second content
+// pipeline and no second difficulty curve*, not "the ability list is the same array".
+// Reference identity happened to enforce both, and enforcing the second one is what made
+// all five Tower bosses byte-identical fights to the five Delve encounters.
+//
+// So it is split into the two things it was actually standing for. The body and the stat
+// line are still borrowed whole — nothing here is authored from scratch — and the phase
+// *structure* is still the template's, meaning the climb has no difficulty curve of its
+// own. What a Tower boss is now allowed to differ in is which cards it holds.
+check("every Tower encounter borrows a real encounter's body and stat line",
+  towerSpecs.every((spec) => BOSSES.some((b) =>
+    b.health === spec.health && b.damage === spec.damage && b.speed === spec.speed
+    && b.radius === spec.radius && b.sprite === spec.sprite && b.spriteScale === spec.spriteScale)));
+check("no Tower encounter has a difficulty curve of its own — the phase shape is the template's",
+  towerSpecs.every((spec) => BOSSES.some((b) =>
+    b.phases.length === spec.phases.length
+    && b.phases.every((phase, i) => {
+      const mine = spec.phases[i]!;
+      return phase.at === mine.at && phase.haste === mine.haste
+        && phase.speed === mine.speed && phase.addsOnEnter === mine.addsOnEnter;
+    }))));
+// ...and the thing the split makes room for, asserted directly so it cannot quietly
+// regress to a reskin: a Tower encounter must not be ability-for-ability its template.
+check("every Tower encounter fights differently from the Delve encounter it borrows",
+  towerSpecs.every((spec) => !BOSSES.some((b) =>
+    b.phases.length === spec.phases.length
+    && b.phases.every((phase, i) => {
+      const mine = spec.phases[i]!;
+      return phase.abilities.length === mine.abilities.length
+        && phase.abilities.every((id) => mine.abilities.includes(id));
+    }))));
 check("every Tower encounter is holy", towerSpecs.every((s) => s.element === "holy"));
 check("the Tower has five encounters, and the top one holds the Celestial Endgame",
   new Set([5, 10, 15, 20, 25].map((h) => towerBossSpec(h).id)).size === 5

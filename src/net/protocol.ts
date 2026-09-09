@@ -221,7 +221,16 @@ export interface Snapshot {
   readonly p: number[][];
   /** [kindIndex, x, y, value, rarityIndex, elementIndex] */
   readonly k: number[][];
-  /** [shape, x, y, angle, radius, inner, arc, width, remaining, total, colorIndex] */
+  /**
+   * [shape, x, y, angle, radius, inner, arc, width, remaining, total, colorIndex,
+   *  holeCount, (x, y, r) * holeCount]
+   *
+   * The row is variable-length from index 11 on. Only `sanctuary` cuts holes, so every
+   * other telegraph writes a trailing 0 and the row is one number longer than it was —
+   * the cheapest encoding that keeps `tg` a flat `number[][]`. A client that drew a
+   * room-wide sear without its safe discs would be shown a mechanic with no answer,
+   * which is the one thing a telegraph may never be.
+   */
   readonly tg: number[][];
   /** [x, y, radius, colorIndex] */
   readonly g: number[][];

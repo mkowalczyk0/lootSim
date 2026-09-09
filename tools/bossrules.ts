@@ -15,26 +15,15 @@
  * No side effects — importing this runs nothing.
  */
 
-import { BOSS_ABILITIES, type BossAbilityId, type BossSpec } from "../src/data/bosses";
+import { BOSS_ABILITIES, CROSS_ARENA_RANGE, reachesAcross, type BossSpec } from "../src/data/bosses";
 
-/**
- * How far an ability has to be able to touch before it counts as reaching across the
- * arena. The rule it serves is "every phase needs at least one ability that reaches
- * across the arena, or the fight can be beaten by walking backwards", so the test is
- * whether the boss can *choose* the ability while you are far away and still hit you.
- */
-export const CROSS_ARENA_RANGE = 400;
-
-/** Whether one ability can touch a player who is refusing to come closer. */
-export function reachesAcross(id: BossAbilityId): boolean {
-  const a = BOSS_ABILITIES[id];
-  // A pure buff reaches nobody; it is not an answer to a player walking backwards.
-  if (a.damage <= 0 && a.count <= 0) return false;
-  if (a.maxRange < CROSS_ARENA_RANGE) return false;
-  // Centred on the boss and small enough to stand outside of: you can just leave.
-  // Unless it throws something (projectiles, adds) that comes to find you.
-  return !a.onSelf || a.radius >= 300 || a.count > 0;
-}
+// `CROSS_ARENA_RANGE` and `reachesAcross` were written here, and moved into
+// `src/data/bosses.ts` when `variantPhases` needed to refuse a drop that would leave a
+// phase beatable by walking backwards. A tool cannot be imported from `src/`, and a
+// second copy of the predicate in the data layer would have been the copy that got the
+// rule wrong. They are re-exported so every existing importer of this module is
+// unaffected, and so the audit still reads as one file.
+export { CROSS_ARENA_RANGE, reachesAcross };
 
 export interface Violation {
   readonly rule: string;

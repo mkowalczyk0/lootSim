@@ -18,11 +18,13 @@
 
 import { clamp, dist, normalize, TAU } from "../core/math";
 import {
-  BOSS_ABILITIES, BOSS_ACTION_GAP, type BossAbility, type BossAbilityId,
+  BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, type BossAbility, type BossAbilityId,
 } from "../data/bosses";
 import { ELEMENT_COLORS } from "../data/elements";
+import { raidThreatRate } from "../data/raids";
+import { resolveCircle } from "./level";
 import type { Dungeon } from "./dungeon";
-import type { Enemy } from "./entities";
+import type { BossState, Enemy } from "./entities";
 
 /** Shortest wind-up a deep floor is allowed to squeeze an ability down to. */
 const MIN_CAST = 0.45;
@@ -40,6 +42,44 @@ const ENRAGE_HASTE_MULT = 0.7;
  * be told explicitly which abilities want the multi-instance treatment.
  */
 const MULTI_INSTANCE: ReadonlySet<BossAbilityId> = new Set(["windmill", "starLance", "wall"]);
+
+/**
+ * What safe ground is drawn in. Not the boss's element, deliberately: every other
+ * telegraph in the game is painted in the colour of the thing that is about to hurt you,
+ * so a `sanctuary` disc has to read as the opposite of one at a glance.
+ */
+const SAFE_COLOR = "#dff3e0";
+
+/** A `mark` sticks rather than pursues: it is beaten by separation, not by running. */
+const MARK_CHASE_SPEED = 4000;
+/** The gap between `judgment`'s two beats, and how much shorter the second tell is. */
+const JUDGMENT_BEAT_GAP = 0.55;
+const JUDGMENT_SECOND_CAST = 0.6;
+/** How far a `drift` field travels per second once it is down. */
+const DRIFT_SPEED = 46;
+/**
+ * A `crescendo` stack's haste and damage, and the most stacks that can ever land.
+ *
+ * The cap is the ability's own rule ("cannot be outlasted" still has to stop short of a
+ * rotation that overlaps its own wind-ups) and it is deliberately low: at four stacks the
+ * gap between casts is 0.82 of its base, which is pressure a good player can still read.
+ */
+const CRESCENDO_HASTE_PER = 0.952;
+const CRESCENDO_DAMAGE_PER = 1.06;
+const CRESCENDO_MAX = 4;
+/**
+ * How big a `sanctuary` disc is, and how far from the body the guaranteed near one may
+ * land. Big enough for a party to share one; small enough that reaching it is a decision.
+ */
+export const SANCTUARY_DISC_RADIUS = 74;
+export const SANCTUARY_NEAR_REACH = 120;
+/**
+ * The closest a *scattered* disc may land. Strictly greater than `SANCTUARY_NEAR_REACH`,
+ * which is what makes "one disc is always near the body" a comparison rather than a hope
+ * — `tools/bossvariety.ts` asserts the relationship, so nudging either number in the
+ * wrong direction turns the ability back into a flat melee-uptime tax and goes red.
+ */
+export const SANCTUARY_FAR_MIN = 280;
 
 /**
  * Advances one boss. Returns true when the brain has taken over movement for this tick,
@@ -163,8 +203,98 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
   const element = b.spec.element;
   const victim = d.aimAvatar(e.x, e.y);
   const toPlayer = Math.atan2(victim.y - e.y, victim.x - e.x);
-  const damage = e.damage * ability.damage * b.buffDamageMult;
+  const damage = e.damage * ability.damage * b.buffDamageMult * crescendoDamage(b);
   const instances = Math.max(1, ability.count || 1);
+
+  // --- the abilities that paint something the generic path cannot express ------
+
+  // `sanctuary`: the room goes up apart from a few discs you have to reach. One sear
+  // with holes cut in it, plus a marker per disc so the safe ground is *visible* — the
+  // sear alone would be a mechanic whose answer the player cannot see.
+  if (ability.id === "sanctuary") {
+    const discs = sanctuaryDiscs(d, e, ability);
+    for (const disc of discs) {
+      d.addTelegraph({
+        shape: "circle", x: disc.x, y: disc.y, angle: 0,
+        radius: disc.r, inner: 0, arc: 0, width: 0,
+        total: cast, damage: 0, element, color: SAFE_COLOR,
+        // A marker, not a hit. It exists to be looked at.
+        hitsPlayer: false, hitsEnemies: false, linger: 0, followId: null,
+      });
+    }
+    d.addTelegraph({
+      shape: "circle", x: e.x, y: e.y, angle: 0,
+      radius: ability.radius, inner: 0, arc: 0, width: 0,
+      total: cast, damage, element, color: ELEMENT_COLORS[element],
+      hitsPlayer: true, hitsEnemies: true, linger: 0, followId: e.id,
+      holes: discs,
+    });
+    return;
+  }
+
+  // `hunt`: one circle that walks toward the player for the whole wind-up. It starts on
+  // them, so standing still is standing in it; it moves at a fraction of the slowest
+  // class's speed, so walking away in any direction beats it.
+  if (ability.id === "hunt") {
+    d.addTelegraph({
+      shape: "circle", x: victim.x, y: victim.y, angle: 0,
+      radius: ability.radius, inner: 0, arc: 0, width: 0,
+      total: cast, damage, element, color: ELEMENT_COLORS[element],
+      hitsPlayer: true, hitsEnemies: true, linger: ability.linger, followId: null,
+      chaseId: d.nearestHeroIndex(e.x, e.y),
+      chaseSpeed: HUNT_SPEED,
+    });
+    return;
+  }
+
+  // `mark`: a sticky circle on every living hero, and on a few of the bodies nearest
+  // them. They all land together, so standing where two overlap means taking both —
+  // there is no special damage rule, just the ordinary resolve counting you twice.
+  if (ability.id === "mark") {
+    for (let i = 0; i < d.heroes.length; i++) {
+      const hero = d.heroes[i]!;
+      if (!hero.alive) continue;
+      d.addTelegraph({
+        shape: "circle", x: hero.avatar.x, y: hero.avatar.y, angle: 0,
+        radius: ability.radius, inner: 0, arc: 0, width: 0,
+        total: cast, damage, element, color: ELEMENT_COLORS[element],
+        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: null,
+        chaseId: i, chaseSpeed: MARK_CHASE_SPEED,
+      });
+    }
+    // The adds get marked too, which is what makes this a mechanic solo: a summoned body
+    // becomes something to stand away from rather than only something to kill.
+    const nearby = d.enemies
+      .filter((other) => !other.boss && other.state !== "spawning")
+      .sort((a, b) => dist(a.x, a.y, victim.x, victim.y) - dist(b.x, b.y, victim.x, victim.y))
+      .slice(0, Math.max(0, ability.count));
+    for (const other of nearby) {
+      d.addTelegraph({
+        shape: "circle", x: other.x, y: other.y, angle: 0,
+        radius: ability.radius, inner: 0, arc: 0, width: 0,
+        total: cast, damage, element, color: ELEMENT_COLORS[element],
+        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: other.id,
+      });
+    }
+    return;
+  }
+
+  // `drift`: the field lands on the player and then keeps going the way it was already
+  // heading — outward from the boss, through where the player was standing. The heading
+  // is decided here rather than at resolve time on purpose: the direction has to be
+  // readable during the wind-up, or the ability is a surprise rather than a mechanic.
+  if (ability.id === "drift") {
+    const heading = toPlayer;
+    d.addTelegraph({
+      shape: "circle", x: b.aimX, y: b.aimY, angle: heading,
+      radius: ability.radius, inner: 0, arc: 0, width: 0,
+      total: cast, damage, element, color: ELEMENT_COLORS[element],
+      hitsPlayer: true, hitsEnemies: true, linger: ability.linger, followId: null,
+      driftVx: Math.cos(heading) * DRIFT_SPEED,
+      driftVy: Math.sin(heading) * DRIFT_SPEED,
+    });
+    return;
+  }
 
   // A fan of cones or a cross of lines, more instances than one telegraph can express.
   // Each carries a fixed offset from wherever the boss ends up facing, so the gaps
@@ -239,12 +369,17 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
   b.ability = null;
   const phase = b.spec.phases[b.phase]!;
   // An enrage buys a tighter rotation on top of whatever the phase already asks for.
-  b.actionTimer = BOSS_ACTION_GAP * phase.haste * d.profile.aggression * b.buffHasteMult;
+  // A raid boss asks a party more questions rather than harder ones — the third lever in
+  // `docs/raid-party-scaling.md`, scoped to raids and exactly 1 solo. The wind-up is
+  // untouched; only the gap between casts shrinks.
+  b.actionTimer = BOSS_ACTION_GAP * phase.haste * d.profile.aggression * b.buffHasteMult
+    * crescendoHaste(b)
+    * (d.config.raid ? raidThreatRate(d.config.players ?? 1) : 1);
   if (!id) return;
 
   const ability = BOSS_ABILITIES[id];
   const element = b.spec.element;
-  const damage = e.damage * ability.damage * b.buffDamageMult;
+  const damage = e.damage * ability.damage * b.buffDamageMult * crescendoDamage(b);
 
   switch (id) {
     case "volley": {
@@ -278,6 +413,71 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
       d.emit({ kind: "shake", amount: 10 });
       break;
     }
+    case "blink": {
+      // The body leaves, and the space it was standing in collapses behind it. The
+      // telegraph was painted following the boss, so it has already tracked to wherever
+      // the boss was at the end of the wind-up — it resolves there, and the boss is
+      // somewhere else by the time it does.
+      //
+      // It lands across the arena from where the player is rather than at random: a
+      // blink that rolled a spot next to you would sometimes be a free gap-closer and
+      // sometimes nothing, which is not a mechanic either way.
+      const away = d.aimAvatar(e.x, e.y);
+      const angle = Math.atan2(e.y - away.y, e.x - away.x) + d.rng.range(-0.7, 0.7);
+      const reach = d.rng.range(320, 520);
+      const spot = resolveCircle(
+        d.level,
+        clamp(away.x + Math.cos(angle) * reach, 60, d.width - 60),
+        clamp(away.y + Math.sin(angle) * reach, 60, d.height - 60),
+        e.radius,
+      );
+      e.x = spot.x;
+      e.y = spot.y;
+      // A teleport is the one movement in the game that must not be interpolated. The
+      // renderer lerps every body from `px`/`py` to `x`/`y` (`lerpBody` in
+      // `render/draw.ts`), and `updateEnemies` captured `px` at the top of this tick —
+      // so without this the boss is drawn sliding across the arena for a frame instead
+      // of being gone. `net/sync.ts` has the same problem over a longer window and
+      // `advanceRemote` handles it there.
+      e.px = e.x;
+      e.py = e.y;
+      d.emit({ kind: "nova", x: e.x, y: e.y, radius: 120 });
+      d.emit({ kind: "shake", amount: 10 });
+      break;
+    }
+    case "drift": {
+      // The telegraph left a lingering field behind it (`linger` on the ability), and
+      // `resolveTelegraph` copies `driftVx`/`driftVy` into it — so the work here is
+      // already done and this exists only to shake the screen. The velocity was decided
+      // when the shape was painted, in `paintTelegraph`, because the direction has to be
+      // readable during the wind-up rather than sprung at the end.
+      d.emit({ kind: "shake", amount: 7 });
+      break;
+    }
+    case "judgment": {
+      // The second beat: same ground, a moment later, with a shorter tell. A dash still
+      // beats it outright — spend one on the first beat and you are standing in the
+      // second on an empty dodge, which is the entire point.
+      const second = Math.max(MIN_CAST, JUDGMENT_SECOND_CAST * Math.max(0.7, d.profile.telegraph));
+      d.addTelegraph({
+        shape: "circle", x: b.aimX, y: b.aimY, angle: 0,
+        radius: ability.radius, inner: 0, arc: 0, width: 0,
+        total: second + JUDGMENT_BEAT_GAP,
+        damage, element, color: ELEMENT_COLORS[element],
+        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: null,
+      });
+      d.emit({ kind: "shake", amount: 8 });
+      break;
+    }
+    case "crescendo": {
+      // A ratchet, not a window. Unlike `enrage` there is no timer on this and it never
+      // comes back down; what stops it is the cap, because a rotation short enough to
+      // overlap its own wind-ups would break the promise that a landed hit was readable.
+      b.crescendo = Math.min(CRESCENDO_MAX, b.crescendo + 1);
+      d.emit({ kind: "nova", x: e.x, y: e.y, radius: 160 });
+      d.emit({ kind: "shake", amount: 12 });
+      break;
+    }
     case "enrage": {
       // Ancient Resolve: no hit of its own, just a harder and faster rotation for the
       // next few seconds. The tell is the fight itself speeding up.
@@ -292,7 +492,8 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
       // Everything else was entirely the telegraph's job.
       d.emit({
         kind: "shake",
-        amount: id === "quake" || id === "ringOut" || id === "windmill" || id === "wall" || id === "starLance"
+        amount: id === "quake" || id === "ringOut" || id === "windmill" || id === "wall"
+          || id === "starLance" || id === "sunder" || id === "sanctuary"
           ? 12 : 5,
       });
       break;
@@ -321,4 +522,58 @@ function dropMeteor(d: Dungeon, e: Enemy): void {
     linger: ability.linger,
     followId: null,
   });
+}
+
+
+/**
+ * Where a `sanctuary`'s safe discs go.
+ *
+ * **One is always placed near the body**, and that is not a nicety. Safe ground that is
+ * always far from the boss is a uniform melee-uptime tax wearing the costume of a
+ * mechanic — the same failure the `hunt` ability was designed around (see `REGARD_HOLD`
+ * in `data/traps.ts` for the measured version of that mistake). Putting one disc in the
+ * boss's lap means a melee player's answer is "stay roughly where you are" and a ranged
+ * player's is "come in or run to the far one", which costs both of them something
+ * different and neither of them everything.
+ *
+ * The rest are scattered across the arena, pushed out of walls so a disc is never drawn
+ * inside rock the player cannot stand in.
+ */
+function sanctuaryDiscs(
+  d: Dungeon, e: Enemy, ability: BossAbility,
+): { x: number; y: number; r: number }[] {
+  const out: { x: number; y: number; r: number }[] = [];
+  const r = SANCTUARY_DISC_RADIUS;
+  const count = Math.max(1, ability.count);
+
+  const near = resolveCircle(
+    d.level,
+    clamp(e.x + d.rng.range(-1, 1) * SANCTUARY_NEAR_REACH, 60, d.width - 60),
+    clamp(e.y + d.rng.range(-1, 1) * SANCTUARY_NEAR_REACH, 60, d.height - 60),
+    r,
+  );
+  out.push({ x: near.x, y: near.y, r });
+
+  for (let i = 1; i < count; i++) {
+    const angle = d.rng.angle();
+    const reach = d.rng.range(SANCTUARY_FAR_MIN, 560);
+    const spot = resolveCircle(
+      d.level,
+      clamp(e.x + Math.cos(angle) * reach, 60, d.width - 60),
+      clamp(e.y + Math.sin(angle) * reach, 60, d.height - 60),
+      r,
+    );
+    out.push({ x: spot.x, y: spot.y, r });
+  }
+  return out;
+}
+
+/** The permanent haste a crescendo has ratcheted on. Multiplies the gap between casts. */
+function crescendoHaste(b: BossState): number {
+  return Math.pow(CRESCENDO_HASTE_PER, b.crescendo);
+}
+
+/** The permanent damage a crescendo has ratcheted on. */
+function crescendoDamage(b: BossState): number {
+  return Math.pow(CRESCENDO_DAMAGE_PER, b.crescendo);
 }

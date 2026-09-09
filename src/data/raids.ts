@@ -257,7 +257,13 @@ export const RAIDS: readonly RaidSpec[] = [
     // army firing on a position.
     templateId: "choir",
     sprite: "bossTyrant",
-    signature: ["starLance", "wall", "summon", "ringOut"],
+    // The doc's own list for this fight: angelic armies, giant celestial weapons, divine
+    // judgment attacks, battlefield-wide celestial abilities. Read straight off it —
+    // `summon` is the armies, `starLance` the celestial weapons, `sanctuary` the divine
+    // judgment (the room is found wanting apart from the ground it spares), and
+    // `judgment` the sentence pronounced twice on the same spot. It has been arguing
+    // since it was thrown out; it does not say a thing only once.
+    signature: ["sanctuary", "judgment", "starLance", "summon", "wall", "ringOut"],
     finalPhase: "The Argument, Concluded",
     biome: THE_FIRST_HEAVENS,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -278,7 +284,19 @@ export const RAIDS: readonly RaidSpec[] = [
     // standing in. A labyrinth is corridors.
     templateId: "colossus",
     sprite: "bossLabyrinth",
-    signature: ["wall", "charge", "meteor", "beam"],
+    // The doc asks for moving walls, multiple maze layouts, false exits, players becoming
+    // separated, and the boss appearing in different parts of the maze. Four of those five
+    // are now sayable: `sunder` cuts the room in half and leaves the cut standing, which
+    // is a wall that was not there before; `blink` is the body appearing somewhere else
+    // without crossing the floor between; `mark` is players being told apart and made to
+    // stand away from each other. `charge` stays because a labyrinth is corridors.
+    //
+    // The fifth — the arena itself relaying between layouts mid-fight — is deliberately
+    // not attempted: level geometry is the collision volume *and* the tile lattice *and*
+    // what the flow field is rebuilt against, so a room that rearranges itself is a change
+    // to `level.ts`'s hardest promise and not a boss ability. `sunder` is the honest
+    // subset of it, and it is a real one.
+    signature: ["sunder", "blink", "mark", "charge", "beam"],
     finalPhase: "No Further Turns",
     biome: THE_NINTH_LABYRINTH,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -299,7 +317,23 @@ export const RAIDS: readonly RaidSpec[] = [
     // raid borrows the shallowest kit; its signature is what makes it a river.
     templateId: "warden",
     sprite: "bossFerryman",
-    signature: ["beam", "corruption", "ringOut", "summon"],
+    // The Styx running through three realms at once, and a boat still being poled through
+    // all of them. `drift` is the river: the one hazard in the game whose ground travels
+    // after it lands, so safe footing is never a fact you can file away. `hunt` is the
+    // fare being collected — slow, certain, and it does not care where you go, only that
+    // you keep going. `corruption` is the water it leaves behind and `summon` the souls it
+    // is still trying to carry.
+    //
+    // The shallowest raid, and the only one whose signature is built entirely out of
+    // pressure rather than punishment: nothing here is a big hit. It is the fight that
+    // never lets you stand anywhere.
+    // `beam` is kept from the original signature deliberately, and the A/B is the reason:
+    // dropping it for `drift` + `hunt` took the Ferryman from 9/16 wins to 15/16 across
+    // sixteen seeds. Swapping a 3.5-damage line for two abilities that are mostly
+    // *pressure* is card-count-neutral and threat-negative, which is a live difficulty
+    // cut to a shipped raid wearing a variety commit's clothes. The pole is a line across
+    // the water; it stays.
+    signature: ["drift", "hunt", "beam", "corruption", "summon", "ringOut"],
     finalPhase: "Both Banks At Once",
     biome: THE_CROSSING,
     baseDepth: 12, depthPerTier: 2.0, dangerPerTier: 1.15,
@@ -320,7 +354,14 @@ export const RAIDS: readonly RaidSpec[] = [
     // fire. A war goddess is that, with more of it arriving at once.
     templateId: "herald",
     sprite: "bossWarQueen",
-    signature: ["volley", "starLance", "meteor", "backlash"],
+    // A war goddess assembled out of every tradition's leftovers, holding the circle where
+    // the violent are kept. Her signature is *everything at once*, which is what "every war
+    // anybody prayed about, answered simultaneously" has to mean mechanically: `crescendo`
+    // is the only ability in the game that never comes back down, so the longer the prayer
+    // goes on the louder it gets, and there is no waiting it out. `volley`, `starLance` and
+    // `meteor` are the answers arriving, and `backlash` is what standing in front of her
+    // costs while they do.
+    signature: ["crescendo", "volley", "starLance", "meteor", "backlash"],
     finalPhase: "The Prayer Answered",
     biome: THE_SEVENTH_CIRCLE,
     baseDepth: 16, depthPerTier: 2.2, dangerPerTier: 1.17,
@@ -469,6 +510,68 @@ export function raidBossSpec(spec: RaidSpec): BossSpec {
     phases: raidPhases(spec, template),
   };
 }
+
+// --- threat rate: the third lever -------------------------------------------
+
+/**
+ * How much faster a raid boss's rotation runs for a party of this size.
+ *
+ * `docs/raid-party-scaling.md` measured the problem and rejected two fixes for it. The
+ * problem: **a growing party dilutes threat.** A raid boss is one body running one
+ * rotation, so it delivers a roughly fixed amount of danger per second no matter how many
+ * people are standing in the room — and that danger is then divided among them. Measured
+ * on the shipped `partyScale`, damage taken *per player* nearly halves from solo to a full
+ * party on the Ferryman at tier 1, while a fight already past the party's power just gets
+ * bloodier without getting more winnable.
+ *
+ * Health scaling was tried and failed (a longer fight is not a harder one, it is the same
+ * fight for longer). Damage scaling was tried and failed (it makes a caught telegraph a
+ * one-shot without making the fight ask more of anybody). Both are in that document.
+ *
+ * This is the third lever and the one that actually names the measured problem: if the
+ * complaint is *danger per second, divided*, then the answer is *more seconds' worth of
+ * danger*. The rotation runs faster, so a party of four is asked more questions than a
+ * solo player is, rather than the same questions with more people available to answer
+ * each one.
+ *
+ * Three things it deliberately does not do:
+ *
+ * - **It does not touch the wind-up.** Only the gap *between* casts shrinks. Every
+ *   telegraph is exactly as long and exactly as readable as it is solo, which is the one
+ *   rule none of this may cost. A boss with a short gap stands and casts almost
+ *   continuously, and since a cast locks the body, that is still the window to hit it.
+ * - **It is not a second difficulty curve.** It multiplies the same `BOSS_ACTION_GAP` the
+ *   one rotation already uses, and it is exactly 1 at one player — so nothing about a solo
+ *   raid moves, and `tools/raids.ts`'s same-depth-same-danger comparison against a Delve
+ *   floor is untouched (that check always runs at the default `players: 1`).
+ * - **It does not pay more.** `danger` is not involved, so §16's reward curve never sees
+ *   it. A party is asked more; it is not paid more for being a party.
+ *
+ * **Scoped to raids and only raids.** The Delve's own boss floors are the same *shape* of
+ * encounter and are shipped and played; retuning their co-op difficulty is a live balance
+ * change needing the owner's sign-off, and `docs/raid-party-scaling.md` already declined
+ * to extend its finding there for the same reason.
+ */
+export function raidThreatRate(players: number): number {
+  const n = Math.max(1, Math.floor(players));
+  if (n <= 1) return 1;
+  // Sub-linear on purpose. Fully linear (1/n) would hold damage-per-player exactly
+  // constant on paper, but a party genuinely does bring something a solo player does not
+  // — revives, and the ability to be in two places — so charging the full headcount would
+  // make a party strictly worse than the sum of its players. `RAID_THREAT_PER_PLAYER` is
+  // the share of a headcount actually charged, and the measurement is what set it.
+  return Math.max(RAID_THREAT_FLOOR, 1 / (1 + RAID_THREAT_PER_PLAYER * (n - 1)));
+}
+
+/** How much of each extra player's headcount is charged back as rotation speed. */
+export const RAID_THREAT_PER_PLAYER = 0.42;
+/**
+ * The tightest the threat-rate term alone may squeeze the gap between casts.
+ *
+ * Separate from `RAID_HASTE_FLOOR`, which floors the *phase*'s haste — this floors the
+ * party term on top of it, so the two cannot multiply into a rotation with no gap at all.
+ */
+export const RAID_THREAT_FLOOR = 0.45;
 
 // --- the run ----------------------------------------------------------------
 

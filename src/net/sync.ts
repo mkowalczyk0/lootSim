@@ -272,6 +272,9 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       SHAPES.indexOf(t.shape), Math.round(t.x), Math.round(t.y), r2(t.angle),
       Math.round(t.radius), Math.round(t.inner), r2(t.arc), Math.round(t.width),
       r2(t.remaining), r2(t.total), ELEMENTS.indexOf(t.element),
+      // Holes, flattened: a count and then three numbers each. Almost always just a 0.
+      t.holes.length,
+      ...t.holes.flatMap((h) => [Math.round(h.x), Math.round(h.y), Math.round(h.r)]),
     ]),
     g: d.ground.map((g) => [
       Math.round(g.x), Math.round(g.y), Math.round(g.radius), ELEMENTS.indexOf(g.element), r2(g.remaining),
@@ -542,6 +545,9 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         ability: s.b.ab === "" ? null : (s.b.ab as BossAbilityId),
         castTimer: s.b.c, castTotal: s.b.ct,
         cooldowns: {}, aimX: 0, aimY: 0,
+        // The client never runs the rotation, so a crescendo's ratchet is the host's
+        // bookkeeping and reaches the client as the haste it already sees in the fight.
+        crescendo: 0,
         chargeTimer: 0, chargeVx: 0, chargeVy: 0,
         pendingDrops: 0, dropTimer: 0,
         buffTimer: 0, buffDamageMult: 1, buffHasteMult: 1,
@@ -638,6 +644,14 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
   d.telegraphs.length = 0;
   for (const w of s.tg) {
     const element = ELEMENTS[w[10]!] ?? "physical";
+    // Index 11 is the hole count, then three numbers each. An older host sends a row
+    // that stops at 11, which reads as no holes — the same thing every telegraph but a
+    // `sanctuary` means.
+    const holes: { x: number; y: number; r: number }[] = [];
+    for (let i = 0; i < (w[11] ?? 0); i++) {
+      const at = 12 + i * 3;
+      holes.push({ x: w[at] ?? 0, y: w[at + 1] ?? 0, r: w[at + 2] ?? 0 });
+    }
     d.telegraphs.push({
       shape: SHAPES[w[0]!] ?? "circle",
       x: w[1]!, y: w[2]!, angle: w[3]!, angleOffset: 0,
@@ -645,6 +659,10 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
       remaining: w[8]!, total: w[9]!,
       damage: 0, element, color: ELEMENT_COLORS[element],
       hitsPlayer: true, hitsEnemies: false, linger: 0, followId: null,
+      // The client draws; it never resolves a telegraph, so pursuit and drift are the
+      // host's business and arrive as position updates in the next snapshot anyway.
+      chaseId: null, chaseSpeed: 0, holes,
+      driftVx: 0, driftVy: 0,
     });
   }
 
