@@ -330,6 +330,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "The Name It Kept",
     flavor: "It has no name. It kept everyone else's.",
     description: "Everything you kill rises for a few seconds and fights for you.",
+    art: "relic.the-name-it-kept",
     effects: [
       {
         kind: "grantEffect", on: { event: "kill" },
@@ -344,6 +345,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Silence Between Sentences",
     flavor: "You should not have come this far. Nothing saw you.",
     description: "You are hard to hit, and every hit you avoid blinds everything near you and drops you out of sight.",
+    art: "relic.silence-between-sentences",
     effects: [
       { kind: "mods", mods: { evasion: 0.1 } },
       {
@@ -364,6 +366,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Sandals of the Swift Messenger",
     flavor: "Delivered. Eventually.",
     description: "You move faster, and you carry a second dodge.",
+    art: "relic.sandals-of-the-swift-messenger",
     effects: [
       { kind: "mods", mods: { moveSpeed: 0.1, dashCharges: 1 } },
       {
@@ -381,6 +384,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Remnant of What Was Not",
     flavor: "It erases distinctions. Yours included.",
     description: "Everything you do is three smaller things: two more projectiles, wider arcs, each hit at six-tenths.",
+    art: "relic.remnant-of-what-was-not",
     effects: [
       {
         kind: "mutate",
