@@ -21,7 +21,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 1 — Fix existing systems | MP, ultimate exploit, progression rebalance, monster scaling | done |
 | 2 — Improve core combat | monster variety, affixes, elites, challenger rebalance | done |
 | 3 — Floor completion loop | clear condition, elite quota, completion portal, extraction penalty | done |
-| 4 — UI | stash, item images, hero screen | done (item PNG pass still outstanding) |
+| 4 — UI | stash, item images, hero screen | **done** — all 42 item/relic/artifact icons painted |
 | 5 — Universal progression | universal skill tree | done |
 | 6 — Endgame foundation | class-completion boss, gold border, daily, weekly, reward previews | **done** |
 | 7 — Named item architecture | modular definitions, images, drop tables, previews | **done** |
@@ -54,7 +54,7 @@ Chunks 1–5 are effectively complete. The live front is Chunks 6–9.
 | 18 | Universal skill tree | done | `progression/universal.ts`, 6 paths, account-wide pool / per-class allocation. `universal-tree.md`. |
 | 19 | Relics & artifacts | **done** | `src/data/relics.ts` + `tools/relics.ts` (~330 checks). A relic is a tree node you wear — same `NodeEffect` vocabulary, no third effect language. 3 slots, **at most 1 relic-tier worn** (`MAX_RELICS_WORN`, an owner-overturnable constant), artifacts fill the rest. 12 relics / 18 artifacts, 2 stat sticks. Artifacts 100% Abyssal per §19; relics from the Proving (by element), the Nameless, the depth-30 cache and Abyss tier 8+. `raid`/`tower` source kinds reserved and refused as an item's only source. Shared table in `src/data/drops.ts`. See `docs/relics.md`. |
 | 20 | Endgame drop previews | **done** | `feat/drop-previews`. `src/data/previews.ts` + `tools/previews.ts`, wired into `npm test`. Every commit screen (Dive, Rifts, Star Map, Vigil, Path) renders one `previewForRun`. Holds **no** table of its own: reads `namedMatchesFor`, `namedDropChance`, `bossSpecForRun` and the `RunMode`. The gate proves the preview lists exactly what the sim's own `rollNamedDrops` can produce, dice rigged, across 13 activities. §17's "clear rewards preview" and §19's "where does this drop?" are the same read. See `docs/drop-previews.md`. |
-| 21 | Titan rush / tower | **done** (reward axis pending) | `src/data/tower.ts` — the ascending counterpart to the Delve. Endless, every fifth height a boss, through the **one** curve: `tools/world.ts` asserts height N and depth N give identical enemy stats across 1–60, so a second curve cannot be added quietly. Holy throughout, Celestial Hierarchy roster, five borrowed encounters. Bone-gold portal at deepest depth 5; height records structurally separate from depth (`recordDepth` dispatches to `recordHeight` first), and the **frontier** — the further ladder — is what the universal pool and both ilvl sites read. Remaining: the regard trap and the drop/holy-mod commit. |
+| 21 | Titan rush / tower | **done** (reward commit in flight) | `src/data/tower.ts`. Endless ascent through the **one** curve (`tools/world.ts` pins height N == depth N across 1–60). Holy roster, five borrowed encounters, bone-gold portal at deepest depth 5, height records structurally separate from depth. The **regard ward** is its unique mechanic: no cycle, marks ground under anyone still for 0.8s inside 170u, sears 0.85s later. Hold time measured (`npm run regard`), not assumed — see findings. Tilesets deliberately undeclared and **unassigned**; floors fall back to a flat fill in the §6 palette. |
 | 22 | Rifts / war concept | **done** | One field, not a system: every `RunMode` carries `lore` beside `blurb` — mechanics stay in `blurb`, the world's reason lives in `lore`. Six lines, all quotation from `game_story_worldbuilding.md`. Reaches the player on every Dive/Rifts/StarMap/Vigil/Convergence aside and on each hub portal via `stationLore`. Checked in `tools/previews.ts`: lore must name the war, differ from the blurb, avoid payout words and hardcode no keys. |
 | 23 | Planets / materials layers | **done** | `src/data/layers.ts` — four bands down (Surface / Deep Delve / Hell Layers / Hell Endgame), three up (Tower Base / Heaven Layers / Celestial Endgame), three off both ladders. Every run answers "where in the war am I" via `DepthProfile.layer`; nothing in the sim *reads* a layer, it is legibility not mechanics. Band edges sit on depths `biomeFor` already changes at. Also widens the Reliquary — a sector opens on its ladder OR the account frontier — with monotonicity in the frontier asserted, so no existing save can lose access. `tools/world.ts` in `npm test`. |
 | 24 | Forge overhaul | **done** | The Reforge grid became a workbench: Temper, Recast, Augment, Inscribe, Awaken, Ascend, Salvage. `src/game/forge.ts` + `tools/forge.ts` in `npm test`. Inscribe *rolls* the grant from the pool rather than letting you pick it — a deterministic choice would collapse every character onto the strongest grant. See `docs/forge.md`. |
@@ -275,3 +275,28 @@ Reproduced (duelist, depth 20, seed 72231); in a browser it ends the run. Being 
   `t` along it is the whole story — but nothing on the client ever turned `t` back into a
   position. Found while mapping the trap wire for the Tower's regard ward, which needs the
   same derivation and would otherwise have shipped the bug twice.
+
+**Three of the Forge's eight essences charged real material and did nothing.** Live defect,
+not a missing feature. The Craft screen cycles all eight `MAGIC_ELEMENTS`; `craftItem`
+charges `craftEssenceCost` in that element's material and passes `favorElement`; `rollMods`
+favours by *filtering the pool for* `dmg-<e>`/`res-<e>` *and tripling what it finds* — and
+`MOD_POOL`'s elemental block was built from `LOOT_ELEMENTS` only. So for holy, arcane and
+nature the filter found nothing, the tripling multiplied nothing, and the roll was
+bit-for-bit what spending no essence would give. A Gilt Reliquary is a farmed
+planet/Reliquary drop. Same root cause made every Tower holy variant drop inert.
+
+Fixed by authoring the reserved three through the same `elementalMods(e)` the loot elements
+use — identical numbers by construction, so "kept out of the pool" cannot quietly also mean
+"worse" — exported as `RESERVED_ELEMENTAL_MODS`, *not* in `MOD_POOL`, spliced in only when
+`favorElement` names that element. Measured over 4000 epic rings: holy went 0.0% unfavoured
+/ 0.0% favoured to 0.0% / 47.3%, against fire's 16.4% / 50.1%. Both halves matter — the
+essence works, and an ordinary drop still never rolls holy.
+
+**The regard ward's hold time: the measurement contradicted the approved remedy.** The
+ranged tax is real (×1.29 marks per minute in reach) but *lengthening the hold makes it
+monotonically worse* — ×1.49 at 0.55s, ×1.29 at 0.80s, ×2.71 at 1.10s, ×2.67 at 1.40s.
+Melee stillness is many short pauses (still ~40% of the time, markable ~13%); ranged
+stillness is one long park (still ~67%, markable ~50%), so a longer hold filters out exactly
+the short melee pauses and leaves the long ranged park untouched. The hold is not a fairness
+dial. 0.8s stands as the minimum of both ratios in the shippable window — the opposite of
+the reason it was approved.
