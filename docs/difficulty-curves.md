@@ -1,5 +1,60 @@
 # Difficulty curves: bosses, trash, and why depth 30 is a wall
 
+> ## ⚠ SECTIONS 2, 3 AND 4 ARE SUSPENDED — THE CHARACTERS WERE WEARING NOTHING
+>
+> Found 2026-09-09 by the session that wrote this document, while building the same bug a
+> second time and catching it. **Do not act on a number in §2, §3 or §4, and do not quote
+> the 6/21 roster spread.** The corrected measurements are in flight; this banner is the
+> interim so nothing is read straight in the meantime.
+>
+> **The mechanism, three silent failures deep.** `requiredLevel(item)` is `ilvl - 1` and
+> `Player.canEquip` refuses anything above it, so a level-*L* character may wear nothing
+> past ilvl *L+1*. `character()` in `tools/curves.ts` defaulted `recordDepth` to
+> `round(level / 0.9)` — **the inverse of the very formula under investigation** — and
+> chests roll ilvl from `recordDepth`, so above about level 10 every rolled item landed
+> one to eleven levels above the cap and `equipFromInventory` silently refused all of it.
+> The safety net (`if (!state.player.hasAffinity) equip(a weapon)`) never fired, because
+> `weaponFamily` is `this.equipment.weapon?.family ?? "sword"` — **a character holding
+> nothing reports as holding a sword**, so for a sword-affinity class the fallback saw
+> affinity it did not have.
+>
+> Measured, not reasoned — §3's six power rungs as §3 actually builds them:
+>
+> ```
+>    rung                  record  ilvl  reqLv  equippable  WORN  maxHP
+>    lv15 Advanced x14         17    17     16        0/14     0    398
+>    lv35 Elite x20            39    39     38        0/20     0    758
+>    lv45 Legendary x20        50    50     49        0/20     0    938
+>    lv60 Legendary x30        67    67     66        0/30     0   1208
+>    lv90 Legendary x60       100   100     99        0/61     0   1748
+> ```
+>
+> Zero items worn on every rung. **§3 is not a power sweep, it is a level sweep with no
+> equipment**, and its maxHP column is pure level scaling at ~180 per ten levels. §2 is
+> worse, because it has a cliff exactly where it reports a wall: the character goes from
+> 504 maxHP at depth 12 (6 items worn) to 380 at depth 15 (0 worn) — it gets *weaker*
+> where its kit stops being wearable. And it landed unevenly across the roster: at lv60
+> Legendary x30, 19 of 21 classes went in holding one weapon and **two went in with
+> nothing — swordsman and paladin**, the two sword-affinity classes. §2, §3 and §4 all use
+> the swordsman, so the headline numbers came from the single worst-affected class.
+>
+> **What still stands:** `recommendedLevel` is wrong (§ short version item 2). Confirmed
+> independently on the corrected harness — at depth 20 at the advised level, a character in
+> Basic gear reaches 15% of the objective while one in Legendary clears 3/3. That was
+> always the right headline and it survives.
+>
+> **What does not:** the bracket "depth 20 needs between lv35 Elite and lv45 Legendary";
+> "every depth clears given enough power" as stated; "the wall is lethality rather than
+> gearing"; and the 6/21 roster spread, which is a spread between 19 characters wearing one
+> item and 2 wearing none — not evidence about class balance.
+>
+> **The harness is already fixed.** §J now rolls every rung at `ilvl = level + 1`, the most
+> a character may legally wear, and every cell reports how many items its character has on,
+> flagged `!n` when short of six — a check that names its own subject cannot rot into a
+> tautology. With that in place the grid is monotone in rarity at every level, which it was
+> not before.
+
+
 A read-only investigation. **No tuning number was changed.** The harness is
 `tools/curves.ts` (`npm run curves`), deliberately *not* wired into `npm test` — it plays
 several hundred real floors and takes minutes, and it answers a question rather than
@@ -121,6 +176,8 @@ table in places.
 
 ## 2. The same depth, both flavours, at the power the game recommends
 
+**SUSPENDED — the characters below wore nothing from depth 15 on. See the banner at the top.**
+
 The comparison nobody had run. The Delve only puts bosses on multiples of 5, and the
 Convergence deliberately puts its boss *shallower* than its trash, so every earlier reading
 compared the two flavours at different depths. Forcing both at one depth, with one
@@ -172,6 +229,8 @@ floors clearing comfortably with more power. The floor is fine; the advice is wr
 
 ## 3. Does more power fix it? Yes — completely
 
+**SUSPENDED — not a power sweep. Every rung below wore zero items. See the banner at the top.**
+
 The dimension none of the three earlier readings varied. Sweeping character power at fixed
 depth separates "this floor is tuned past what any character can do" from "characters
 arrive here under-geared", and those have opposite fixes. Four seeds per cell.
@@ -216,6 +275,8 @@ an artifact of the broken bot and does not survive.
 ---
 
 ## 4. Class spread — the finding hiding inside the depth finding
+
+**SUSPENDED — 19 of these 21 classes wore one item and 2 wore none. Do not quote 6/21.**
 
 Level 60, 30 Legendary chests, both trees filled; all 21 classes; three seeds each.
 

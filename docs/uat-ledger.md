@@ -173,25 +173,29 @@ or earlier grants, because those would tread on the Forge bench's `augment`/`ins
 its stated invariant that nothing an op produces is something a chest couldn't have
 dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
 
-**The endgame was never a wall — it is a power curve, and a roster spread.** The
-difficulty investigation finished (`docs/difficulty-curves.md`, `npm run curves`) and
-retires the question three separate sessions circled all day. Sweeping *character power*
-at fixed depth — the axis none of the earlier readings varied — **every depth clears 4/4
-given enough power, on trash and boss floors alike, monotonic throughout, zero stalls.**
-Depth 30 was a wall in the power curve leading to it, not in the content. **Ruling: no
-curve retune** — it would treat a symptom and would move every class together.
+**RETRACTED 2026-09-09: the endgame ruling, and the 6/21 roster spread.** Both came from
+`docs/difficulty-curves.md` §2/§3/§4, and **those characters were wearing nothing.**
+`requiredLevel` is `ilvl - 1`, and `tools/curves.ts` rolled every rung's gear at an ilvl
+above what the character could legally equip, so `equipFromInventory` silently refused all
+of it; the affinity safety net never fired because `weaponFamily` reports an empty hand as
+`"sword"`. §3 was a level sweep with no equipment. §2 has a *cliff* exactly where it
+reported a wall — the character loses maxHP from depth 12 to depth 15 because that is
+where its kit stopped being wearable. §4's 6/21 is a spread between 19 characters wearing
+one item and 2 (swordsman and paladin, the sword-affinity classes) wearing none. **Do not
+put 6/21 in front of the owner.** Found by the session that wrote the document, catching
+itself building the same bug a second time. See the banner on `docs/difficulty-curves.md`.
 
-Bosses cost about **one power rung more than trash** at the same depth, consistently at
-both ends. The earlier "it inverts at depth 30" reading was a broken measurement bot.
+**What survives: `recommendedLevel` is wrong.** Independently reconfirmed on the corrected
+harness — at depth 20 at the advised level a character in Basic gear reaches 15% of the
+objective while one in Legendary clears 3/3. That was always the headline and it holds.
+The corrected power and roster sweeps are running; the ruling on a curve retune is
+**reopened and unanswered** until they land, and "no curve retune" should not be quoted
+as settled in the meantime.
 
-**The real finding is the roster.** At depth 30, level 60, Legendary, filled trees:
-**6 of 21 classes clear the boss floor, 12 of 21 clear trash, and progress spans 3%–100%
-at identical gearing.** The spread between classes is larger than the effect of depth. It
-overlaps `npm run builds` being red for eight hybrid pairs. Held for the owner — twenty-one
-classes of tuning is a direction call, not a defect fix.
-
-*Caveat the report states itself:* sections 1–3 are all swordsman, so every depth figure
-reads "for this class" until repeated.
+*The lesson, sixth of the day:* the instrument produced a plausible monotone-looking grid,
+and plausibility was doing the work verification should have. The fix is the standing one
+— the corrected harness now prints how many items each character has on, flagged when
+short of six. An assertion that names its own subject cannot rot into a tautology.
 
 **RETRACTED earlier the same day: a "floors stall constantly" finding** (25–67% of floors).
 It was an instrument fault — the measurement bot called `FlowField.direction(x, y)` against
@@ -203,11 +207,12 @@ see the typecheck gap below. What survives: `dungeon.ts:1288`'s wave gate is gen
 fragile and worth a cheap guard (ordinary hardening, not critical path), and monsters do
 spawn clipping a wall at ~1.9% at depth 35.
 
-**`recommendedLevel` may be lying to players.** At exactly the level and gear the game
-advises, every floor from depth 18 down killed the character in 6–22 seconds having
-completed 0–3% of the objective. Held pending the straggler fix, since stalls may have
-contaminated this measurement too — but if it survives re-measurement, a number shown in
-the UI is actively misleading.
+**`recommendedLevel` is lying to players — confirmed twice, on two instruments.** At the
+level and gear the game advises, floors from depth 18 down killed the character in 6–22
+seconds having completed 0–3% of the objective; the corrected harness reproduces the same
+verdict from the other direction (depth 20, advised level: Basic gear 15% of the objective,
+Legendary 3/3). A number shown in the UI is actively misleading. Fix in flight on
+lootsim-26's branch — measurement first, then `src/data/depth.ts:182`.
 
 **`tools/` has never been typechecked, and the gate was full of checks that measure
 nothing.** `tsconfig.json` is `"include": ["src"]` — which is simply what `npm create vite`
