@@ -69,7 +69,7 @@ import {
   steerAngle,
 } from "./bot";
 import type { Enemy } from "../src/game/entities";
-import { itemScore, rollItem } from "../src/game/item";
+import { itemScore, requiredLevel, rollItem } from "../src/game/item";
 import { FlowField, circleHitsWall } from "../src/game/level";
 import { GameState } from "../src/game/state";
 import type { ChestTier } from "../src/data/chests";
@@ -275,12 +275,33 @@ function play(state: GameState, run: RunConfig, seed: number, dodge = 0.55, maxS
 /**
  * A character at a chosen power level. Same construction as the smoke test's `endgame`
  * helper — level, gear rolled from chests at the character's own record depth, both trees
- * filled — with the knobs exposed so power can be swept as its own axis. That is the
- * dimension none of the three earlier measurements varied.
+ * filled — with the knobs exposed so power can be swept as its own axis.
+ *
+ * ### The default used to hand the character gear it could not wear
+ *
+ * `recordDepth` defaulted to `round(level / 0.9)` — the inverse of the very formula this
+ * file was built to investigate. Chests roll `ilvl = recordDepth`, `requiredLevel` is
+ * `ilvl - 1`, and `Player.canEquip` refuses anything above that. For every level past
+ * about 10 the default therefore rolled a full stash of items the character was not
+ * allowed to put on, `equipFromInventory` silently declined all of them, and the run
+ * measured a character wearing **nothing**.
+ *
+ * It survived because the guard against exactly this reads `true` for a naked character:
+ * `hasAffinity` asks `heroClass.affinity.includes(weaponFamily)`, and `weaponFamily` is
+ * `equipment.weapon?.family ?? "sword"` — so a swordsman holding empty hands is reported
+ * as holding a sword and the fallback weapon below never fires. The two sword-affinity
+ * classes (swordsman, paladin) went in with zero items; the other nineteen went in with
+ * exactly one.
+ *
+ * The default is now `level + 1`: the deepest `ilvl` this character may legally equip,
+ * spending `requiredLevel`'s one-level grace on purpose so the gear axis is measured at
+ * its ceiling rather than at an arbitrary point below it. And the invariant is asserted
+ * at the bottom rather than trusted, because every symptom of the old behaviour was a
+ * plausible number.
  */
 function character(
   classId: ClassId, level: number, tier: ChestTier, keys: number, seed: number,
-  recordDepth = Math.max(1, Math.round(level / 0.9)),
+  recordDepth = level + 1,
 ): GameState {
   const state = new GameState(seed);
   state.chooseClass(classId);
@@ -321,6 +342,20 @@ function character(
   }
   state.player.fullHeal();
   state.potions = 9;
+
+  // The instrument check, not a game rule. A measurement harness that quietly returns an
+  // unarmed character produces numbers that look like difficulty findings and are not —
+  // it did, for the whole of sections B, C and D. Throwing is right here: there is no
+  // reading worth salvaging from a character that cannot hold its own equipment.
+  const worn = Object.values(state.player.equipment).filter(Boolean).length;
+  if (worn === 0) {
+    const roll = state.inventory[0];
+    throw new Error(
+      `character(${classId}, lv${level}, ${tier} x${keys}) equipped nothing: `
+      + `${state.inventory.length} items rolled at ilvl ${roll ? roll.ilvl : "?"}, `
+      + `requiring level ${roll ? requiredLevel(roll) : "?"} — recordDepth ${recordDepth} `
+      + `is above what level ${level} may wear (ilvl ${level + 1}).`);
+  }
   return state;
 }
 
@@ -558,7 +593,15 @@ if (section("B")) {
     QUICK ? [10, 20, 30] : [5, 8, 10, 12, 15, 18, 20, 22, 25, 28, 30, 33, 36],
     (depth, seed) => {
       const { tier, keys } = tierForDepth(depth);
-      return character("swordsman", levelForDepth(depth), tier, keys, seed, depth);
+      // The record depth is capped at what the advised level may legally wear. Uncapped
+      // (it used to be a bare `depth`) this construction is self-contradictory past depth
+      // 15, and that is a finding rather than a detail: the game advises level 18 for
+      // depth 20, and depth-20 loot has `requiredLevel` 19. **The advised character
+      // cannot equip the floor's own drops.** Before the cap, every row from depth 18
+      // down played the floor wearing nothing, which is exactly where B1 used to report
+      // a wall.
+      const level = levelForDepth(depth);
+      return character("swordsman", level, tier, keys, seed, Math.min(depth, level + 1));
     });
   reportCmp("B1 — at the level and gear the floor recommends (swordsman)", levelled);
 
@@ -620,7 +663,13 @@ if (section("C")) {
         for (let i = 0; i < SEEDS; i++) {
           const seed = 71_000 + i * 137 + depth;
           runs.push(play(
-            character("swordsman", rung.level, rung.tier, rung.keys, seed, Math.max(depth, rung.level)),
+            // Capped at the rung's own equip ceiling for the reason B1 is: uncapped, the
+            // two cheapest rungs played the deeper floors naked (lv15 at depth 20+, lv25
+            // at depth 28+ — 6 of these 30 cells). The four rungs above lv35 were always
+            // properly equipped, which is why the "does more power fix it" answer this
+            // section reports is unaffected.
+            character("swordsman", rung.level, rung.tier, rung.keys, seed,
+              Math.min(Math.max(depth, rung.level), rung.level + 1)),
             floorAt(depth, flavour === "boss"), seed));
         }
         const c = runs.filter((r) => r.outcome === "cleared").length;
@@ -1032,4 +1081,257 @@ if (section("I")) {
   console.log("   A floor needs exactly one of these, carrying `fromWave`, to become");
   console.log("   permanently uncompletable. The per-monster rate is small; the per-floor");
   console.log("   rate is what a player experiences, and it rises with the body count.");
+}
+
+// ===========================================================================
+// J. What level does a floor actually want? — `recommendedLevel`, measured
+// ===========================================================================
+//
+// `profileFor` advertises `recommendedLevel = round(d * 0.9 * danger^0.35)`, with the
+// comment "Levelling now tracks depth closely, so the advice should too." That is a
+// statement about the XP curve, not about the floor. It answers *"what level will a
+// player who has dived this far be?"* and the UI presents the answer as *"req. lv N"* —
+// what you must bring. Those were the same number once. Section B says they are not now:
+// depth 18, played at the level depth 18 advises, died at 1% of the objective.
+//
+// ### The first draft of this section measured naked characters
+//
+// The obvious way to separate "level" from "gear" is to pin the record depth items roll
+// their `ilvl` against, independently of the character's level. That produced a grid in
+// which **better gear performed worse** — at depth 10, level 10, Basic chests cleared 2
+// of 3 seeds and Legendary chests cleared 0 of 3.
+//
+// The reason is `requiredLevel(item) = ilvl - 1` and `Player.canEquip`: a level-10
+// character handed fourteen ilvl-12 items **can wear none of them**, and plays the floor
+// wearing nothing. Its maximum health was 308 against the Basic-geared character's 443.
+// Nothing threw, nothing warned, and every number in that grid was plausible.
+//
+// So the two axes are **not independent, and cannot be made independent** — that is a
+// property of the game, not a limitation of the harness:
+//
+//   **`ilvl` is capped by character level.** A character of level L can equip nothing
+//   above ilvl L+1. Level does not merely *correlate* with gear power; it is the ceiling
+//   on it. The one axis genuinely free at a fixed level is **rarity** — which chest tier
+//   the items came out of — because rarity multiplies the same ilvl's stats (`2^n`,
+//   `data/rarity.ts`) and is gated by nothing but the chest.
+//
+// J therefore sweeps **level** against **rarity**, rolling every rung at `ilvl = level +
+// 1` so the character can actually wear what it is given. And every cell reports how many
+// items its character has on, so a naked character can never again be read as a result.
+
+interface Gear { readonly name: string; readonly tier: ChestTier; readonly keys: number }
+
+/**
+ * The same key count on every rung, so the only thing that varies down this axis is
+ * rarity. 26 is the number at which every tier reliably fills all six slots (Basic
+ * x14 filled six in only 9 of 15 samples, and a character missing a slot is measuring
+ * kit completeness, not rarity).
+ */
+const GEAR: readonly Gear[] = [
+  { name: "Basic x26", tier: "Basic", keys: 26 },
+  { name: "Advanced x26", tier: "Advanced", keys: 26 },
+  { name: "Elite x26", tier: "Elite", keys: 26 },
+  { name: "Legendary x26", tier: "Legendary", keys: 26 },
+];
+
+const J_LEVELS = QUICK ? [20, 45] : [10, 20, 30, 40, 50, 60];
+const J_DEPTHS = QUICK ? [10, 20] : [5, 10, 15, 20, 25, 30];
+/** One class, the same one sections B and C used, so the numbers line up across them. */
+const J_CLASS: ClassId = "swordsman";
+
+/**
+ * A character whose gear is rolled at the deepest `ilvl` it is allowed to wear. The
+ * `+ 1` is `requiredLevel`'s one-level grace, spent deliberately: it is the most gear a
+ * character of this level can legally have on, which is what makes this the *ceiling* of
+ * the gear axis rather than an arbitrary point on it.
+ */
+function geared(level: number, g: Gear, seed: number): GameState {
+  return character(J_CLASS, level, g.tier, g.keys, seed, level + 1);
+}
+
+interface Cell { cleared: number; runs: number; progress: number; worn: number }
+
+function cell(depth: number, boss: boolean, level: number, g: Gear): Cell {
+  const runs: Run[] = [];
+  let worn = 0;
+  for (let i = 0; i < SEEDS; i++) {
+    const seed = 90_000 + i * 311 + depth * 7 + level;
+    const state = geared(level, g, seed);
+    // Read BEFORE the floor runs. This is the guard the first draft did not have: a cell
+    // whose character is wearing two items is not a reading about the floor.
+    worn = Math.max(worn, Object.values(state.player.equipment).filter(Boolean).length);
+    runs.push(play(state, floorAt(depth, boss), seed));
+  }
+  return {
+    cleared: runs.filter((r) => r.outcome === "cleared").length,
+    runs: runs.length,
+    progress: mean(runs.map((r) => r.progress)),
+    worn,
+  };
+}
+
+/** A cell "clears" when more than half its seeds do. One lucky seed is not advice. */
+const clears = (c: Cell) => c.cleared * 2 > c.runs;
+/** How many slots a fully-kitted character fills, established by the deepest rung. */
+let FULL_KIT = 0;
+
+function fmt(c: Cell): string {
+  const s = `${c.cleared}/${c.runs} ${pct(c.progress, 1)}`;
+  // `!` means this cell's character was under-equipped, so the cell is about the harness
+  // rather than about the floor. It must never be silent.
+  const flag = FULL_KIT > 0 && c.worn < FULL_KIT ? `!${c.worn}` : "";
+  return (clears(c) ? `[${s}]${flag}` : ` ${s} ${flag}`).padStart(17);
+}
+
+if (section("J")) {
+  console.log("\n=== J. what level does a floor actually want? ===");
+
+  // --- J0. the instrument, checked before it is believed --------------------
+  console.log("\n  J0 — what each rung can actually wear (the check the first draft lacked)");
+  console.log("   level  rung             rolled  ilvl  equippable  WORN   maxHP");
+  for (const level of [10, 30, 60]) {
+    for (const g of GEAR) {
+      const st = geared(level, g, 11);
+      const inv = st.inventory;
+      const wornN = Object.values(st.player.equipment).filter(Boolean).length;
+      FULL_KIT = Math.max(FULL_KIT, wornN);
+      console.log(`   ${String(level).padStart(5)}  ${g.name.padEnd(15)}  ${String(inv.length).padStart(6)}`
+        + `  ${String(level + 1).padStart(4)}  ${String(inv.filter((i) => i.ilvl - 1 <= level).length).padStart(10)}`
+        + `  ${String(wornN).padStart(4)}  ${st.player.maxHealth.toFixed(0).padStart(6)}`);
+    }
+  }
+  console.log(`\n   A full kit is ${FULL_KIT} slots. Every rung below fills them, which is what`);
+  console.log("   makes the grid a reading about rarity rather than about nudity. Cells that");
+  console.log("   fall short are flagged `!n` and are not evidence.");
+
+  // --- J1. the grid ---------------------------------------------------------
+  console.log(`\n  J1 — ${J_CLASS}, trash floors, ${SEEDS} seeds per cell: cleared/seeds and mean`);
+  console.log("  objective reached. [..] cleared a majority. `>` marks the advised level.\n");
+
+  const frontier: { depth: number; advises: number; need: number | null; rung: string | null }[] = [];
+  for (const depth of J_DEPTHS) {
+    const advises = levelForDepth(depth);
+    console.log(`   depth ${String(depth).padStart(2)}  (advises level ${advises})`);
+    console.log(`     level |${GEAR.map((g) => g.name.padStart(17)).join(" |")}`);
+    const grid = new Map<string, Cell>();
+    for (const level of J_LEVELS) {
+      const cells = GEAR.map((g) => {
+        const c = cell(depth, false, level, g);
+        grid.set(`${level}|${g.name}`, c);
+        return c;
+      });
+      console.log(`   ${level === advises ? ">" : " "}${String(level).padStart(6)} |`
+        + cells.map(fmt).join(" |"));
+    }
+    let need: number | null = null, rung: string | null = null;
+    outer: for (const level of J_LEVELS) {
+      for (const g of GEAR) {
+        if (clears(grid.get(`${level}|${g.name}`)!)) { need = level; rung = g.name; break outer; }
+      }
+    }
+    frontier.push({ depth, advises, need, rung });
+  }
+
+  console.log("\n   the advice, against the measurement");
+  console.log("   depth  advises   cheapest clearing cell         verdict");
+  for (const f of frontier) {
+    const cheapest = f.need === null ? "nothing on this grid clears" : `lv${f.need} ${f.rung}`;
+    const verdict = f.need === null ? "no honest number on this grid"
+      : f.need <= f.advises ? "advice is reachable"
+        : `advice is ${f.need - f.advises} levels short`;
+    console.log(`   ${String(f.depth).padStart(5)}  ${String(f.advises).padStart(7)}   `
+      + `${cheapest.padEnd(29)}  ${verdict}`);
+  }
+
+  // --- J2. does rarity alone move it? --------------------------------------
+  //
+  // The comparison, asserted directly rather than as two one-sided readings (the
+  // campaign-inversion lesson in CLAUDE.md). Hold the level at exactly what the game
+  // advises and change only the chest tier. If that flips a floor from failed to
+  // cleared, then no bare level number can be honest advice, because two characters at
+  // the advised level get different answers and the number is quietly assuming one.
+  console.log("\n  J2 — hold the level at what the game advises; change only the rarity.");
+  console.log(`   depth  level |${GEAR.map((g) => g.name.padStart(17)).join(" |")}`);
+  let flips = 0;
+  for (const depth of J_DEPTHS) {
+    const advises = levelForDepth(depth);
+    const cells = GEAR.map((g) => cell(depth, false, advises, g));
+    if (cells.some(clears) && cells.some((c) => !clears(c))) flips++;
+    console.log(`   ${String(depth).padStart(5)}  lv${String(advises).padStart(4)} |`
+      + cells.map(fmt).join(" |"));
+  }
+  console.log(`\n   rarity alone flipped the outcome at ${flips} of ${J_DEPTHS.length} depths, with the`);
+  console.log("   level held at the advised one. If that is not zero, one integer cannot be");
+  console.log("   honest advice: it is silently assuming a gear tier it never names.");
+}
+
+// ===========================================================================
+// K. Is one number possible at all? — the same floor, every class
+// ===========================================================================
+//
+// J measures one class. Any advice derived from one class inherits that class's curve,
+// and the phase-one roster sweep says that curve is not the roster's: at identical
+// gearing, 6 of 21 classes cleared a depth-30 boss floor and objective progress spanned
+// 3% to 100%. So before proposing *any* number, ask whether a single number can be
+// honest for twenty-one different characters.
+//
+// The test: fix the depth, fix the rarity rung, and find each class's cheapest clearing
+// level. The spread of that column is the answer. A tight spread means one number can be
+// right for everyone and only needs to be a *different* number. A wide one means the
+// displayed integer is answering a question that has twenty-one different answers, and
+// the honest fix is a different shape rather than a bigger number.
+//
+// This deliberately does NOT tune anything. Class balance is the owner's direction call
+// and explicitly not this branch's assignment; K exists only to bound what advice can
+// truthfully say.
+
+const K_DEPTH = Number(process.env.CURVES_KDEPTH) || 20;
+const K_LEVELS = QUICK ? [30, 60] : [20, 30, 40, 50, 60];
+const K_GEAR: Gear = { name: "Elite x26", tier: "Elite", keys: 26 };
+
+if (section("K")) {
+  console.log(`\n=== K. the same floor, every class — can one number be honest? ===`);
+  console.log(`\n  depth ${K_DEPTH} trash, ${K_GEAR.name}, gear rolled at ilvl = level + 1,`);
+  console.log(`  ${SEEDS} seeds per cell. The game advises level ${levelForDepth(K_DEPTH)} here.\n`);
+  console.log(`   class            ${K_LEVELS.map((l) => `lv${l}`.padStart(11)).join("")}   cheapest`);
+
+  const cheapest: { id: ClassId; level: number | null; best: number }[] = [];
+  for (const id of CLASS_IDS) {
+    const cells = K_LEVELS.map((level) => {
+      const runs: Run[] = [];
+      for (let i = 0; i < SEEDS; i++) {
+        const seed = 95_000 + i * 419 + level;
+        runs.push(play(character(id, level, K_GEAR.tier, K_GEAR.keys, seed, level + 1),
+          floorAt(K_DEPTH, false), seed));
+      }
+      return {
+        cleared: runs.filter((r) => r.outcome === "cleared").length,
+        runs: runs.length,
+        progress: mean(runs.map((r) => r.progress)),
+        worn: 0,
+      } as Cell;
+    });
+    const idx = cells.findIndex(clears);
+    const level = idx < 0 ? null : K_LEVELS[idx]!;
+    cheapest.push({ id, level, best: Math.max(...cells.map((c) => c.progress)) });
+    console.log(`   ${id.padEnd(16)}${cells.map((c) => `${c.cleared}/${c.runs} ${pct(c.progress, 1)}`.padStart(11)).join("")}`
+      + `   ${level === null ? `never (best ${pct(Math.max(...cells.map((c) => c.progress)), 1)})` : `lv${level}`}`);
+  }
+
+  const solved = cheapest.filter((c) => c.level !== null).map((c) => c.level!);
+  const never = cheapest.filter((c) => c.level === null);
+  console.log(`\n   ${solved.length} of ${CLASS_IDS.length} classes cleared depth ${K_DEPTH} somewhere on this ladder.`);
+  if (solved.length) {
+    const sorted = [...solved].sort((a, b) => a - b);
+    console.log(`   cheapest clearing level: min lv${sorted[0]}, median lv${sorted[Math.floor(sorted.length / 2)]},`
+      + ` max lv${sorted[sorted.length - 1]}  — a spread of ${sorted[sorted.length - 1]! - sorted[0]!} levels`);
+  }
+  if (never.length) {
+    console.log(`   never cleared at any level on this rung: ${never.map((c) => c.id).join(", ")}`);
+    console.log("   Those are a class-balance finding and NOT something advice can fix: no");
+    console.log("   number displayed on the Dive screen makes a floor clearable.");
+  }
+  console.log("\n   The spread is the constraint on what `recommendedLevel` can truthfully be.");
+  console.log("   A single integer has to be either the median (wrong and dangerous for half");
+  console.log("   the roster) or the maximum (wrong and discouraging for the other half).");
 }
