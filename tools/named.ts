@@ -330,18 +330,20 @@ section("7. acquisition is the table, and only the table");
   for (const def of NAMED_ITEMS) {
     for (const src of def.sources) {
       if (src.kind === "craft") continue;
-      // `raid` and `tower` are the reserved §15/§21 seams — no site emits those queries
-      // yet, so there is nothing to roll one against. Refused rather than skipped, the
-      // same way `relicProblems` refuses a definition hiding behind one: until this
-      // commit they fell through to the `worldDrop` branch and read a `minDepth` those
-      // kinds do not have, quietly asking for `depth: undefined`.
-      if (src.kind === "raid" || src.kind === "tower") {
+      // `raid` is the reserved §15 seam — no site emits that query yet, so there is
+      // nothing to roll one against. Refused rather than skipped, the same way
+      // `relicProblems` refuses a definition hiding behind one: until Sept 2026 it fell
+      // through to the `worldDrop` branch and read a `minDepth` that kind does not have,
+      // quietly asking for `depth: undefined`. (`tower` was refused here on the same
+      // terms and is live now — the ascent's clear cache emits it.)
+      if (src.kind === "raid") {
         check(`${def.id}: a ${src.kind} source has a roll site to test against`, false,
           "authored against a reserved seam nothing emits yet");
         continue;
       }
       const q: NamedDropQuery = src.kind === "boss" ? { kind: "boss", bossId: src.bossId }
         : src.kind === "chest" ? { kind: "chest", tier: src.tier }
+        : src.kind === "tower" ? { kind: "tower", floor: src.minFloor }
         : src.kind === "clearCache" ? { kind: "clearCache", depth: src.minDepth, mode: src.mode ?? "delve" }
         : { kind: "worldDrop", depth: src.minDepth, elite: false };
       check(`${def.id}: its ${src.kind} source pays out when the dice say so`, rollNamedDrops(q, always).includes(def));
