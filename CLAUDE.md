@@ -252,6 +252,80 @@ the boss floor, not a death or bail-out, and not an intermediate floor either) m
 week closed on `GameState.weekly.clearedWeek`; retries are free until then. Solo only for
 now. See `src/data/weekly.ts` and `docs/weekly-dungeon.md`.
 
+### Raids: the war's set pieces, and the only place their loot exists
+
+`src/data/raids.ts` (UAT §15), design record `docs/raids.md`. Four encounters, every one of
+them lifted from the worldbuilding doc's own EXAMPLE RAID BOSSES rather than invented: **the
+Ferryman** (Threshold, cold), **the Queen of the Seventh Circle** (Hell Layers, fire), **the
+Minotaur of the Ninth Labyrinth** (Hell Endgame, void) and **the Tyrant of the First
+Heavens** (Celestial Endgame, holy). Reached from a **War Table** terminal on the deck, which
+picks a raid and a tier and spawns a Raid Portal — the Reliquary Gate's exact shape.
+
+- **One floor, and that floor is the boss.** A gauntlet in front of the encounter only taxes
+  retrying the thing that is meant to be extremely difficult. `lastFloor` already pays the
+  cache 2.4×, so it still pays like a run.
+- **No second difficulty curve.** A raid tier compounds `danger` and goes through the same
+  `profileFor`. `tools/raids.ts` compares a raid floor against a Delve floor at the same
+  depth and danger across six stats — the Tower's height-for-depth property from the other
+  side, so "balancing a raid" by nudging its own numbers goes red immediately.
+- **The encounter is borrowed and reskinned** per the `planetBossSpec` precedent, then
+  rebuilt strictly cumulative per `legendBossSpec`, with its stat line measured against the
+  **deepest authored encounter** rather than the borrowed template. No new `BossAbilityId`.
+  All four pass the boss-rule audit with zero violations.
+- **§16 two ways and only two.** Drop chance/count/item power/variants come from
+  `rewardCurve(danger)`. Rarity is **not** a second curve keyed on danger — that would route
+  around the Challenger cap — so the rarest half of each table is gated behind `minTier`:
+  tier 8 drops what tier 1 *cannot*, rather than a better roll of it.
+- **The `raid` drop kind is live**, its own kind rather than a `boss` source with a mode,
+  because the Tyrant borrows the Choir's kit and its Crown must never fall off a Delve floor.
+  8 named items and 8 relics/artifacts each carry a single `raid` source, which makes §15's
+  "cannot be obtained through normal gameplay" structural rather than promised.
+- **`WorldLayer.raidId` is filled in on four layers**, but it gates neither ladder — a layer
+  is still a *reading* of the ladders. The only gate is the raid's own `unlockFrontier`, off
+  the account frontier, so a climb counts.
+- **Solo in v1**, the same call the Vigil and the Proving made, but the seam is *open*: the
+  wire carries `raidId`/`raidTier` and `configFromWire` rebuilds through `raidConfig`, so one
+  branch in `handleHubInteraction` is all that stops a party raid.
+- **Weekly rotation is deliberately not built.** §15 calls raids weekly events, but the game
+  already has a weekly (the Convergence), and a roster only open one week in four is four
+  pieces of content nobody can test. Raids are always open. A featured-raid read is cheap if
+  it's ever wanted — but it must not *pay* more without moving `danger`.
+- `tools/bossrules.ts` extracts the boss-rule audit out of `tools/legends.ts` so raids and
+  Provings are held to one copy of it.
+
+### The Memories: an altar, and the one place the ceiling moves
+
+`src/data/memories.ts`, design record `docs/memories.md`. The endgame next to raids: an
+**Altar** in the Citadel where a Memory is recalled, augmented and consumed. Rift-shaped —
+three floors, boss last — unlocked per class at **depth 30 and height 30**, with monsters and
+places drawn from across all existing content.
+
+The fiction is the worldbuilding doc's, not invented: *Purgatory is shaped by memory*, and
+*the Reliquary does not remember itself the same way twice*. A Memory is a recollection the
+Keepers pinned down — Purgatory forced to remember one place the same way twice. That is why
+its monsters come from everywhere, why it is an altar, and why it is consumed.
+
+- **Every modifier is a percentage, never a multiplier.** Each family carries a `magnitude`
+  and stores the percentage itself; `pctMult` is the one conversion site. The two flat
+  exceptions (`hunted`'s elite count, and `armored`/`spiteful` naming affix ids) are declared
+  as exceptions. This is an owner ruling: a brief that says "3× rarity" means "a meaningful
+  increase of this kind", not a literal factor.
+- **Boons never outnumber burdens** (`boons.length <= burdens.length`). No free positives.
+- **Only `merciless` moves `danger`**; every other burden changes the floor's *shape*, the
+  same split `data/daily.ts` already shipped, so difficulty can't double-dip into rewards.
+- **This is the one place the rarity ceiling lifts, and it is narrow.** Below mythic nothing
+  exceeds the Abyssal Rift. A mythic Memory may overshoot by a margin granted in proportion
+  to the **square** of its burden load, so the ceiling cannot be bought cheaply — an
+  unburdened mythic gets none of it. Measured at depth 45, unspoken goes from 1 in 48 in the
+  Abyss to 1 in 43 in the best Memory ever rolled, against 1 in 3,879 on a plain floor. The
+  gate asserts all three of: strictly better than the Abyss, less than 1.5× better, and still
+  rarer than 1 in 30. **Farmable unspoken at the very top end is intended**; a second route
+  around the cap anywhere else is not.
+- **A Memory's boss id is rewritten `memory-<templateId>`**, so a Memory rolling a sector's
+  boss can't pay that sector's exclusive named items outside it. Raid encounters *and* raid
+  arenas are excluded from the pool in v1: a raid fight without its table is the worst of
+  both.
+
 ### The Proving: the bottom of the Delve, and finishing a class
 
 `src/data/legends.ts` (UAT §13/§14). A class can be **completed**: take it to depth 30,
@@ -443,7 +517,11 @@ Three things about it are load-bearing:
   tier 11 by §9's design — the Death March tiers are about raw danger, not about paying
   more. A second rarity term keyed on `danger` would route around that cap; don't add one.
   Nothing here can lift the rarity ceiling either: divine and unspoken don't become
-  reachable because a floor got harder.
+  reachable because a floor got harder. **The Memories are the one deliberate exception**
+  — see their section below. It is bounded to mythic Memories, scaled by the square of the
+  burden load, capped a stated margin past the Abyssal Rift, and asserted as a comparison;
+  it is a narrow carve-out by owner ruling, not a repeal. This rule still governs the Delve,
+  the Tower, the rifts, the Challenger dial and every crafting path.
 - **Difficulty you chose pays; the day's weather doesn't.** `profileFor` divides the Vigil's
   own modifiers back out before asking the curve, because §17 splits the daily's twists into
   ones that change how a floor fights and ones that change what it pays, with at most one
