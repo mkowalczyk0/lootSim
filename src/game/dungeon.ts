@@ -1,7 +1,7 @@
 import { angleDelta, approach, circlesOverlap, clamp, dist, distToSegment, normalize, TAU } from "../core/math";
 import { Rng } from "../core/rng";
 import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP } from "../data/bosses";
-import { challengerRewardMult } from "../data/challenger";
+import { challengerGuaranteedRarity, challengerRewardMult } from "../data/challenger";
 import {
   BLOCK_CHANCE_CAP, BLOCK_MITIGATION, EVASION_CAP, SKILL_POWER, ULTIMATE_POWER,
 } from "../data/combat-tuning";
@@ -24,7 +24,7 @@ import { biomeForRun, coinDropFor, profileFor, xpDropFor, type DepthProfile } fr
 import { EQUIP_SLOTS } from "../data/items";
 import { emptyMaterials, MATERIAL_NAMES, type MaterialBag } from "../data/materials";
 import { delveConfig, EARLY_EXTRACT_KEEP, type RunConfig } from "../data/modes";
-import { dailyEffects } from "../data/daily";
+import { DAILY_GUARANTEED_RARITY, dailyEffects, dailyGuaranteesItem } from "../data/daily";
 import type { ClassId } from "../data/classes";
 import { bossSpecForRun } from "../data/encounters";
 import { provingFloor } from "../data/legends";
@@ -2935,22 +2935,40 @@ export class Dungeon implements CombatHost, RuleHost {
       }
     }
     // The Vigil pays in keys (UAT §17): one of the day's tier, guaranteed, here and only
-    // here — so it can't be had without closing the floor, and only once a day.
-    if (this.config.daily) this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
+    // here — so it can't be had without closing the floor, and only once a day. At
+    // ordinary Challenger this is the whole reward, exactly as before Challenger reached
+    // the Vigil; from `CHALLENGER_GUARANTEE_TIER` it also carries one item forced to
+    // `DAILY_GUARANTEED_RARITY` (`challengerGuaranteedRarity` is what steps that to
+    // mythic and holds it there) — the same guarantee the Convergence already has,
+    // extended to its daily sibling rather than invented twice.
+    if (this.config.daily) {
+      this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
+      if (dailyGuaranteesItem(this.config.challengerTier)) {
+        const rarity = challengerGuaranteedRarity(DAILY_GUARANTEED_RARITY, this.config.challengerTier);
+        const item = rollItem({
+          rarity, type: randomItemType(this.rng, this.player.heroClass.affinity),
+          ilvl: this.profile.depth, rng: this.rng,
+        });
+        this.dropPickup(x, y, { kind: "item", item, rarity });
+      }
+    }
     // The Convergence's signature reward lands only on the boss floor (UAT §17): one
     // guaranteed key at the week's tier — Adept's Trove or Collector's Hoard more often
     // than not, tiers the Quartermaster otherwise only sells outright — plus one item
-    // forced to at least Legendary. Floors 1-3 pay the ordinary depth-weighted loot above
-    // and nothing more, so the reward can't be farmed piecemeal.
+    // forced to exactly `WEEKLY_GUARANTEED_RARITY` (Legendary), or one rarity higher,
+    // capped at mythic, from Challenger's `CHALLENGER_GUARANTEE_TIER` on. Floors 1-3 pay
+    // the ordinary depth-weighted loot above and nothing more, so the reward can't be
+    // farmed piecemeal.
     if (this.config.weekly && this.config.lastFloor) {
       this.dropPickup(x, y, { kind: "key", keyTier: this.config.weekly.keyTier });
+      const rarity = challengerGuaranteedRarity(WEEKLY_GUARANTEED_RARITY, this.config.challengerTier);
       const item = rollItem({
-        rarity: WEEKLY_GUARANTEED_RARITY,
+        rarity,
         type: randomItemType(this.rng, this.player.heroClass.affinity),
         ilvl: this.profile.depth,
         rng: this.rng,
       });
-      this.dropPickup(x, y, { kind: "item", item, rarity: WEEKLY_GUARANTEED_RARITY });
+      this.dropPickup(x, y, { kind: "item", item, rarity });
     }
     if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }

@@ -199,10 +199,13 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMar
   const mark = k(s, "mark");
   const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   switch (tab) {
-    case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
-    case "Tower": return `${sel} choose height · ${e} climb · ${q} buy a potion`;
-    case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
-    case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
+    case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion · `
+      + `walk down to Challenger, ${adj} to set it`;
+    case "Tower": return `${sel} choose height · ${e} climb · ${q} buy a potion · `
+      + `walk down to Challenger, ${adj} to set it`;
+    case "Rifts": return `${sel} choose tier · ${adj} switch rift, or set Challenger from its row · ${e} open the rift`;
+    case "StarMap": return `${sel} choose tier · ${adj} switch sector, or set Challenger from its row · `
+      + `${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Convergence": return `${e} open the Convergence · the same four floors for everyone this week · a warden and a real prize at the end`;
     case "Craft": return forgeMode === "reforge"
@@ -639,10 +642,12 @@ export class TownUI {
 
   private rowCount(): number {
     switch (this.tab) {
-      case "Dive": return this.state.maxUnlockedDepth;
-      case "Tower": return this.state.maxUnlockedHeight;
-      case "Rifts": return this.state.riftTiers[this.riftMode];
-      case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
+      // +1 on every commit ladder for the Challenger row appended after the last real
+      // one — see `challengerRowIndex()`, the single place that index is defined.
+      case "Dive": return this.state.maxUnlockedDepth + 1;
+      case "Tower": return this.state.maxUnlockedHeight + 1;
+      case "Rifts": return this.state.riftTiers[this.riftMode] + 1;
+      case "StarMap": return (this.state.planetProgress[this.starMapPlanet.id] ?? 1) + 1;
       case "Vigil": return 1;
       case "Convergence": return 1;
       case "Craft": return this.forgeMode === "reforge"
@@ -666,7 +671,51 @@ export class TownUI {
     }
   }
 
+  /**
+   * The Delve, the Tower, a rift and the Reliquary all let you set Challenger right on
+   * the commit screen — one more row after the ladder, reusing `rowCount()` (which
+   * already carries the +1) so there is exactly one place this index is computed.
+   * `null` on every other tab, including Vigil and Convergence: those two still send
+   * you to Settings, same as before.
+   */
+  private challengerRowIndex(): number | null {
+    if (this.tab !== "Dive" && this.tab !== "Tower" && this.tab !== "Rifts" && this.tab !== "StarMap") return null;
+    return this.rowCount() - 1;
+  }
+
+  /**
+   * The Challenger row itself — same shape as a Settings toggle row, dropped into the
+   * bottom of a commit-screen ladder so the dial never needs a second stored value.
+   * Clicking anywhere on the row (or landing the cursor on it and pressing confirm)
+   * intentionally does *not* dive — `primary()` guards that index on every tab that
+   * calls this — only the ◀ / ▶ chips (or the keys they name) change the tier.
+   */
+  private renderChallengerRow(index: number): string {
+    const s = this.state.settings;
+    const tier = this.state.challengerTier;
+    const on = index === this.cursor;
+    return `<div class="group">Challenger</div>
+      <div class="row ${on ? "on" : ""}" data-index="${index}">
+        <div class="row-main">
+          <span class="name" style="color:${tier > 0 ? "#ff2d2d" : "#e8eef7"}">
+            ${tier > 0 ? escapeHtml(challengerName(tier)) : "Off"}
+          </span>
+        </div>
+        <div class="row-side" style="color:${tier > 0 ? "#ff2d2d" : "#5a6270"}">
+          <span class="chip" data-action="left" data-index="${index}">◀ ${k(s, "left")}</span>
+          ${tier}/${MAX_CHALLENGER_TIER}${tier > 0 ? ` · ×${challengerMultiplier(tier).toFixed(1)} danger` : ""}
+          <span class="chip" data-action="right" data-index="${index}">${k(s, "right")} ▶</span>
+        </div>
+      </div>`;
+  }
+
   private adjust(dir: number): boolean {
+    const challengerRow = this.challengerRowIndex();
+    if (challengerRow !== null && this.cursor === challengerRow) {
+      this.state.setChallengerTier(this.state.challengerTier + dir);
+      this.state.save();
+      return true;
+    }
     if (this.tab === "Capsules") {
       this.bulk = dir > 0;
       return true;
@@ -954,6 +1003,13 @@ export class TownUI {
   }
 
   private primary(): void {
+    // The Challenger row confirms nothing — it's there to be adjusted with ◀ / ▶, not
+    // stepped into. Guarded once, here, rather than in each of the four cases below.
+    const challengerRow = this.challengerRowIndex();
+    if (challengerRow !== null && this.cursor === challengerRow) {
+      this.notify(`${k(this.state.settings, "left")} / ${k(this.state.settings, "right")} sets Challenger.`, "#9aa4b2");
+      return;
+    }
     switch (this.tab) {
       case "Party": {
         this.partyAction(this.partyRows()[this.cursor]);
@@ -1891,6 +1947,7 @@ export class TownUI {
           </div>
         </div>`);
     }
+    rows.push(this.renderChallengerRow(this.state.maxUnlockedDepth));
     const depth = Math.min(this.cursor + 1, this.state.maxUnlockedDepth);
     const biome = biomeFor(depth);
     const layer = layerFor(delveConfig(depth, challenger));
@@ -1921,7 +1978,6 @@ export class TownUI {
         <h3>Belt</h3>
         <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
         <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
-        ${this.challengerNote()}
       </aside>`;
   }
 
@@ -1956,6 +2012,7 @@ export class TownUI {
           </div>
         </div>`);
     }
+    rows.push(this.renderChallengerRow(this.state.maxUnlockedHeight));
     const height = Math.min(this.cursor + 1, this.state.maxUnlockedHeight);
     const config = towerConfig(height, challenger);
     const biome = towerBiomeFor(height);
@@ -1983,7 +2040,6 @@ export class TownUI {
         <h3>Belt</h3>
         <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
         <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
-        ${this.challengerNote()}
       </aside>`;
   }
 
@@ -2015,6 +2071,7 @@ export class TownUI {
           </div>
         </div>`);
     }
+    rows.push(this.renderChallengerRow(maxTier));
 
     const sel = riftConfig(this.riftMode, Math.min(this.cursor + 1, maxTier), mode.floors, challenger);
     const other = RIFT_MODES.map((m) =>
@@ -2027,8 +2084,11 @@ export class TownUI {
         <p class="muted" style="font-style:italic">${escapeHtml(RIFT_LORE)}</p>
         <h3 style="color:${mode.color}">${escapeHtml(mode.name)}</h3>
         <p class="muted">${other}
-          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
-          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+          <!-- data-index parks the cursor back on a tier row, not the Challenger row
+               below it, so this chip always switches the rift flavor rather than
+               occasionally being read as a Challenger adjustment. -->
+          <span class="chip" data-action="left" data-index="0">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right" data-index="0">${k(this.state.settings, "right")} ▶</span></p>
         <p class="muted" style="font-style:italic">${escapeHtml(mode.lore)}</p>
         <p class="muted"><b>${escapeHtml(riftLayer.name)}</b> · ${escapeHtml(riftLayer.lore)}</p>
         <p>${escapeHtml(mode.blurb)}</p>
@@ -2046,7 +2106,6 @@ export class TownUI {
         <p class="muted">Clearing the boss opens the next tier. Extracting early keeps
         what you're carrying and opens nothing.</p>
         <p>Rifts closed: <b>${this.state.stats.riftsCleared[this.riftMode] ?? 0}</b></p>
-        ${this.challengerNote()}
       </aside>`;
   }
 
@@ -2079,6 +2138,7 @@ export class TownUI {
           </div>
         </div>`);
     }
+    rows.push(this.renderChallengerRow(maxTier));
 
     const sel = planetConfig(planet, Math.min(this.cursor + 1, maxTier), planet.floors, challenger);
     const sectorLayer = layerFor(sel);
@@ -2093,8 +2153,10 @@ export class TownUI {
         <h3 style="color:${ELEMENT_COLORS[planet.element]}">${escapeHtml(planet.name)}
           <span class="muted">· T${planet.order}</span></h3>
         <p class="muted">${other}
-          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
-          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+          <!-- Same reason as the Rifts screen's pair: park the cursor off the
+               Challenger row so this always switches the sector. -->
+          <span class="chip" data-action="left" data-index="0">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right" data-index="0">${k(this.state.settings, "right")} ▶</span></p>
         <p>${escapeHtml(planet.blurb)}</p>
         ${unlocked ? "" : `<p class="danger">Sealed. Clear the previous sector's first tier,
           or reach depth ${planet.baseDepth} on either ladder.</p>`}
@@ -2110,7 +2172,6 @@ export class TownUI {
         extraction and the next tier — the deeper the sector, the better it pays.</p>
         <p>Opening a portal doesn't dive — it spawns one by the Reliquary Gate. Walk into
         it when you're ready.</p>
-        ${this.challengerNote()}
       </aside>`;
   }
 
