@@ -176,6 +176,38 @@ committed boss art is not that. Cost is about one generation per short animation
 sizes. Pass `no_background: true` — the default follows the input, but passing `false`
 flattens a transparent sprite onto **white**.
 
+## Wind-ups: what does not work, and what to do instead
+
+**`animate_image` free-form cannot produce a cast wind-up, and this is measured rather than
+felt.** Three raid bosses were generated with prompts that named the requirement explicitly
+("the final frame is the pose fully drawn back at maximum wind-up, about to release — do not
+show the strike itself", plus feet-planted / no-wander wording). `art/anim/windup-check.py`
+measures each frame's silhouette difference from frame 0:
+
+    ferryman   8 21 31 39 41 43 40 39     peak at frame 6, falls back
+    queen      1  1  2  6  7 10 17  9     barely moves at all, then halves
+    minotaur   6 13 18 23 26 26 22 17     peak at frame 5-6, falls back
+
+Every one **peaks in the middle and returns toward the start** — the signature of a loop,
+which is what the tool is built for. The Queen additionally hallucinated a sword that is not
+on the base sprite, appearing around frame 4 and gone again by frame 8.
+
+The consequence is specific and worse than "no animation": a wind-up is keyed to progress,
+so the **last** frame is what the player sees at the instant of the hit. A sequence that
+peaks mid-way and falls back shows a near-resting pose at exactly the moment it exists to
+cue. It would make the fight *less* readable, which is the opposite of why §15's telegraph
+rules want this animation at all.
+
+**The fix is `last_frame_base64` / `last_frame_url`** — pin the ending, and the generator
+interpolates between two poses instead of animating open-endedly. That needs a target pose
+authored or generated per boss, which is a real extra step; re-rolling the open-ended call is
+not a fix, and no prompt wording moved it across three attempts. Run
+`art/anim/windup-check.py` on any candidate before stripping it: it rejects a sequence that
+does not build monotonically and end at its extreme.
+
+Idles are unaffected — a loop-shaped motion is exactly what an idle wants, which is why
+`boss.ferryman`'s shipped fine.
+
 ## Known open ends
 
 - **No art yet.** Phase 2 is the PixelLab pass, raid bosses first. Of the eight new boss
