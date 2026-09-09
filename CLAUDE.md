@@ -81,6 +81,11 @@ inverted (the reckless bot reaching deeper than the sharp one) while every check
 green, because each side only bounded its own number and neither was ever compared
 against the other. A loose one-sided threshold doesn't prove a design promise; a
 comparison does. If you write a new check for "X should beat Y", assert that directly.
+When you falsify a same-seed determinism check by injecting a violation and expecting it
+to go red, the violation has to actually consume or reorder the shared `Rng` stream (or
+otherwise touch a field the comparison reads) — a real behavior change that only reaches
+something the run doesn't compare, or a rare branch the scenario never hits, passes the
+check while proving nothing, the same way a one-sided bound does.
 
 ## The game loop (this is the design; respect it)
 
