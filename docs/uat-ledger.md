@@ -173,42 +173,50 @@ or earlier grants, because those would tread on the Forge bench's `augment`/`ins
 its stated invariant that nothing an op produces is something a chest couldn't have
 dropped. Widening it is a coordinated design decision, not a reward-curve side effect.
 
-**RETRACTED: the "floors stall constantly" finding.** Briefly recorded here as a real
-defect at 25–67% of floors. It was an instrument fault, caught by the investigating
-session falsifying its own detector before publishing. Its measurement bot called
-`FlowField.direction(x, y)` against a signature of `direction(level, x, y)`, which returns
-`null` unconditionally — so the bot never pathfound at all, fell back to straight-line
-steering, and walked into geometry it could have routed around. The "stalls" were the bot
-failing to reach monsters it was capable of killing. Re-measured with the real helpers:
-**0% stalls at every depth from 5 to 30**, one at depth 35.
+**The endgame was never a wall — it is a power curve, and a roster spread.** The
+difficulty investigation finished (`docs/difficulty-curves.md`, `npm run curves`) and
+retires the question three separate sessions circled all day. Sweeping *character power*
+at fixed depth — the axis none of the earlier readings varied — **every depth clears 4/4
+given enough power, on trash and boss floors alike, monotonic throughout, zero stalls.**
+Depth 30 was a wall in the power curve leading to it, not in the content. **Ruling: no
+curve retune** — it would treat a symptom and would move every class together.
 
-Kept because the near-miss is the lesson: a confident, well-quantified headline built on an
-unvalidated instrument, which re-planned the whole board for an hour. The tell was there —
-25% at depth 5 was implausible, and the campaign's own `unfinished` tolerance should have
-been read as falsifying rather than explained away.
+Bosses cost about **one power rung more than trash** at the same depth, consistently at
+both ends. The earlier "it inverts at depth 30" reading was a broken measurement bot.
 
-**What does survive, stated conservatively:**
+**The real finding is the roster.** At depth 30, level 60, Legendary, filled trees:
+**6 of 21 classes clear the boss floor, 12 of 21 clear trash, and progress spans 3%–100%
+at identical gearing.** The spread between classes is larger than the effect of depth. It
+overlaps `npm run builds` being red for eight hybrid pairs. Held for the owner — twenty-one
+classes of tuning is a direction call, not a defect fix.
 
-- **The wave gate is fragile.** `updateSpawning` (`dungeon.ts:1288`) starts the next wave
-  only when `enemies.length === 0`, and its own comment names stragglers without guarding
-  against them. *If* it triggers, the floor can never complete and the only exit is the
-  entrance portal at 15%. The evidence that it triggers often has evaporated, so this is
-  **ordinary hardening, not a critical path** — but the guard is cheap and worth having.
-- **Monsters do sometimes spawn clipping a wall** — measured with a correctly-called
-  predicate at ~1.9% at depth 35, near zero at depth 1. `spawnBurst` scatters up to 60u
-  from an open centre, a wall is 32u thick, and `resolveCircle` ejects per-wall-rect over
-  two passes: fine for a thin wall, unable to escape a sealed mass.
-- **Depth 30 is genuinely lethal**, which is the thing we originally set out to measure and
-  which the fake stalls were burying: at level 60 in Legendary gear, 5 cleared / 6 died /
-  1 slow. Real, and the honest version of the "endgame is a wall" question.
+*Caveat the report states itself:* sections 1–3 are all swordsman, so every depth figure
+reads "for this class" until repeated.
 
-**Not a gap after all:** the portal-reachability check was briefly thought to test only
-cell-openness rather than connectivity. It does test connectivity — `level.open` is
-`floodFrom(grid, …, start)`, a BFS from the spawn, so `isWalkable` answers "reachable from
-where you came in" and its doc comment is accurate.
+**RETRACTED earlier the same day: a "floors stall constantly" finding** (25–67% of floors).
+It was an instrument fault — the measurement bot called `FlowField.direction(x, y)` against
+a signature of `direction(level, x, y)`, getting `null` every time, so it never pathfound
+and its own failures to reach monsters were logged as stalls. Caught by the investigating
+session falsifying its own detector before publishing. Re-measured: 0% at every depth to 30.
+Kept because the near-miss is the lesson, and because it has a root cause worth fixing —
+see the typecheck gap below. What survives: `dungeon.ts:1288`'s wave gate is genuinely
+fragile and worth a cheap guard (ordinary hardening, not critical path), and monsters do
+spawn clipping a wall at ~1.9% at depth 35.
 
 **`recommendedLevel` may be lying to players.** At exactly the level and gear the game
 advises, every floor from depth 18 down killed the character in 6–22 seconds having
 completed 0–3% of the objective. Held pending the straggler fix, since stalls may have
 contaminated this measurement too — but if it survives re-measurement, a number shown in
 the UI is actively misleading.
+
+**`tools/` has never been typechecked.** `tsconfig.json` is `"include": ["src"]`, and
+esbuild strips types without checking them — so every acceptance test in this repo, the
+entire gate, has only ever been type-stripped. That is precisely how a two-argument call to
+a three-argument function survived long enough to produce a retracted finding and an hour of
+re-planning. Being fixed; expect it to surface latent errors that were always there.
+
+**A real crash in `AbilityRuntime.notify`** (`src/combat/runtime.ts`). It iterates
+`this.pending` backwards, splices inside the loop, and calls `runEffect`, which re-enters
+`notify` and splices again — so the outer index can end up past the end of a now-shorter
+array and `this.pending[i]!` reads `undefined`. The `!` is what hid it from the type system.
+Reproduced (duelist, depth 20, seed 72231); in a browser it ends the run. Being fixed.

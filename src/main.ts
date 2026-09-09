@@ -374,7 +374,7 @@ function start(state: GameState, who: AccountInfo): void {
             : ev.crit ? "#ffd34d"
             : ev.element === "physical" ? "#ffffff"
             : ELEMENT_COLORS[ev.element];
-          fx.text(ev.x, ev.y, String(ev.amount), color, ev.crit ? 16 : 12);
+          fx.text(ev.x, ev.y, formatNumber(Math.round(ev.amount)), color, ev.crit ? 16 : 12);
           if (!ev.onPlayer) {
             // A four-pointed flash on every landed hit, bigger and gold on a crit. This
             // is the single cheapest thing that makes combat feel like it connects.
