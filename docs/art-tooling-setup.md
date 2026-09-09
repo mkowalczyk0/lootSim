@@ -52,3 +52,34 @@ The account has since moved off the 40-generation trial onto a paid tier (check
 `get_balance` for the current cycle's count and reset date). Don't spend generations on
 throwaways regardless of how many are left — each test should target a real
 style-guide deliverable (§18 backlog in the style guide).
+
+## Mode matters: only `standard` honours the style knobs
+
+`create_character` takes `shading` (`flat shading` … `detailed shading`), `detail` (`low`
+… `high`) and `outline`, and **`pro` and `v3` mode silently ignore `shading` and `detail`
+— `pro` ignores `outline` too**. They are not soft guidance in those modes; they are
+dropped. Only `standard` mode applies them (as soft guidance).
+
+This is worth knowing because it plausibly explains a run of rejected passes. The hero was
+redrawn five times, and the recurring verdict was that the art came back **more rendered
+than it was asked for** — "too realistic", too many colours, a face carrying more detail
+than the reference's two or three pixels. Those generations asked for flat shading and low
+detail while running in a mode that discards both. The prompt looked right and the knob was
+never connected.
+
+So:
+
+- **Reaching for flat, chunky, limited-palette art → `standard` mode**, and put the palette
+  discipline in the *description* as well, since even there the knobs are only guidance.
+  `pro`/`v3` bias hard toward clean, polished, high-detail rendering (the same bias
+  `art/bosses/finish.ts` records for heroic armour), which is the opposite of what this
+  game's §1.4 palette rules want.
+- **`v3` is still the right mode for rotating an existing sprite** into 8 directions via
+  `reference_image_base64` / `reference_image_url` — that path takes its style from the
+  reference, so the ignored knobs cost nothing.
+- **Candidate rounds should be `standard`, 4 directions, one generation each.** The owner
+  picks a direction from a south view; paying for 8-direction rotations of two sprites that
+  are about to be thrown away is the expensive way to ask a cheap question. Rotate the
+  winner afterwards.
+
+Derived while generating the v6 hero candidates; see `art/characters/candidates/NOTES.md`.
