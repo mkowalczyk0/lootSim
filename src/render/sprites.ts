@@ -162,14 +162,68 @@ export function monsterSprite(name: SpriteName, set?: string): {
   return { canvas: sprite(name), worldScale: spriteWorldScale(name), feet: spriteFeet(name) };
 }
 
+/**
+ * One frame cut out of an animated strip, cached. A sprite with no `anim` table has no
+ * strip to cut, so it hands back the whole canvas and costs nothing.
+ *
+ * Cached against the sprite id and frame index rather than rebuilt per draw: a boss is
+ * drawn every frame of every tick of a two-minute fight.
+ */
+const frameCache = new Map<string, HTMLCanvasElement>();
+
+function sliceFrame(id: string, png: HTMLCanvasElement, index: number): HTMLCanvasElement {
+  const meta = ATLAS[id];
+  if (!meta?.anim || meta.anim.cols <= 1) return png;
+  const key = `${id}#${index}`;
+  const hit = frameCache.get(key);
+  if (hit) return hit;
+  const { canvas, ctx } = blank(meta.w, meta.h);
+  ctx.drawImage(png, index * meta.w, 0, meta.w, meta.h, 0, 0, meta.w, meta.h);
+  if (frameCache.size > 256) frameCache.clear();
+  frameCache.set(key, canvas);
+  return canvas;
+}
+
+/**
+ * A sprite's picture. **Always the first frame** for an animated sprite — see
+ * {@link spriteAt} for a live one.
+ *
+ * That default is deliberate and it is what makes animating a sprite safe: `art/anim/strip.py`
+ * builds a strip whose frame 0 is the sprite that shipped before it, so any call site that
+ * has not opted into animation keeps drawing pixel-identically to what it drew before. A
+ * missed call site is not a bug, it is just a still picture.
+ */
 export function sprite(name: SpriteName): HTMLCanvasElement {
+  return spriteAt(name, 0);
+}
+
+/** A sprite at a given animation frame. Out-of-range indices are clamped, never thrown. */
+export function spriteAt(name: SpriteName, frame: number): HTMLCanvasElement {
   if (!atlas) throw new Error("buildSprites() must run before rendering");
   const overrideId = SPRITE_OVERRIDES[name];
   if (overrideId) {
     const png = atlasCanvas(overrideId);
-    if (png) return png;
+    if (png) {
+      const cols = ATLAS[overrideId]?.anim?.cols ?? 1;
+      const i = Math.min(Math.max(0, Math.floor(frame) || 0), cols - 1);
+      return sliceFrame(overrideId, png, i);
+    }
   }
   return atlas[name];
+}
+
+/** Tinted copy of one animation frame. Keyed per frame so frames can't share a cache entry. */
+export function tintedAt(
+  name: SpriteName, frame: number, color: string, strength = 0.6,
+): HTMLCanvasElement {
+  return tintedCanvas(spriteAt(name, frame), `${name}#${frame}`, color, strength);
+}
+
+/** Silhouette of one animation frame. */
+export function silhouetteAt(
+  name: SpriteName, frame: number, color = "#ffffff",
+): HTMLCanvasElement {
+  return silhouetteCanvas(spriteAt(name, frame), `${name}#${frame}`, color);
 }
 
 /**

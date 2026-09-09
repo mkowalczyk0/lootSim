@@ -80,6 +80,20 @@ for (const meta of animated) {
     png ? `${png.width}x${png.height}` : "PNG missing");
 }
 
+// The frames tile the strip exactly. `render/sprites.ts` cuts a frame out with this rect,
+// so a rect that ran past the PNG would silently draw transparent pixels — a boss that
+// vanishes for part of its own animation rather than an error anyone would notice.
+for (const meta of animated) {
+  const rects = Array.from({ length: meta.anim!.cols }, (_, i) =>
+    frameRect(meta, { index: i, cols: meta.anim!.cols }));
+  const tiles = rects.every((r, i) =>
+    r.sx === i * meta.w && r.sy === 0 && r.sw === meta.w && r.sh === meta.h);
+  const last = rects[rects.length - 1]!;
+  check(`${meta.id}: the ${meta.anim!.cols} frame rects tile the strip exactly`,
+    tiles && last.sx + last.sw === stripWidth(meta),
+    `last rect ends at ${last.sx + last.sw}, strip is ${stripWidth(meta)}`);
+}
+
 console.log("\nanimation — the design promises\n");
 
 // --- fixtures. Synthetic rows, so these properties hold whether or not any art has

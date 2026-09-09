@@ -147,6 +147,35 @@ what the gate checks it against.
 > `hero.legend-base` an `anim` table, or the hero is the one sprite whose animation fails
 > the gate next door.
 
+## Making the art (Phase 2)
+
+Two scripts sit next to the raws, following the pattern `art/bosses/finish.ts` states for
+every art batch: **a treatment that lives in a script survives a re-roll; one applied by
+hand is lost the first time anybody regenerates a single animation.**
+
+- **`art/pixellab-upload.py`** turns a committed sprite into base64 that survives an MCP
+  tool call. This is not busywork — sending a sprite's bytes straight through *fails*, and
+  the error blames truncation, which is misleading. Measured on `boss.ferryman.png`: the
+  RGBA original arrived at the **right byte count** and still would not decode, so it is
+  corruption rather than length; an indexed PNG with PIL's default 256-entry palette also
+  failed, because its unused entries are zeros and produce long runs of identical base64
+  characters; the same image with the palette **trimmed to exactly the colours used**
+  (longest identical run: 8) went through first time. Padding after `IEND` does not help —
+  that was tried. The conversion is pixel-exact and asserts so, and it refuses rather than
+  quietly shipping altered art to the generator. **Never downscale a sprite to make it
+  fit**; the art direction is explicit that art is authored high and drawn near 1:1.
+- **`art/anim/strip.py`** assembles the returned frames into the strip PNG the `ATLAS` row
+  describes and prints the row. It trims the frames **as a set** — one bounding box across
+  all of them, never per-frame — because trimming each independently re-centres each pose
+  and the sprite jitters against its own feet anchor. It also recomputes `worldScale` as
+  `targetWorldHeight / h` so animating a boss never changes how big it is in the arena.
+
+`animate_image` is the right generator call here: it works on a loose sprite, where
+`animate_character` / `animate_object` need an id of something PixelLab generated, and the
+committed boss art is not that. Cost is about one generation per short animation at these
+sizes. Pass `no_background: true` — the default follows the input, but passing `false`
+flattens a transparent sprite onto **white**.
+
 ## Known open ends
 
 - **No art yet.** Phase 2 is the PixelLab pass, raid bosses first. Of the eight new boss
