@@ -268,11 +268,25 @@ console.log("\n=== the first raid boss (depth 5) ===");
  * isn't the right measure here — a bot that kites and drinks potions can survive a
  * great deal of bad play — but the damage bill has to be brutally different, or the
  * mechanics aren't mechanics.
+ *
+ * Seed count is derived, not guessed (2026-09-09 power analysis, master only — no
+ * balance change anywhere near this commit). At 5 seeds — the original count — 8
+ * independent 5-seed blocks landed as low as a 1.92x blind/read ratio against the >2x
+ * promise this check makes: the check was failing master itself on unlucky seed draws,
+ * not measuring the design promise. Sweeping 5/10/15/20/30/40/60/80 across 8 blocks
+ * each, then re-running 40/60/80 on a second, entirely disjoint set of seed blocks to
+ * rule out the first sweep having gotten lucky at any one size, the margin above 2.0x
+ * plateaus at 40 seeds (min 2.08x across both sweeps) and does not improve further at
+ * 60 or 80 (2.09x, 2.08x) — the noise floor is structural, not something more seeds
+ * average away, so there is nothing to buy past 40. 30 seeds still isn't safely past
+ * it (min dropped to 2.05x on the second sweep). 40 is the smallest size that reaches
+ * the plateau instead of sitting on its edge.
  */
 console.log("\n=== standing in boss mechanics costs you ===");
 {
-  const attentive = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0.85));
-  const reckless = [11, 22, 33, 44, 55].map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0));
+  const TELEGRAPH_SEEDS = Array.from({ length: 40 }, (_, i) => 11 * (i + 1));
+  const attentive = TELEGRAPH_SEEDS.map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0.85));
+  const reckless = TELEGRAPH_SEEDS.map((seed) => playFloor(geared(6, 4000 + seed, 8), 5, 400, seed, 0));
   const avg = (rs: typeof reckless, f: (r: (typeof rs)[number]) => number) =>
     rs.reduce((a, r) => a + f(r), 0) / rs.length;
 
@@ -286,12 +300,12 @@ console.log("\n=== standing in boss mechanics costs you ===");
     `${readHits.toFixed(1)}/${avg(attentive, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
     `${avg(attentive, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
     `${avg(attentive, (r) => r.seconds).toFixed(0)}s, ` +
-    `${attentive.filter((r) => r.d.phase === "dead").length}/5 died`);
+    `${attentive.filter((r) => r.d.phase === "dead").length}/${TELEGRAPH_SEEDS.length} died`);
   console.log(
     `  stands in it:    ${blindDamage.toFixed(0)} damage taken, ` +
     `${blindHits.toFixed(1)}/${avg(reckless, (r) => r.mechanicsResolved).toFixed(1)} mechanics eaten, ` +
     `${avg(reckless, (r) => r.potionsDrunk).toFixed(1)} potions, ` +
-    `${avg(reckless, (r) => r.seconds).toFixed(0)}s, ${deaths}/5 died`);
+    `${avg(reckless, (r) => r.seconds).toFixed(0)}s, ${deaths}/${TELEGRAPH_SEEDS.length} died`);
 
   // The rate, not the count: a player who dodges is alive longer and therefore sees more
   // mechanics, so comparing totals would flatter the one who stood still and died faster.
