@@ -78,6 +78,12 @@ export interface ZoneTemplate {
   status?: { id: StatusId; chance: number };
   /** A friendly zone: heal or buff instead of damage. */
   benefit?: "heal" | "shield" | "haste";
+  /**
+   * A `line` zone that multiplies the damage of its owner's projectiles while they
+   * travel through it — Ranger's Predator's Trail. The projectile keeps the charge
+   * (and a bright tell) after it leaves.
+   */
+  empowerProjectiles?: number;
 }
 
 export interface MinionCommand {

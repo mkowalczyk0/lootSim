@@ -715,15 +715,29 @@ export function runEffect(
     case "zone": {
       const z = step.zone;
       const pt = point(ctx);
+      // A `line` zone is a lane on the ground: it runs from where the caster stands out
+      // along the cast direction for the ability's own reach. `line` targeting resolves
+      // hits, not a ground point (it never fills `ctx.targets.point`), so the far end has
+      // to be rebuilt from the same direction the hit-scan used. Anything else is a
+      // puddle at `pt`.
+      const isLine = z.shape === "line";
+      let far = pt;
+      if (isLine) {
+        const dir = ctx.targets.direction ?? ctx.facing;
+        const length = ctx.ability.shape?.length ?? ctx.ability.range ?? z.radius * 4;
+        far = { x: ctx.origin.x + Math.cos(dir) * length, y: ctx.origin.y + Math.sin(dir) * length };
+      }
       const req: Parameters<CombatHost["spawnZone"]>[0] = {
         ownerId: ctx.casterId,
-        x: pt.x,
-        y: pt.y,
+        x: isLine ? ctx.origin.x : pt.x,
+        y: isLine ? ctx.origin.y : pt.y,
         radius: z.radius,
         duration: z.duration,
         tickInterval: z.tickInterval,
         follows: z.follows ?? false,
         mergeable: z.mergeable ?? false,
+        ...(isLine ? { x2: far.x, y2: far.y } : {}),
+        ...(z.empowerProjectiles !== undefined ? { empowerProjectiles: z.empowerProjectiles } : {}),
       };
       if (z.damage) {
         req.damage = makeDamagePacket({

@@ -271,6 +271,11 @@ export interface Projectile extends Body {
    * (they credit through `weaponStrike`) and on hostile projectiles.
    */
   packet?: DamagePacket;
+  /**
+   * Charged by flying through its owner's Predator's Trail — deals amplified damage on
+   * its next hit and draws with a distinct tint so the charge is visible in flight.
+   */
+  empowered?: number;
 }
 
 /**
@@ -331,6 +336,15 @@ export interface GroundZone extends Body {
   owner?: number;
   /** Status id a zone re-applies to whoever stands in it each tick (a pure status zone). */
   status?: string;
+  /**
+   * A `line` zone (Ranger's Predator's Trail): a lane from (`x`,`y`) to (`x2`,`y2`),
+   * `radius` wide either side of the segment, rather than a circle. Absent on every
+   * other zone.
+   */
+  x2?: number;
+  y2?: number;
+  /** Damage multiplier this zone gives its owner's projectiles travelling through it. */
+  empowerProjectiles?: number;
   /**
    * The originating ability's damage packet, for a hero-cast damage zone. Its `source`
    * feeds each tick's hit back into the caster's resources (Shaman totems, Stormcaller

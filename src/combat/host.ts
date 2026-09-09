@@ -59,6 +59,11 @@ export interface ZoneRequest {
   damage?: DamagePacket;
   benefit?: "heal" | "shield" | "haste";
   status?: { id: string; chance: number };
+  /** `line` zone: the far end of the segment. `x`/`y` is the near end, `radius` its half-width. */
+  x2?: number;
+  y2?: number;
+  /** Damage multiplier this zone confers on its owner's projectiles passing through it. */
+  empowerProjectiles?: number;
 }
 
 export interface MinionRequest {
