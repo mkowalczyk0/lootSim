@@ -21,7 +21,7 @@
  * kit — an arena of stationary dummies can't measure "did the escape save you" — and
  * printed as an effect-step census so the table has a number for every column.
  */
-import type { Action, AvatarInput, Input } from "../src/core/input";
+import type { Action, Input } from "../src/core/input";
 import { Dungeon } from "../src/game/dungeon";
 import type { Enemy } from "../src/game/entities";
 import { resolveCircle } from "../src/game/level";
@@ -152,7 +152,7 @@ function run(
       elite: null,
       boss: null,
       summoned: false,
-      sc: new StatusContainer(Dungeon.ENEMY_ID_BASE + id),
+      sc: new StatusContainer((Dungeon as unknown as { ENEMY_ID_BASE: number }).ENEMY_ID_BASE + id),
     };
     mine.add(id);
     return dummy;

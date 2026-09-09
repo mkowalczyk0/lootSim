@@ -33,7 +33,7 @@ import { Rng } from "../src/core/rng";
 import { parseSaved, serializeSave } from "../src/core/save";
 import { COSMETICS, COSMETIC_SLOTS } from "../src/data/cosmetics";
 import { dropsForSource } from "../src/data/drop-preview";
-import { LIVE_SOURCE_KINDS, dropChance, forSource, type DropQuery, type FoundSource } from "../src/data/drops";
+import { LIVE_SOURCE_KINDS, dropChance, type DropQuery, type FoundSource } from "../src/data/drops";
 import { DELVE_BOTTOM } from "../src/data/legends";
 import { MOD_KEYS, type ModKey } from "../src/data/mods";
 import { delveConfig, riftConfig } from "../src/data/modes";

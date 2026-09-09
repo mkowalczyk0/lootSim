@@ -60,15 +60,15 @@ import { ARCHETYPES, type EnemyKind } from "../src/data/enemies";
 import { BOSSES, bossFor } from "../src/data/bosses";
 import { CLASS_IDS, type ClassId } from "../src/data/classes";
 import { DELVE_BOTTOM } from "../src/data/legends";
-import { MODES, delveConfig, type RunConfig } from "../src/data/modes";
+import { delveConfig, type RunConfig } from "../src/data/modes";
 import { profileFor } from "../src/data/depth";
 import { UNIVERSAL_TREE } from "../src/progression/universal";
 import { Dungeon, inTelegraph } from "../src/game/dungeon";
 import {
-  CAMPAIGN_SEEDS, DT, FakeInput, approachDir, campaign, escapeAngle, geared, steer,
+  CAMPAIGN_SEEDS, DT, FakeInput, approachDir, campaign, escapeAngle, steer,
   steerAngle,
 } from "./bot";
-import type { Enemy } from "../src/game/dungeon";
+import type { Enemy } from "../src/game/entities";
 import { itemScore, rollItem } from "../src/game/item";
 import { FlowField, circleHitsWall } from "../src/game/level";
 import { GameState } from "../src/game/state";
@@ -331,18 +331,6 @@ function floorAt(depth: number, boss: boolean): RunConfig {
 
 function mean(xs: readonly number[]): number {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
-}
-
-/** Plays one (depth, flavour) cell across every seed and folds the runs together. */
-function cell(
-  make: (seed: number) => GameState, depth: number, boss: boolean, dodge = 0.55,
-): { clears: number; runs: Run[] } {
-  const runs: Run[] = [];
-  for (let i = 0; i < SEEDS; i++) {
-    const seed = 70_000 + i * 137 + depth;
-    runs.push(play(make(seed), floorAt(depth, boss), seed, dodge));
-  }
-  return { clears: runs.filter((r) => r.cleared).length, runs };
 }
 
 const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(0)}%`;

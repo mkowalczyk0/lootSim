@@ -18,7 +18,7 @@
  * Nothing in this file asserts anything: it is the instrument, not a test.
  */
 
-import { Input, type Action, type AvatarInput } from "../src/core/input";
+import { Input, type Action } from "../src/core/input";
 import { Rng } from "../src/core/rng";
 import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
 import type { ClassId } from "../src/data/classes";
@@ -137,6 +137,8 @@ export interface FloorResult {
   /** Boss mechanics that resolved with the player still standing in them. */
   mechanicsEaten: number;
   mechanicsResolved: number;
+  /** Seconds the bot spent pinned against geometry — instrument health, not game data. */
+  pinned: number;
 }
 
 /**

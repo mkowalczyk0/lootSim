@@ -541,7 +541,7 @@ console.log("\n=== 10. one resource spender (with health conversion) ===");
 // =========================================================================
 console.log("\n=== 11. one status application (chance / resist / immunity / cleanse / detonate / spread) ===");
 {
-  const { w, hero, enemies } = world();
+  const { hero, enemies } = world();
   const [a, b] = enemies;
   const target = a!;
 

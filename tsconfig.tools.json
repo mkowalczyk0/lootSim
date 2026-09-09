@@ -1,0 +1,15 @@
+{
+  // The acceptance tools are Node programs that import the browser simulation, so they
+  // need `src`'s settings plus Node's globals — and they need to be checked at all.
+  // Until Sept 2026 `tsconfig.json` said `"include": ["src"]` and nothing else, so every
+  // tool in this repo — the entire acceptance gate — was only ever type-*stripped* by
+  // esbuild, never type-*checked*. A two-argument call to a three-argument function
+  // survived that long enough to produce a retracted measurement finding.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  // `src/vite-env.d.ts` comes along because tools reach render code that reads
+  // `import.meta`, which Vite's ambient types describe.
+  "include": ["tools", "src/vite-env.d.ts"]
+}

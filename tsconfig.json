@@ -12,7 +12,11 @@
     "exactOptionalPropertyTypes": false,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    // `src` is the browser half and must not see Node's globals: `@types/node` exists in
+    // this repo for `tools/` (see tsconfig.tools.json) and would otherwise be pulled into
+    // every program automatically, making `process` and `Buffer` typecheck inside the game.
+    "types": []
   },
   "include": ["src"]
 }

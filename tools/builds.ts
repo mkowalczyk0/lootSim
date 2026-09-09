@@ -38,7 +38,7 @@ import { itemScore, rollItem } from "../src/game/item";
 import { GameState } from "../src/game/state";
 import { CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
 import { delveConfig } from "../src/data/modes";
-import { CLASS_BY_ID, buildProgressionTree, installClass } from "../src/progression/index";
+import { CLASS_BY_ID, installClass } from "../src/progression/index";
 import type { PathUnlockDef } from "../src/progression/unlocks";
 import { KEYSTONE_COST_V2 } from "../src/progression/nodes";
 import type { Ability, EffectStep } from "../src/combat/ability";

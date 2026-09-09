@@ -20,7 +20,6 @@
 import {
   AbilityRuntime,
   EventBus,
-  ResourceSet,
   StatusContainer,
   creditResourcesForHit,
   getStatusSpec,
@@ -388,7 +387,7 @@ section("resources — Mana / Momentum / Rage / Corpses / Souls / Conviction / W
   }
   // Momentum — Lancer builds it by moving
   {
-    const { w, hero } = arena(LANCER);
+    const { hero } = arena(LANCER);
     const mom = hero.resources!.get("momentum")!;
     hero.resources!.broadcast({ type: "move", distance: 30 });
     check("Momentum: movement generates it", mom.value > 0, `value ${mom.value.toFixed(1)}`);
@@ -398,7 +397,7 @@ section("resources — Mana / Momentum / Rage / Corpses / Souls / Conviction / W
   }
   // Rage — Berserker fills it by TAKING damage, not by kills
   {
-    const { w, hero } = arena(BERSERKER);
+    const { hero } = arena(BERSERKER);
     const rage = hero.resources!.get("rage")!;
     hero.resources!.broadcast({ type: "damageTaken", damage: 40, maxHealth: 200 });
     check("Rage: taking damage generates it", rage.value > 0, `value ${rage.value.toFixed(1)}`);
@@ -423,14 +422,14 @@ section("resources — Mana / Momentum / Rage / Corpses / Souls / Conviction / W
   }
   // Souls — Necromancer's slow economy fills on kill
   {
-    const { w, hero } = arena(NECROMANCER);
+    const { hero } = arena(NECROMANCER);
     const souls = hero.resources!.get("souls")!;
     hero.resources!.broadcast({ type: "kill" });
     check("Souls: a kill grants Souls", souls.value === 6);
   }
   // Conviction — Paladin fills it by PREVENTING damage
   {
-    const { w, hero } = arena(PALADIN);
+    const { hero } = arena(PALADIN);
     const conv = hero.resources!.get("conviction")!;
     hero.resources!.broadcast({ type: "damagePrevented", damage: 40, maxHealth: 200 });
     check("Conviction: preventing damage generates it", conv.value > 0, `value ${conv.value.toFixed(1)}`);

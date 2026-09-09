@@ -14,19 +14,18 @@ import { Input, type Action, type AvatarInput } from "../src/core/input";
  * harness, which then measured its own paraphrase instead of the game; see that file.
  */
 import {
-  CAMPAIGN_SEEDS, DT, FakeInput, approachDir, campaign, escapeAngle, geared, playFloor,
-  steer, steerAngle, townVisit, type FloorResult,
+  CAMPAIGN_SEEDS, DT, FakeInput, campaign, geared, playFloor, steerAngle, type FloorResult,
 } from "./bot";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
-import { Dungeon, inTelegraph, type Hero } from "../src/game/dungeon";
+import { Dungeon, type Hero } from "../src/game/dungeon";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
 import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
 import { Player, xpForLevel } from "../src/game/player";
-import { GameState, POTION_PRICE } from "../src/game/state";
-import { CHESTS, CHEST_TIERS, type ChestTier } from "../src/data/chests";
+import { GameState } from "../src/game/state";
+import { type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
@@ -40,7 +39,7 @@ import {
 import {
   WEEKLY_BOSS_DEPTH_MAX, WEEKLY_BOSS_DEPTH_MIN, WEEKLY_DEPTH_MAX, WEEKLY_DEPTH_MIN, WEEKLY_DEPTH_PER_FLOOR,
   WEEKLY_FLOORS, WEEKLY_GUARANTEED_RARITY, WEEKLY_KEY_ODDS, WEEKLY_MODIFIERS, WEEKLY_MODIFIER_IDS,
-  WEEKLY_UNLOCK_DEPTH, msUntilWeeklyReset, weekNumber, weeklyConfig, weeklyEffects, weeklyFloorSeed, weeklyPlan,
+  WEEKLY_UNLOCK_DEPTH, msUntilWeeklyReset, weekNumber, weeklyConfig, weeklyEffects, weeklyPlan,
   weeklySeed, weeklyUnlocked, type WeeklyModifierId,
 } from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
@@ -48,7 +47,7 @@ import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
 import { CLASS_BY_ID, UNIVERSAL_TREE, buildProgressionTree } from "../src/progression/index";
-import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
+import { WEAPON_FAMILIES, WEAPONS } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
 import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
 import {
@@ -84,12 +83,19 @@ import { playerToJSON } from "../src/game/state";
 
 
 let failures = 0;
+/**
+ * `eliteCapForFloor` is private; a headless test reaches it so "within what the floor can
+ * make" is checked against the real cap rather than a number copied out of the sim.
+ */
+function eliteCap(d: Dungeon): number {
+  return (d as unknown as { eliteCapForFloor(): number }).eliteCapForFloor();
+}
+
 function check(label: string, ok: boolean, detail = "") {
   console.log(`${ok ? "  ok  " : " FAIL "} ${label}${detail ? "  — " + detail : ""}`);
   if (!ok) failures++;
 }
 
-const DT = 1 / 60;
 
 
 
@@ -410,7 +416,7 @@ console.log("\n=== monster variety — six new archetype roles (UAT §2) ===");
     const d = new Dungeon(geared(28, 8123, 26), delveConfig(16, 1), 60_600);
     d.sealWaves();
     d.enemies.length = 0;
-    const leech = d.spawnArchetypeAt("leech", d.avatar.x + 200, d.avatar.y);
+    d.spawnArchetypeAt("leech", d.avatar.x + 200, d.avatar.y);
     const ally = d.spawnArchetypeAt("brute", d.avatar.x + 260, d.avatar.y);
     ally.health = ally.maxHealth * 0.3;
     let healed = false;
@@ -1189,7 +1195,7 @@ console.log("\n=== planets ===");
   const state2 = geared(12, 9090, 6);
   const miningRun = new Dungeon(state2, planetConfig(ignathis, 1, 1, 0), 1234);
   check("a planet floor is generated with resource nodes",
-    miningRun.level.resourceNodes.length > 0, miningRun.level.resourceNodes.length);
+    miningRun.level.resourceNodes.length > 0, `${miningRun.level.resourceNodes.length}`);
   const node = miningRun.level.resourceNodes[0];
   if (node) {
     const input = new FakeInput();
@@ -1457,7 +1463,7 @@ console.log("\n=== the vigil ===");
     const quiet = new Dungeon(st, withMods([]), 4242);
     const hunt = new Dungeon(st, withMods(["hunt"]), 4242);
     check("Elite Hunt asks for more elites, within what the floor can make",
-      hunt.elitesRequired === Math.min(quiet.elitesRequired + 2, hunt.eliteCapForFloor()) && hunt.elitesRequired > quiet.elitesRequired,
+      hunt.elitesRequired === Math.min(quiet.elitesRequired + 2, eliteCap(hunt)) && hunt.elitesRequired > quiet.elitesRequired,
       `${quiet.elitesRequired} → ${hunt.elitesRequired}`);
   }
   check("a plain delve floor is untouched by any of it",
@@ -1479,7 +1485,7 @@ console.log("\n=== the vigil ===");
     const keys = d.pickups.filter((p) => p.kind === "key" && p.keyTier === cfg.daily!.keyTier);
     check("the day's key is in the clear cache", keys.length >= 1, `${keys.length} × ${cfg.daily!.keyTier}`);
     check("nothing is closed until it's banked", st.daily.clearedDay === 0);
-    for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier!]++;
+    for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier as ChestTier]++;
     const before = st.keys[cfg.daily!.keyTier];
     d.bankLoot();
     check("banking closes the Vigil for the day", st.daily.clearedDay === today && st.stats.vigilsCleared === 1);
@@ -1952,7 +1958,7 @@ console.log("\n=== the convergence ===");
     const quiet = new Dungeon(st, wWithMods([]), 4343);
     const purge = new Dungeon(st, wWithMods(["purge"]), 4343);
     check("Purge asks for more elites, within what the floor can make",
-      purge.elitesRequired === Math.min(quiet.elitesRequired + 4, purge.eliteCapForFloor()) && purge.elitesRequired > quiet.elitesRequired,
+      purge.elitesRequired === Math.min(quiet.elitesRequired + 4, eliteCap(purge)) && purge.elitesRequired > quiet.elitesRequired,
       `${quiet.elitesRequired} → ${purge.elitesRequired}`);
   }
   check("a plain floor is untouched by any of it",
@@ -1986,7 +1992,7 @@ console.log("\n=== the convergence ===");
         check("the warden's floor guarantees the week's key tier", keys.length >= 1, `${keys.length} × ${wPlan.keyTier}`);
         const items = d.pickups.filter((p) => p.kind === "item" && p.rarity === WEEKLY_GUARANTEED_RARITY);
         check("…and a guaranteed item at the promised rarity", items.length >= 1);
-        for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier!]++;
+        for (const p of [...d.pickups]) if (p.kind === "key") d.localHero.loot.keys[p.keyTier as ChestTier]++;
       }
       check(`nothing closes the week before the warden falls`, st.weekly.clearedWeek === 0);
       d.bankLoot();
