@@ -130,6 +130,32 @@ export class AbilityRuntime {
     return true;
   }
 
+  /**
+   * Removes every pending entry `match` accepts and hands them back, newest first —
+   * *before* any of them has run.
+   *
+   * This exists because a pending entry's effects re-enter this runtime. `runEffect` can
+   * deal damage, damage makes the host emit, and an emit calls `notify`, which spends
+   * pending entries of its own. So an index walked across a `runEffect` call is an index
+   * into an array that call may have rebuilt underneath it: the index goes stale,
+   * `this.pending[i]` is `undefined`, and reading a field off it throws — in a browser,
+   * that ends the run. Claiming first also means the re-entrant call sees these entries
+   * as already spent, so nothing fires twice.
+   *
+   * The loop below splices, but it calls nothing while it does, which is the whole point.
+   */
+  private claim(match: (p: PendingEffect) => boolean): PendingEffect[] {
+    const taken: PendingEffect[] = [];
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i];
+      if (p && match(p)) {
+        this.pending.splice(i, 1);
+        taken.push(p);
+      }
+    }
+    return taken;
+  }
+
   /** Advances cooldowns, charge recharge, and fires due delayed effects. */
   tick(dt: number, host: CombatHost): void {
     for (const [id, t] of this.cooldowns) {
@@ -138,18 +164,14 @@ export class AbilityRuntime {
       else this.cooldowns.set(id, next);
     }
     const now = host.now();
-    for (let i = this.pending.length - 1; i >= 0; i--) {
-      const p = this.pending[i]!;
-      if (p.kind === "delay" && p.fireAt !== undefined && now >= p.fireAt) {
-        this.pending.splice(i, 1);
-        for (const step of p.effects) runEffect(host, p.ctx, step, this);
-      } else if (p.expiresAt !== undefined && now >= p.expiresAt) {
-        // A window that ran out is dropped on purpose: a `reactive` whose event never
-        // came, or a follow-up combo the player did not press in time. Both are misses,
-        // not effects owed. What must never happen is a window closing *unnoticed* —
-        // `notify` and `takeFollowUp` are the two things that can spend one.
-        this.pending.splice(i, 1);
-      }
+    const due = (p: PendingEffect): boolean =>
+      p.kind === "delay" && p.fireAt !== undefined && now >= p.fireAt;
+    // A window that ran out is claimed alongside the due ones and then simply dropped: a
+    // `reactive` whose event never came, or a follow-up combo the player did not press in
+    // time. Both are misses, not effects owed. What must never happen is a window closing
+    // *unnoticed* — `notify` and `takeFollowUp` are the two things that can spend one.
+    for (const p of this.claim((p) => due(p) || (p.expiresAt !== undefined && now >= p.expiresAt))) {
+      if (due(p)) for (const step of p.effects) runEffect(host, p.ctx, step, this);
     }
   }
 
@@ -226,16 +248,20 @@ export class AbilityRuntime {
     return { ok: true, targets, pending: [...this.pending], fromFollowUp: true };
   }
 
-  /** A reactive step's event fired — run its effects if the window is still open. */
+  /**
+   * A reactive step's event fired — run its effects if the window is still open.
+   *
+   * Claimed before anything runs, via `claim`. A counter that answers a hit deals damage,
+   * and damage makes the host emit `damageTaken` again, which lands back here: the
+   * Duelist opens three of these windows and is built entirely around countering, so it
+   * is the class that found this. Reproduced on the depth-20 trash floor at seed 72231.
+   */
   notify(event: string, host: CombatHost): void {
     const now = host.now();
-    for (let i = this.pending.length - 1; i >= 0; i--) {
-      const p = this.pending[i]!;
-      if (p.kind === "reactive" && p.event === event && (p.expiresAt ?? Infinity) >= now) {
-        this.pending.splice(i, 1);
-        for (const step of p.effects) runEffect(host, p.ctx, step, this);
-      }
-    }
+    const due = this.claim(
+      (p) => p.kind === "reactive" && p.event === event && (p.expiresAt ?? Infinity) >= now,
+    );
+    for (const p of due) for (const step of p.effects) runEffect(host, p.ctx, step, this);
   }
 
   castAbility(host: CombatHost, casterId: number, ability: Ability, input: CastInput = {}): CastResult {
