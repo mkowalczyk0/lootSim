@@ -238,6 +238,20 @@ Elites and elemental infusions are palette-swaps of these same 11 base silhouett
 (`tinted()` in `render/sprites.ts`), already working end-to-end. Nothing new to author
 there either.
 
+**The Reliquary question was asked and closed (Sept 2026).** `manifest.ts`'s own
+`SHARED_MONSTER_SETS` comment used to say the opposite of this section — that the
+Reliquary "should eventually diverge" into per-sector monster rosters — which was a real
+contradiction sitting in the repo, caught when an art session was asked to scope exactly
+that and stopped rather than pick a side. The ruling stands with this section, and the
+citation is the worldbuilding doc itself: every one of the nine Reliquary sectors in
+`docs/game_story_worldbuilding.md` is described purely as a *place* (architecture,
+terrain, what's embedded in the walls) and is silent on what walks around in it. Each
+sector's one labelled differentiator — "Fire-heavy", "Cold-heavy", "Void-heavy", ... —
+names the elemental-infusion lever this section already declares sufficient, not a
+monster population. `manifest.ts`'s comment has been corrected to match. **Do not reopen
+this a third time** without a new source — a production-cost argument alone doesn't
+clear the bar this section and the worldbuilding doc both already set.
+
 ---
 
 ## 4. Section C — the Tower's monster identity (open decision, not a queued task)
