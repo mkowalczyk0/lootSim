@@ -1,268 +1,235 @@
-# Handoff — 2026-09-09
+# Handoff — 2026-09-09 (evening)
 
-Written at the end of a multi-session run (PM session `lootsim-21`, with `lootsim-26`,
-`lootsim-56`, `lootsim-76`, `lootsim-97`). All sessions have wrapped and all worktrees are
-clean. This file is the state of play for whoever picks it up next.
+Written at the end of a multi-session run: PM `lootsim-21`, with `lootsim-26`, `lootsim-56`,
+`lootsim-76`, `lootsim-97`. **Master is green at `a0a80ef` (`npm test` GATE_EXIT=0, full
+suite, verified after the last merge), the working tree is clean, and every branch this run
+produced has been merged.** Fifteen merges landed.
 
----
-
-## Addendum (lootsim-97, after this file's first commit): the axis is confirmed
-
-Item #5 on the docket below — "the item-level axis" — is no longer an open question. The
-owner, live in the `lootsim-97` session, was asked directly and confirmed: item level for
-chests and crafting should track the active character's own **`level`**, not `frontier`.
-This was a real, in-conversation confirmation, not an inference from the inline comment.
-
-Confirmed explicitly for **two of the three sites**: `openAugmented`/`openChests`
-(`state.ts:815`, the edit already in the tree) and `craftItem` (`state.ts:477`). The owner
-was *not* separately asked about the third site, `craftNamed` (`state.ts:578`) — when told
-it existed, they chose to stop and hand off rather than extend the confirmation to it
-in-session, so treat it as still open.
-
-**What is still genuinely left to do** (this session deliberately did not do it, on the
-owner's own choice to stop rather than finish under time pressure — see "Working rules"
-below on why a wrap-up is the wrong time to make a balance change):
-
-1. Confirm (or extend by inference — it's the same axis) `craftNamed` at `state.ts:578`.
-2. Change all confirmed sites from `this.player.frontier` to `this.player.level` together.
-3. Rewrite the regression guard in `tools/smoke.ts` (the "fresh alt's chests" block) — it
-   currently asserts the *old* rule (frontier-based) and will and should keep failing until
-   it's rewritten to assert the *new* one. A fresh alt is no longer "ilvl 1 because its
-   frontier is 0" — it's "ilvl equal to its own level," and the test's own alt gets bumped to
-   level 30 by an earlier step in the same block (for an unrelated equip-catchup check)
-   before the "fresh alt" assertion runs, so the test will need either a genuinely fresh
-   second alt or a reordering, not just a changed expected value.
-4. Re-measure the "reading the telegraphs actually gets you out of them" comparison with the
-   change applied, widened across seeds and A/B'd against master in a throwaway worktree
-   (see "Working rules" — never report a balance delta from one default run). The one
-   sampled reading this session took was 78% eaten vs 40%, close to master's 77% vs 34%, but
-   one reading proves nothing either way.
-5. Update `CLAUDE.md`'s two references to this rule (the frontier/Tower section and the
-   per-class-save section) to describe `level`, not `frontier` or `deepestDepth`.
-
-Also: this file's own opening line ("all sessions have wrapped and all worktrees are
-clean") stopped being true partway through its own commit — `lootsim-97` was still active
-and picked this up afterward. Worth knowing if a future handoff assumes the file it's
-reading is itself the last word.
+This file replaces the previous handoff. Everything on that docket is closed.
 
 ---
 
-## Read this first: there is an uncommitted owner edit in the working tree
+## The previous docket, closed
 
-`src/game/state.ts` has a one-line change that **is the owner's own**, made directly on the
-dev server, with their comment on it:
-
-```ts
-const ilvl = Math.max(1, this.player.level); // owner override - this should be based on the
-// active character's level, not the account's record. chests and crafting are bricked otherwise
-```
-
-**Do not discard it and do not casually commit it.** It is preserved as a tag in case the
-working tree is ever cleaned:
-
-```
-git stash apply owner-wip/chest-ilvl
-```
-
-### What is actually going on, because it is more interesting than it looks
-
-**The owner's complaint is real and the diagnosis is right.** `Player.frontier` is the
-per-class maximum of that character's depth and height records. A character who has
-*levelled* but has not *banked a deep run* therefore has a low frontier and rolls near-ilvl-1
-items out of every chest — junk out of a Legendary key. That is a genuine defect, not a
-preference.
-
-**The edit as written covers one of three sites.** It changes `openChests`. Still on the old
-value:
-
-- `src/game/state.ts:477` — `craftItem`
-- `src/game/state.ts:578` — `craftNamed`
-
-So chests are fixed and **crafting is still bricked exactly as described**.
-
-**But the axis change collides with the acceptance suite, and the collision is not a bug.**
-With the edit in the tree, `npm test` fails two checks:
-
-```
-FAIL  a fresh alt's chests roll for its own (level 1) depth, not the main's
-      — ilvls: 30,30,30,30,...
-FAIL  reading the telegraphs actually gets you out of them — 78% eaten vs 40%
-```
-
-The first is a deliberate regression guard (`tools/smoke.ts`, near the "fresh alt" block)
-protecting the rule in `CLAUDE.md`: *chests and the forge roll item level off the active
-character's `deepestDepth`, not the account record*. That check builds an alt that is **level
-30 but shallow**, so **any formula that reads `level` fails it by construction**. This was
-verified: `Math.max(1, frontier, level)` applied at all three sites fails the two checks
-identically. It is not a patch away from passing.
-
-The second failure is the more important one and it is a real consequence, not noise: moving
-the item-level axis changes what the campaign bots are wearing, which moves combat balance
-enough to break the sharp-vs-reckless telegraph comparison. Any change here is a live balance
-change.
-
-**This is therefore an owner decision, not a fix to apply.** The two designs are opposed:
-"item level tracks how deep this character has actually gone" versus "item level tracks how
-strong this character currently is." The owner has stated the second. Whoever takes this up
-should confirm the axis with them, then change the rule in `CLAUDE.md`, the check in
-`tools/smoke.ts`, and all three call sites **together** — and re-measure the telegraph
-comparison rather than assuming it recovers.
-
-`npm test` on committed `master` with the working tree clean is **green, exit 0**. The two
-failures come from the working-tree edit alone.
+| Item | Outcome |
+|---|---|
+| Chest augments WASD / click bug | **Fixed and merged** (98c4c57) |
+| Bosses all fight the same | **Fixed and merged** (e015d27) — see below, the numbers are stark |
+| Citadel/lobby looks wrong | **Fixed and merged** (068f6a4, 76d7ed0) |
+| Delve drawing the Reliquary's monsters | **Was already resolved** — `SHARED_MONSTER_SETS` declares the overlap deliberately. No work needed. |
+| Item-level axis (3 sites + guard + docs) | **Fixed and merged** (afcc198) |
+| Rune Fragment / Heartwood Sap recipes | **Still open** — see below |
+| Reliquary reachability (sectors 7–9) | **Still open** — see below |
+| Raid party threat-rate direction | **Built, measured and merged** (e015d27) |
+| Augment discount: divine or unspoken? | **PM ruling: stays on divine.** Closed. |
+| Hero redraw | **Three candidates rendered, awaiting the owner's pick.** Nothing committed. |
+| Animation + art overhaul | **Architecture, gate and three animated raid bosses merged.** Wind-ups blocked — see below. |
 
 ---
 
-## What landed this session
+## The one thing blocking work: the hero pick
 
-Merged and live on `master`:
+Three candidates were rendered on a real graded floor beside the unchanged monster cast and
+sent to the owner. **Nothing is committed** — deliberately, so a rejected direction cannot be
+mistaken for a starting point. The instrument (`art/characters/candidates.ts`) is committed
+and re-derives every number from the PNGs.
 
-- **Augments** (`docs/augments.md`) — `SAVE_VERSION` is **29**. Guaranteed-outcome tokens
-  (unspoken augment guarantees unspoken, bow augment guarantees a bow), priced at the owner's
-  literal 2× harder to drop from Avarice Rifts. **27 is a burned save version and must stay a
-  hole** — see the comment in `src/core/save.ts`.
-- **Challenger badges, reworked to per-depth.** Twenty-slot arrays indexed by tier holding the
-  deepest depth banked at that tier, per activity per class. The earlier activity-keyed shape
-  was rejected: Death March X on depth 1 and on depth 30 are not the same achievement.
-- **Forge popups**, **combat-stats overlay** (`src/game/combatStats.ts`), **the training dummy
-  room**, **ability FX tracers** (37 ranged abilities, instant tracers rather than travelling
-  bolts — damage lands instantly, so a bolt arriving later is a visible lie).
-- **Portrait height is a band, not a ceiling.** The legal bands are **24–43, 46–50, 52–58,
-  78–87**, and **59–77 is a dead zone** — exactly the range you reach for when you want a
-  slightly bigger hero, so it is the range that silently wastes a generation. The band is now
-  *derived* in `tools/smoke.ts` and printed next to the portrait sizes. Deriving it caught that
-  the hand-scanned numbers were wrong at both ends; the docs now point at the tool rather than
-  quoting a list.
-- **Monster sets** — `BiomeStyle.monsterSet` + `MONSTER_SETS` + `monsterSprite`, wired for all
-  three realms (9 Reliquary sectors, 6 Delve biomes, 3 Tower bands). Plus Citadel station props
-  and floor dressing on the text grid, and the `ATLAS` asymmetry check.
-- **`docs/art_refs/`** — the owner's five reference images, now committed so every worktree can
-  see them.
-- **`docs/materials-coverage.md`** — on branch `investigate/materials-coverage` @ `5a30318`,
-  **not yet merged**.
+|  | lever | px | colours | max chroma | head/body lum | world h | tiles | density |
+|---|---|---|---|---|---|---|---|---|
+| v4 shipped | — | 39×57 | 40 | 30 (skin) | 2.1× | 32 | 1.00 | 3.56× |
+| A cut the ink | colour only | 16×41 | 27 | 35 (skin) | 1.17× | 32 | 1.00 | 2.56× |
+| B coarse + tall | height only | 20×51 | 18 | **73 #dba820** | 1.6× | 58 | 1.81 | 1.76× |
+| C both | both | 16×39 | 24 | 26 (skin) | 1.17× | 52 | 1.63 | 1.50× |
 
-### A correction that reversed an earlier report
+- **B carries a hot accent** (saturated gold buckle, chroma 73, plus lit blue eyes) — the
+  §1.4 violation the hero is forbidden outright, and what v3 was rejected for. It is
+  invisible to colour count, because one bright pixel pair costs exactly one colour. B also
+  lands at h=51, inside a portrait dead zone (free to fix: pad to 52).
+- **B and C do not subtly tower** — the monsters read as children beside them. Picking either
+  commits to rescaling every monster's *drawn* size. Mechanically free (`worldScale` is
+  decoupled from collision, so no hitbox, telegraph radius or camera geometry moves), but it
+  reads as a more zoomed-in game.
+- **The PM's read, offered and not decided:** the references put the *whole cast* at 2–3
+  tiles and ours is at 1, so "too high in scale" may have always been a world-scale problem
+  the hero merely made visible. The honest third option is "hero + cast rescale as one
+  deliberate piece of work."
 
-The Delve did **not** need five new monster sprites. The existing art already reads as Hell —
-rot, bone, iron, a cult robe — and the `reliquary.` prefix is an accident of when it was
-generated. `delve` and `reliquary` now point at the same five deliberately, declared in
-`SHARED_MONSTER_SETS`, and undeclared overlap fails the gate. **The remaining art need is the
-Reliquary's, not the Delve's**: its sectors are places (frozen basilica, rotting garden,
-wargrave) and the Delve is where this art already looks at home.
-
----
-
-## The hero: five rejected passes, and the measurement that explains why
-
-Nothing is committed. The hood direction is dead, the generic-exposed-head pass has not been
-generated, and **v4 is still what ships**. No branch exists on purpose — committing a rejected
-direction only gives the next session something to mistake for a starting point.
-
-The direction, which has now been stated across several sessions and is stable:
-
-> "None of those are good, they are still too high in scale. We don't want a cloaked guy — that
-> was just an art style reference. We still want a generic hero dude with a head exposed."
-
-**Wizard of Legend is a STYLE reference, not a SUBJECT reference.** When the owner names a game
-or supplies an image they mean its rendering style — pixel scale, palette discipline,
-silhouette weight, shading flatness — not its costume or character design. `docs/art_refs/ref_3`
-is the subject reference (small, exposed-head figures); `ref_5` is the scale reference.
-
-### "Too high in scale" is one ratio, and it is measurable
-
-Measured off the owner's own `ref_5.png`: their characters stand roughly **2–3 floor tiles
-tall** and are drawn at approximately the **same pixel pitch as their floor — a density ratio
-near 1.0**. Our hero stands **1.0 tile tall** at **3.56× the floor's pitch**. The same complaint
-from both sides: too many art pixels for the world space he occupies.
-
-**There are two levers and every pass so far has pulled only one.** You can cut the art-pixel
-count, or you can let the sprite occupy more world. The reference leans hard on the second — its
-characters are *large on screen* built from *coarse pixels*. Ours is the inverse: small on
-screen, fine pixels.
-
-The second lever is cheaper than it sounds: `PLAYER_RADIUS` is 9 world units while the hero
-draws 32 tall, so **drawn height and collision are already separate numbers** and drawing him
-taller moves no hitbox, telegraph or camera geometry. **Unverified: what this does to the two
-town portraits. Check that first.**
-
-### The justification that has to be retired
-
-v4's height went 48 → 57 explicitly so the face would be big enough to hold a calm expression.
-In `ref_3` and `ref_5` **a face is two or three pixels**. The hero got bigger in order to draw
-the one thing the reference says not to draw. So the next pass should be **smaller *and* have a
-smaller face, and those are the same decision** rather than competing ones.
-
-### Metric note
-
-The density ratio is a **proxy and flat shading breaks it**. A hooded candidate measured 4.19×
-against v4's 3.56× — worse by the ratio — while being visibly better: whole-sprite colour count
-40 → 13. "Too realistic" was **information density (colour count per region)**, not pixels per
-world unit. Trust §1.4c "measure the head" in `docs/art-style-guide.md`.
-
-### One more finding that survived the pivot
-
-A hooded hero collides with the cult-caster's silhouette. That now argues *for* the exposed
-head, so the pivot fixes a real legibility problem too.
+Findings that must not be re-derived a fourth time (all now in `NOTES.md` and the manifest):
+- **Town portraits scale off art-pixel height (`heroMeta.h`), never `worldScale`** — so
+  drawing the hero taller is free. Legal h band: **16–43, 46–50, 52–58, 78–87, 155–160**.
+- `density = 2h / worldHeight`; the floor is fixed at 2.0 world units per art pixel, so both
+  levers are one equation and a ratio can be targeted rather than guessed. `npm run inworld`.
+- **PixelLab `standard` mode is the only mode that honours `shading: flat` and `detail: low`**
+  — `pro` and `v3` silently ignore both. This plausibly explains several earlier passes
+  coming back more rendered than asked for. In `docs/art-tooling-setup.md`.
 
 ---
 
-## Left on the docket
+## What landed, and what is load-bearing about it
 
-**Art (blocked on the hero pitch decision above — the same ratio governs the Citadel sheet):**
+### Bosses stopped being five fights in 44 costumes (e015d27)
 
-1. **Hero redraw** — generic hero, exposed head, smaller scale, smaller face, from
-   `docs/art_refs/`. Settle drawn-height-vs-pixel-pitch first; check the town portraits.
-2. **`tiles.citadel` + station props** — **wiring is done, art is not started.** The three-rung
-   ladder already promotes the sheet automatically and the exact `TILESETS` row is written into
-   the `DECK_TILESET` comment. Twelve prop ids are named and safely absent from `ATLAS`. The
-   eight dressing placements on the grid are a **starting arrangement nobody could see** — they
-   want an eye.
-3. **The Reliquary's sector monsters** (not the Delve's — see the correction above).
-4. **More Tower monsters** — new silhouettes, not reskins. Then the Tower's three tilesets,
-   **in that order**: a properly celestial floor with Hell's monsters standing on it is the
-   worst configuration available.
+Measured first (`npm run bossvariety`, in `npm test`). The owner's complaint was literally
+true as data:
 
-**Design / balance:**
+| | before | after |
+|---|---|---|
+| pairs that are the same fight | 74 of 946 | **0** |
+| abilities in 100% of kits | quake, summon | **none** |
+| full-kit overlap mean | 58.3% | 44.5% |
+| Proving vs Proving mean / worst | 71.8% / **100%** | 50.5% / 88.2% |
+| raid vs raid mean | 50.3% | **37.1%** |
 
-5. **The item-level axis** — the owner decision at the top of this file.
-6. **Reliquary reachability is unmeasured, not proven.** Sectors 7–9 sit behind nine sequential
-   clears that nothing in the suite exercises past `PLANETS[1]`. All nine materials *do* have
-   working sources, live-confirmed — but "technically obtainable, practically nobody has got
-   there" reads exactly like "no source" from the player's chair. A harness for this was
-   attempted and produced **zero numbers**; there is nothing to build on.
-7. **Rune Fragment and Heartwood Sap have a source and no dedicated recipe** — spendable only on
-   general essences. A source with no sink.
-8. **Raid party scaling is an open finding, not a fix.** `partyScale` does not transfer to a
-   single enormous body; a growing party dilutes threat and health scaling cannot fix
-   trivialisation. Raids stay solo-only. See `docs/raid-party-scaling.md`. Deliberately **not**
-   extended to the Delve's own boss floors without the owner's sign-off.
-9. **Whether the augment discount moves from divine onto unspoken** — awaiting the owner.
+- **14 encounters were byte-identical fights with a new name plate** — `planetBossSpec` and
+  `towerBossSpec` spread the template and never touched `phases`. `variantPhases` gained a
+  `drop` half; a variant that can only ADD ends up as the template plus more, which is
+  exactly how quake and summon reached 100%.
+- Eight new mechanics: `hunt`, `drift`, `sunder`, `blink`, `sanctuary`, `judgment`, `mark`,
+  `crescendo`. Design record `docs/boss-abilities.md`.
+- **A true dash-reader was declined and stays declined.** "A dash always beats them" is
+  load-bearing. `judgment` punishes the reflex dash, not the dash.
+- **THE FINDING THAT OUTRANKS THE FIX: a kit's difficulty is cadence × mean threat per card,
+  NOT card count.** Adding low-threat abilities to a fixed-cadence rotation makes a fight
+  *easier*. In CLAUDE.md's boss section.
+- **Raid party threat rate works.** Ferryman T1 went 58%→96% clear rate solo-to-four; now
+  67%→75%. T4's "bloodier without being winnable" inverts. `docs/raid-threat-rate.md`.
+  **Instrument caveat: `dmgBill/player` is confounded when fight length moves.**
+- `blink` needed no wire field — the interpolator snaps any remote body that moved further
+  than legitimate movement could in one snapshot. **That is the precedent for the next
+  discontinuous ability: handle it by distance in the interpolator, don't teach the protocol.**
 
-**Unverified in a browser** (no session on this machine can click through the UI): the augment
-tab, the FX tracers, the combat-stats overlay density, the Path trophy table, the dummy room,
-and the Citadel dressing composition. These want the owner's eye.
+### The animation seam (7ee1bd0, a8d3277, 1bf7fdc, 6860dd3, a0a80ef)
+
+`docs/animation.md` is the pick-up-and-go document. Read it before touching this.
+
+- The sim never learns about animation. The clock lives in `render/`, reads `BossState`'s
+  existing `ability`/`castTimer`/`castTotal`, writes nothing. The co-op wire already carried
+  all three, so a cast animation resolves identically host and client with **no new field**.
+- **A wind-up is keyed to PROGRESS, not a clock**, because `DepthProfile.telegraph` squeezes
+  cast length with depth — a free-running animation drifts the "now" frame away from the hit
+  as you descend, which is backwards from where it is most needed.
+- **`sprite()` returns FRAME 0 of a strip, asserted pixel-identical to what shipped before.**
+  Every un-migrated call site keeps drawing what it drew; a missed call site is a still
+  picture, not a bug. `spriteAt`/`tintedAt`/`silhouetteAt` are the opt-in.
+- Three of four raid bosses idle: Ferryman, War Queen, Exiled Tyrant.
+
+### Two new art gates
+
+- **`npm run chroma`** — the hot accent as a comparison: the hero's loudest colour must sit
+  **below** the monsters'. Also per-frame, on **both hue and chroma** (see below). Found and
+  fixed `boss.warden`, which had no lit accent at all.
+- **A floor may not be its own sector's element** (in `tools/smoke.ts`) — washes each monster
+  sprite toward its biome element at the real `tinted()` 0.28 and asserts 28+ luminance
+  separation from the graded floor.
 
 ---
 
-## Working rules that cost something to relearn
+## Open items, in the order I would take them
 
-- **The main worktree `~/Desktop/lootSim` is the owner's dev server.** It must contain every
-  merged change and must never sit on a feature branch or hold half-finished work.
-- **Never stash, commit or discard another session's uncommitted work in a shared checkout.**
-  Uncommitted work there means a session is live in it. This project has already had work
-  swallowed that way once. To preserve something at risk without touching the tree:
-  `git stash create` plus `git tag`.
-- **Capture the real exit status.** `npm test 2>&1 | tail -3` swallows it and has caused a
-  merge to be reported green twice when it had actually conflicted. Use
-  `npm test > /tmp/gate.log 2>&1; echo "GATE_EXIT=$?"`.
-- **When a check goes red, find out whether *you* turned it red** before touching anything.
-  A throwaway worktree at the pre-change commit with `node_modules` symlinked answers it in
-  one run and costs nothing.
-- **Assert design promises as comparisons, not one-sided bounds.** A loose bound on each side
-  separately lets an inversion ship green — this happened once already.
-- **Derive numbers, don't hand-scan them.** Twice on the portrait task a hand-computed figure
-  was wrong and the derived one was right.
-- **`docs/game_story_worldbuilding.md` is the tiebreaker** on lore, naming and world structure.
-  It is often the owner's live work-in-progress — do not commit it as a side effect.
-- **A measurement ships even when the fix does not.** The instrument and the write-up land on
-  `master`; the failed fix stays on its branch.
+1. **The hero pick** (owner). Everything else in the art queue is downstream of it.
+
+2. **The wind-up pipeline** — the top open item on the animation stream, and a real piece of
+   work rather than a re-roll. `animate_image` free-form produces a **loop**: across three
+   attempts with explicit one-shot prompting, every sequence peaked mid-way and came back
+   toward rest (ferryman `8 21 31 39 41 43 40 39`, queen `1 1 2 6 7 10 17 9`, minotaur
+   `6 13 18 23 26 26 22 17`). Because a wind-up is keyed to progress, **the last frame is
+   what the player sees at the instant of the hit**, so these do not merely fail to help —
+   they actively mis-cue, and would read worse than the static sprite. Three generations were
+   rejected and committed as evidence under `art/anim/raw/` with a README saying they are not
+   art waiting to be wired. **The fix is `last_frame_base64`**, which pins the ending so the
+   generator interpolates between two poses — that needs a target pose authored or generated
+   per boss, which is a different pipeline. `art/anim/windup-check.py` rejects any candidate
+   that does not build monotonically and end at its extreme. **Run it before stripping.**
+
+3. **Two shipped tilesets fail the new floor/element gate** — Ashen Wastes + Cinder Catacombs
+   (fire on fire) and The Veil (void on void). Pinned, not touched. This is a playability
+   defect, not a taste one: infused monsters are camouflaged against the ground they stand
+   on, and at depth that is most of the room. **A before/after sheet with infused monsters
+   composited on both floors is being prepared for the owner** — the Ashen Wastes is the
+   first floor of the game, so the change is theirs to approve. **Do not unpin without it.**
+
+4. **The Minotaur will not hold its accent through animation, and it is a hold, not a bug.**
+   Two attempts, the second starting from #a855f7 at 63.5 on the source per the headroom
+   rule; still 22.4 and 23.1 in two frames of five. **The generator dims accents — measured
+   39%** — and it is not scaling a two-pixel feature down, it is losing it. Next thing to try
+   is *enlarging* its eyes on the source (more pixels, not merely brighter), which is a change
+   to shipped art and wants the owner. Also: an element's palette entry is not always enough
+   — void is `#c084fc`, a light violet reading only 47.1.
+
+5. **The sharp-vs-reckless campaign check can still invert, on seeds alone.** Margin across
+   five disjoint 12-seed blocks: **2.42** (master's own seeds), 2.92, 4.83, 6.08, **−0.33**.
+   That last block is a live inversion with no code change. Master's seeds read comfortably
+   because they are not a bad block, not because the promise holds. **Deliberately not
+   fixed**: ~85s per 12-seed block, so a full power sweep costs hours, not minutes — a cost
+   decision for the owner. **Do not read a green campaign check as proof the promise holds.**
+   In CLAUDE.md.
+
+6. **Rune Fragment and Heartwood Sap still have a source and no dedicated recipe.** A source
+   with no sink. Untouched this run.
+
+7. **Reliquary reachability is still unmeasured.** Sectors 7–9 sit behind nine sequential
+   clears that nothing exercises past `PLANETS[1]`. A prior harness attempt produced zero
+   numbers. Untouched this run.
+
+8. **The three deepest Reliquary sectors have no visual escalation** — `infusionChance` caps
+   at 65% around depth 22 and they start at baseDepth 34/39/44, so they are at the cap from
+   floor one and look identical all the way down. Defensible (a sector is a place, not a
+   ladder) but nobody chose it. **If escalation is ever wanted there, the lever is the cap,
+   not the tilesets.** Recorded in `docs/art-manifest.md`.
+
+**Unverified in a browser** — no session on this machine can click through the UI. Wants the
+owner's eye: the augment tab, the Citadel hall (including the eight floor-dressing placements,
+still the original blind arrangement — **do not rearrange them blind a second time**), the
+three new Reliquary sector floors, and whether the boss idles read at 0.22s/frame. The
+Ferryman's head shifts a pixel or two between frames and may read as a wobble rather than a
+breath.
+
+---
+
+## The lesson this run kept re-learning
+
+**A check that looks like it states a promise can prove nothing, and only running it against
+the real failing input finds out.** Four instances in one day:
+
+1. The animation gate's first version compared the frame at the **end** of a cast — which a
+   non-looping tag clamps to, so it passed both ways. Two sides, and still vacuous.
+2. A seed count derived from **one** sweep looked rigorous; a second, disjoint sweep dropped
+   the candidate size from +0.10 to +0.05 margin. One sweep cannot tell plateau from edge.
+3. The PM specified the per-frame accent check as "above the hero's floor in every frame."
+   Built to spec, it **passed the real pre-fix art** — with the eye gone, a dull olive robe
+   pixel was the loudest thing at 31.4 against the hero's 30.2. Max-chroma-per-frame never
+   asks *which* colour is the accent. Replaced with a hue bar — and then the Minotaur showed
+   the hue bar alone was also insufficient (eyes *darkened* within the same hue family to
+   27.8, below the hero's skin). **The bar is now both, and each catches what the other
+   cannot.**
+4. Three wind-up generations looked like plenty of movement on a contact sheet. The defect
+   existed only in the relationship between the last frame and the first.
+
+Corollary worth keeping: **a delegate correcting a PM ruling with evidence is the process
+working.** Three of the four above were caught that way.
+
+---
+
+## Working rules that still cost something to relearn
+
+- **`~/Desktop/lootSim` is the owner's dev server.** It must contain every merged change and
+  must never sit on a feature branch or hold half-finished work. 33 stale worktrees are still
+  registered under `~/Desktop/lootSim-worktrees/`; they are harmless but somebody should prune.
+- **Never stash, commit or discard another session's uncommitted work.** To preserve something
+  at risk: `git stash create` plus `git tag`. The owner's chest-ilvl edit was preserved that
+  way this run (`owner-wip/chest-ilvl-2026-09-09`) before being superseded on master.
+- **Capture the real exit status**: `npm test > /tmp/gate.log 2>&1; echo "GATE_EXIT=$?"`.
+  Never `| tail`.
+- **Never merge a red gate.** If a check goes red, first find out whether *you* turned it red.
+  If the check itself is at fault, fix the check on master **alone, first**, justified by
+  master's own numbers — that ordering is the difference between fixing a check and rigging one.
+- **Assert design promises as comparisons, not one-sided bounds — and give the comparison
+  power.** A thin comparison fails the same silent way a bound does.
+- **Derive numbers, don't hand-scan them.** Three times now a hand-computed figure was wrong
+  and the derived one was right.
+- **`docs/game_story_worldbuilding.md` is the tiebreaker** and it settled a real documented
+  contradiction this run. Do not commit it as a side effect.
+- **A measurement ships even when the fix does not.** Landed three times this run: the
+  wind-up rejection, the campaign-check thinness, and the raid threat-rate instrument.
+- **Both branches adding to the `npm test` chain conflict in `package.json` every time.**
+  Expect it, keep both scripts.
