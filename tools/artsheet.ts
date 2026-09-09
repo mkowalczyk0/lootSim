@@ -34,7 +34,7 @@ import { ATLAS } from "../src/render/atlas/manifest";
 import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 1860;
+const H = 2000;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -243,10 +243,18 @@ strip(
 
 {
   // Relics and artifacts (UAT §19) — same unwashed treatment as named items: a relic's
-  // colour is fixed forever, so it never goes through the rarity wash.
+  // colour is fixed forever, so it never goes through the rarity wash. stripPng doesn't
+  // auto-wrap, so relics and artifacts get their own row each — 21 authored icons at
+  // scale 3 no longer fit one line under W.
   const authored = RELICS.filter((d) => d.art && d.art in ATLAS);
+  const relicTier = authored.filter((d) => d.tier === "relic");
+  const artifactTier = authored.filter((d) => d.tier === "artifact");
   stripPng(
-    authored.map((d) => decodePng(readFileSync(`src/render/atlas/relics/${d.art}.png`))),
+    relicTier.map((d) => decodePng(readFileSync(`src/render/atlas/relics/${d.art}.png`))),
+    3, true, 12,
+  );
+  stripPng(
+    artifactTier.map((d) => decodePng(readFileSync(`src/render/atlas/relics/${d.art}.png`))),
     3, true, 12,
   );
 }

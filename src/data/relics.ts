@@ -411,6 +411,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Coin of the First Circle",
     flavor: "Limbo keeps no ledger. It kept this.",
     description: "Sometimes what you kill gets up again, on your side.",
+    art: "relic.coin-of-the-first-circle",
     effects: [{
       kind: "grantEffect", on: { event: "kill" },
       note: "One kill in four raises a spirit for 4 seconds.",
@@ -429,6 +430,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Hook of the Second Circle",
     flavor: "Everything wants to be closer to you. Everything.",
     description: "Your critical hits drag everything near the target toward you.",
+    art: "relic.hook-of-the-second-circle",
     effects: [{
       kind: "grantEffect", on: { event: "criticalHit" },
       note: "A critical hit pulls every enemy near the target toward you.",
@@ -441,6 +443,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Tooth of the Third Circle",
     flavor: "It is never full.",
     description: "Your melee skills bite harder the more hurt the enemy already is.",
+    art: "relic.tooth-of-the-third-circle",
     effects: [{
       kind: "mutate",
       mutation: {
@@ -457,6 +460,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Weight of the Fourth Circle",
     flavor: "Heavy. Worth it. Probably.",
     description: "More coins, more gems, a longer reach for both — and it slows you a step.",
+    art: "relic.weight-of-the-fourth-circle",
     effects: [{ kind: "mods", mods: { coinFind: 0.3, gemFind: 0.2, pickupRadius: 0.25, moveSpeed: -0.04 } }],
     statStick: true,
     sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
@@ -466,6 +470,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Tempo of the Fifth Circle",
     flavor: "Wrath is a rhythm. It is being kept for you.",
     description: "Being hit hastes you.",
+    art: "relic.tempo-of-the-fifth-circle",
     effects: [{
       kind: "grantEffect", on: { event: "damageTaken" },
       note: "Taking a hit hastes you for two seconds.",
@@ -478,6 +483,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Candle of the Sixth Circle",
     flavor: "A false light. It still heals.",
     description: "Every heal you cast also raises a small ward on you.",
+    art: "relic.candle-of-the-sixth-circle",
     effects: [{
       kind: "grantEffect", on: { tag: "heal" },
       note: "Casting a heal wards you for a slice of your attack damage.",
@@ -490,6 +496,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Drum of the Seventh Circle",
     flavor: "The battlefield is eternal. The drum has not stopped.",
     description: "What hits you, hits back: taking damage lashes everything near you.",
+    art: "relic.drum-of-the-seventh-circle",
     effects: [{
       kind: "grantEffect", on: { event: "damageTaken" },
       note: "Taking a hit deals physical damage to every enemy near you.",
@@ -502,6 +509,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Mirror of the Eighth Circle",
     flavor: "It shows you where you were.",
     description: "When you dodge, you slip out of sight for a moment and everything loses interest in you.",
+    art: "relic.mirror-of-the-eighth-circle",
     effects: [{
       kind: "grantEffect", on: { event: "dodge" },
       note: "Dodging hides you briefly and drops every enemy's attention.",
@@ -517,6 +525,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Frost of the Ninth Circle",
     flavor: "Loyalty, frozen where it stood.",
     description: "Your critical hits chill.",
+    art: "relic.frost-of-the-ninth-circle",
     effects: [{
       kind: "grantEffect", on: { event: "criticalHit" },
       note: "A critical hit chills its target.",
