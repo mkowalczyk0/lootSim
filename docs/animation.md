@@ -46,8 +46,25 @@ already the exhaustive table to key off.
 
 ## Every rung is a fallback, never an error
 
-The same idiom `monsterSprite` already uses for `MONSTER_SETS`. Requested tag → `idle` →
-frame 0. A sprite with no `anim` table, an unknown tag, a tag naming frames the strip
+The same idiom `monsterSprite` already uses for `MONSTER_SETS`. The ladder takes a **chain**
+of names, most specific first, then `idle`, then frame 0 — for a boss cast that chain is
+`[<BossAbilityId>, "cast", "idle"]`.
+
+**The chain is what makes the art affordable, and it is the reason this is a chain rather
+than one name.** The four raid bosses draw their rotations from a shared pool of about
+fifteen abilities (`cleave`, `slam`, `beam`, `quake`, `summon`, `windmill`, `corruption`,
+`ringOut`, `enrage`, `volley`, `starLance`, `wall`, `meteor`, `charge`, `backlash`), and the
+tag for a cast is the ability id. One animation per ability would be forty-odd generations
+per boss for a fight the player sees for two minutes. Instead a boss ships **one** generic
+`cast` wind-up that covers every ability it has, and a specific ability can be given its own
+art later with nothing rewired — the more specific name simply starts resolving.
+
+That also means art can land **in stages**: a boss with only an `idle` still resolves every
+ability it will ever cast. The gate asserts all three of those (one `cast` covers all
+fifteen; a per-ability override wins without rewiring; an idle-only boss still resolves
+everything).
+
+Requested tag → `idle` → frame 0. A sprite with no `anim` table, an unknown tag, a tag naming frames the strip
 doesn't have, a NaN clock, no sprite at all — all resolve to a valid frame and none of them
 throw. Missing art is never a broken screen; the worst case is the static single frame the
 game drew before any of this existed.
