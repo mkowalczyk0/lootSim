@@ -569,6 +569,25 @@ export class GameState {
   }
 
   /**
+   * The Stash's mass-salvage: exactly `salvageItem` run once per id, summed — not a
+   * second code path with its own idea of what salvage pays. A missing id (already
+   * salvaged, already sold) is skipped rather than failing the whole batch.
+   */
+  salvageItems(ids: readonly string[]): { ash: number; materials: Partial<MaterialBag> } {
+    let ash = 0;
+    const materials: Partial<MaterialBag> = {};
+    for (const id of ids) {
+      const y = this.salvageItem(id);
+      if (!y) continue;
+      ash += y.ash;
+      for (const [e, n] of Object.entries(y.materials) as [Element, number][]) {
+        if (n) materials[e] = (materials[e] ?? 0) + n;
+      }
+    }
+    return { ash, materials };
+  }
+
+  /**
    * Everything an op would cost on this item right now, and why it can't run if it can't.
    * The bench renders this; `applyForgeOp` re-checks it, so the two can never disagree.
    */

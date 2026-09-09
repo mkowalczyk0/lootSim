@@ -21,6 +21,8 @@
  *   8. every essence the Forge *sells* changes the roll — asserted as paid-vs-unpaid, for
  *      all eight, because three of them silently didn't until Sept 2026 — while holy,
  *      arcane and nature stay out of the random pool, which is the other half of the call
+ *   9. the Stash's mass-salvage is `salvageItem` run once per id, summed — never a second
+ *      economy of its own, asserted as sum-equals-sum against the one-at-a-time route
  *
  * Headless, no browser. Run with `npm run forge`.
  */
@@ -464,6 +466,47 @@ section("8. every essence the Forge sells actually changes the roll");
   check("...so tempering it has a real range to move inside, like any other affix",
     !!holyRange && holyRange[1] > holyRange[0],
     holyRange ? `${holyRange[0].toFixed(3)} – ${holyRange[1].toFixed(3)}` : "no range");
+}
+
+// =========================================================================
+section("9. mass-salvage is the same op run N times, not a second economy");
+{
+  // The Stash's mass-salvage calls this in one shot instead of once per click. It must
+  // never be allowed to drift from `salvageItem` — that's the whole reason it's asserted
+  // as a sum-equals-sum comparison rather than by its own numbers.
+  const rng = new Rng(901);
+  const oneAtATime = new GameState(902);
+  oneAtATime.chooseClass("swordsman");
+  const batched = new GameState(902);
+  batched.chooseClass("swordsman");
+
+  const items = RARITIES.slice(0, 5).map((r) => rollItem({ rarity: r, type: "ring", ilvl: 12, rng }));
+  const oneCopy = items.map((it) => ({ ...it }));
+  const batchCopy = items.map((it) => ({ ...it }));
+  oneAtATime.inventory.push(...oneCopy);
+  batched.inventory.push(...batchCopy);
+
+  let summedAsh = 0;
+  const summedMaterials: Partial<Record<Element, number>> = {};
+  for (const it of oneCopy) {
+    const y = oneAtATime.salvageItem(it.id)!;
+    summedAsh += y.ash;
+    for (const [e, n] of Object.entries(y.materials) as [Element, number][]) {
+      if (n) summedMaterials[e] = (summedMaterials[e] ?? 0) + n;
+    }
+  }
+  const batch = batched.salvageItems(batchCopy.map((it) => it.id));
+
+  check("mass-salvage pays exactly what salvaging one at a time pays",
+    batch.ash === summedAsh, `batch ${batch.ash}, one-by-one ${summedAsh}`);
+  check("...material for material too", same(batch.materials, summedMaterials));
+  check("...and the Ash landed in the account the same way either route", batched.ash === oneAtATime.ash);
+  check("...every item is gone from the stash, both ways",
+    batchCopy.every((it) => !batched.inventory.some((x) => x.id === it.id))
+    && oneCopy.every((it) => !oneAtATime.inventory.some((x) => x.id === it.id)));
+
+  check("an id that doesn't exist is skipped, not a crash",
+    batched.salvageItems(["not-a-real-id"]).ash === 0);
 }
 
 console.log(`\n${failures === 0 ? "ALL FORGE CHECKS PASSED" : `${failures} FORGE CHECK(S) FAILED`}\n`);

@@ -892,6 +892,7 @@ Rebinding two actions to the same key swaps them.
 | `E` | Confirm / interact |
 | `Q` | Back / cancel |
 | `I` / `O` | Previous / next tab (Quartermaster's screens only) |
+| `F` | Mark an item for a batch action (Stash's mass-salvage) |
 | `Esc` | Pause a dive, or back out of a town screen |
 
 This table is just the shipped default — `Settings` can rebind every row, this table
