@@ -137,8 +137,29 @@
  * host too. Powerless, like `legendComplete`: read by the UI and by nothing in the
  * simulation. An older save loads with every badge unearned, which is the truth — none of
  * these floors were ever banked with a badge system watching.
+ *
+ * Version 27 is claimed by the in-flight augment/chest rework (`feat/augments`) — not
+ * shipped from this branch. Following the version-20 precedent above: if that branch
+ * merges, its own commit fills in this paragraph with what it actually changed.
+ *
+ * Version 28 reworks the Delve and Tower's Challenger badges from version 26's single
+ * "highest tier ever cleared" number to a per-tier depth (or height) shelf, because the
+ * owner rejected the activity-keyed shape on sight: the Delve and the Tower have no
+ * upper bound, so a single number can only ever record the *cheapest* depth a tier was
+ * cleared at — Death March X on depth 1 lit the same badge as Death March X on depth 30.
+ * `challengerBadges.delve`/`.tower` are gone; `Player.delveChallengerBadges` and
+ * `Player.towerChallengerBadges` replace them, one array slot per Challenger tier holding
+ * the deepest depth/height ever banked at exactly that tier (`Player`'s own doc comment
+ * has the full reasoning). Every other activity in `challengerBadges` is untouched — a
+ * rift, a raid, a sector, the Vigil and the Convergence are all a fixed run of floors
+ * where the tier itself sets the difficulty, so a single number was never dishonest
+ * there. `playerToJSON` gains the two new arrays; an older save's `delve`/`tower` entries
+ * inside `challengerBadges` are dropped on load rather than guessed into a depth — see
+ * `applyPlayerJSON` for why inventing one would be exactly the unverifiable arithmetic
+ * this codebase has already rejected once. `deepestDepth`/`highestHeight` are untouched
+ * and still say how far that character actually got, badges or not.
  */
-export const SAVE_VERSION = 26;
+export const SAVE_VERSION = 28;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to
