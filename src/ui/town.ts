@@ -227,10 +227,7 @@ function tabHelp(
     case "Rifts": return `${sel} choose tier · ${adj} switch rift, or set Challenger from its row · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector, or set Challenger from its row · `
       + `${e} open a portal for it`;
-    // The Raid tab has no Challenger row yet — it landed in the same merge that added
-    // the row to the other four ladders, and giving it one is a change to `rowCount`,
-    // `challengerRowIndex` and `primary()`, not a merge resolution. Tracked as follow-up.
-    case "Raid": return `${sel} choose tier · ${adj} switch raid · ${e} open a portal for it`;
+    case "Raid": return `${sel} choose tier · ${adj} switch raid, or set Challenger from its row · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Convergence": return `${e} open the Convergence · the same four floors for everyone this week · a warden and a real prize at the end`;
     case "Altar": return altarMode === "recall"
@@ -709,9 +706,7 @@ export class TownUI {
       case "Tower": return this.state.maxUnlockedHeight + 1;
       case "Rifts": return this.state.riftTiers[this.riftMode] + 1;
       case "StarMap": return (this.state.planetProgress[this.starMapPlanet.id] ?? 1) + 1;
-      // No +1: `challengerRowIndex()` deliberately excludes "Raid", so the Raid ladder
-      // has no Challenger row to reserve a slot for. See the note in `tabHelp`.
-      case "Raid": return raidTiersOpen(this.warTableRaid, this.state.raidProgress);
+      case "Raid": return raidTiersOpen(this.warTableRaid, this.state.raidProgress) + 1;
       case "Vigil": return 1;
       case "Convergence": return 1;
       case "Altar": return this.altarMode === "recall"
@@ -739,14 +734,15 @@ export class TownUI {
   }
 
   /**
-   * The Delve, the Tower, a rift and the Reliquary all let you set Challenger right on
-   * the commit screen — one more row after the ladder, reusing `rowCount()` (which
-   * already carries the +1) so there is exactly one place this index is computed.
+   * The Delve, the Tower, a rift, the Reliquary and a raid all let you set Challenger
+   * right on the commit screen — one more row after the ladder, reusing `rowCount()`
+   * (which already carries the +1) so there is exactly one place this index is computed.
    * `null` on every other tab, including Vigil and Convergence: those two still send
    * you to Settings, same as before.
    */
   private challengerRowIndex(): number | null {
-    if (this.tab !== "Dive" && this.tab !== "Tower" && this.tab !== "Rifts" && this.tab !== "StarMap") return null;
+    if (this.tab !== "Dive" && this.tab !== "Tower" && this.tab !== "Rifts"
+      && this.tab !== "StarMap" && this.tab !== "Raid") return null;
     return this.rowCount() - 1;
   }
 
@@ -2359,6 +2355,7 @@ export class TownUI {
           </div>
         </div>`);
     }
+    rows.push(this.renderChallengerRow(maxTier));
 
     const sel = raidConfig(spec, Math.min(this.cursor + 1, maxTier), challenger);
     const other = RAIDS.map((r) =>
@@ -2371,8 +2368,11 @@ export class TownUI {
         ${layer ? `<p class="muted"><b>${escapeHtml(layer.name)}</b> · ${escapeHtml(layer.lore)}</p>` : ""}
         <h3 style="color:${MODES.raid.color}">${escapeHtml(spec.name)}</h3>
         <p class="muted">${other}
-          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
-          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+          <!-- data-index parks the cursor back on a tier row, not the Challenger row
+               below it, so this chip always switches the raid rather than
+               occasionally being read as a Challenger adjustment. -->
+          <span class="chip" data-action="left" data-index="0">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right" data-index="0">${k(this.state.settings, "right")} ▶</span></p>
         <p class="muted" style="font-style:italic">${escapeHtml(spec.lore)}</p>
         <p>${escapeHtml(spec.blurb)}</p>
         ${unlocked ? "" : `<p class="danger">Sealed. Reach ${spec.unlockFrontier} on either
@@ -2390,7 +2390,6 @@ export class TownUI {
         picked up in there.</p>
         <p>Opening a portal doesn't dive — it spawns one on the deck. Walk into it when
         you're ready.</p>
-        ${this.challengerNote()}
       </aside>`;
   }
 
