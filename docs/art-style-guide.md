@@ -871,9 +871,15 @@ hand-arted 16px stone.
   through the same grade the renderer does, and fails if the all-floor and all-rock
   tiles land closer than 28 luminance apart, if either is brighter than L150, or if a
   tile's internal spread is over ±14.
-- **Author to the Citadel deck, in prompt and in pitch.** `hub.citadel-deck` is the
-  reference for palette *and* pixel density: calm, muted, mid-grey stone, two or three
-  flat shapes per tile, thin seams, no grain. The prompt recipe that gets there —
+- **Author to the Citadel palette, in prompt and in pitch.** This used to read "author to
+  the Citadel deck", naming `hub.citadel-deck` — the painted hub scene — as the reference
+  for palette *and* pixel density. **That went circular the moment the Citadel itself
+  became a tileset**, because the reference every other sheet cites is the thing
+  `tiles.citadel` replaces. So the reference is now the *palette and recipe*, which is what
+  was actually load-bearing, and it outlives the painting it came off: calm, muted,
+  mid-grey stone, two or three flat shapes per tile, thin seams, no grain. The painted
+  scene survives as the ladder's middle rung and is where those numbers were measured; it
+  is no longer what a new sheet is held against. The prompt recipe that gets there —
   `detail: "low detail"`, `shading: "flat shading"`, `outline: "selective outline"`,
   `text_guidance_scale` 9–10, and terrain text along the lines of *"large flat square
   slabs, matte, only thin darker mortar seams, no cracks, no pebbles, no pattern, heavily
@@ -895,6 +901,18 @@ hand-arted 16px stone.
   contrast. The grade is why a set that comes back a shade loud still ships; it is
   *not* a licence to skip the prompt recipe above, because the grade cannot remove a
   pattern, only quieten it.
+- **The pitch is fixed and it is not a convention.** Every sheet is
+  `{ w: 64, h: 64, tile: 16 }` — all thirteen of them — because `render/tilemap.ts` stamps a
+  16-texel tile across a 32-unit cell, which puts every floor in the game at exactly **2.0
+  world units per art pixel**. That number is the anchor the whole density argument rests
+  on and what `tools/inworld.ts` measures every sprite against, so a sheet at another pitch
+  is not a style choice, it is a floor that does not belong to the same game.
+- **Dressing lives in the props, never in the tiles.** `npm run smoke` fails a sheet whose
+  tiles carry more than ±14 internal luminance spread, because a busy tile turns to mush at
+  game zoom and stops reading as walkable-vs-not. That pulls directly against "a bare
+  stamped floor isn't finished" — and the resolution is that the two are different jobs. A
+  quiet floor with things standing on it reads as a place; a busy floor reads as noise. If
+  a room needs character, it needs *set pieces*, and the gate is not the thing to soften.
 - **Pitch and mask.** A 16-texel sheet tile is stamped across a **32-unit** cell — a
   clean 2× nearest-neighbour blow-up that puts the floor on the same on-screen pixel
   grid as the deck, the hero and the props (1:1 stamping read finer and "zoomed out"

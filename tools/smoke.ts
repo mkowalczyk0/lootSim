@@ -68,7 +68,9 @@ import {
 import { FLOOR_GRADE, gradeSheet, tileLuminance } from "../src/render/grade";
 import {
   ATLAS, ATLAS_COSMETICS, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
+  MONSTER_SETS,
 } from "../src/render/atlas/manifest";
+import { STATION_PROP } from "../src/game/deck";
 import {
   HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX, portraitScale, portraitSpread,
 } from "../src/ui/portrait";
@@ -2924,6 +2926,40 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
     if (tints.length === 0) tints.push(...BIOMES.map((b) => b.tint));
     return tints;
   };
+  // --- declared-vs-drawn, the one asymmetry that breaks instead of degrading ---
+  //
+  // Three tables now *name* art the repo may not have yet: `MONSTER_SETS` (a realm's
+  // roster), `STATION_PROP` (the Citadel's relics) and the reserved tileset ids. That is
+  // deliberate and it is how a realm declares intent before anybody draws it — every one
+  // of those resolves through `atlasCanvas`, which returns null and falls back.
+  //
+  // But `ATLAS` is a different promise: `loadAtlas` *rejects* on a missing PNG for an
+  // `ATLAS` row, so a half-declared sprite — listed there with no file behind it — takes
+  // the whole game down at boot rather than falling back. So the rule is one-directional
+  // and worth a test: **anything in `ATLAS` must exist on disk; anything merely named
+  // elsewhere must not be in `ATLAS` unless it does.**
+  {
+    const named = [
+      ...Object.values(MONSTER_SETS).flatMap((set) => Object.values(set)),
+      ...Object.values(STATION_PROP).filter((id): id is string => id !== null),
+    ];
+    const dirFor = (id: string) => id.startsWith("prop.") ? "props"
+      : id.startsWith("boss.") ? "bosses"
+      : id.startsWith("icon.") ? "icons"
+      : id.startsWith("hero.") ? "characters"
+      : "monsters";
+    const halfDeclared = named.filter((id) => {
+      if (!ATLAS[id]) return false;
+      try { readFileSync(`src/render/atlas/${dirFor(id)}/${id}.png`); return false; } catch { return true; }
+    });
+    check("nothing is listed in ATLAS without a PNG behind it — that breaks boot, it doesn't degrade",
+      halfDeclared.length === 0, halfDeclared.join(", "));
+
+    const pending = named.filter((id) => !ATLAS[id]);
+    check("art that is named but not yet drawn is absent from ATLAS, so it falls back cleanly",
+      pending.every((id) => !ATLAS[id]), `${pending.length} pending: ${[...new Set(pending)].slice(0, 6).join(", ")}`);
+  }
+
   let worstDelta = Infinity, worstSpread = 0, brightest = 0;
   const bad: string[] = [];
   for (const id of Object.keys(TILESETS)) {
