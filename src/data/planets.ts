@@ -7,11 +7,21 @@
  *
  * `PlanetSpec` / `PLANETS` / `planet*` keep their names as the **internal** identifiers
  * (and `id` values are frozen for save compatibility — `GameState.planetProgress` is
- * keyed by them) but every player-facing string is a Reliquary **sector**: six regions,
- * one per damage element, from `game_story_worldbuilding.md` → "Reliquary Sectors" and
- * art-style-guide §8.2. `MODES.planet.name`/`.short` (`data/modes.ts`) carry the same
- * rename now — "Reliquary Expedition" / "Reliquary" — so a run into a sector reads
- * consistently everywhere the delve and the rifts already do.
+ * keyed by them) but every player-facing string is a Reliquary **sector**: one region per
+ * damage element. The first six are `game_story_worldbuilding.md` → "Reliquary Sectors"
+ * and art-style-guide §8.2, verbatim — the doc lists them as examples ("For example:"),
+ * not an exhaustive roster, and only covers `LOOT_ELEMENTS` plus physical. The last three
+ * (holy, arcane, nature) were added Sept 2026 so the three *reserved* elements
+ * (`RESERVED_ELEMENTS` in `data/elements.ts`) have somewhere that pays in them — until
+ * then `Gilt Reliquary`/`Rune Fragment`/`Heartwood Sap` were craftable essences with no
+ * material behind them, a dead end the Forge's per-element essence menu only exposed
+ * rather than caused. They aren't in the worldbuilding doc's example list (nothing there
+ * covers those three elements), so they're new places invented to match its own rule for
+ * what a sector *is* — "areas within the same massive supernatural repository … its own
+ * visual identity, enemy population, events, and material affinity" — rather than a quote
+ * from it. `MODES.planet.name`/`.short` (`data/modes.ts`) carry the Reliquary rename now
+ * — "Reliquary Expedition" / "Reliquary" — so a run into a sector reads consistently
+ * everywhere the delve and the rifts already do.
  *
  * Mechanically a sector run is still shaped exactly like a rift — a fixed run of floors
  * ending in a boss, tiers that reopen the same sector harder. Each sector owns a full
@@ -172,6 +182,65 @@ export const PLANETS: readonly PlanetSpec[] = [
     bossTemplateId: "colossus", bossName: "The Index", bossTitle: "It catalogues what the Archive takes. It has an entry for you.",
     enemyNames: enemyFlavor("Hollow Revenant", "Unwritten Archer", "Erased Hulk", "Margin Scuttler", "Redacted Adept"),
     materialYield: 6, nodeCount: 6,
+  },
+  {
+    // Not in the worldbuilding doc's example list — invented to give the holy element
+    // (kept out of LOOT_ELEMENTS on purpose, per elements.ts) somewhere to be harvested.
+    // A literal reliquary: every saint interred here was gilded rather than buried, and
+    // the doc's own "a reliquary is a container for the remains of something holy" line
+    // is the closest thing this sector is quoting.
+    id: "giltvault", name: "The Gilded Ossuary", order: 7,
+    blurb: "A treasury of the dead, gilded instead of buried. Every relic here used to be a saint, and some of them still know it.",
+    element: "holy",
+    biome: {
+      name: "The Gilded Ossuary", tileset: "tiles.reliquary-ossuary",
+      tint: "#2f2717", floorAlt: "#3a3020", wall: "#5c4c2c", wallSide: "#231d10",
+      accent: "#fde68a", props: ["rock", "bones", "torch"],
+      layouts: ["chambers", "pillars", "rubble"], traps: ["spike", "flame"],
+      element: "holy",
+    },
+    floors: 3, baseDepth: 34, depthPerTier: 3.0, depthPerFloor: 1.55, dangerPerTier: 1.17,
+    bossTemplateId: "choir", bossName: "The Reliquary Saint", bossTitle: "It was interred whole. It did not stay that way.",
+    enemyNames: enemyFlavor("Gilded Revenant", "Reliquary Archer", "Ossuary Hulk", "Relic Scuttler", "Anointed Adept"),
+    materialYield: 7, nodeCount: 6,
+  },
+  {
+    // Also invented for the same reason — arcane is the second reserved element with no
+    // sector of its own. A mage-tower that outlived the war it was built for; nobody is
+    // left to hold its wards shut, which is why the rooms don't stay put.
+    id: "runespire", name: "The Unbound Spire", order: 8,
+    blurb: "A mage-tower that outlived the war that built it. The wards that pinned it to one place broke first, and the books never stopped writing themselves.",
+    element: "arcane",
+    biome: {
+      name: "The Unbound Spire", tileset: "tiles.reliquary-spire",
+      tint: "#241a33", floorAlt: "#2e2140", wall: "#453262", wallSide: "#160f24",
+      accent: "#f0abfc", props: ["crystal", "rock", "torch"],
+      layouts: ["ring", "pillars", "gauntlet"], traps: ["turret", "saw"],
+      element: "arcane",
+    },
+    floors: 3, baseDepth: 39, depthPerTier: 3.2, depthPerFloor: 1.6, dangerPerTier: 1.18,
+    bossTemplateId: "nameless", bossName: "The Unbound Archivist", bossTitle: "It never finished cataloguing itself.",
+    enemyNames: enemyFlavor("Unbound Revenant", "Marginal Archer", "Bound Hulk", "Errant Scuttler", "Unread Adept"),
+    materialYield: 8, nodeCount: 7,
+  },
+  {
+    // The third reserved element. An orchard grown directly over a civilisation's mass
+    // grave, roots laced through the bones beneath it — still growing, the way its own
+    // material's blurb (`Heartwood Sap`, "still growing, slowly") already said.
+    id: "heartgrove", name: "The Hollow Orchard", order: 9,
+    blurb: "An orchard grown over the graves of a whole civilisation, roots laced through the bones beneath it. It hasn't stopped growing since, and it isn't going to.",
+    element: "nature",
+    biome: {
+      name: "The Hollow Orchard", tileset: "tiles.reliquary-orchard",
+      tint: "#22271a", floorAlt: "#2b3320", wall: "#3f4a2c", wallSide: "#171c10",
+      accent: "#34d399", props: ["mushroom", "rock", "bones"],
+      layouts: ["chambers", "rubble", "open"], traps: ["mire", "spike"],
+      element: "nature",
+    },
+    floors: 3, baseDepth: 44, depthPerTier: 3.4, depthPerFloor: 1.65, dangerPerTier: 1.2,
+    bossTemplateId: "colossus", bossName: "The Orchard's Root", bossTitle: "It was planted a long time ago. It has not stopped growing.",
+    enemyNames: enemyFlavor("Sapbound Revenant", "Orchard Archer", "Heartwood Hulk", "Root Scuttler", "Grove Adept"),
+    materialYield: 9, nodeCount: 7,
   },
 ];
 

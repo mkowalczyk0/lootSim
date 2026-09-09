@@ -23,6 +23,8 @@
  *      the reserved `raid`/`tower` drop kinds.
  *   6. **The Reliquary widening only ever widens.** The frontier route may add access and
  *      may never remove it, so no existing save can lose a sector it already had.
+ *   7. **Every element has a sector.** A material with no sector paying it out is a live
+ *      dead end (the Sept 2026 holy/arcane/nature bug this file now pins against).
  *
  * Headless, no browser. Run with `npm run world`.
  */
@@ -46,6 +48,7 @@ import { BOSSES } from "../src/data/bosses";
 import { RAID_BY_ID } from "../src/data/raids";
 import { BIOMES } from "../src/data/biomes";
 import { TRAPS, REGARD_HOLD, REGARD_WATCH, type TrapKind } from "../src/data/traps";
+import { ELEMENTS, RESERVED_ELEMENTS } from "../src/data/elements";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -443,6 +446,26 @@ for (let i = 1; i < PLANETS.length; i++) {
   if (!planetUnlocked(PLANETS[i]!, progress, 0)) ladderPreserved = false;
 }
 check("every sector the old ladder opened is still open at frontier 0", ladderPreserved);
+
+// --- 7. every element has a Reliquary sector that pays in it ---------------
+
+console.log("\n=== the Reliquary covers every damage element, not just the loot pool ===");
+
+// This is the direct fix for a live dead-end: the Forge sells a crafting essence in every
+// magic element (`CRAFT_ESSENCES` in `data/crafting.ts`), but an essence just weights a
+// roll toward its element and still costs that element's material — so a reserved element
+// with no sector paying it out was a menu entry that could never be afforded. Structural
+// on purpose: a ninth sector that forgot to set `element` right, or a reserved element that
+// quietly regains a tenth home, both fail here rather than waiting on a bug report.
+const sectorElements = new Set(PLANETS.map((p) => p.element));
+check("every element has at least one sector",
+  ELEMENTS.every((e) => sectorElements.has(e)),
+  ELEMENTS.filter((e) => !sectorElements.has(e)).join(", "));
+check("no element is doubled up while another goes uncovered",
+  sectorElements.size === ELEMENTS.length,
+  `${sectorElements.size} distinct elements across ${PLANETS.length} sectors`);
+check("the three reserved elements — the ones this fix was for — are all in",
+  RESERVED_ELEMENTS.every((e) => sectorElements.has(e)));
 
 console.log(failures === 0
   ? "\nThe world reads as one structure.\n"
