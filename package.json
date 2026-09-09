@@ -32,6 +32,7 @@
     "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs",
     "tileset": "esbuild tools/tileset.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/tileset.mjs --log-level=error && node node_modules/.cache/tileset.mjs",
     "curves": "esbuild tools/curves.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/curves.mjs --log-level=error && node node_modules/.cache/curves.mjs",
+    "regard": "esbuild tools/regard.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/regard.mjs --log-level=error && node node_modules/.cache/regard.mjs",
     "builds": "esbuild tools/builds.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/builds.mjs --log-level=error && node node_modules/.cache/builds.mjs",
     "deadpaths": "esbuild tools/deadpaths.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/deadpaths.mjs --log-level=error && node node_modules/.cache/deadpaths.mjs"
   },

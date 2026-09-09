@@ -43,6 +43,8 @@ import { provingFloor } from "../src/data/legends";
 import { TOWER_BIOMES, towerBiomeFor, towerBossSpec, towerConfig } from "../src/data/tower";
 import { bossSpecForRun } from "../src/data/encounters";
 import { BOSSES } from "../src/data/bosses";
+import { BIOMES } from "../src/data/biomes";
+import { TRAPS, REGARD_HOLD, REGARD_WATCH, type TrapKind } from "../src/data/traps";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -288,6 +290,59 @@ console.log("\n=== a height is not a depth ===");
   // Per-character, which is the rule the ilvl split protects.
   check("a character's own frontier is the further of its own two records",
     state.player.frontier === Math.max(state.player.deepestDepth, state.player.highestHeight));
+}
+
+// --- 3b. the ward is Heaven's, and it is readable ------------------------
+
+/**
+ * The regard ward (UAT §21). Two conditions came with it, and both are properties rather
+ * than opinions, so both are pinned here.
+ *
+ * **Telegraph-grade readability.** The ward is the one hazard you are asked to read while
+ * you are busy doing something else, so its warning is the longest in the game. Asserted
+ * as a comparison against every other hazard rather than as a threshold, for the reason
+ * this repo learned the hard way: a bound only says a number is in a range, a comparison
+ * says the design promise still holds. If a future pass tunes another hazard's telegraph
+ * up past this one, or trims this one down, that is a decision someone should have to make
+ * on purpose.
+ *
+ * **Tower-only.** A hazard that punishes standing still is a real tax on ranged builds
+ * (measured at `npm run regard` — see that file's header for the table and for why a
+ * longer hold makes it worse rather than better). That tax is a fair price for the Tower's
+ * own floors and would be a silent, roster-wide nerf if it ever leaked onto the Delve's,
+ * so the ward's confinement to the ascent is a checked property, not a convention.
+ */
+console.log("\n=== the ward is readable, and it is the Tower's alone ===");
+{
+  const regard = TRAPS.regard;
+  const others = (Object.keys(TRAPS) as TrapKind[]).filter((k) => k !== "regard").map((k) => TRAPS[k]);
+
+  check("the ward telegraphs for longer than any other hazard in the game",
+    others.every((t) => regard.warn > t.warn),
+    `regard ${regard.warn}s vs ${others.map((t) => `${t.kind} ${t.warn}s`).join(", ")}`);
+  check("…and it telegraphs for longer than it sears, so the warning is the bigger half",
+    regard.warn > regard.active, `${regard.warn}s warn vs ${regard.active}s sear`);
+  check("…and you get longer to read it than you had to stand still to earn it",
+    regard.warn >= REGARD_HOLD * 0.8, `${regard.warn}s telegraph on a ${REGARD_HOLD}s hold`);
+  check("the mark is escapable at a walk, not only by dashing",
+    regard.radius < REGARD_WATCH / 4, `${regard.radius}u mark, ${REGARD_WATCH}u reach`);
+
+  // Every biome in the game, both ladders and every planet, asked the same question.
+  const towerNames = new Set(TOWER_BIOMES.map((b) => b.name));
+  const elsewhere = [...BIOMES, ...PLANETS.map((p) => p.biome)].filter((b) => !towerNames.has(b.name));
+  check("every band of the Tower posts wards", TOWER_BIOMES.every((b) => b.traps.includes("regard")),
+    `${TOWER_BIOMES.length} bands`);
+  check("…and nothing outside the Tower does — the Delve, the rifts and every planet are clean",
+    elsewhere.every((b) => !b.traps.includes("regard")),
+    `${elsewhere.length} other biomes checked`);
+  check("…so a Delve floor can never place one, at any depth",
+    [1, 10, 25, 30, 60].every((d) => !trapKindsAt(d).includes("regard")));
+}
+
+/** Which hazards the Delve is allowed to place at a depth — biome list, then minDepth. */
+function trapKindsAt(depth: number): TrapKind[] {
+  const biome = biomeForRun(delveConfig(depth));
+  return biome.traps.filter((k) => TRAPS[k].minDepth <= depth);
 }
 
 // --- 4. the prose says something the mode's own line doesn't ---------------
