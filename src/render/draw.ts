@@ -14,7 +14,8 @@ import { atlasCanvas, atlasTileset } from "./atlas/index";
 import { ATLAS } from "./atlas/manifest";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
-  heroKey, heroSprite, itemSprite, silhouette, silhouetteCanvas, sprite, spriteFeet, spriteWorldScale,
+  heroKey, heroSprite, itemSprite, monsterSprite, silhouette, silhouetteCanvas, sprite, spriteFeet,
+  spriteWorldScale,
   tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
   augmentSprite,
   relicSprite,
@@ -449,7 +450,13 @@ export class WorldRenderer {
 
     for (const e of d.enemies) {
       const pos = lerpPos(e, alpha);
-      drawables.push({ y: pos.y, draw: () => this.drawEnemy(ctx, e, pos.x, pos.y, d.elapsed) });
+      drawables.push({
+        y: pos.y,
+        // The floor's own monster set travels with the draw call rather than being read
+        // back off a renderer field: the renderer holds no per-floor state, and a monster
+        // wears the face of the place it is standing in.
+        draw: () => this.drawEnemy(ctx, e, pos.x, pos.y, d.elapsed, d.level.biome.monsterSet),
+      });
     }
     // Everybody on the floor, sorted into the same painter's pass as the monsters —
     // an ally standing behind a grunt is drawn behind it, same as you are.
@@ -644,16 +651,24 @@ export class WorldRenderer {
     ctx.restore();
   }
 
-  private drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x0: number, y0: number, time: number): void {
+  private drawEnemy(
+    ctx: CanvasRenderingContext2D, e: Enemy, x0: number, y0: number, time: number,
+    monsterSet?: string,
+  ): void {
     const name: SpriteName = e.boss ? e.boss.spec.sprite : ENEMY_SPRITES[e.archetype.kind] ?? "grunt";
+    // Which realm's pictures this floor's monsters wear (`BiomeStyle.monsterSet`). Bosses
+    // are excluded on purpose: a boss is an authored encounter with its own sprite, not an
+    // archetype wearing a local face. Everything about the monster except the picture —
+    // kind, stats, behaviour, hitbox — is untouched by this.
+    const art = monsterSprite(name, e.boss ? undefined : monsterSet);
     // A pipeline sprite carries its own world scale and feet offset; a procedural one
     // rides the global constant (or the boss's own tuned `spriteScale`).
-    const atlasScale = spriteWorldScale(name);
+    const atlasScale = art.worldScale;
     // An elite is a mini-boss — draw its body noticeably larger so it reads as a threat
     // before the health bar or the aura do (UAT §4: "immediately recognizable").
     const eliteScale = e.elite && !e.boss ? 1.4 : 1;
     const scale = (atlasScale ?? (e.boss ? e.boss.spec.spriteScale : SPRITE_SCALE)) * eliteScale;
-    const feet = spriteFeet(name) ?? 0.22;
+    const feet = art.feet ?? 0.22;
     // A slow bob, phase-shifted by position so a pack doesn't breathe in unison. The
     // shadow stays put: it's the body that hops, not the monster's footing.
     const x = x0;

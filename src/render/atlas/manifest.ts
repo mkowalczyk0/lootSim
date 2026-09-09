@@ -312,6 +312,75 @@ export interface AtlasTileset {
   readonly tile: number;
 }
 
+/**
+ * **Which pictures a realm's monsters draw.**
+ *
+ * `SPRITE_OVERRIDES` below is the game-wide default, and until this existed it was the
+ * *only* answer: `grunt` meant `reliquary.monster.rot-imp` everywhere, so the Delve, the
+ * Tower and every rift all fought the Reliquary's roster. One realm's art had quietly
+ * become the whole game's art, and there was no way to say otherwise.
+ *
+ * A `BiomeStyle` now names a set (`monsterSet`) and its archetypes resolve here first.
+ * Three rules, all of them the `TILESETS` precedent applied to monsters:
+ *
+ *  1. **A set may be named before it is drawn.** An id listed here whose PNGs are not
+ *     committed resolves to nothing and the archetype falls back to `SPRITE_OVERRIDES`,
+ *     then to the procedural bake. Declaring a realm's intent costs nothing and breaks
+ *     nothing — which is the whole reason the Tower's tilesets are already named.
+ *  2. **A set may be partial.** An archetype a set doesn't list falls back the same way,
+ *     so a realm can ship its grunt before its caster without looking half-finished in a
+ *     way that crashes.
+ *  3. **This decides pictures and nothing else.** No entry here may change a monster's
+ *     kind, stats, behaviour, name or hitbox — those are `data/enemies.ts` and
+ *     `data/biomes.ts`'s `enemyNames`. `tools/monstersets.ts` asserts it as a comparison:
+ *     the same seeded floor plays out byte-identically whichever set it draws from.
+ */
+export const MONSTER_SETS: Record<string, Record<string, string>> = {
+  /**
+   * The Ashen Reliquary (§8.2) — dead-civilisation stone, rot and bone. Committed and
+   * loading; this is the set that has been standing in for every realm.
+   */
+  reliquary: {
+    grunt: "reliquary.monster.rot-imp",
+    archer: "reliquary.monster.bone-archer",
+    brute: "reliquary.monster.iron-brute",
+    caster: "reliquary.monster.cult-caster",
+    swarmer: "reliquary.monster.rot-scuttler",
+  },
+
+  /**
+   * The Delve (§5) — **named, deliberately undrawn, and this is the live defect.**
+   *
+   * The Delve has no monsters of its own and never did: it draws the Reliquary's, because
+   * `SPRITE_OVERRIDES` was the only answer there was. Nobody noticed because those sprites
+   * were tuned to look at home in exactly this palette. Naming the set here does not fix
+   * that on its own — the ids below resolve to nothing until somebody draws them — but it
+   * makes the gap *sayable*, which it previously was not.
+   */
+  delve: {
+    grunt: "delve.monster.grunt",
+    archer: "delve.monster.archer",
+    brute: "delve.monster.brute",
+    caster: "delve.monster.caster",
+    swarmer: "delve.monster.swarmer",
+  },
+
+  /**
+   * The Tower (§6) — **named, deliberately undrawn.** Heaven is Order, and Order lives in
+   * silhouette: symmetry, repetition, geometry, against Hell's asymmetry and appetite. A
+   * palette swap of the Reliquary's roster would be white demons, which is why these are
+   * their own sprites rather than a tint. Until the PNGs land, every id below resolves to
+   * nothing and the Tower draws today's art — no worse than before, and no pretending.
+   */
+  tower: {
+    grunt: "tower.monster.power",
+    archer: "tower.monster.virtue-lancer",
+    brute: "tower.monster.throne-bearer",
+    caster: "tower.monster.dominion-herald",
+    swarmer: "tower.monster.halo-fragment",
+  },
+};
+
 export const TILESETS: Record<string, AtlasTileset> = {
   // The Delve (§5) — one per legacy biome, themed toward the Nine Circles it's
   // becoming. Floor mid-tone, wall near-black, on the ash/Hell palette.

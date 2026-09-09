@@ -18,7 +18,7 @@ import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
-  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES,
+  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, MONSTER_SETS, SPRITE_OVERRIDES,
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
@@ -126,6 +126,40 @@ export function buildSprites(): void {
  */
 export async function preloadArt(): Promise<void> {
   await loadAtlas();
+}
+
+/**
+ * The atlas id an archetype draws in a given realm, or null to use the global default.
+ *
+ * The ladder, in order, and every rung is a *fallback* rather than an error: the named
+ * set's entry for this archetype → nothing. A set that doesn't exist, doesn't list this
+ * archetype, or lists one whose PNG isn't committed all come out the same way, which is
+ * what lets `MONSTER_SETS` name a realm's roster before anybody has drawn it.
+ */
+function monsterSetId(set: string | undefined, name: SpriteName): string | null {
+  if (!set) return null;
+  const id = MONSTER_SETS[set]?.[name];
+  if (!id) return null;
+  // Listed but not committed: `atlasCanvas` is the honest test, because a manifest row is
+  // a statement of intent and a loaded canvas is a fact.
+  return atlasCanvas(id) ? id : null;
+}
+
+/**
+ * One monster's picture, for the realm it is standing in.
+ *
+ * `set` comes from `BiomeStyle.monsterSet`. Passing nothing is exactly today's behaviour,
+ * which is why every existing call site kept working unchanged.
+ */
+export function monsterSprite(name: SpriteName, set?: string): {
+  canvas: HTMLCanvasElement; worldScale: number | null; feet: number | null;
+} {
+  const id = monsterSetId(set, name);
+  if (id) {
+    const png = atlasCanvas(id);
+    if (png) return { canvas: png, worldScale: ATLAS[id]?.worldScale ?? null, feet: ATLAS[id]?.feet ?? null };
+  }
+  return { canvas: sprite(name), worldScale: spriteWorldScale(name), feet: spriteFeet(name) };
 }
 
 export function sprite(name: SpriteName): HTMLCanvasElement {
