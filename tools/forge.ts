@@ -18,6 +18,9 @@
  *      and building a specific item at the bench is never cheaper than finding one —
  *      asserted as a direct comparison, not two one-sided bounds
  *   7. the mythic wall holds everywhere, and Ash survives a save round-trip
+ *   8. every essence the Forge *sells* changes the roll — asserted as paid-vs-unpaid, for
+ *      all eight, because three of them silently didn't until Sept 2026 — while holy,
+ *      arcane and nature stay out of the random pool, which is the other half of the call
  *
  * Headless, no browser. Run with `npm run forge`.
  */
@@ -25,16 +28,17 @@
 import { Rng } from "../src/core/rng";
 import { parseSaved, serializeSave } from "../src/core/save";
 import {
-  ASCEND_COMPONENTS, CRAFT_MAX_RARITY, FORGE_OPS, SALVAGE_ASH, ascendTarget, craftBulkCost, forgeOpCost,
+  ASCEND_COMPONENTS, CRAFT_ESSENCES, CRAFT_MAX_RARITY, FORGE_OPS, SALVAGE_ASH, ascendTarget, craftBulkCost, forgeOpCost,
   itemMeetsRequirement, requirementLabel, type ForgeOp,
 } from "../src/data/crafting";
-import { GRANT_MIN_TIER, MOD_COUNTS, TRIGGER_MIN_TIER } from "../src/data/items";
+import { GRANT_MIN_TIER, MOD_COUNTS, MOD_POOL, RESERVED_ELEMENTAL_MODS, TRIGGER_MIN_TIER } from "../src/data/items";
+import { ELEMENT_LABELS, RESERVED_ELEMENTS, type Element } from "../src/data/elements";
 import { NAMED_BY_ID, NAMED_ITEMS, craftRecipeFor, craftableNamed } from "../src/data/named";
 import { RARITIES, RARITY_MULTIPLIERS, RARITY_VALUE, rarityIndex, type Rarity } from "../src/data/rarity";
 import {
   affixRange, ascend, ascendComponents, augment, forgeOpBlocker, inscribe, recast, salvageYield, temper,
 } from "../src/game/forge";
-import { forgeNamedItem, itemMods, rollItem, type Item } from "../src/game/item";
+import { MOD_ROLL_BY_ID, forgeNamedItem, itemMods, rollItem, type Item } from "../src/game/item";
 import { GameState } from "../src/game/state";
 import { GRANTABLE_ABILITY_IDS } from "../src/progression/index";
 
@@ -374,6 +378,92 @@ section("7. the mythic wall, and Ash survives the save");
   check("...so do the salvage records", back.stats.itemsSalvaged === 3);
   const old = GameState.fromSaved({ version: 17, data: { coins: 5 } });
   check("a pre-Ash save loads with zero Ash", old.ash === 0);
+}
+
+// =========================================================================
+section("8. every essence the Forge sells actually changes the roll");
+{
+  // The bug this pins: `rollMods` weights an essence by filtering the affix pool for
+  // `dmg-<e>`/`res-<e>` and tripling what it finds, and `MOD_POOL`'s elemental block was
+  // built from `LOOT_ELEMENTS` alone. So for holy, arcane and nature the filter matched
+  // nothing, the tripling multiplied nothing, and the Forge charged the material for a
+  // roll it left completely untouched — three of the eight essences on the screen.
+  //
+  // It is asserted as a comparison, per this repo's standing lesson: not "a holy craft
+  // sometimes rolls holy" (a threshold that a wide enough pool passes by accident) but
+  // "paying for this essence lands it more often than not paying for it does", for every
+  // element the screen sells, driven through the real `craftItem` a player presses.
+  const CRAFTS = 400;
+  const hasElement = (it: Item, e: Element) => it.mods.some((m) => m.id === `dmg-${e}` || m.id === `res-${e}`);
+
+  function craftRate(essence: Element | null, looking: Element): number {
+    const state = rich(801);
+    let hits = 0;
+    for (let i = 0; i < CRAFTS; i++) {
+      const it = state.craftItem("accessory", "epic", essence);
+      if (it && hasElement(it, looking)) hits++;
+    }
+    return hits / CRAFTS;
+  }
+
+  for (const e of CRAFT_ESSENCES) {
+    const paid = craftRate(e, e);
+    const unpaid = craftRate(null, e);
+    check(`paying for the ${ELEMENT_LABELS[e].toLowerCase()} essence lands ${ELEMENT_LABELS[e].toLowerCase()} more often than not paying does`,
+      paid > unpaid + 0.1, `${(paid * 100).toFixed(1)}% with, ${(unpaid * 100).toFixed(1)}% without`);
+  }
+
+  // The other half of the same design call, and the reason the fix does not simply add
+  // these to `MOD_POOL`: holy, arcane and nature stay out of the *random* pool. If this
+  // check ever goes green-by-widening — the pool quietly grew to all nine — the promise
+  // in `data/elements.ts` has been reversed by accident.
+  for (const e of RESERVED_ELEMENTS) {
+    check(`...and an unpaid craft still never rolls ${ELEMENT_LABELS[e].toLowerCase()} — it is out of the random pool`,
+      craftRate(null, e) === 0);
+  }
+  check("no reserved element's affix is in the random pool at all",
+    !MOD_POOL.some((m) => RESERVED_ELEMENTS.some((e) => m.id === `dmg-${e}` || m.id === `res-${e}`)));
+  // ...and not reachable from the bench either, driven rather than inspected: Recast and
+  // Augment roll out of `MOD_POOL`, so a reserved element must never come back from one.
+  // A bench op is not an element you chose and paid for.
+  {
+    const bench = new Rng(802);
+    let benchReserved = 0;
+    for (let i = 0; i < 300; i++) {
+      const base = rollItem({ rarity: "legendary", type: "ring", ilvl: 20, rng: bench });
+      const after = augment(recast(base, 0, bench), bench);
+      if (after.mods.some((m) => RESERVED_ELEMENTS.some((e) => m.id === `dmg-${e}` || m.id === `res-${e}`))) benchReserved++;
+    }
+    check("...nor reachable from the bench, which recasts and augments out of that same pool",
+      benchReserved === 0, "300 recast+augment rounds");
+  }
+
+  // Kept out of the pool must not also mean rolled weaker. The two lists are built by one
+  // function in `data/items.ts`, and this is that being true rather than assumed.
+  for (const e of RESERVED_ELEMENTS) {
+    const reserved = RESERVED_ELEMENTAL_MODS.find((m) => m.id === `dmg-${e}`);
+    const loot = MOD_POOL.find((m) => m.id === "dmg-fire");
+    check(`the ${ELEMENT_LABELS[e].toLowerCase()} damage roll is worth exactly what a fire one is`,
+      !!reserved && !!loot && reserved.base === loot.base && reserved.perTier === loot.perTier
+        && reserved.scale === loot.scale && reserved.minTier === loot.minTier);
+  }
+
+  // And the bench has to be able to *find* the roll behind a holy affix, or a crafted
+  // holy ring would be untemperable and would salvage for less than the cold one beside it.
+  const state = rich(803);
+  let holyRing: Item | null = null;
+  for (let i = 0; i < 200 && !holyRing; i++) {
+    const it = state.craftItem("accessory", "epic", "holy");
+    if (it && hasElement(it, "holy")) holyRing = it;
+  }
+  check("a crafted holy item exists to test with", !!holyRing);
+  const holyAt = holyRing?.mods.findIndex((m) => m.id === "dmg-holy" || m.id === "res-holy") ?? -1;
+  check("...and the bench can look up the roll behind its holy affix",
+    holyAt >= 0 && !!MOD_ROLL_BY_ID.get(holyRing!.mods[holyAt]!.id));
+  const holyRange = holyRing && holyAt >= 0 ? affixRange(holyRing, holyAt) : null;
+  check("...so tempering it has a real range to move inside, like any other affix",
+    !!holyRange && holyRange[1] > holyRange[0],
+    holyRange ? `${holyRange[0].toFixed(3)} – ${holyRange[1].toFixed(3)}` : "no range");
 }
 
 console.log(`\n${failures === 0 ? "ALL FORGE CHECKS PASSED" : `${failures} FORGE CHECK(S) FAILED`}\n`);

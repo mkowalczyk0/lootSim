@@ -2884,6 +2884,14 @@ export class Dungeon implements CombatHost, RuleHost {
       kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id,
       tier: this.config.tier, lastFloor: this.config.lastFloor,
     }, this.localHero);
+    // ...and the ascent's cache emits its own kind on top of that (UAT §21). A `tower`
+    // query carries the **height**, not the effective depth, even though the two are the
+    // same number today: the height is what the source means, and the one place the
+    // ascent's rewards get addressed by the descent's number is the place the §21 rule
+    // would start leaking. `recordHeight` keeps the same distinction on the save side.
+    if (this.config.tower) {
+      this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero);
+    }
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
     if (gems > 0) this.dropPickup(x, y, { kind: "gem", value: gems });

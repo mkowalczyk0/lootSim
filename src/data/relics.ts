@@ -41,7 +41,7 @@
  * `sources` is the shared drop table's vocabulary (`data/drops.ts`), read by the same
  * roll sites that pay out named items. A relic may not carry a `craft` source — a relic
  * is found, never made — and every shipped definition must have at least one source some
- * site emits today, so nothing can hide behind the reserved `raid` / `tower` kinds.
+ * site emits today, so nothing can hide behind the reserved `raid` kind.
  *
  * Pure data + pure functions. Imports only types and other `data/` registries.
  */
@@ -122,6 +122,14 @@ export const RELIC_ODDS = {
   abyssBossHigh: 0.16,
   /** An artifact from any Abyssal Rift clear cache — every floor, not just the last. */
   abyssCache: 0.03,
+  /**
+   * A relic from the cache that closes a Tower floor (UAT §21). Lower than `deepCache`
+   * because the ascent hands it out from a much shallower gate: the Delve's cache route
+   * only opens at depth 30, and a second, easier route to the same relic at the same odds
+   * would make the deep one pointless rather than alternative. Two shapes of chase, not
+   * one chase with a shortcut.
+   */
+  towerCache: 0.025,
 } as const;
 
 // --- the registry -----------------------------------------------------------
@@ -229,7 +237,13 @@ export const RELICS: readonly RelicDef[] = [
         ],
       },
     ],
-    sources: provingSourcesOf("holy", RELIC_ODDS.proving),
+    sources: [
+      ...provingSourcesOf("holy", RELIC_ODDS.proving),
+      // The holy relic gets a holy home (UAT §21). Height 30 is the ascent's answer to the
+      // Delve's own bottom: the Proving route is still the cheaper one for a holy Legend,
+      // and this is the route for everyone whose Legend isn't.
+      { kind: "tower", minFloor: 30, chance: RELIC_ODDS.towerCache },
+    ],
   }),
   relic({
     id: "venom-of-the-unfinished-garden",
@@ -375,7 +389,13 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "status", status: "hasted", to: "self" }],
       },
     ],
-    sources: [{ kind: "clearCache", minDepth: DELVE_BOTTOM, chance: RELIC_ODDS.deepCache, mode: "delve" }],
+    sources: [
+      { kind: "clearCache", minDepth: DELVE_BOTTOM, chance: RELIC_ODDS.deepCache, mode: "delve" },
+      // A messenger is Heaven's own word for what it sends, so the ascent pays this one
+      // out too (UAT §21) — earlier than the Delve does, at longer odds. The two routes
+      // are deliberately different shapes: a short climb you repeat, or one deep floor.
+      { kind: "tower", minFloor: 15, chance: RELIC_ODDS.towerCache },
+    ],
   }),
 
   // ---- the Abyss, at the top of its ladder ---------------------------------------------
@@ -805,7 +825,7 @@ export function relicProblems(def: RelicDef): string[] {
   if (def.rarity !== RELIC_TIER_INFO[def.tier].rarity) out.push(`a ${def.tier} presents as ${RELIC_TIER_INFO[def.tier].rarity}, not ${def.rarity}`);
   if (def.effects.length === 0) out.push("no effects — it would do nothing");
   if (def.sources.length === 0) out.push("no acquisition source — nothing could ever drop it");
-  if (!def.sources.some(isLiveSource)) out.push("every source is reserved (raid/tower) — nothing in the game today can drop it");
+  if (!def.sources.some(isLiveSource)) out.push("every source is reserved (raid) — nothing in the game today can drop it");
 
   for (const s of def.sources) {
     if ((s as { kind: string }).kind === "craft") { out.push("a relic is found, never forged — no craft source"); continue; }

@@ -30,6 +30,24 @@ export const MAGIC_ELEMENTS = ELEMENTS.filter((e) => e !== "physical") as readon
 export const LOOT_ELEMENTS = ["fire", "cold", "lightning", "poison", "void"] as const;
 export type LootElement = (typeof LOOT_ELEMENTS)[number];
 
+/**
+ * The other half of the magic elements: authored in full, kept out of the random pool.
+ *
+ * Derived rather than listed, so it cannot drift if `LOOT_ELEMENTS` is ever widened —
+ * "reserved" means exactly "a magic element the random generators don't reach for", and
+ * that is one statement, not two lists to keep in agreement.
+ *
+ * **Reserved is not unauthored.** Each of these has a resist stat, a material, a Forge
+ * essence, an ailment and an affix pair, and they are reachable through every path that
+ * names an element on purpose: a crafted essence, an element cache, a floor whose own
+ * element is one of them. Until Sept 2026 the affix pair was the exception — it was only
+ * ever built from `LOOT_ELEMENTS`, so a holy essence took the material and changed
+ * nothing. See `RESERVED_ELEMENTAL_MODS` in `data/items.ts`.
+ */
+export const RESERVED_ELEMENTS = MAGIC_ELEMENTS.filter(
+  (e) => !(LOOT_ELEMENTS as readonly string[]).includes(e),
+) as readonly Exclude<Element, "physical" | LootElement>[];
+
 export const ELEMENT_LABELS: Record<Element, string> = {
   physical: "Physical",
   fire: "Fire",

@@ -37,6 +37,7 @@ import { LIVE_SOURCE_KINDS, dropChance, type DropQuery, type FoundSource } from 
 import { DELVE_BOTTOM } from "../src/data/legends";
 import { MOD_KEYS, type ModKey } from "../src/data/mods";
 import { delveConfig, riftConfig } from "../src/data/modes";
+import { towerConfig } from "../src/data/tower";
 import { NAMED_ITEMS } from "../src/data/named";
 import {
   MAX_RELICS_WORN, RELICS, RELIC_BY_ID, RELIC_RULE_PREFIX, RELIC_SLOTS, RELIC_TIER_INFO,
@@ -230,9 +231,25 @@ section("5. rule 4 — every one answers 'where does this drop?'");
     relicsForSource({ kind: "clearCache", depth: 12, mode: "abyss", tier: 1, lastFloor: false }).every((d) => !d.sources.some((s) => s.kind === "clearCache" && s.lastFloor))
     && relicsForSource({ kind: "clearCache", depth: 12, mode: "abyss", tier: 1, lastFloor: true }).some((d) => d.sources.some((s) => s.kind === "clearCache" && s.lastFloor)));
 
-  // The reserved seam: typed, matchable, and empty today.
-  check("no site emits a raid or tower query yet, so the reserved kinds pay out nothing",
-    relicsForSource({ kind: "raid", raidId: "anything" }).length === 0 && relicsForSource({ kind: "tower", floor: 99 }).length === 0);
+  // The reserved seam: typed, matchable, and empty today. `tower` left it in Sept 2026 —
+  // the ascent's clear cache emits it — so `raid` is what is still holding the door.
+  check("no site emits a raid query yet, so the reserved kind pays out nothing",
+    relicsForSource({ kind: "raid", raidId: "anything" }).length === 0);
+
+  // ...and the ascent's own kind is live, asserted as the pair rather than as a bound: a
+  // height below the gate pays nothing and a height above it pays that exact relic. A
+  // one-sided "the tower drops something" would pass just as happily if `minFloor` were
+  // being ignored altogether.
+  const towerLow = relicsForSource({ kind: "tower", floor: 14 }).map((d) => d.id);
+  const towerMid = relicsForSource({ kind: "tower", floor: 15 }).map((d) => d.id);
+  const towerTop = relicsForSource({ kind: "tower", floor: 30 }).map((d) => d.id);
+  check("the Tower's cache pays nothing below its first gate", towerLow.length === 0);
+  check("...the Sandals at height 15, and only the Sandals",
+    towerMid.length === 1 && towerMid[0] === "sandals-of-the-swift-messenger", towerMid.join(", "));
+  check("...and the holy relic joins it at height 30", towerTop.includes("hymn-of-the-unfinished-choir"), towerTop.join(", "));
+  check("a height is not a depth: no relic reads the tower gate off a Delve floor",
+    relicsForSource({ kind: "clearCache", depth: 99, mode: "tower", tier: 0, lastFloor: false })
+      .every((d) => !d.sources.some((s) => s.kind === "tower")));
   const hidden: RelicDef = { ...RELICS[0]!, id: "hidden-behind-the-seam", sources: [{ kind: "raid", raidId: "tyrant", chance: 0.5 }] };
   check("a definition with only a reserved source is refused by the validator", relicProblems(hidden).some((p) => p.includes("reserved")));
   const forged: RelicDef = { ...RELICS[0]!, id: "forged-relic", sources: [{ kind: "craft", materials: {}, coins: 1 } as unknown as FoundSource] };
@@ -541,6 +558,27 @@ section("11. live: the drop sites really ask the table, and a bank lands it");
   const shallow = new Dungeon(cacheState, delveConfig(DELVE_BOTTOM - 1), 605);
   rig(shallow).dropClearCache();
   check("...and the depth-29 cache does not", !relicsOnFloor(shallow).includes("sandals-of-the-swift-messenger"));
+  // The ascent's own cache (UAT §21), asserted as the same pair — and then as the
+  // comparison that actually matters: a Delve cache at *any* depth never pays the
+  // ascent's table, because a height is not a depth and the two ladders are addressed
+  // separately on purpose. A one-sided "the tower pays out" check would stay green even
+  // if `tower` had been implemented as a `clearCache` keyed on the effective depth, which
+  // is precisely the leak §21 is built to prevent.
+  const tower15 = new Dungeon(cacheState, towerConfig(15), 609);
+  rig(tower15).dropClearCache();
+  check("the height-15 Tower cache holds the Sandals", relicsOnFloor(tower15).includes("sandals-of-the-swift-messenger"));
+  const tower14 = new Dungeon(cacheState, towerConfig(14), 610);
+  rig(tower14).dropClearCache();
+  check("...and the height-14 cache does not", !relicsOnFloor(tower14).includes("sandals-of-the-swift-messenger"));
+  const tower30 = new Dungeon(cacheState, towerConfig(30), 611);
+  rig(tower30).dropClearCache();
+  check("the height-30 cache adds the holy relic", relicsOnFloor(tower30).includes("hymn-of-the-unfinished-choir"),
+    relicsOnFloor(tower30).join(", ") || "nothing");
+  const deepDelve = new Dungeon(cacheState, delveConfig(60), 612);
+  rig(deepDelve).dropClearCache();
+  check("...which a Delve cache never holds, at any depth — a height is not a depth",
+    !relicsOnFloor(deepDelve).includes("hymn-of-the-unfinished-choir"));
+
   const closing = new Dungeon(cacheState, riftConfig("abyss", 2, 4), 606);
   rig(closing).dropClearCache();
   const midway = new Dungeon(cacheState, riftConfig("abyss", 2, 2), 607);

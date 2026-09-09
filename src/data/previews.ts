@@ -127,6 +127,11 @@ function eventsOn(floor: RunConfig, proving: ClassId | null) {
   if (floor.bossFloor) {
     events.unshift({ kind: "boss", bossId: bossSpecForRun(floor, proving).id });
   }
+  // The ascent's cache emits a second query on top of the first (UAT §21), so the preview
+  // has to ask it too — the whole point of this file is that what a screen advertises and
+  // what the floor rolls are the same call. Keyed on the height, exactly as the roll site
+  // keys it; `Dungeon.dropClearCache` is the thing this must not drift from.
+  if (floor.tower) events.push({ kind: "tower", floor: floor.tower.height });
   return events;
 }
 

@@ -12,7 +12,7 @@
  */
 
 import {
-  ELEMENT_SUFFIX, ELEMENT_WARD_SUFFIX, LOOT_ELEMENTS, type Element,
+  ELEMENT_SUFFIX, ELEMENT_WARD_SUFFIX, LOOT_ELEMENTS, RESERVED_ELEMENTS, type Element,
 } from "./elements";
 import {
   ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY, type ModKey, type StatKey,
@@ -275,16 +275,55 @@ export interface ModRoll {
   readonly minTier: number;
 }
 
-const ELEMENTAL_MODS: readonly ModRoll[] = LOOT_ELEMENTS.flatMap((e): ModRoll[] => [
-  {
-    id: `dmg-${e}`, key: ELEMENT_DAMAGE_KEY[e]!, kind: "suffix", label: ELEMENT_SUFFIX[e],
-    base: 0.1, perTier: 0.55, scale: "linear", where: "offense", minTier: 0,
-  },
-  {
-    id: `res-${e}`, key: ELEMENT_RESIST_KEY[e]!, kind: "suffix", label: ELEMENT_WARD_SUFFIX[e],
-    base: 12, perTier: 0.85, scale: "linear", where: "defense", minTier: 0,
-  },
-]);
+/**
+ * The two affixes every magic element gets: a slice of your hit converted, or flat
+ * resistance to it. One authoring function so the two halves of the element list below
+ * cannot drift apart in their numbers — a reserved element's rolls have to be *the same
+ * rolls*, or "kept out of the random pool" would quietly also mean "worse".
+ */
+function elementalMods(e: Exclude<Element, "physical">): ModRoll[] {
+  return [
+    {
+      id: `dmg-${e}`, key: ELEMENT_DAMAGE_KEY[e]!, kind: "suffix", label: ELEMENT_SUFFIX[e],
+      base: 0.1, perTier: 0.55, scale: "linear", where: "offense", minTier: 0,
+    },
+    {
+      id: `res-${e}`, key: ELEMENT_RESIST_KEY[e]!, kind: "suffix", label: ELEMENT_WARD_SUFFIX[e],
+      base: 12, perTier: 0.85, scale: "linear", where: "defense", minTier: 0,
+    },
+  ];
+}
+
+const ELEMENTAL_MODS: readonly ModRoll[] = LOOT_ELEMENTS.flatMap(elementalMods);
+
+/**
+ * Holy, arcane and nature's affixes — authored identically to the five above, and
+ * deliberately **not** in `MOD_POOL`.
+ *
+ * `data/elements.ts` keeps these three out of the random pool on purpose: they are the
+ * holy / caster / wild identities, and they should come from a class's kit or from a
+ * choice the player paid for, not turn up diluted across every dropped ring. That call
+ * stands. What was wrong until Sept 2026 is that they were not authored *at all* —
+ * `ELEMENTAL_MODS` was built from `LOOT_ELEMENTS` and nothing else, so `dmg-holy` and
+ * `res-holy` did not exist as rolls anywhere in the game. Every path that names an
+ * element deliberately went through `rollItem`'s `favorElement`, which weights a roll by
+ * *filtering the pool for those two ids* — and filtering a pool that never contained them
+ * returns nothing. So the three of them were silently inert:
+ *
+ *  - A **Forge holy essence** (a Gilt Reliquary, and the same for Rune Fragment and
+ *    Heartwood Sap) charged its material and changed the roll in no way whatsoever. The
+ *    Craft screen offers all eight magic essences, so three of the eight took payment for
+ *    nothing. That is the pre-existing bug, and it predates the Tower by a long way.
+ *  - A **floor whose own element is one of the three** could not pay out a variant drop,
+ *    which is what made the Tower's holy loot axis inert the day it shipped (UAT §21).
+ *
+ * The fix is to author them here and splice them in at the one site that already asks for
+ * an element by name (`rollMods` in `game/item.ts`), rather than to add them to
+ * `MOD_POOL` — which would put holy on every dropped ring and reverse a design call
+ * nobody asked to reverse. The bench's Recast and Augment pools read `MOD_POOL` and so
+ * still cannot reach these: a bench op is not an element you chose and paid for.
+ */
+export const RESERVED_ELEMENTAL_MODS: readonly ModRoll[] = RESERVED_ELEMENTS.flatMap(elementalMods);
 
 /**
  * The affix pool. Everything a build wants lives in here somewhere, and the rarity

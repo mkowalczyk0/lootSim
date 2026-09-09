@@ -18,11 +18,16 @@
  * description, one matcher — the §20 preview screen depends on that being true, because
  * two ways to describe the same kill are two matchers that can disagree.
  *
- * `raid` and `tower` are RESERVED. They are new addressing (a raid is not a boss floor,
- * a tower floor is not a depth), typed here so UAT §15 and §21 can hang their own drops
- * off the table without a schema change — but no site emits their queries yet, so
- * `LIVE_SOURCE_KINDS` says which kinds can actually pay out today and the acceptance
- * tools refuse a definition that hides behind a reserved one.
+ * `raid` is RESERVED. It is new addressing (a raid is not a boss floor), typed here so
+ * UAT §15 can hang its own drops off the table without a schema change — but no site
+ * emits that query yet, so `LIVE_SOURCE_KINDS` says which kinds can actually pay out
+ * today and the acceptance tools refuse a definition that hides behind a reserved one.
+ *
+ * `tower` was reserved on the same terms and **went live in Sept 2026**, when the ascent
+ * got a clear cache to emit it (UAT §21). It is deliberately its own kind rather than a
+ * `clearCache` with `mode: "tower"`, because a height is not a depth: the whole §21 rule
+ * is that the two ladders are never written into each other's numbers, and a source that
+ * said `minDepth` while meaning a height would be the first place that rule leaked.
  *
  * Pure data + pure functions. Imports only types and registries from `data/`.
  */
@@ -68,7 +73,10 @@ export type FoundSource =
   | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
   /** RESERVED for UAT §15 — a raid encounter by id. No site emits this query yet. */
   | { readonly kind: "raid"; readonly raidId: string; readonly chance: number }
-  /** RESERVED for UAT §21 — a tower floor at least this high. No site emits this query yet. */
+  /**
+   * In the cache that closes a Tower floor at least this high (UAT §21). A *height*, not
+   * a depth — the ascent's own address, so nothing here can be confused for the descent.
+   */
   | { readonly kind: "tower"; readonly minFloor: number; readonly chance: number };
 
 /**
@@ -85,7 +93,7 @@ export interface CraftSource {
 export type DropSource = FoundSource | CraftSource;
 
 /** The source kinds some roll site actually emits a query for today. */
-export const LIVE_SOURCE_KINDS: readonly FoundSource["kind"][] = ["boss", "chest", "clearCache", "worldDrop"];
+export const LIVE_SOURCE_KINDS: readonly FoundSource["kind"][] = ["boss", "chest", "clearCache", "worldDrop", "tower"];
 
 export function isLiveSource(src: DropSource): src is FoundSource {
   return (LIVE_SOURCE_KINDS as readonly string[]).includes(src.kind);
@@ -288,7 +296,7 @@ export function foundSourceLine(s: FoundSource): string {
     case "worldDrop":
       return `Dropped by monsters from depth ${s.minDepth}${modeSuffix(s)} (${pct(s.chance)} per kill, elites triple)`;
     case "raid": return `Raid reward — ${s.raidId} (${pct(s.chance)}; raids are not in the game yet)`;
-    case "tower": return `Tower reward from floor ${s.minFloor} (${pct(s.chance)}; the tower is not in the game yet)`;
+    case "tower": return `In the clear cache of a Tower floor from height ${s.minFloor} (${pct(s.chance)})`;
   }
 }
 
@@ -352,6 +360,8 @@ export function foundSourceProblems(s: FoundSource): string[] {
       break;
     case "tower":
       if (!(s.minFloor >= 1)) out.push("tower minFloor must be >= 1");
+      // A height, deliberately: writing this as a depth is the §21 leak the whole
+      // recordHeight/recordDepth split exists to prevent.
       break;
   }
   return out;

@@ -2,7 +2,7 @@ import { Rng } from "../core/rng";
 import { LOOT_ELEMENTS, type Element } from "../data/elements";
 import type { HeroClass } from "../data/classes";
 import {
-  EQUIP_SLOTS, ITEM_NAMES, MOD_COUNTS, MOD_POOL, TRIGGER_SHAPES, TYPE_STATS,
+  EQUIP_SLOTS, ITEM_NAMES, MOD_COUNTS, MOD_POOL, RESERVED_ELEMENTAL_MODS, TRIGGER_SHAPES, TYPE_STATS,
   grantChance, isWeaponType, modAllowed, modValue, slotForType, triggerChance,
   type EquipSlot, type ItemType, type ModRoll, type TriggerSpec,
 } from "../data/items";
@@ -285,8 +285,18 @@ export function rollMods(
     // A craft's entire promise is that the essence you paid for actually shows up, so
     // its damage and resist rolls are weighted rather than forced — that keeps crafted
     // items rolling through the exact same code every dropped item does.
-    const favored = pool.filter((m) => m.id === `dmg-${favorElement}` || m.id === `res-${favorElement}`);
-    pool = [...pool, ...favored, ...favored, ...favored];
+    const wanted = (m: ModRoll) => m.id === `dmg-${favorElement}` || m.id === `res-${favorElement}`;
+    // Holy, arcane and nature are kept out of the random pool (`MOD_POOL` is built from
+    // `LOOT_ELEMENTS`), so this is the one place their affixes become reachable — and
+    // only for the element actually named, which is why the reserved list is filtered by
+    // `wanted` rather than spliced in wholesale. Before Sept 2026 they were reachable
+    // nowhere: `favored` came back empty, the tripling multiplied nothing, and a holy
+    // essence charged its material for an unchanged roll. See `RESERVED_ELEMENTAL_MODS`.
+    const reserved = RESERVED_ELEMENTAL_MODS.filter((m) => wanted(m) && modAllowed(m, type, tier));
+    // One copy in the pool plus three favoured copies, exactly as a loot element gets,
+    // so a reserved element is weighted the same and not quietly rarer.
+    const favored = [...pool.filter(wanted), ...reserved];
+    pool = [...pool, ...reserved, ...favored, ...favored, ...favored];
   }
   const out: { mod: ItemMod; roll: ModRoll }[] = [];
   const used = new Set<string>();
@@ -316,8 +326,17 @@ function rollTrigger(tier: number, rng: Rng): TriggerSpec | null {
   return makeTrigger(tier, rng);
 }
 
-/** Every pool affix by id, for the bench to find the roll an `ItemMod` came from. */
-export const MOD_ROLL_BY_ID: ReadonlyMap<string, ModRoll> = new Map(MOD_POOL.map((m) => [m.id, m]));
+/**
+ * Every affix by id, for the bench to find the roll an `ItemMod` came from.
+ *
+ * This is the *vocabulary*, not the random pool, so it covers the reserved elements too.
+ * An item carrying a holy affix has to be temperable, salvageable and valuable like any
+ * other; a lookup that missed it would silently make a crafted holy ring worth less at
+ * the vendor than the cold one beside it.
+ */
+export const MOD_ROLL_BY_ID: ReadonlyMap<string, ModRoll> = new Map(
+  [...MOD_POOL, ...RESERVED_ELEMENTAL_MODS].map((m) => [m.id, m]),
+);
 
 /** Whether an item's type may carry a granted skill at all — weapons, rings, necklaces. */
 export function grantEligible(type: ItemType): boolean {
