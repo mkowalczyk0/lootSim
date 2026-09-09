@@ -506,9 +506,23 @@ export class TownUI {
         switch (action) {
           case "left": this.adjust(-1); break;
           case "right": this.adjust(1); break;
+          case "primary": this.primary(); break;
           case "secondary": this.secondary(); break;
           case "tertiary": this.tertiary(); break;
         }
+        this.render();
+        return;
+      }
+      // An Augment loadout slot is a thing to *select*, not a row to fire — picking the
+      // base chest or an axis is a different action from opening the chest, and the two
+      // must not collapse into one click the way the generic `[data-index]` fallback
+      // below would (that fallback both selects and calls `primary()`, which is exactly
+      // right for a chest card or a stash item but wrong here). Opening lives only in the
+      // aside's explicit "confirm · open" chip, handled by the `data-action="primary"`
+      // case just above.
+      const augSlotEl = target.closest<HTMLElement>("[data-aug-slot]");
+      if (augSlotEl) {
+        this.cursor = Number(augSlotEl.dataset.augSlot);
         this.render();
         return;
       }
@@ -706,9 +720,22 @@ export class TownUI {
     } else {
       // Chests is the one screen where up/down don't walk the row the cursor is on —
       // they flip between categories (General, Weapon Specific, ...), because the chests
-      // themselves are a left/right carousel within whichever category is showing.
+      // themselves are a left/right carousel within whichever category is showing. The
+      // Augment view breaks that shape: it's a stack of loadout slots, not a carousel, so
+      // up/down walk *those* rows instead — a direction press must not silently carry you
+      // out into the neighbouring category. But `chestCategory` is instance state that
+      // outlives this screen (it survives an I/O tab switch and even a dive), so the view
+      // still needs a keyboard way out or a keyboard-only player is parked here for good —
+      // every key here is safe to rebind specifically because no keyboard state is allowed
+      // to lock a player out of a screen. So it wraps at the edges, same as the ordinary
+      // category carousel one level up: down on the last slot and up on the first slot
+      // leave to the neighbouring category exactly like they would outside the Augment
+      // view, everywhere else they walk the slot list. Leaving still isn't a side effect of
+      // an arbitrary direction press — it's something you have to walk to the edge to do.
       if (input.wasPressedOrRepeated("down") && count > 0) {
-        if (this.tab === "Chests") {
+        if (this.tab === "Chests" && !this.augmentView) {
+          this.setChestCategory(this.chestCategory + 1);
+        } else if (this.augmentView && this.cursor === count - 1) {
           this.setChestCategory(this.chestCategory + 1);
         } else {
           this.cursor = (this.cursor + 1) % count;
@@ -717,7 +744,9 @@ export class TownUI {
         dirty = true;
       }
       if (input.wasPressedOrRepeated("up") && count > 0) {
-        if (this.tab === "Chests") {
+        if (this.tab === "Chests" && !this.augmentView) {
+          this.setChestCategory(this.chestCategory - 1);
+        } else if (this.augmentView && this.cursor === 0) {
           this.setChestCategory(this.chestCategory - 1);
         } else {
           this.cursor = (this.cursor - 1 + count) % count;
@@ -3418,7 +3447,7 @@ export class TownUI {
       const on = i === this.cursor ? " on" : "";
       if (axis === null) {
         const info = CHESTS[this.loadout.base];
-        return `<div class="aug-slot${on}" data-index="${i}" style="--r:${info.color}">
+        return `<div class="aug-slot${on}" data-aug-slot="${i}" style="--r:${info.color}">
             <span class="aug-slot-axis">Base</span>
             <span class="aug-slot-name">${escapeHtml(chestName(this.loadout.base))}</span>
             <span class="badge">${this.state.keys[this.loadout.base]} keys</span>
@@ -3429,7 +3458,7 @@ export class TownUI {
       const have = this.ownedOnAxis(axis).length;
       const colour = def ? RARITY_COLORS[def.grade] : "#3a4152";
       const name = def ? def.name : have > 0 ? "— empty —" : "— none owned —";
-      return `<div class="aug-slot${on}" data-index="${i}" style="--r:${colour}">
+      return `<div class="aug-slot${on}" data-aug-slot="${i}" style="--r:${colour}">
           <span class="aug-slot-axis">${escapeHtml(augmentAxisLabel(axis))}</span>
           <span class="aug-slot-name">${escapeHtml(name)}</span>
           <span class="badge">${have}</span>
