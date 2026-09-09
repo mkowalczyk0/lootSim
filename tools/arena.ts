@@ -345,8 +345,10 @@ function censusSteps(steps: readonly EffectStep[], into: KitCensus, seenSelfBuff
 function kitCensus(classId: ClassId): KitCensus {
   const def = CLASS_BY_ID[classId]!;
   const into: KitCensus = { heal: 0, shield: 0, mitigation: 0, mobility: 0, control: 0, support: 0, summon: 0, execution: 0 };
+  // `PilotClass.abilities` is "exactly ten: nine normal skills then the one ultimate",
+  // so the ultimate is already in here. A `def.ultimate` push used to sit below this
+  // line; the property does not exist, so it never ran — and never needed to.
   const abilities: Ability[] = [...def.abilities];
-  if (def.ultimate) abilities.push(def.ultimate);
   for (const ab of abilities) {
     censusSteps(ab.effects ?? [], into, false);
     if (ab.followUp) censusSteps(ab.followUp.effects, into, false);

@@ -260,7 +260,9 @@ function prime(d: Dungeon, ability: Ability): void {
   hero.player.fullHeal();
   hero.player.health = Math.floor(hero.player.maxHealth * 0.4);
   hero.ward = 0;
-  hero.sc.apply("chill", { duration: 30, potency: 1, sourceActorId: hero.index });
+  // `ApplyOptions` has `durationMult`, not `duration`: the option this used to pass was
+  // silently dropped and the chill ran for the spec's own default, not the sweep's length.
+  hero.sc.apply("chill", { durationMult: 30, potency: 1, sourceActorId: hero.index });
   hero.posHistory.length = 0;
   for (let i = 0; i < 30; i++) hero.posHistory.push({ x: a.x - i * 2, y: a.y });
 }
@@ -354,7 +356,12 @@ function run(classId: ClassId, ability: Ability, doCast: boolean): Acc | null {
     const res = hero.rt.castAbility(d, hero.index, ability, castInput(d, hero, ability));
     acc.ok = res.ok;
     if (!res.ok) acc.failure = res.failure;
-    acc.targets = res.ok ? res.targets.actorIds.length : 0;
+    // `CastResult.targets` is optional on the type even when `ok` is true (it wants to
+    // be a discriminated union and isn't). Recording a silent 0 here would read as "this
+    // ability reaches nothing" — a dead path that isn't one — so say so loudly instead.
+    const hit = res.ok ? res.targets : undefined;
+    if (res.ok && !hit) throw new Error(`${ability.id}: a successful cast returned no target list`);
+    acc.targets = hit ? hit.actorIds.length : 0;
   }
 
   const sample = (): void => {
