@@ -71,6 +71,18 @@ single-body attempt's numbers.
   headcount (`dmgBill/player`) — the fairness measure, since a party of four naturally
   racks up more total damage just from having more bodies present — clear rate, downs
   (times any hero went from standing to downed), and potions drunk.
+- **`dmgBill/player` is confounded whenever the fight's LENGTH moves, and this document
+  leans on it heavily.** Added after the threat-rate work (`docs/raid-threat-rate.md`)
+  found the two metrics disagreeing on the same run: a change that makes a fight *harder*
+  can book *less* total damage, because the party dies sooner and the damage never accrues.
+  On Queen tier 1 the clear rate flattened across party size — the fix working — while
+  `dmgBill/player` said the dilution had got worse, and the average phases reached dropped
+  from 2.1 to 1.4, which is the tell that the party was simply dying earlier. Every number
+  in this document is sound as a *baseline* reading, because the arms being compared there
+  ran to comparable lengths. But when you compare a treatment against it, **read clear rate
+  first and check `avgSec` and `phases` before believing a `dmgBill/player` delta.** Damage
+  taken is a rate, and this column silently divides it by a duration that is itself part of
+  what you changed.
 - **Baseline and treatment are compared at the same seed count.** The first report on this
   finding compared a 12-seed baseline against a 24-seed treatment — reasonable in the
   moment (only the treatment had shown a surprise worth widening), but it risked crediting
