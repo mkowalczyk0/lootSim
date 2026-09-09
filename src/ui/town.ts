@@ -62,7 +62,7 @@ import {
   ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
   REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
 } from "../data/settings";
-import { SKILL_SLOTS } from "../game/player";
+import { SKILL_SLOTS, type Player } from "../game/player";
 import {
   ALL_CLASSES, CLASS_BY_ID, classMatrixRow,
   categoryGloss, describeEffects, describeNode, describeNodeLong, pathPointsByName,
@@ -2167,6 +2167,7 @@ export class TownUI {
         a raid boss, and it will take a while.</p>
         <p class="danger">Die and you lose every coin, key and item you picked up on the
         way down. XP is always kept.</p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges.delve, "Challenger clears")}
         <h3>${escapeHtml(layer.name)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
         <h3>${escapeHtml(biome.name)}</h3>
@@ -2235,6 +2236,7 @@ export class TownUI {
         way up. XP is always kept.</p>
         <p class="muted">A height is not a depth. Climbing opens nothing down there — no
         rift tier, and no Proving.</p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges.tower, "Challenger clears")}
         <h3>${escapeHtml(layer.name)}</h3>
         <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
         <h3>${escapeHtml(biome.name)}</h3>
@@ -2312,6 +2314,7 @@ export class TownUI {
         <p class="muted">Clearing the boss opens the next tier. Extracting early keeps
         what you're carrying and opens nothing.</p>
         <p>Rifts closed: <b>${this.state.stats.riftsCleared[this.riftMode] ?? 0}</b></p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges[this.riftMode], "Challenger clears")}
       </aside>`;
   }
 
@@ -2378,6 +2381,7 @@ export class TownUI {
         extraction and the next tier — the deeper the sector, the better it pays.</p>
         <p>Opening a portal doesn't dive — it spawns one by the Reliquary Gate. Walk into
         it when you're ready.</p>
+        ${this.challengerBadgeLine(this.state.player.planetChallengerBadges[planet.id] ?? 0, "Challenger clears")}
       </aside>`;
   }
 
@@ -2451,6 +2455,7 @@ export class TownUI {
         picked up in there.</p>
         <p>Opening a portal doesn't dive — it spawns one on the deck. Walk into it when
         you're ready.</p>
+        ${this.challengerBadgeLine(this.state.player.raidChallengerBadges[spec.id] ?? 0, "Challenger clears")}
       </aside>`;
   }
 
@@ -2622,6 +2627,7 @@ export class TownUI {
         nothing here is given away. Rarity buys more of both, and worse grades of both.</p>
         <p class="muted">Divine and unspoken are the item ladder's, not this one. A Memory
         stops at mythic.</p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges.memory, "Challenger clears")}
       </aside>`;
   }
 
@@ -3019,6 +3025,7 @@ export class TownUI {
         </table>
         ${this.previewBlock(previewForRun(config))}
         <p>Vigils kept: <b>${this.state.stats.vigilsCleared}</b></p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges.vigil, "Challenger clears")}
         ${this.challengerNote()}
       </aside>`;
   }
@@ -3093,6 +3100,7 @@ export class TownUI {
           <tr><td>Gems</td><td>×${mode.gemMult.toFixed(1)}</td></tr>
         </table>
         <p>Convergences closed: <b>${this.state.stats.convergencesCleared}</b></p>
+        ${this.challengerBadgeLine(this.state.player.challengerBadges.convergence, "Challenger clears")}
         ${this.challengerNote()}
       </aside>`;
   }
@@ -3103,6 +3111,53 @@ export class TownUI {
     return `<p style="color:#ff2d2d">Challenger <b>${tier}</b> — ${escapeHtml(challengerName(tier))}.
       ×${challengerMultiplier(tier).toFixed(1)} danger on top of everything above.
       <span class="muted">Change it in Settings.</span></p>`;
+  }
+
+  /**
+   * Twenty pips for one Challenger completion badge — Nightmare's ten purple, Death
+   * March's ten red, filled up to whatever tier this activity has actually been *banked*
+   * at (never a death, never a bail-out; see `GameState.recordDepth`). A trophy: read
+   * only here and on the Path screen, nowhere the simulation looks (`tools/badges.ts`).
+   */
+  private challengerPips(tier: number): string {
+    return Array.from({ length: MAX_CHALLENGER_TIER }, (_, i) => {
+      const n = i + 1;
+      const color = n <= 10 ? "#a78bfa" : "#ff2d2d";
+      return `<span style="color:${n <= tier ? color : "#3a4150"}">●</span>`;
+    }).join("");
+  }
+
+  /** A commit-screen badge line: the pips, plus which tier they add up to. */
+  private challengerBadgeLine(tier: number, label: string): string {
+    const best = tier > 0
+      ? ` — best <b style="color:${tier > 10 ? "#ff2d2d" : "#a78bfa"}">${escapeHtml(challengerName(tier))}</b>`
+      : " — none banked yet";
+    return `<p class="muted">${escapeHtml(label)}
+      <span style="letter-spacing:2px">${this.challengerPips(tier)}</span>${best}</p>`;
+  }
+
+  /**
+   * The Path screen's full trophy shelf for one character: every activity, one row each.
+   * Every value is a direct read off `Player` — nothing here is a second table that could
+   * drift from what actually banked (`tools/badges.ts` pins that as a property).
+   */
+  private trophyRows(pc: Player): string {
+    const modeRow = (id: RunModeId, label: string) => `
+        <tr><td>${escapeHtml(label)}</td><td>${this.challengerPips(pc.challengerBadges[id])}</td></tr>`;
+    const rows = [
+      modeRow("delve", "The Delve"),
+      modeRow("tower", "The Tower"),
+      modeRow("abyss", "Abyssal Rift"),
+      modeRow("hoard", "Avarice Rift"),
+      modeRow("vigil", "The Vigil"),
+      modeRow("convergence", "The Convergence"),
+      modeRow("memory", "A Memory"),
+      ...PLANETS.map((p) => `
+        <tr><td>${escapeHtml(p.name)}</td><td>${this.challengerPips(pc.planetChallengerBadges[p.id] ?? 0)}</td></tr>`),
+      ...RAIDS.map((r) => `
+        <tr><td>${escapeHtml(r.name)}</td><td>${this.challengerPips(pc.raidChallengerBadges[r.id] ?? 0)}</td></tr>`),
+    ];
+    return rows.join("");
   }
 
   /**
@@ -3963,6 +4018,10 @@ export class TownUI {
         and anything else hits a little softer</span></p>
         <h3>Skills</h3>
         <ul class="pulls">${skills}</ul>
+        <h3>Trophies</h3>
+        <p class="muted">The highest Challenger tier this class has actually banked a
+        clear at — never a death, never a bail-out — per activity.</p>
+        <table class="cmp trophies">${this.trophyRows(selChar)}</table>
         ${isCurrent
           ? '<p class="danger">You are playing this one right now.</p>'
           : this.state.classChosen

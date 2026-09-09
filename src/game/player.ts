@@ -9,6 +9,7 @@ import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import {
   ELEMENT_RESIST_KEY, addMods, elementalFractions, zeroMods, type Mods,
 } from "../data/mods";
+import { RUN_MODES, type RunModeId } from "../data/modes";
 import { WEAPONS, type WeaponFamily, type WeaponSpec } from "../data/weapons";
 import type { Ability } from "../combat/ability";
 import { ResourceSet, type ResourceSpec } from "../combat/resources";
@@ -64,6 +65,18 @@ export type Equipment = Record<EquipSlot, Item | null>;
 
 export function emptyEquipment(): Equipment {
   return { weapon: null, armor: null, shield: null, ring: null, gloves: null, necklace: null };
+}
+
+/**
+ * Zeroed Challenger trophy shelf for the fixed activities — same shape as `state.ts`'s
+ * `freshTiers()`, one entry per `RunModeId`. Only `delve`, `tower`, `abyss`, `hoard`,
+ * `vigil`, `convergence` and `memory` are ever written; `planet` and `raid` sit unused
+ * here for exactly the reason they sit unused in `riftTiers` — each of those two rosters
+ * is its own open-ended list, tracked instead by id on `planetChallengerBadges` /
+ * `raidChallengerBadges` below.
+ */
+function freshChallengerBadges(): Record<RunModeId, number> {
+  return Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>;
 }
 
 /**
@@ -152,6 +165,26 @@ export class Player {
    * mechanics on purpose — prestige, not power.
    */
   legendComplete = false;
+  /**
+   * Challenger completion badges: the highest Challenger tier this class has *banked* a
+   * clear at, per activity — a trophy, the same "banked, not died, not bailed out" rule
+   * `recordDepth`/`GameState.completeLegend` already hold every other piece of progress
+   * to. Fixed activities (delve, the Tower, both rifts, the Vigil, the Convergence, a
+   * Memory) are keyed by `RunModeId`, the same split `GameState.riftTiers` uses; the
+   * Reliquary's sectors and the raid roster are each their own open-ended list, so they
+   * get their own id-keyed maps below, mirroring `planetProgress`/`raidProgress`.
+   *
+   * Per-`Player` because the badge is meant to read as *this character's* record, not the
+   * account's — the same call `legendComplete` already made. Read only by the UI; nothing
+   * in the simulation ever asks for it (see `tools/badges.ts`).
+   */
+  challengerBadges: Record<RunModeId, number> = freshChallengerBadges();
+  /** Challenger badges for the Reliquary's sectors, by planet id. Sparse — an entry only
+   *  exists once a tier of that sector has actually been banked. */
+  planetChallengerBadges: Record<string, number> = {};
+  /** Challenger badges for raids, by raid id. Same shape and reasoning as the sector map
+   *  above. */
+  raidChallengerBadges: Record<string, number> = {};
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
   /** Legacy mana pool, kept for the HUD and potions. A class's real casting resource is
@@ -169,6 +202,30 @@ export class Player {
     this.autoSlotNewAbilities();
     this.health = this.maxHealth;
     this.mana = this.maxMana;
+  }
+
+  /**
+   * Banks a Challenger badge for one of the fixed activities — never lowers a tier
+   * already earned, exactly like `deepestDepth`/`highestHeight`. Called only from
+   * `GameState.recordDepth`, itself only reachable from a credited `bank(true)`, so a
+   * death or an early extraction can never plant a badge that wasn't actually cleared.
+   */
+  bankChallengerBadge(mode: RunModeId, tier: number): void {
+    if (tier > this.challengerBadges[mode]) this.challengerBadges[mode] = tier;
+  }
+
+  /** Same rule as `bankChallengerBadge`, for a planet's own Challenger ladder. */
+  bankPlanetChallengerBadge(planetId: string, tier: number): void {
+    if (tier > (this.planetChallengerBadges[planetId] ?? 0)) {
+      this.planetChallengerBadges[planetId] = tier;
+    }
+  }
+
+  /** Same rule as `bankChallengerBadge`, for a raid's own Challenger ladder. */
+  bankRaidChallengerBadge(raidId: string, tier: number): void {
+    if (tier > (this.raidChallengerBadges[raidId] ?? 0)) {
+      this.raidChallengerBadges[raidId] = tier;
+    }
   }
 
   get heroClass(): HeroClass {

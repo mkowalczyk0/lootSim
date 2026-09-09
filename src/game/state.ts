@@ -843,6 +843,14 @@ export class GameState {
    * Called when a floor's loot is banked. A delve floor unlocks the next depth; a rift
    * floor unlocks nothing until the boss at the bottom of it is dead, which is what
    * stops the tier ladder from being climbed by extracting on floor one.
+   *
+   * This is also the one hook Challenger completion badges bank through — every branch
+   * below is already "this activity just counted as *done*", which is exactly what a
+   * badge means, so a badge is banked beside whatever record that branch already writes,
+   * against `config.challengerTier` (the dial this specific floor was actually run at).
+   * Every `RunConfig` carries that field, and every real caller sets it, but the
+   * function's own `config?` stays optional (a couple of tools call it bare), so a badge
+   * only ever gets banked where a `config` actually exists.
    */
   recordDepth(depth: number, config?: RunConfig): void {
     // The ascent keeps its own books and touches none of the depth records (UAT §21).
@@ -850,6 +858,7 @@ export class GameState {
     // `deepestDepth` would hand a climber the Proving and the rift ladders for free.
     if (config?.tower) {
       this.recordHeight(config.tower.height);
+      this.player.bankChallengerBadge("tower", config.challengerTier);
       return;
     }
     if (depth > this.stats.deepestDepth) this.stats.deepestDepth = depth;
@@ -859,6 +868,7 @@ export class GameState {
     if (config?.daily) {
       this.daily.clearedDay = config.daily.day;
       this.stats.vigilsCleared++;
+      this.player.bankChallengerBadge("vigil", config.challengerTier);
       return;
     }
     // The Convergence is closed for the week. Its four floors each call this (every
@@ -868,6 +878,7 @@ export class GameState {
       if (!config.lastFloor) return;
       this.weekly.clearedWeek = config.weekly.week;
       this.stats.convergencesCleared++;
+      this.player.bankChallengerBadge("convergence", config.challengerTier);
       return;
     }
     // A raid is rift-shaped and keeps its own tier ladder per encounter (UAT §15), so it
@@ -880,6 +891,7 @@ export class GameState {
       const next = config.raid.tier + 1;
       this.stats.riftsCleared[config.mode.id]++;
       if (next > (this.raidProgress[id] ?? 1)) this.raidProgress[id] = next;
+      this.player.bankRaidChallengerBadge(id, config.challengerTier);
       return;
     }
     // A planet is rift-shaped (`mode.isRift` is true for it too) but each one keeps its
@@ -889,6 +901,7 @@ export class GameState {
       const id = config.planet.spec.id;
       const next = config.planet.tier + 1;
       if (next > (this.planetProgress[id] ?? 1)) this.planetProgress[id] = next;
+      this.player.bankPlanetChallengerBadge(id, config.challengerTier);
       return;
     }
     // A Memory is rift-shaped but has no tier ladder — depth and modifiers *are* its
@@ -896,16 +909,21 @@ export class GameState {
     if (config?.memory) {
       if (!config.lastFloor) return;
       this.stats.riftsCleared.memory++;
+      this.player.bankChallengerBadge("memory", config.challengerTier);
       return;
     }
     if (!config || !config.mode.isRift) {
       if (depth + 1 > this.maxUnlockedDepth) this.maxUnlockedDepth = depth + 1;
+      // Reached for the plain delve only — the Tower's own `!isRift` floor already
+      // returned above via its `config.tower` branch.
+      if (config) this.player.bankChallengerBadge("delve", config.challengerTier);
       return;
     }
     if (!config.lastFloor) return;
     this.stats.riftsCleared[config.mode.id]++;
     const next = config.tier + 1;
     if (next > this.riftTiers[config.mode.id]) this.riftTiers[config.mode.id] = next;
+    this.player.bankChallengerBadge(config.mode.id, config.challengerTier);
   }
 
   /**
@@ -1233,6 +1251,12 @@ export function playerToJSON(p: Player) {
     // host rebuilds this hero's build from this blob, and a relic left behind here would
     // mean the host simulating a weaker character than the one on the player's screen.
     relics: p.relics,
+    // Challenger completion badges. On the wire for the same reason `legendComplete` is:
+    // this blob is the whole character sheet, and an ally's trophies reaching the host is
+    // free once they're here — nothing reads them for anything but display, on either side.
+    challengerBadges: p.challengerBadges,
+    planetChallengerBadges: p.planetChallengerBadges,
+    raidChallengerBadges: p.raidChallengerBadges,
   };
 }
 
@@ -1289,6 +1313,16 @@ function applyPlayerJSON(
   p.legendComplete = raw.legendComplete === true;
   // A save from before v22 wears no relics; anything else is brought back to legal.
   p.relics = normalizeRelicLoadout(raw.relics);
+  // A save from before v26 has never banked a Challenger badge — every activity starts
+  // unearned, which is true. Same `{ ...fresh, ...saved }` shape `riftTiers` already uses,
+  // so a fixed-map entry a newer build hasn't seen yet (or one absent from an older save)
+  // both fall back to the field's own zeroed default rather than crashing the load.
+  p.challengerBadges = {
+    ...p.challengerBadges,
+    ...(raw.challengerBadges as Record<RunModeId, number> | undefined),
+  };
+  p.planetChallengerBadges = { ...(raw.planetChallengerBadges as Record<string, number> | undefined) };
+  p.raidChallengerBadges = { ...(raw.raidChallengerBadges as Record<string, number> | undefined) };
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {

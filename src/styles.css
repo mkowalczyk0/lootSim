@@ -420,6 +420,11 @@ html, body {
 .cmp td:first-child { color: var(--muted); }
 .cmp td:not(:first-child) { text-align: right; }
 .cmp.wide td { padding: 7px 0; border-bottom: 1px solid var(--line); }
+/* The Path screen's trophy shelf (Challenger completion badges): twenty pips per row is
+   wider than an ordinary `.cmp` value, so the pip column runs a size smaller. Left free
+   to wrap rather than forced onto one line — the aside is a fixed 340px and a badge that
+   can't fit shouldn't run off it. */
+.cmp.trophies td:not(:first-child) { font-size: 10px; line-height: 1.8; }
 
 /* --- footer ---------------------------------------------------------- */
 
