@@ -38,10 +38,12 @@ npm run previews  # drop previews (tools/previews.ts) — proves a preview lists
                   # what the real roll can produce; part of npm test
 npm run itemart   # one item, one picture (tools/itemart.ts) — UAT §11's "same item
                   # everywhere" as a property; part of npm test
-npm run world     # the world structure (tools/world.ts) — UAT §23's layers as a property:
-                  # the bands tile both ladders, every mode says where it happens, a layer
-                  # edge is a boundary the Delve already had, and the Reliquary's second
-                  # unlock route only ever widens; part of npm test
+npm run world     # the world structure (tools/world.ts) — UAT §23's layers and §21's
+                  # ascent as properties: the bands tile both ladders, every mode says
+                  # where it happens, a layer edge is a boundary the Delve already had,
+                  # the Reliquary's second unlock route only ever widens, the Tower walks
+                  # the Delve's own curve height-for-depth, and a height is never written
+                  # into a depth record; part of npm test
 npm run relics    # relics and artifacts: the roster, rule 3 as a test, the drop table,
                   # slots, save/wire, live drop sites (tools/relics.ts) — part of npm test
 npm run rewards   # the reward curve (tools/rewards.ts) — UAT §16's "harder pays better",
@@ -143,7 +145,7 @@ ordinary `[I]`/`[O]` tab cycle (`CYCLE_TABS` in `town.ts`) so they can't be brow
 sideways; the rest of the tabs cycle exactly like they always did once you've walked up
 to the Quartermaster.
 
-### Run modes: the delve and the rifts
+### Run modes: the delve, the tower and the rifts
 
 `src/data/modes.ts` owns how a run is configured, and every mode goes through the same
 difficulty curve — a mode hands `profileFor` an effective depth plus a `danger`
@@ -151,6 +153,8 @@ multiplier and the curve does the rest. One curve, several ways of walking up it
 
 - **The Delve** — the original ladder. One floor at a time, no upper bound, descend or
   extract after every clear.
+- **The Tower** — the same ladder pointed the other way. One floor at a time, no upper
+  bound, climb or extract after every clear. See its own section below.
 - **Abyssal Rift** — four floors and a boss, opened at a tier you choose. Brutal, and it
   pays in *rarity*: bends the loot table hard toward the top end, gives little else.
 - **Avarice Rift** — three floors and a boss. A step easier, pays in *volume*: coins, keys
@@ -174,7 +178,7 @@ with its own copy of the text — read `MODES[id].lore`.
 
 **The world is layers, and there is one table of them** (UAT §23). `src/data/layers.ts`
 reads the depth ladders that already exist as named bands of the war: the Delve descends
-Surface → Deep Delve → Hell Layers → Hell Endgame, and the ascent §21 will build climbs
+Surface → Deep Delve → Hell Layers → Hell Endgame, and the ascent §21 built climbs
 Tower Base → Heaven Layers → Celestial Endgame; every rift and the Reliquary sit off both
 in the Threshold. `layerFor(config)` is the one answer for any `RunConfig`, exposed on
 `DepthProfile.layer` so the HUD and every commit screen read it rather than re-deriving
@@ -188,6 +192,34 @@ Reliquary sector now opens by **either** the travel ladder **or** the account fr
 (`GameState.frontier`) reaching its `baseDepth` — widening only, so no save can lose
 access. `WorldLayer.raidId` is a reserved, null seam for §15: a raid is the thing holding
 a layer's gate, and the acceptance tool refuses a non-null id until a raid table exists.
+
+**The Tower is the Delve's mirror, on the Delve's own curve** (UAT §21). Heaven descended
+and is still ordering the wound one perfect floor at a time; climbing it passes Lower
+Tower → Seamless Halls → Blinding Heights, the art guide's §6 bands sitting exactly on the
+`UP_LAYERS` edges. `src/data/tower.ts` owns the whole ascent — three `BiomeStyle`s, a
+renamed roster per band drawn from the Celestial Hierarchy, five bosses reskinned from
+existing encounters per the `planetBossSpec` precedent, and `towerConfig(height)`, which
+is `delveConfig` with the mode swapped: **effective depth = height, `danger` 1**. There is
+no second difficulty curve and there must never be one — `npm run world` asserts that
+height *N* and depth *N* produce identical `enemyHealth`, `enemyDamage`, `enemySpeed`,
+`aggression`, `telegraph` and `recommendedLevel` across 1–60, so "balancing the Tower" by
+nudging its own numbers goes red immediately. What makes the climb a different place is
+*where* it is, not what the numbers say: its own biomes, its own encounters, holy as the
+local element, and its own rewards.
+
+**A height is not a depth.** The Tower keeps `stats.highestHeight` and
+`Player.highestHeight` separate from the two `deepestDepth` records, written only by
+`recordHeight` — which `recordDepth` dispatches to as its first statement, before any
+depth write, so a banked tower floor can never open a rift tier or qualify a class for the
+Proving. `GameState.frontier` and `Player.frontier` are the max of a side's two records:
+the account frontier is what `universalPointsFor` reads (a climb pays for the basics), the
+per-class one is what both item-level sites read (an alt still rolls off its own
+progress). The Tower's *own* gate is the descent's — account `deepestDepth` 5 — so the
+climb can't unlock itself, and `maxUnlockedHeight` is its ladder after that. The tower
+tilesets are named on the biomes but deliberately absent from `TILESETS` until the sheets
+exist; `atlasTileset` returns null and the floor falls back to `bakeFloor` in the §6
+palette, because declaring an id whose PNG isn't committed would fail `npm run smoke` and
+claim art the repo doesn't have.
 
 **The Vigil** (UAT §17 v1) is a daily one-floor mode, unlocked at `deepestDepth` 6: the
 seed, depth (band 6–14), two modifiers and the guaranteed key-tier reward all derive from
@@ -674,8 +706,10 @@ Swiftness, Might, Attunement, Warding, Avarice), a few of which cross-link into 
 neighboring path partway down, and every keystone carries a real downside (a wall of
 health that moves slower, a glass cannon that gives up defense) so the tree stays a set
 of tradeoffs rather than a shopping list. The point *pool* is account-wide and derived
-from record depth (`universalPointsFor`, capped at `UNIVERSAL_POINT_CAP` so a deep enough
-account can never afford the whole tree), but the *allocation* is per-class
+from the **account frontier** — the further of the depth record and the height record,
+since §21 gave the world a second ladder (`universalPointsFor(GameState.frontier)`, capped
+at `UNIVERSAL_POINT_CAP` so a deep enough account can never afford the whole tree) — but
+the *allocation* is per-class
 (`Player.universalAllocated`) — that split is what lets an alt feel like it inherited the
 account's progress while still letting a caster and a melee spend the same pool
 differently, and it's also why co-op didn't need a new wire field (a character's

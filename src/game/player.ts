@@ -122,6 +122,27 @@ export class Player {
   relics: (string | null)[] = Array.from({ length: RELIC_SLOTS }, () => null);
   deepestDepth = 0;
   /**
+   * How high this character has climbed the Tower (UAT §21), banked only.
+   *
+   * Deliberately **not** folded into `deepestDepth`. That field is where "any route to
+   * depth 30 counts" lives — the Proving gate, and the rift ladders — and a height-30
+   * climb must qualify for none of it. Two records, two ladders.
+   */
+  highestHeight = 0;
+  /**
+   * The furthest this character has got on either ladder — what a chest or the Forge
+   * rolls an item level off (`GameState.openChests`, `craftItem`).
+   *
+   * Per-character, which is the rule that matters: CLAUDE.md's is that gear rolls off the
+   * *active character's* record and never the account's, so a fresh alt can't buy gear at
+   * the main's depth. Taking the better of two per-character records keeps that intact and
+   * fixes the case it would otherwise miss — a character who only ever climbs would buy
+   * level-1 gear forever.
+   */
+  get frontier(): number {
+    return Math.max(this.deepestDepth, this.highestHeight);
+  }
+  /**
    * The Legend is Complete — this class beat its own Proving at the bottom of the Delve
    * (UAT §13/§14, `data/legends.ts`). Per-`Player` because class completion is exactly
    * the thing that must be earned once per class; the gold border on the class card is

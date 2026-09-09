@@ -19,7 +19,7 @@ import { MODES, type RunModeId } from "../data/modes";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms" | "vigil" | "convergence";
+  | "comms" | "vigil" | "convergence" | "tower";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -37,7 +37,8 @@ export interface HubStation {
  */
 const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   dive: "delve", abyss: "abyss", hoard: "hoard", starmap: "planet", expedition: "planet",
-  vigil: "vigil", convergence: "convergence", forge: null, quartermaster: null, comms: null,
+  vigil: "vigil", convergence: "convergence", tower: "tower",
+  forge: null, quartermaster: null, comms: null,
 };
 
 /** The one line of lore a station's prompt carries, or null for the non-portal stations. */
@@ -89,6 +90,11 @@ const EXPEDITION_SPOT = { x: 270, y: 250 };
 /** Where the Vigil's portal opens once it's unlocked — the open flagstone bottom-left,
  *  a short walk from the spawn, since it's meant to be the first thing you do each day. */
 const VIGIL_SPOT = { x: 150, y: 390 };
+/** Where the Tower's portal opens once the first Warden is behind you (UAT §21) — the
+ *  open flagstone top-left, opposite the Delve's crack in the floor and clear of the
+ *  Abyss's central archway. The two directions of the war stand at opposite ends of the
+ *  deck on purpose; the Citadel is the pivot between them. Position unverified by eye. */
+const TOWER_SPOT = { x: 150, y: 110 };
 /** Where the Convergence's portal opens once it's unlocked — open flagstone on the
  *  opposite side of the deck from the Vigil, clear of the Forge and the Reliquary Gate. */
 const CONVERGENCE_SPOT = { x: 580, y: 330 };
@@ -102,6 +108,10 @@ export class Hub {
   facing = -Math.PI / 2;
   /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
+  /** The Tower is unlocked (UAT §21), which is what puts its portal on the deck. Set from
+   *  the account's *depth* record, never the frontier: you earn the second direction by
+   *  holding the first one. */
+  towerOpen = false;
   /** The daily Vigil is unlocked (UAT §17), which is what puts its portal on the deck. */
   vigilOpen = false;
   /** The weekly Convergence is unlocked (UAT §17), which is what puts its portal on the
@@ -136,6 +146,9 @@ export class Hub {
         kind: "expedition", label: "Reliquary Portal",
         x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
       });
+    }
+    if (this.towerOpen) {
+      stations.push({ kind: "tower", label: "The Tower", x: TOWER_SPOT.x, y: TOWER_SPOT.y, radius: 22 });
     }
     if (this.vigilOpen) {
       stations.push({ kind: "vigil", label: "The Vigil", x: VIGIL_SPOT.x, y: VIGIL_SPOT.y, radius: 22 });

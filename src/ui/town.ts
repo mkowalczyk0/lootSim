@@ -30,6 +30,7 @@ import {
 import {
   MODES, RIFT_LORE, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
+import { towerBiomeFor, towerConfig } from "../data/tower";
 import { layerFor, type WorldLayer } from "../data/layers";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
 import {
@@ -92,13 +93,14 @@ const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
-const STATION_TABS = ["Dive", "Rifts", "StarMap", "Craft", "Party", "Vigil", "Convergence"] as const;
+const STATION_TABS = ["Dive", "Tower", "Rifts", "StarMap", "Craft", "Party", "Vigil", "Convergence"] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
 const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY", Vigil: "THE VIGIL", Convergence: "THE CONVERGENCE",
+  Tower: "THE TOWER",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -184,6 +186,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
   const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
+    case "Tower": return `${sel} choose height · ${e} climb · ${q} buy a potion`;
     case "Rifts": return `${sel} choose tier · ${adj} switch rift · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
@@ -577,6 +580,7 @@ export class TownUI {
   private rowCount(): number {
     switch (this.tab) {
       case "Dive": return this.state.maxUnlockedDepth;
+      case "Tower": return this.state.maxUnlockedHeight;
       case "Rifts": return this.state.riftTiers[this.riftMode];
       case "StarMap": return this.state.planetProgress[this.starMapPlanet.id] ?? 1;
       case "Vigil": return 1;
@@ -900,6 +904,18 @@ export class TownUI {
         this.onDive(delveConfig(depth, this.state.challengerTier));
         break;
       }
+      case "Tower": {
+        if (!this.requireClass()) break;
+        // The gate is the account's *depth* record, the same number the portal on the
+        // deck reads — you earn the second direction by holding the first one.
+        if (!modeUnlocked(MODES.tower, this.state.stats.deepestDepth)) {
+          this.notify(`Reach depth ${MODES.tower.unlockDepth} in the delve first.`, "#ef4444");
+          break;
+        }
+        this.state.player.fullHeal();
+        this.onDive(towerConfig(this.cursor + 1, this.state.challengerTier));
+        break;
+      }
       case "Rifts": {
         if (!this.requireClass()) break;
         const mode = MODES[this.riftMode];
@@ -1221,6 +1237,8 @@ export class TownUI {
 
   private secondary(): void {
     switch (this.tab) {
+      // Both ladders sell you a potion on the way in — same belt, same price.
+      case "Tower":
       case "Dive": {
         if (this.state.potions >= POTION_CAP) {
           this.notify("Your belt is full. Nine is plenty.", "#9aa4b2");
@@ -1402,7 +1420,8 @@ export class TownUI {
             <span style="color:${s.classChosen ? s.heroClass.color : "#5a6270"}">
               ${s.classChosen ? escapeHtml(s.heroClass.name) : "no class"}</span>
             <span class="sep">·</span> LV ${s.player.level}
-            <span class="sep">·</span> deepest ${s.stats.deepestDepth}
+            <span class="sep">·</span> deepest ${s.stats.deepestDepth}${
+              s.stats.highestHeight > 0 ? ` <span class="sep">·</span> highest ${s.stats.highestHeight}` : ""}
           </div>
         </header>
         <nav class="tabs">
@@ -1430,6 +1449,7 @@ export class TownUI {
   private renderTab(): string {
     switch (this.tab) {
       case "Dive": return this.renderDive();
+      case "Tower": return this.renderTower();
       case "Party": return this.renderParty();
       case "Rifts": return this.renderRifts();
       case "StarMap": return this.renderStarMap();
@@ -1774,6 +1794,68 @@ export class TownUI {
           provingFloor(delveConfig(depth, challenger), this.state.player.deepestDepth)
             ? this.state.activeClassId : null,
         ))}
+        <h3>Belt</h3>
+        <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
+        <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
+        ${this.challengerNote()}
+      </aside>`;
+  }
+
+  /**
+   * The climb (UAT §21) — the Dive screen's mirror, deliberately, down to the layout.
+   *
+   * The Tower is the Delve's opposite direction and not its harder sibling, so the screen
+   * that sells it has to read the same: the same row shape, the same grouping under the
+   * band of the war, the same preview. What differs is what the words say. If this ever
+   * grows a second list format, the two ladders have stopped being two halves of one thing.
+   */
+  private renderTower(): string {
+    const challenger = this.state.challengerTier;
+    const rows: string[] = [];
+    let band: WorldLayer | null = null;
+    for (let height = 1; height <= this.state.maxUnlockedHeight; height++) {
+      const p = profileFor(height, towerConfig(height, challenger));
+      if (p.layer !== band) {
+        band = p.layer;
+        rows.push(`<div class="group">${escapeHtml(band.name)}</div>`);
+      }
+      const under = this.state.player.level < p.recommendedLevel;
+      rows.push(`
+        <div class="row ${height - 1 === this.cursor ? "on" : ""}" data-index="${height - 1}">
+          <div class="row-main">
+            <span class="depth">${String(height).padStart(2, "0")}</span>
+            <span class="name">${p.name}</span>
+            ${p.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
+          </div>
+          <div class="row-side ${under ? "warn" : ""}">
+            req. lv ${p.recommendedLevel} · ${p.waves} waves · ×${p.coinMultiplier.toFixed(1)} loot
+          </div>
+        </div>`);
+    }
+    const height = Math.min(this.cursor + 1, this.state.maxUnlockedHeight);
+    const config = towerConfig(height, challenger);
+    const biome = towerBiomeFor(height);
+    const layer = layerFor(config);
+    const hazards = trapsFor(height, biome.traps).map((t) => t.label);
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3>The climb</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(MODES.tower.lore)}</p>
+        <p>Clear every wave, then step into the portal. <b>Climb</b> to push higher, or
+        <b>extract</b> to bank what you're carrying. Every fifth floor is a raid boss, and
+        it will take a while.</p>
+        <p class="danger">Die and you lose every coin, key and item you picked up on the
+        way up. XP is always kept.</p>
+        <p class="muted">A height is not a depth. Climbing opens nothing down there — no
+        rift tier, and no Proving.</p>
+        <h3>${escapeHtml(layer.name)}</h3>
+        <p class="muted" style="font-style:italic">${escapeHtml(layer.lore)}</p>
+        <h3>${escapeHtml(biome.name)}</h3>
+        <p class="muted">Nothing here is permitted to deviate from its place. That includes the floor plan.</p>
+        <p>Hazards: ${hazards.length ? escapeHtml(hazards.join(", ")) : "none yet. Enjoy it."}</p>
+        <p>Local element: <b style="color:${ELEMENT_COLORS[biome.element]}">${ELEMENT_LABELS[biome.element]}</b>
+        <span class="muted">· the higher you go, the more of the host is made of it</span></p>
+        ${this.previewBlock(previewForRun(config))}
         <h3>Belt</h3>
         <p><b>${this.state.potions}</b> / ${POTION_CAP} potions
         <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy for ${POTION_PRICE}c</span></p>
@@ -3611,6 +3693,7 @@ export class TownUI {
           <tr><td>Runs extracted</td><td>${formatNumber(st.runsCompleted)}</td></tr>
           <tr><td>Deaths</td><td>${formatNumber(st.deaths)}</td></tr>
           <tr><td>Deepest depth</td><td>${st.deepestDepth}</td></tr>
+          <tr><td>Highest floor of the Tower</td><td>${st.highestHeight}</td></tr>
           <tr><td>Gems earned</td><td>${formatNumber(st.gemsEarned)}</td></tr>
           <tr><td>Capsules opened</td><td>${formatNumber(st.capsulesOpened)}</td></tr>
           <tr><td>Wardrobe</td><td>${this.state.cosmetics.length} / ${COSMETICS.length}</td></tr>

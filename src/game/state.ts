@@ -48,6 +48,9 @@ export interface RunStats {
   itemsSold: number;
   enemiesKilled: number;
   deepestDepth: number;
+  /** Highest Tower floor ever banked, account-wide (UAT §21). Separate from the depth
+   *  record on purpose — see `GameState.recordHeight`. */
+  highestHeight: number;
   runsCompleted: number;
   deaths: number;
   /** Rifts finished, per mode. The number people actually brag about. */
@@ -78,6 +81,7 @@ function freshStats(): RunStats {
     itemsSold: 0,
     enemiesKilled: 0,
     deepestDepth: 0,
+    highestHeight: 0,
     runsCompleted: 0,
     deaths: 0,
     riftsCleared: Object.fromEntries(RUN_MODES.map((m) => [m, 0])) as Record<RunModeId, number>,
@@ -148,6 +152,9 @@ export class GameState {
   stats = freshStats();
   /** Deepest floor unlocked for a direct dive; you always earn the next one by clearing. */
   maxUnlockedDepth = 1;
+  /** Highest Tower floor unlocked for a direct climb (UAT §21) — the ascent's mirror of
+   *  `maxUnlockedDepth`, and earned the same way, by clearing and banking. */
+  maxUnlockedHeight = 1;
   /** Highest rift tier opened per mode. Clearing a rift opens the next one. */
   riftTiers: Record<RunModeId, number> = freshTiers();
   /** Highest tier opened per planet. Clearing a planet's first tier opens the next planet. */
@@ -240,20 +247,47 @@ export class GameState {
    * How far into the war this account has got, on any ladder (UAT §23) — the one number
    * that answers "what has this player earned the right to stand in".
    *
-   * Today that is the lifetime record depth and nothing else, so this getter is exactly
-   * `stats.deepestDepth`. It exists as its own name anyway because §21's Tower adds a
-   * second ladder and the frontier then becomes the deeper of the two: one place to widen
-   * rather than a `Math.max` copied into every caller. `planetUnlocked` is its first
-   * reader.
+   * Now that §21's Tower exists this is the further of the two ladders, which is what the
+   * name was reserved for: one place to widen rather than a `Math.max` copied into every
+   * caller. It only ever widens, so no save can lose access to anything it could reach.
+   *
+   * It is emphatically **not** a replacement for `stats.deepestDepth`. Anything that means
+   * *specifically* how deep this account has dug — the rift unlock ladder, the Vigil's and
+   * Convergence's thresholds, the Tower's own unlock — still reads that, because a climb
+   * must not open the descent's doors. What reads the frontier is what means "how far into
+   * the war has this account got": the Reliquary's second route in, and the universal
+   * tree's point pool.
    */
   get frontier(): number {
-    return this.stats.deepestDepth;
+    return Math.max(this.stats.deepestDepth, this.stats.highestHeight);
+  }
+
+  /**
+   * The ascent's records, banked (UAT §21). Called by `recordDepth` — a tower floor never
+   * reaches the depth bookkeeping at all.
+   *
+   * `stats.highestHeight` is the account record, `Player.highestHeight` this character's,
+   * and `maxUnlockedHeight` the next floor you may climb straight to; all three mirror the
+   * descent's exactly. A height is never written into any depth field, which is the whole
+   * point of the split: `provingFloor` refuses a non-Delve config anyway, but the records
+   * being separate is what stops a later "simplification" from making a height-30 climb
+   * somebody's final exam. `tools/world.ts` pins it.
+   */
+  recordHeight(height: number): void {
+    if (height > this.stats.highestHeight) this.stats.highestHeight = height;
+    if (height > this.player.highestHeight) this.player.highestHeight = height;
+    if (height + 1 > this.maxUnlockedHeight) this.maxUnlockedHeight = height + 1;
   }
 
   /**
    * The universal tree's point pool — UAT §18. **Account-wide**, unlike the class tree's,
-   * and derived from the lifetime record depth across every character rather than from
-   * any one character's level.
+   * and derived from the account's lifetime frontier across every character rather than
+   * from any one character's level.
+   *
+   * It reads `frontier` rather than the depth record because §23 makes both ladders halves
+   * of one war: an account that spent its time climbing has earned the same basics an
+   * account that spent it digging has. `UNIVERSAL_POINT_CAP` still bounds it, so this
+   * widens who reaches the cap rather than lifting it.
    *
    * That is the whole reason the tree feels different from a second class tree: the class
    * tree is what *this* character earned, and this is what the *account* earned. A brand
@@ -262,7 +296,7 @@ export class GameState {
    * (`Player.universalAllocated`).
    */
   get universalPool(): number {
-    return universalPointsFor(this.stats.deepestDepth);
+    return universalPointsFor(this.frontier);
   }
 
   /** What's left to spend on the active character's universal tree. */
@@ -395,7 +429,7 @@ export class GameState {
     const type = category === "weapon" && affinity.length > 0 && this.rng.chance(0.6)
       ? this.rng.pick(affinity)
       : this.rng.pick(pool);
-    const ilvl = Math.max(1, this.player.deepestDepth);
+    const ilvl = Math.max(1, this.player.frontier);
     const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: usedEssence ?? undefined });
     this.stats.raritiesFound[rarity]++;
     this.addToInventory([item]);
@@ -474,7 +508,7 @@ export class GameState {
     // The components go in whole (UAT §24): out of the stash, into the item.
     const eaten = new Set(components.flat().map((it) => it.id));
     this.inventory = this.inventory.filter((it) => !eaten.has(it.id));
-    const item = this.forgeNamed(def, Math.max(1, this.player.deepestDepth));
+    const item = this.forgeNamed(def, Math.max(1, this.player.frontier));
     this.addToInventory([item]);
     return item;
   }
@@ -671,7 +705,7 @@ export class GameState {
     const weights = {} as Record<Rarity, number>;
     for (const r of RARITIES) weights[r] = BASE_RARITY_WEIGHTS[r] * info.weights[r];
 
-    const ilvl = Math.max(1, this.player.deepestDepth);
+    const ilvl = Math.max(1, this.player.frontier);
     const affinity = this.player.heroClass.affinity;
     const found: Item[] = [];
     for (let i = 0; i < available; i++) {
@@ -761,6 +795,13 @@ export class GameState {
    * stops the tier ladder from being climbed by extracting on floor one.
    */
   recordDepth(depth: number, config?: RunConfig): void {
+    // The ascent keeps its own books and touches none of the depth records (UAT §21).
+    // First, before anything below runs: a height is not a depth, and writing one into
+    // `deepestDepth` would hand a climber the Proving and the rift ladders for free.
+    if (config?.tower) {
+      this.recordHeight(config.tower.height);
+      return;
+    }
     if (depth > this.stats.deepestDepth) this.stats.deepestDepth = depth;
     if (depth > this.player.deepestDepth) this.player.deepestDepth = depth;
     // The Vigil is closed for the day. Only a credited bank gets here, so a death or a
@@ -832,6 +873,7 @@ export class GameState {
       cosmetics: this.cosmetics,
       appearance: this.appearance,
       maxUnlockedDepth: this.maxUnlockedDepth,
+      maxUnlockedHeight: this.maxUnlockedHeight,
       riftTiers: this.riftTiers,
       planetProgress: this.planetProgress,
       daily: this.daily,
@@ -895,6 +937,8 @@ export class GameState {
       state.cosmetics = normalizeOwned(d.cosmetics);
       state.appearance = normalizeAppearance(d.appearance);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
+      // A save from before the Tower has climbed nothing, which is the fresh value anyway.
+      state.maxUnlockedHeight = Number(d.maxUnlockedHeight ?? 1);
       state.keys = { ...state.keys, ...(d.keys as Record<ChestTier, number>) };
       state.stats = { ...freshStats(), ...(d.stats as RunStats) };
       // Saves from before rifts existed have neither of these.
@@ -928,7 +972,7 @@ export class GameState {
       // The universal pool is derived from the account record, which is already loaded
       // above — so every class's universal allocation can be validated against the pool
       // it was actually spent from.
-      const universalPool = universalPointsFor(state.stats.deepestDepth);
+      const universalPool = universalPointsFor(state.frontier);
 
       const playersRaw = d.players as Record<string, unknown> | undefined;
       if (playersRaw) {
@@ -975,6 +1019,7 @@ export function playerToJSON(p: Player) {
     level: p.level,
     xp: p.xp,
     deepestDepth: p.deepestDepth,
+    highestHeight: p.highestHeight,
     health: p.health,
     mana: p.mana,
     skills: p.skills,
@@ -1034,6 +1079,9 @@ function applyPlayerJSON(
   // falling back to the account-wide record, which is exactly the bug this fixed: a
   // fresh alt would otherwise inherit the main's depth and get gear it can't wear.
   p.deepestDepth = Number(raw.deepestDepth ?? Math.max(0, p.level - 1));
+  // No estimate for the ascent: a save from before the Tower has genuinely climbed zero,
+  // and guessing one from level would hand it item levels it never earned.
+  p.highestHeight = Number(raw.highestHeight ?? 0);
   const hadAllocation = Array.isArray(raw.allocated) && (raw.allocated as unknown[]).length > 0;
   p.allocated = preProgression || !Array.isArray(raw.allocated)
     ? []

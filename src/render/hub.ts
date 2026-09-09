@@ -25,11 +25,14 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   dive: "#7dd3fc", abyss: "#ff1493", hoard: "#fbbf24", expedition: "#4ade80",
   starmap: "#a855f7", forge: "#fb923c", quartermaster: "#38bdf8",
   comms: "#22d3ee", vigil: "#c084fc", convergence: "#dc2626",
+  // Bone-gold, the Heaven base tone from art-style-guide §6 — the one warm ring on the
+  // deck, and the only one that reads as light rather than as a wound.
+  tower: "#d8cfa8",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
  *  Everything else is a relic already painted into the deck image. */
-const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "vigil", "convergence"]);
+const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower"]);
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
