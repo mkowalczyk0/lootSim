@@ -170,6 +170,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "relic.silence-between-sentences":   { id: "relic.silence-between-sentences",   w: 33, h: 29, worldScale: 0.60, feet: 0.15 },
   "relic.sandals-of-the-swift-messenger": { id: "relic.sandals-of-the-swift-messenger", w: 34, h: 21, worldScale: 0.60, feet: 0.15 },
   "relic.remnant-of-what-was-not":     { id: "relic.remnant-of-what-was-not",     w: 26, h: 32, worldScale: 0.60, feet: 0.15 },
+
+  // The Nine Circles artifact set (docs/game_story_worldbuilding.md's "THE NINE CIRCLES
+  // OF HELL" section) — one per circle, a shared worn-material family with one accent
+  // colour each. First batch of the 19 artifacts; the Abyss/borrowed-encounter sets follow.
+  "relic.coin-of-the-first-circle":    { id: "relic.coin-of-the-first-circle",    w: 29, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.hook-of-the-second-circle":   { id: "relic.hook-of-the-second-circle",   w: 24, h: 28, worldScale: 0.60, feet: 0.15 },
+  "relic.tooth-of-the-third-circle":   { id: "relic.tooth-of-the-third-circle",   w: 17, h: 36, worldScale: 0.60, feet: 0.15 },
+  "relic.weight-of-the-fourth-circle": { id: "relic.weight-of-the-fourth-circle", w: 28, h: 20, worldScale: 0.60, feet: 0.15 },
+  "relic.tempo-of-the-fifth-circle":   { id: "relic.tempo-of-the-fifth-circle",   w: 21, h: 37, worldScale: 0.60, feet: 0.15 },
+  "relic.candle-of-the-sixth-circle":  { id: "relic.candle-of-the-sixth-circle",  w: 18, h: 35, worldScale: 0.60, feet: 0.15 },
+  "relic.drum-of-the-seventh-circle":  { id: "relic.drum-of-the-seventh-circle",  w: 27, h: 29, worldScale: 0.60, feet: 0.15 },
+  "relic.mirror-of-the-eighth-circle": { id: "relic.mirror-of-the-eighth-circle", w: 24, h: 36, worldScale: 0.60, feet: 0.15 },
+  "relic.frost-of-the-ninth-circle":   { id: "relic.frost-of-the-ninth-circle",   w: 30, h: 30, worldScale: 0.60, feet: 0.15 },
 };
 
 /**
