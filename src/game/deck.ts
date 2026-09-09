@@ -128,11 +128,11 @@ export const DECK_DRESSING: Record<string, string> = {
  * `Record<HubStationKind, ...>` on purpose, exactly like `STATION_GLYPH` below: a new station cannot
  * be added without deciding what it looks like, even if the decision is `null`.
  *
- * **These ids are deliberately absent from `ATLAS` until their PNGs are committed.** That
- * is not laziness, it is the one failure mode that breaks rather than degrades: `loadAtlas`
- * *rejects* on a missing PNG for an `ATLAS` row, so a half-declared prop is a boot failure
- * where an undeclared one is a clean fallback. Naming it here and listing it there are two
- * different promises — this one says "this is what it will be", that one says "this exists".
+ * An id here is not automatically safe to add to `ATLAS` — `loadAtlas` *rejects* on a
+ * missing PNG for an `ATLAS` row, so a half-declared prop is a boot failure where an
+ * undeclared one is a clean fallback. Naming it here and listing it there are two
+ * different promises — this one says "this is what it will be", that one says "this
+ * exists" — and all seven now do (`src/render/atlas/props/prop.citadel-*.png`).
  */
 export const STATION_PROP: Record<HubStationKind, string | null> = {
   forge: "prop.citadel-forge",

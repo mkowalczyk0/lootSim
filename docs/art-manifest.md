@@ -374,6 +374,15 @@ Source: `src/data/tower.ts`, `src/render/atlas/manifest.ts` (`TILESETS`), `src/d
   as "Circle IV: hoarded gold, piled loot, swarms" (style guide §5, §3). Lower priority
   than the Tower (the Abyssal Rift shipped its own look; the Avarice Rift is the one
   standard-progression mode still borrowing someone else's floor).
+- **The Citadel's tiled rung is now painted** — `tiles.citadel` (ash-black flagstone
+  under pale bone-white collage masonry, §4/§17.7) is wired into `TILESETS`, so the hub
+  promotes off the flat bake and off the frozen `hub.citadel-deck` painting the moment it
+  loads. The seven station relics and five dressing pieces `STATION_PROP`/
+  `DECK_DRESSING` (`game/deck.ts`) name are all committed too
+  (`prop.citadel-*` — see the ledger below), so the tiled rung no longer draws six
+  identical terminals with different words under them. The eight dressing placements on
+  the deck's text grid are still a blind first arrangement — nobody has looked at them
+  rendered yet.
 
 ---
 
@@ -397,6 +406,8 @@ actual committed PNGs under `src/render/atlas/` at 446b44d.
 | Reliquary tilesets | 6 of 6 | one per sector |
 | Abyssal Rift tileset | 1 of 1 | `tiles.abyss` |
 | Tower tilesets | 0 of 3 | unpainted — §8 |
+| Citadel tileset | 1 of 1 | `tiles.citadel` — tiled rung, §8 |
+| Citadel props (station relics + dressing) | 12 of 12 | `prop.citadel-*` — the tiled rung's own relics, §8 |
 | Cosmetics (hat/ears/face/back) | 8 of 24 unique grids | §7 |
 | Affix glyphs | 0 of 16 as pixel art (16 as Unicode text) | §6 |
 | Hub scene | 1 of 1 | `hub.citadel-deck`, stations baked in |
