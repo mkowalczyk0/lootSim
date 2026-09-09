@@ -19,7 +19,11 @@ import { MODES, type RunModeId } from "../data/modes";
 
 export type HubStationKind =
   | "dive" | "abyss" | "hoard" | "starmap" | "expedition" | "forge" | "quartermaster"
-  | "comms" | "vigil" | "convergence" | "tower";
+  | "comms" | "vigil" | "convergence" | "tower"
+  // The raid pair (UAT §15): a terminal that picks one, and the portal that picking spawns
+  // — the Reliquary Gate's shape exactly, because a raid is chosen the same way a sector
+  // is (which one, at which tier) and there are four of them to choose between.
+  | "warTable" | "raidPortal";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -38,6 +42,7 @@ export interface HubStation {
 const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   dive: "delve", abyss: "abyss", hoard: "hoard", starmap: "planet", expedition: "planet",
   vigil: "vigil", convergence: "convergence", tower: "tower",
+  warTable: "raid", raidPortal: "raid",
   forge: null, quartermaster: null, comms: null,
 };
 
@@ -82,6 +87,10 @@ const FIXED_STATIONS: readonly HubStation[] = [
   { kind: "forge", label: "The Forge", x: 508, y: 372, radius: 20 },
   { kind: "quartermaster", label: "Quartermaster", x: 430, y: 214, radius: 20 },
   { kind: "comms", label: "Comms Relay", x: 95, y: 236, radius: 20 },
+  // The War Table (UAT §15) — where the Keepers keep the list of things too large to
+  // contain. Left wall below the Comms shrine, clear of the Delve's crack in the floor.
+  // Position unverified by eye: nobody working on this branch has a browser.
+  { kind: "warTable", label: "The War Table", x: 62, y: 330, radius: 20 },
 ];
 
 /** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
@@ -95,6 +104,9 @@ const VIGIL_SPOT = { x: 150, y: 390 };
  *  Abyss's central archway. The two directions of the war stand at opposite ends of the
  *  deck on purpose; the Citadel is the pivot between them. Position unverified by eye. */
 const TOWER_SPOT = { x: 150, y: 110 };
+/** Where a chosen raid's portal stands once the War Table has picked one (UAT §15) — open
+ *  flagstone across the bottom of the deck, clear of the Delve, the Forge and the Vigil. */
+const RAID_SPOT = { x: 330, y: 392 };
 /** Where the Convergence's portal opens once it's unlocked — open flagstone on the
  *  opposite side of the deck from the Vigil, clear of the Forge and the Reliquary Gate. */
 const CONVERGENCE_SPOT = { x: 580, y: 330 };
@@ -108,6 +120,12 @@ export class Hub {
   facing = -Math.PI / 2;
   /** Set by the Reliquary Gate; walking into the portal this spawns launches the run. */
   expedition: { planetId: string; tier: number } | null = null;
+  /** Set by the War Table (UAT §15); walking into the portal this spawns launches the raid.
+   *  Same lifetime as `expedition` — it does not survive a reload, and picking costs nothing. */
+  raid: { raidId: string; tier: number } | null = null;
+  /** At least one raid is open for this account, which is what puts the War Table's portal
+   *  on the deck. Set from the account *frontier* (§21), so a climber reaches them too. */
+  raidOpen = false;
   /** The Tower is unlocked (UAT §21), which is what puts its portal on the deck. Set from
    *  the account's *depth* record, never the frontier: you earn the second direction by
    *  holding the first one. */
@@ -145,6 +163,12 @@ export class Hub {
       stations.push({
         kind: "expedition", label: "Reliquary Portal",
         x: EXPEDITION_SPOT.x, y: EXPEDITION_SPOT.y, radius: 22,
+      });
+    }
+    if (this.raid && this.raidOpen) {
+      stations.push({
+        kind: "raidPortal", label: "Raid Portal",
+        x: RAID_SPOT.x, y: RAID_SPOT.y, radius: 22,
       });
     }
     if (this.towerOpen) {
@@ -201,5 +225,13 @@ export class Hub {
 
   clearExpedition(): void {
     this.expedition = null;
+  }
+
+  setRaid(raidId: string, tier: number): void {
+    this.raid = { raidId, tier };
+  }
+
+  clearRaid(): void {
+    this.raid = null;
   }
 }

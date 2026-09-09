@@ -18,7 +18,7 @@
  *      the account owns never drops again for it, and both tiers have a roster
  *
  * Plus the slot rule (three slots, one relic-tier), and the two-tier split itself:
- * artifacts are Abyssal and only Abyssal.
+ * artifacts come out of the Abyssal Rift and out of raids (UAT §15), and nowhere else.
  *
  * Headless, no browser. Run with `npm run relics`.
  */
@@ -39,6 +39,7 @@ import { MOD_KEYS, type ModKey } from "../src/data/mods";
 import { delveConfig, riftConfig } from "../src/data/modes";
 import { towerConfig } from "../src/data/tower";
 import { NAMED_ITEMS } from "../src/data/named";
+import { RAIDS } from "../src/data/raids";
 import {
   MAX_RELICS_WORN, RELICS, RELIC_BY_ID, RELIC_RULE_PREFIX, RELIC_SLOTS, RELIC_TIER_INFO,
   normalizeRelicLoadout, relicMatchesFor, relicProblems, relicSocketBlocker, relicSourceLines, relicsForSource,
@@ -91,7 +92,9 @@ function queryFor(src: FoundSource): DropQuery {
     case "chest": return { kind: "chest", tier: src.tier };
     case "clearCache": return { kind: "clearCache", depth: src.minDepth, mode: src.mode ?? "delve", tier: src.minTier ?? 0, lastFloor: src.lastFloor ?? false };
     case "worldDrop": return { kind: "worldDrop", depth: src.minDepth, elite: false, mode: src.mode ?? "delve" };
-    case "raid": return { kind: "raid", raidId: src.raidId };
+    // The tier has to ride along or a `minTier`-gated source can never satisfy its own
+    // query — the same reason the `boss` branch above carries `src.minTier ?? 0`.
+    case "raid": return { kind: "raid", raidId: src.raidId, tier: src.minTier ?? 0 };
     case "tower": return { kind: "tower", floor: src.minFloor };
   }
 }
@@ -206,8 +209,16 @@ section("5. rule 4 — every one answers 'where does this drop?'");
   }
 
   // The two-tier split, as the spec's table has it.
-  check("every artifact source is the Abyssal Rift, and nothing but",
-    relicsOfTier("artifact").every((d) => d.sources.every((s) => (s.kind === "boss" || s.kind === "clearCache") && s.mode === "abyss")));
+  // The two-tier split, widened once by UAT §15: an artifact comes out of the Abyssal Rift
+  // or out of a raid, and out of nothing else. Raids are the other end of the endgame and
+  // §15 asks for "some of the most desirable equipment in the game" to live there; what
+  // the check still refuses is an artifact leaking into a chest, a wave monster, an
+  // ordinary Delve floor or the Tower.
+  check("every artifact source is the Abyssal Rift or a raid, and nothing but",
+    relicsOfTier("artifact").every((d) => d.sources.every((s) =>
+      s.kind === "raid" || ((s.kind === "boss" || s.kind === "clearCache") && s.mode === "abyss"))));
+  check("...and every raid pays out artifacts as well as relics",
+    RAIDS.every((r) => relicsForSource({ kind: "raid", raidId: r.id, tier: 99 }).some((d) => d.tier === "artifact")));
   check("no relic comes out of a chest or a wave monster",
     relicsOfTier("relic").every((d) => d.sources.every((s) => s.kind !== "chest" && s.kind !== "worldDrop")));
   check("a relic from the Abyss needs its deep tiers",
@@ -231,10 +242,17 @@ section("5. rule 4 — every one answers 'where does this drop?'");
     relicsForSource({ kind: "clearCache", depth: 12, mode: "abyss", tier: 1, lastFloor: false }).every((d) => !d.sources.some((s) => s.kind === "clearCache" && s.lastFloor))
     && relicsForSource({ kind: "clearCache", depth: 12, mode: "abyss", tier: 1, lastFloor: true }).some((d) => d.sources.some((s) => s.kind === "clearCache" && s.lastFloor)));
 
-  // The reserved seam: typed, matchable, and empty today. `tower` left it in Sept 2026 —
-  // the ascent's clear cache emits it — so `raid` is what is still holding the door.
-  check("no site emits a raid query yet, so the reserved kind pays out nothing",
-    relicsForSource({ kind: "raid", raidId: "anything" }).length === 0);
+  // `raid` left the reserved seam with UAT §15, so the pair that used to say "nothing
+  // emits this" now says what it emits and what it refuses: a real raid pays out its own
+  // relics, and an id nothing declares pays out nothing at all. There is no reserved kind
+  // today; the next one is added by leaving it out of `LIVE_SOURCE_KINDS`, and the
+  // validator check further down is what keeps that guard honest.
+  check("a raid query pays out that raid's relics",
+    relicsForSource({ kind: "raid", raidId: RAIDS[0]!.id, tier: 99 }).length >= 2);
+  check("...and an id no raid declares pays out nothing",
+    relicsForSource({ kind: "raid", raidId: "anything", tier: 99 }).length === 0);
+  check("a raid's relic-tier item needs the raid's own deep tiers",
+    RAIDS.every((r) => relicsForSource({ kind: "raid", raidId: r.id, tier: 1 }).every((d) => d.tier === "artifact")));
 
   // ...and the ascent's own kind is live, asserted as the pair rather than as a bound: a
   // height below the gate pays nothing and a height above it pays that exact relic. A
@@ -250,8 +268,21 @@ section("5. rule 4 — every one answers 'where does this drop?'");
   check("a height is not a depth: no relic reads the tower gate off a Delve floor",
     relicsForSource({ kind: "clearCache", depth: 99, mode: "tower", tier: 0, lastFloor: false })
       .every((d) => !d.sources.some((s) => s.kind === "tower")));
-  const hidden: RelicDef = { ...RELICS[0]!, id: "hidden-behind-the-seam", sources: [{ kind: "raid", raidId: "tyrant", chance: 0.5 }] };
-  check("a definition with only a reserved source is refused by the validator", relicProblems(hidden).some((p) => p.includes("reserved")));
+  // The guard that used to be demonstrated with a `raid` source. Every kind is live now,
+  // so it is demonstrated against the mechanism itself: `isLiveSource` is what the
+  // validator consults, and a kind absent from `LIVE_SOURCE_KINDS` is refused. Kept
+  // because the next reserved kind is opted *out*, and a guard nobody exercises is a
+  // guard that has already stopped working.
+  check("every kind the union declares is live today", LIVE_SOURCE_KINDS.length === 6);
+  const hidden = { ...RELICS[0]!, id: "hidden-behind-the-seam", sources: [{ kind: "notyet", raidId: "x", chance: 0.5 }] } as unknown as RelicDef;
+  check("a definition whose only source is a kind no site emits is refused by the validator",
+    relicProblems(hidden).some((p) => p.includes("reserved kind")));
+  const raidOnly: RelicDef = { ...RELICS[0]!, id: "raid-only", sources: [{ kind: "raid", raidId: RAIDS[0]!.id, chance: 0.5 }] };
+  check("...while a raid source is accepted now that a site emits it",
+    !relicProblems(raidOnly).some((p) => p.includes("reserved kind")));
+  const unknownRaid: RelicDef = { ...RELICS[0]!, id: "unknown-raid", sources: [{ kind: "raid", raidId: "no-such-raid", chance: 0.5 }] };
+  check("...and a raid source naming no raid is still refused",
+    relicProblems(unknownRaid).some((p) => p.includes("names no raid")));
   const forged: RelicDef = { ...RELICS[0]!, id: "forged-relic", sources: [{ kind: "craft", materials: {}, coins: 1 } as unknown as FoundSource] };
   check("a relic with a craft source is refused — a relic is found, never made", relicProblems(forged).some((p) => p.includes("never forged")));
 

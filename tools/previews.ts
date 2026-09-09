@@ -29,6 +29,7 @@ import {
   NAMED_ITEMS, bossDisplayName, namedDropChance, rollNamedDrops,
 } from "../src/data/named";
 import { PLANETS, planetConfig } from "../src/data/planets";
+import { RAIDS, RAID_BY_ID, raidConfig } from "../src/data/raids";
 import { towerConfig } from "../src/data/tower";
 import { previewForChest, previewForRun } from "../src/data/previews";
 import { Dungeon } from "../src/game/dungeon";
@@ -69,6 +70,12 @@ function eventsOfRun(config: RunConfig, proving: ClassId | null) {
     if (floor.bossFloor) events.push({ kind: "boss", bossId: bossSpecForRun(floor, proving).id });
     events.push({ kind: "clearCache", depth: floor.depth, mode: floor.mode.id });
     events.push({ kind: "worldDrop", depth: floor.depth, elite: true });
+    // The two ladders' own kinds, restated here the same way the rest of this walk is.
+    // A raid's tier rides along because the top of a raid's table is gated behind one
+    // (UAT §16) — a walk that dropped the tier would list tier-8 items on a tier-1 preview
+    // and call the disagreement a preview bug.
+    if (floor.tower) events.push({ kind: "tower", floor: floor.tower.height });
+    if (floor.raid) events.push({ kind: "raid", raidId: floor.raid.spec.id, tier: floor.raid.tier });
   }
   return events;
 }
@@ -100,6 +107,13 @@ console.log("\n=== a preview lists exactly what the run can really drop ===");
     ["a deep Reliquary sector", planetConfig(PLANETS[PLANETS.length - 1]!, 3, 1, 0), null],
     ["the Vigil", dailyConfig(dayNumber()), null],
     ["the Delve under Challenger 12", delveConfig(20, 12), null],
+    // Raids (UAT §15): one at its opening tier and one past the `minTier` gate on its own
+    // table, because the interesting failure is a preview that lists the tier-gated half
+    // of a raid's table at a tier that cannot drop it.
+    ["the Ferryman, tier 1", raidConfig(RAID_BY_ID["the-ferryman"]!, 1), null],
+    ["the Ferryman, tier 6", raidConfig(RAID_BY_ID["the-ferryman"]!, 6), null],
+    ["the Tyrant, tier 1", raidConfig(RAID_BY_ID["tyrant-of-the-first-heavens"]!, 1), null],
+    ["the Tyrant, tier 8", raidConfig(RAID_BY_ID["tyrant-of-the-first-heavens"]!, 8), null],
   ];
 
   for (const [label, config, proving] of activities) {
@@ -131,7 +145,10 @@ for (const id of RUN_MODES) {
     : id === "tower" ? towerConfig(10)
       : id === "vigil" ? dailyConfig(dayNumber())
         : id === "planet" ? planetConfig(PLANETS[0]!, 1, 1, 0)
-          : riftConfig(id, 1, MODES[id].floors);
+          // A raid *is* rift-shaped, so it would reach the fallback and come back as a
+          // raid-shaped run with no raid on it — the exact trap the comment above names.
+          : id === "raid" ? raidConfig(RAIDS[0]!, 1)
+            : riftConfig(id, 1, MODES[id].floors);
   const preview = previewForRun(config);
   check(`${MODES[id].name} has a title and says what else it pays`,
     preview.title.length > 0 && preview.other.length > 0,
@@ -369,8 +386,14 @@ console.log("\n=== a mode says what it is a consequence of, not only what it pay
   hub.weeklyOpen = true;
   hub.towerOpen = true;
   hub.setExpedition(PLANETS[0]!.id, 1);
+  hub.raidOpen = true;
+  hub.setRaid(RAIDS[0]!.id, 1);
   const kinds = new Set<HubStationKind>(hub.stations.map((s) => s.kind));
-  const doors: HubStationKind[] = ["dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence", "tower"];
+  const doors: HubStationKind[] = [
+    "dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence", "tower",
+    // The raid pair (UAT §15): the terminal that picks one and the portal picking spawns.
+    "warTable", "raidPortal",
+  ];
   const notDoors: HubStationKind[] = ["forge", "quartermaster", "comms"];
   check("every station kind is on the deck under test", [...doors, ...notDoors].every((k) => kinds.has(k)),
     [...kinds].join(", "));

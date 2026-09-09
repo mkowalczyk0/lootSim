@@ -2816,6 +2816,16 @@ export class Dungeon implements CombatHost, RuleHost {
         kind: "boss", bossId: e.boss.spec.id,
         mode: this.config.mode.id, tier: this.config.tier, depth: this.profile.depth,
       }, source);
+      // A raid encounter emits its own kind on top of the boss query (UAT §15). Its own,
+      // rather than a `boss` source with `mode: "raid"`, because §15 asks that a raid's
+      // items be that raid's alone: addressing the table by the raid is what stops an
+      // item leaking onto the Delve encounter this fight borrowed its kit from. The tier
+      // rides along because the rarest half of a raid's table is gated behind one (§16).
+      if (this.config.raid) {
+        this.dropFromTables(e.x, e.y, {
+          kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
+        }, source);
+      }
     } else if (e.fromWave) {
       this.dropFromTables(e.x, e.y, {
         kind: "worldDrop", depth: this.profile.depth, elite: e.elite !== null, mode: this.config.mode.id,
@@ -2914,6 +2924,14 @@ export class Dungeon implements CombatHost, RuleHost {
     // would start leaking. `recordHeight` keeps the same distinction on the save side.
     if (this.config.tower) {
       this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero);
+    }
+    // ...and so does the cache that closes a raid (UAT §15). The raid's floor *is* its
+    // boss floor, so this is the second half of the same payout and the same query the
+    // kill emitted — one address for one raid, asked twice because the floor pays twice.
+    if (this.config.raid) {
+      this.dropFromTables(x, y, {
+        kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
+      }, this.localHero);
     }
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);

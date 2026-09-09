@@ -18,10 +18,16 @@
  * description, one matcher — the §20 preview screen depends on that being true, because
  * two ways to describe the same kill are two matchers that can disagree.
  *
- * `raid` is RESERVED. It is new addressing (a raid is not a boss floor), typed here so
- * UAT §15 can hang its own drops off the table without a schema change — but no site
- * emits that query yet, so `LIVE_SOURCE_KINDS` says which kinds can actually pay out
- * today and the acceptance tools refuse a definition that hides behind a reserved one.
+ * `raid` was RESERVED and **went live with UAT §15**. It is its own addressing rather than
+ * a `boss` query with `mode: "raid"`, because §15's whole rule is that "a specific boss
+ * should be the exclusive source of a specific named item": a raid's table is addressed by
+ * the raid, so nothing that merely happens to be standing in a raid can pay it out, and a
+ * raid's items can never leak onto a Delve encounter that shares a template. `minTier` on
+ * the source is §16 — the hardest tiers of a raid can drop things the first tier cannot.
+ *
+ * `LIVE_SOURCE_KINDS` still exists and now names every kind, which is the point: the next
+ * reserved kind has to be *left out* of it deliberately, and the acceptance tools refuse a
+ * definition that hides behind one.
  *
  * `tower` was reserved on the same terms and **went live in Sept 2026**, when the ascent
  * got a clear cache to emit it (UAT §21). It is deliberately its own kind rather than a
@@ -42,6 +48,7 @@ import { legendName } from "./legends";
 import type { MaterialBag } from "./materials";
 import { MODES, RUN_MODES, type RunModeId } from "./modes";
 import { PLANETS } from "./planets";
+import { RAID_BY_ID, raidOfBossId } from "./raids";
 
 // --- sources ----------------------------------------------------------------
 
@@ -71,8 +78,13 @@ export type FoundSource =
     }
   /** Any wave monster at least this deep. Elites triple the odds. */
   | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
-  /** RESERVED for UAT §15 — a raid encounter by id. No site emits this query yet. */
-  | { readonly kind: "raid"; readonly raidId: string; readonly chance: number }
+  /**
+   * Paid out by a raid (UAT §15) — the encounter and the cache that closes it, addressed
+   * by `RaidSpec.id`. `minTier` is §16: the rarest half of a raid's table only opens at a
+   * tier, so a harder raid drops things an easier one cannot rather than better rolls of
+   * the same thing.
+   */
+  | { readonly kind: "raid"; readonly raidId: string; readonly chance: number; readonly minTier?: number }
   /**
    * In the cache that closes a Tower floor at least this high (UAT §21). A *height*, not
    * a depth — the ascent's own address, so nothing here can be confused for the descent.
@@ -93,7 +105,7 @@ export interface CraftSource {
 export type DropSource = FoundSource | CraftSource;
 
 /** The source kinds some roll site actually emits a query for today. */
-export const LIVE_SOURCE_KINDS: readonly FoundSource["kind"][] = ["boss", "chest", "clearCache", "worldDrop", "tower"];
+export const LIVE_SOURCE_KINDS: readonly FoundSource["kind"][] = ["boss", "chest", "clearCache", "worldDrop", "tower", "raid"];
 
 export function isLiveSource(src: DropSource): src is FoundSource {
   return (LIVE_SOURCE_KINDS as readonly string[]).includes(src.kind);
@@ -114,7 +126,7 @@ export type DropQuery =
       readonly tier?: number; readonly lastFloor?: boolean;
     }
   | { readonly kind: "worldDrop"; readonly depth: number; readonly elite: boolean; readonly mode?: RunModeId }
-  | { readonly kind: "raid"; readonly raidId: string }
+  | { readonly kind: "raid"; readonly raidId: string; readonly tier?: number }
   | { readonly kind: "tower"; readonly floor: number };
 
 /** The UAT §16 hook: harder content pays better odds. Gentle, capped, one place. */
@@ -144,7 +156,8 @@ export function sourceMatches(src: DropSource, q: DropQuery): boolean {
       return q.kind === "worldDrop" && q.depth >= src.minDepth
         && (src.mode === undefined || src.mode === q.mode);
     case "raid":
-      return q.kind === "raid" && src.raidId === q.raidId;
+      return q.kind === "raid" && src.raidId === q.raidId
+        && (src.minTier === undefined || (q.tier ?? 0) >= src.minTier);
     case "tower":
       return q.kind === "tower" && q.floor >= src.minFloor;
     case "craft":
@@ -266,6 +279,10 @@ export function bossDisplayName(bossId: string): string {
   if (planet) return planet.bossName;
   // A Proving (UAT §13): `legend-<classId>`, generated rather than authored, so it is
   // resolved rather than listed. Without this the source line would print the raw id.
+  // A raid encounter (UAT §15): `raid-<raidId>`, generated from the raid table the same
+  // way a Proving's is generated from the class roster, so it is resolved rather than listed.
+  const raid = raidOfBossId(bossId);
+  if (raid) return raid.name;
   const legend = CLASS_IDS.find((id) => `legend-${id}` === bossId);
   return legend ? legendName(legend) : bossId;
 }
@@ -295,7 +312,11 @@ export function foundSourceLine(s: FoundSource): string {
     }
     case "worldDrop":
       return `Dropped by monsters from depth ${s.minDepth}${modeSuffix(s)} (${pct(s.chance)} per kill, elites triple)`;
-    case "raid": return `Raid reward — ${s.raidId} (${pct(s.chance)}; raids are not in the game yet)`;
+    case "raid": {
+      const raid = RAID_BY_ID[s.raidId];
+      const tier = s.minTier !== undefined ? ` from tier ${s.minTier}` : "";
+      return `Drops in the ${raid?.name ?? s.raidId} raid${tier} (${pct(s.chance)})`;
+    }
     case "tower": return `In the clear cache of a Tower floor from height ${s.minFloor} (${pct(s.chance)})`;
   }
 }
@@ -357,6 +378,7 @@ export function foundSourceProblems(s: FoundSource): string[] {
       break;
     case "raid":
       if (!s.raidId.trim()) out.push("raid source needs a raid id");
+      else if (!RAID_BY_ID[s.raidId]) out.push(`raid source "${s.raidId}" names no raid`);
       break;
     case "tower":
       if (!(s.minFloor >= 1)) out.push("tower minFloor must be >= 1");

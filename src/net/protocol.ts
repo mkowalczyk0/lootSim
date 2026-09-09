@@ -100,6 +100,11 @@ export interface RunConfigWire {
   readonly players: number;
   readonly planetId?: string;
   readonly planetTier?: number;
+  /** A raid (UAT §15) — which one, and at what tier. Solo in v1, so nothing sends these
+   *  today; carried anyway so a raid that ever does cross the wire is rebuilt by its own
+   *  builder rather than reassembled into a raid-shaped run with no raid in it. */
+  readonly raidId?: string;
+  readonly raidTier?: number;
 }
 
 export type PartyMessage =

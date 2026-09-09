@@ -330,18 +330,18 @@ section("7. acquisition is the table, and only the table");
   for (const def of NAMED_ITEMS) {
     for (const src of def.sources) {
       if (src.kind === "craft") continue;
-      // `raid` is the reserved §15 seam — no site emits that query yet, so there is
-      // nothing to roll one against. Refused rather than skipped, the same way
-      // `relicProblems` refuses a definition hiding behind one: until Sept 2026 it fell
-      // through to the `worldDrop` branch and read a `minDepth` that kind does not have,
-      // quietly asking for `depth: undefined`. (`tower` was refused here on the same
-      // terms and is live now — the ascent's clear cache emits it.)
-      if (src.kind === "raid") {
-        check(`${def.id}: a ${src.kind} source has a roll site to test against`, false,
-          "authored against a reserved seam nothing emits yet");
-        continue;
-      }
+      // `raid` was the reserved §15 seam and is live now — `Dungeon` emits it at the raid
+      // encounter's death and again at the cache that closes the floor. It gets a real
+      // branch below rather than the blanket refusal it used to get, and the `minTier`
+      // rides in as the tier for the same reason the boss branch carries one: a gated
+      // source that could not satisfy its own query would look like a broken table.
+      //
+      // The refusal it replaced is still worth remembering: before Sept 2026 a `raid`
+      // source fell through to the `worldDrop` branch and read a `minDepth` that kind
+      // does not have, quietly asking for `depth: undefined`. A new reserved kind needs
+      // its own branch here, not the fallthrough.
       const q: NamedDropQuery = src.kind === "boss" ? { kind: "boss", bossId: src.bossId }
+        : src.kind === "raid" ? { kind: "raid", raidId: src.raidId, tier: src.minTier ?? 0 }
         : src.kind === "chest" ? { kind: "chest", tier: src.tier }
         : src.kind === "tower" ? { kind: "tower", floor: src.minFloor }
         : src.kind === "clearCache" ? { kind: "clearCache", depth: src.minDepth, mode: src.mode ?? "delve" }

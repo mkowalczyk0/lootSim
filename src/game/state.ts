@@ -31,6 +31,7 @@ import {
 } from "./forge";
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
+import { RAIDS } from "../data/raids";
 import { BASE_RARITY_WEIGHTS, RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
@@ -107,6 +108,12 @@ function freshPlanetProgress(): Record<string, number> {
   return Object.fromEntries(PLANETS.map((p) => [p.id, 1]));
 }
 
+/** Highest tier open per raid (UAT §15) — same shape and same reasoning as
+ *  `freshPlanetProgress`, keyed by raid id. */
+function freshRaidProgress(): Record<string, number> {
+  return Object.fromEntries(RAIDS.map((r) => [r.id, 1]));
+}
+
 /** One capsule opening: what came out, and what it was worth if you already had it. */
 export interface CapsulePull {
   readonly cosmetic: Cosmetic;
@@ -159,6 +166,16 @@ export class GameState {
   riftTiers: Record<RunModeId, number> = freshTiers();
   /** Highest tier opened per planet. Clearing a planet's first tier opens the next planet. */
   planetProgress: Record<string, number> = freshPlanetProgress();
+  /**
+   * Highest tier opened per raid (UAT §15). Killing a raid's boss and banking it opens the
+   * next tier of *that* raid; bailing out opens nothing, the same asymmetry every rift has.
+   *
+   * Keyed by raid id rather than by `RunModeId` for exactly the reason `planetProgress` is:
+   * `riftTiers` is a fixed map over a union and the raid roster is its own open-ended list,
+   * so a fifth raid must not need a `RunModeId`. Which raids are *visible* is not stored at
+   * all — that is `raidUnlocked(spec, frontier)`, derived, and widening only.
+   */
+  raidProgress: Record<string, number> = freshRaidProgress();
   /** The Vigil (UAT §17): the UTC day number it was last closed on, 0 for never. The
    *  portal stays shut for the rest of that day — one key a day is the whole design. */
   daily: { clearedDay: number } = { clearedDay: 0 };
@@ -839,6 +856,18 @@ export class GameState {
       this.stats.convergencesCleared++;
       return;
     }
+    // A raid is rift-shaped and keeps its own tier ladder per encounter (UAT §15), so it
+    // is tracked by raid id for the reason a planet is — the roster is a list, not a union.
+    // It falls through the depth-record update above on purpose: a raid's effective depth
+    // is a real depth reached by a real character, exactly as a rift tier's is.
+    if (config?.raid) {
+      if (!config.lastFloor) return;
+      const id = config.raid.spec.id;
+      const next = config.raid.tier + 1;
+      this.stats.riftsCleared[config.mode.id]++;
+      if (next > (this.raidProgress[id] ?? 1)) this.raidProgress[id] = next;
+      return;
+    }
     // A planet is rift-shaped (`mode.isRift` is true for it too) but each one keeps its
     // own tier ladder, so it's tracked by planet id rather than the shared rift Records.
     if (config?.planet) {
@@ -895,6 +924,7 @@ export class GameState {
       maxUnlockedHeight: this.maxUnlockedHeight,
       riftTiers: this.riftTiers,
       planetProgress: this.planetProgress,
+      raidProgress: this.raidProgress,
       daily: this.daily,
       weekly: this.weekly,
       materials: this.materials,
@@ -966,6 +996,11 @@ export class GameState {
       // Saves from before planets and the forge existed have none of these; a fresh
       // ladder and an empty materials bag is exactly what a brand new save gets too.
       state.planetProgress = { ...freshPlanetProgress(), ...(d.planetProgress as Record<string, number> | undefined) };
+      // Version 24 added raids (UAT §15); an older save has opened no tier of any of them,
+      // which is what a fresh ladder already says. Merged the same way as every other
+      // id-keyed record, so a raid removed from the roster leaves a dead key rather than
+      // resetting the ones that remain.
+      state.raidProgress = { ...freshRaidProgress(), ...(d.raidProgress as Record<string, number> | undefined) };
       state.materials = { ...emptyMaterials(), ...(d.materials as Partial<MaterialBag> | undefined) };
       // Version 16 added the daily Vigil; an older save has simply never closed one.
       const daily = d.daily as { clearedDay?: unknown } | undefined;

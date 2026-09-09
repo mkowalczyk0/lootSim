@@ -23,7 +23,7 @@
  *
  * | | Artifact | Relic |
  * |---|---|---|
- * | source | the Abyssal Rift, and only the Abyssal Rift | the Proving, the deepest Delve, the Abyss's top tiers |
+ * | source | the Abyssal Rift, and every raid | the Proving, the deepest Delve, the Abyss's top tiers, every raid's top tiers |
  * | power | "this makes my build better at what it does" | "this changes how my build works" |
  * | odds | at least 1.5× a relic's (asserted as a comparison) | the aspirational chase |
  *
@@ -41,7 +41,7 @@
  * `sources` is the shared drop table's vocabulary (`data/drops.ts`), read by the same
  * roll sites that pay out named items. A relic may not carry a `craft` source — a relic
  * is found, never made — and every shipped definition must have at least one source some
- * site emits today, so nothing can hide behind the reserved `raid` kind.
+ * site emits today (`LIVE_SOURCE_KINDS`), so nothing can hide behind a reserved kind.
  *
  * Pure data + pure functions. Imports only types and other `data/` registries.
  */
@@ -130,6 +130,20 @@ export const RELIC_ODDS = {
    * one chase with a shortcut.
    */
   towerCache: 0.025,
+  /**
+   * An artifact from a raid encounter (UAT §15). The most generous artifact source in the
+   * game on purpose: a raid is one floor with one fight on it, gated behind a frontier and
+   * its own tier ladder, and §15's whole promise is "a reason to repeatedly farm specific
+   * bosses". Still comfortably above `raidRelic` — rule 5's ratio holds inside a raid the
+   * same way it holds inside the Abyss.
+   */
+  raidArtifact: 0.18,
+  /**
+   * A relic-tier item from a raid, at the tier it opens at. Half the artifact's odds, and
+   * gated behind `minTier` on top: a raid's relic is the top of that raid's table, so the
+   * first tier of it cannot pay one out at all (UAT §16).
+   */
+  raidRelic: 0.09,
 } as const;
 
 // --- the registry -----------------------------------------------------------
@@ -714,6 +728,178 @@ export const RELICS: readonly RelicDef[] = [
     statStick: true,
     sources: [{ kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache * 2, mode: "abyss", lastFloor: true }],
   }),
+
+  // ===== RAIDS — one relic and one artifact per encounter (UAT §15) ==========
+  //
+  // The doc's EXAMPLE RAID BOSSES lists "Relic — Spark of the Tyrant" by name under the
+  // Tyrant of the First Heavens, so that one is quoted rather than invented. The rest are
+  // written to the same rule the roster already follows: an object the encounter itself
+  // left behind, named out of the cosmology it belongs to.
+  //
+  // **The Heaven-side names are Thrones, never Dominions.** THE THREE-SIDED COSMOLOGY is
+  // explicit that Dominion is *Hell's* word — "Creation belongs to those strong enough to
+  // claim it" — while the Thrones are Heaven's living law (CELESTIAL HIERARCHY). A relic
+  // off a celestial warlord named after a Dominion would be wearing the wrong side's
+  // vocabulary.
+  //
+  // Every relic-tier item here is gated behind `minTier` and every artifact is not, which
+  // is §16 in the shape §19 already uses: the chase is the tier, not a better roll.
+
+  relic({
+    id: "spark-of-the-tyrant",
+    name: "Spark of the Tyrant",
+    flavor: "What was left when Heaven took the rest of it back.",
+    description: "Everything you cast is holy, and your ultimate arrives as a judgment on the whole room.",
+    art: "relic.spark-of-the-tyrant",
+    effects: [
+      { kind: "mods", mods: { holyDamage: 0.45 } },
+      {
+        kind: "mutate",
+        mutation: {
+          id: "relic.spark-of-the-tyrant.all-holy",
+          label: "Every skill deals holy damage",
+          target: { all: true },
+          ops: [{ kind: "damagePacket", setType: "holy" }],
+        },
+      },
+      {
+        kind: "grantEffect", on: { event: "ultimateUse" },
+        note: "Your ultimate calls a judgment down on everything around you.",
+        effects: [{ kind: "damage", damage: { base: 1.8, scale: "spell", type: "holy" }, to: "allTargets" }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+  }),
+  relic({
+    id: "thread-of-the-labyrinth",
+    name: "Thread of the Labyrinth",
+    flavor: "It leads out. It also leads in, and it does not tell you which end you have.",
+    description: "You get an extra dodge, and every dodge tears a hole in the floor behind you.",
+    art: "relic.thread-of-the-labyrinth",
+    effects: [
+      { kind: "mods", mods: { dashCharges: 1, dashRate: 0.2 } },
+      {
+        kind: "grantEffect", on: { event: "dodge" },
+        note: "Dodging leaves a collapsing void behind you.",
+        effects: [{
+          kind: "zone",
+          zone: {
+            damage: { base: 0.8, scale: "spell", type: "void" },
+            radius: 70, duration: 1.4, tickInterval: 0.35,
+            status: { id: "corruption", chance: 0.35 },
+          },
+        }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+  }),
+  relic({
+    id: "the-ferrymans-toll",
+    name: "The Ferryman's Toll",
+    flavor: "Everything crossing has to pay. It is not fussy about whose coin.",
+    description: "Everything you kill pays the fare: it freezes what is standing near it and wards you.",
+    art: "relic.the-ferrymans-toll",
+    effects: [
+      {
+        kind: "grantEffect", on: { event: "kill" },
+        note: "Every kill freezes the ground around it and wraps you in a brief ward.",
+        effects: [
+          { kind: "damage", damage: { base: 0.9, scale: "spell", type: "cold" }, to: "allTargets" },
+          { kind: "status", status: "chill", to: "allTargets", chance: 0.8 },
+          { kind: "shield", amount: 0.5, scale: "attack", duration: 3, to: "self" },
+        ],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidRelic, minTier: 3 }],
+  }),
+  relic({
+    id: "the-seventh-crown",
+    name: "The Seventh Crown",
+    flavor: "Worn by a war nobody won.",
+    description: "Being hit answers back in fire, and your criticals set everything nearby alight.",
+    art: "relic.the-seventh-crown",
+    effects: [
+      {
+        kind: "grantEffect", on: { event: "damageTaken" },
+        note: "Taking a hit throws a burst of fire back at the room.",
+        effects: [
+          { kind: "damage", damage: { base: 1.1, scale: "attack", type: "fire" }, to: "allTargets" },
+          { kind: "status", status: "burn", to: "allTargets", chance: 0.5 },
+        ],
+      },
+      {
+        kind: "grantEffect", on: { event: "criticalHit" },
+        note: "A critical hit sets everything around the target burning.",
+        effects: [{ kind: "status", status: "burn", to: "allTargets", chance: 0.6 }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+  }),
+
+  artifact({
+    id: "shard-of-a-broken-throne",
+    name: "Shard of a Broken Throne",
+    flavor: "A Throne is the law sitting down. This is the part that came off.",
+    description: "Holy damage, a stronger ward, and every ward you raise burns the room a little.",
+    art: "relic.shard-of-a-broken-throne",
+    effects: [
+      { kind: "mods", mods: { holyDamage: 0.22, wardPower: 0.25, defensePercent: 0.08 } },
+      {
+        kind: "grantEffect", on: { tag: "shield" },
+        note: "Raising a ward scorches everything near you with holy light.",
+        effects: [{ kind: "damage", damage: { base: 0.8, scale: "spell", type: "holy" }, to: "allTargets" }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidArtifact }],
+  }),
+  artifact({
+    id: "bronze-of-the-ninth-gate",
+    name: "Bronze of the Ninth Gate",
+    flavor: "The last door of the ninth maze. It was never opened; it was gone through.",
+    description: "Heavy plating that hurts whatever hits it, and hurts more the longer it is hit.",
+    art: "relic.bronze-of-the-ninth-gate",
+    effects: [
+      { kind: "mods", mods: { defensePercent: 0.14, thorns: 6, voidResist: 20 } },
+      {
+        kind: "grantEffect", on: { event: "damageTaken" },
+        note: "Every hit you take makes the plating answer harder for a moment.",
+        effects: [{ kind: "shield", amount: 0.5, scale: "attack", duration: 2.5, to: "self" }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidArtifact }],
+  }),
+  artifact({
+    id: "obol-of-the-three-rivers",
+    name: "Obol of the Three Rivers",
+    flavor: "Small, cold, and accepted everywhere.",
+    description: "Everything you pick up is worth more, reaches further, and comes back sooner.",
+    art: "relic.obol-of-the-three-rivers",
+    effects: [
+      { kind: "mods", mods: { coinFind: 0.3, gemFind: 0.2, pickupRadius: 0.35, cooldownRate: 0.08 } },
+      {
+        kind: "grantEffect", on: { event: "kill" },
+        note: "Every kill chills whatever else was standing with it.",
+        effects: [{ kind: "status", status: "chill", to: "allTargets", chance: 0.35 }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidArtifact }],
+  }),
+  artifact({
+    id: "standard-of-the-seventh-circle",
+    name: "Standard of the Seventh Circle",
+    flavor: "Carried at the front of an army that no longer has a front.",
+    description: "You hit harder and crit more often, and every kill fans the fire on everything left.",
+    art: "relic.standard-of-the-seventh-circle",
+    effects: [
+      { kind: "mods", mods: { fireDamage: 0.2, critChance: 0.05, meleeDamage: 0.12, skillDamage: 0.1 } },
+      {
+        kind: "grantEffect", on: { event: "kill" },
+        note: "Every kill throws burning cinders over whatever is still standing.",
+        effects: [{ kind: "damage", damage: { base: 0.7, scale: "attack", type: "fire" }, to: "allTargets" }],
+      },
+    ],
+    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidArtifact }],
+  }),
 ];
 
 export const RELIC_BY_ID: Readonly<Record<string, RelicDef>> = Object.fromEntries(RELICS.map((d) => [d.id, d]));
@@ -825,7 +1011,10 @@ export function relicProblems(def: RelicDef): string[] {
   if (def.rarity !== RELIC_TIER_INFO[def.tier].rarity) out.push(`a ${def.tier} presents as ${RELIC_TIER_INFO[def.tier].rarity}, not ${def.rarity}`);
   if (def.effects.length === 0) out.push("no effects — it would do nothing");
   if (def.sources.length === 0) out.push("no acquisition source — nothing could ever drop it");
-  if (!def.sources.some(isLiveSource)) out.push("every source is reserved (raid) — nothing in the game today can drop it");
+  // Every kind is live as of UAT §15, so this cannot fire today — it stays because the
+  // *next* reserved kind is added by leaving it out of `LIVE_SOURCE_KINDS`, and this is
+  // what stops a definition being authored against it before a site emits it.
+  if (!def.sources.some(isLiveSource)) out.push("every source is a reserved kind — nothing in the game today can drop it");
 
   for (const s of def.sources) {
     if ((s as { kind: string }).kind === "craft") { out.push("a relic is found, never forged — no craft source"); continue; }

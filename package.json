@@ -26,7 +26,7 @@
     "relics": "esbuild tools/relics.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relics.mjs --log-level=error && node node_modules/.cache/relics.mjs",
     "legends": "esbuild tools/legends.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/legends.mjs --log-level=error && node node_modules/.cache/legends.mjs",
     "universal": "esbuild tools/universal.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/universal.mjs --log-level=error && node node_modules/.cache/universal.mjs",
-    "test": "npm run markers && npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run rules && npm run universal && npm run named && npm run legends && npm run forge && npm run previews && npm run world && npm run itemart && npm run relics && npm run rewards && npm run deadpaths && npm run smoke",
+    "test": "npm run markers && npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run rules && npm run universal && npm run named && npm run legends && npm run forge && npm run previews && npm run world && npm run itemart && npm run relics && npm run raids && npm run rewards && npm run deadpaths && npm run smoke",
     "arena": "esbuild tools/arena.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/arena.mjs --log-level=error && node node_modules/.cache/arena.mjs",
     "art": "esbuild tools/artsheet.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/artsheet.mjs --log-level=error && node node_modules/.cache/artsheet.mjs",
     "relay": "esbuild tools/relay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relay.mjs --log-level=error && node node_modules/.cache/relay.mjs",
@@ -34,7 +34,8 @@
     "curves": "esbuild tools/curves.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/curves.mjs --log-level=error && node node_modules/.cache/curves.mjs",
     "regard": "esbuild tools/regard.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/regard.mjs --log-level=error && node node_modules/.cache/regard.mjs",
     "builds": "esbuild tools/builds.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/builds.mjs --log-level=error && node node_modules/.cache/builds.mjs",
-    "deadpaths": "esbuild tools/deadpaths.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/deadpaths.mjs --log-level=error && node node_modules/.cache/deadpaths.mjs"
+    "deadpaths": "esbuild tools/deadpaths.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/deadpaths.mjs --log-level=error && node node_modules/.cache/deadpaths.mjs",
+    "raids": "esbuild tools/raids.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/raids.mjs --log-level=error && node node_modules/.cache/raids.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

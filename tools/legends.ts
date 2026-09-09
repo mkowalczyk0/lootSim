@@ -22,7 +22,8 @@
  * Headless, no browser. Run with `npm run legends`.
  */
 
-import { BOSSES, BOSS_ABILITIES, type BossAbilityId, type BossSpec } from "../src/data/bosses";
+import { BOSSES } from "../src/data/bosses";
+import { auditSpec } from "./bossrules";
 import { CLASSES, CLASS_IDS } from "../src/data/classes";
 import {
   DELVE_BOTTOM, LEGENDS, PROVING_DAMAGE, PROVING_HEALTH, PROVING_LAST_PHASE_NAME,
@@ -39,100 +40,10 @@ function check(label: string, ok: boolean, detail = "") {
 }
 
 // --- the boss rules, as code ------------------------------------------------
-
-/**
- * How far an ability has to be able to touch before it counts as reaching across the
- * arena. The rule it serves is "every phase needs at least one ability that reaches
- * across the arena, or the fight can be beaten by walking backwards", so the test is
- * whether the boss can *choose* the ability while you are far away and still hit you.
- */
-const CROSS_ARENA_RANGE = 400;
-
-/** Whether one ability can touch a player who is refusing to come closer. */
-function reachesAcross(id: BossAbilityId): boolean {
-  const a = BOSS_ABILITIES[id];
-  // A pure buff reaches nobody; it is not an answer to a player walking backwards.
-  if (a.damage <= 0 && a.count <= 0) return false;
-  if (a.maxRange < CROSS_ARENA_RANGE) return false;
-  // Centred on the boss and small enough to stand outside of: you can just leave.
-  // Unless it throws something (projectiles, adds) that comes to find you.
-  return !a.onSelf || a.radius >= 300 || a.count > 0;
-}
-
-interface Violation {
-  readonly rule: string;
-  readonly detail: string;
-}
-
-/**
- * Audits one encounter against the rules in `CLAUDE.md`'s boss section. Structural only:
- * "a dash always beats a mechanic" and "casting locks the boss in place" are runtime
- * promises of `game/boss.ts` and are covered in `tools/smoke.ts` instead — what is
- * checkable here is that every ability *has* a wind-up to be locked by.
- */
-function auditSpec(spec: BossSpec): Violation[] {
-  const out: Violation[] = [];
-  const phases = spec.phases;
-
-  if (phases.length < 2) {
-    out.push({ rule: "phases", detail: `only ${phases.length} phase(s)` });
-  }
-  if (phases[0]?.at !== 1) {
-    out.push({ rule: "phases", detail: `first phase starts at ${phases[0]?.at}, not 1` });
-  }
-
-  for (let i = 0; i < phases.length; i++) {
-    const phase = phases[i]!;
-    const where = `${spec.id} phase ${i + 1} (${phase.name})`;
-
-    if (phase.abilities.length === 0) {
-      out.push({ rule: "phases", detail: `${where} has no abilities` });
-      continue;
-    }
-
-    // Rule: every ability is telegraphed. If a hit landed, it was readable.
-    for (const id of phase.abilities) {
-      const a = BOSS_ABILITIES[id];
-      if (!a) {
-        out.push({ rule: "telegraphed", detail: `${where} names unknown ability ${id}` });
-        continue;
-      }
-      // Rule: casting locks the boss in place — so there has to be a cast to lock it.
-      if (a.cast <= 0) {
-        out.push({ rule: "wind-up", detail: `${where}: ${id} has no wind-up` });
-      }
-      // No shape is only allowed when nothing lands unannounced: either the ability
-      // deals no damage itself (a buff, a summon) or it resolves into visible
-      // projectiles the player can see crossing the floor.
-      if (a.shape === "none" && a.damage > 0 && a.count <= 0) {
-        out.push({ rule: "telegraphed", detail: `${where}: ${id} deals damage with no telegraph` });
-      }
-    }
-
-    // Rule: every phase needs at least one ability that reaches across the arena.
-    if (!phase.abilities.some(reachesAcross)) {
-      out.push({
-        rule: "cross-arena",
-        detail: `${where} can be beaten by walking backwards (${phase.abilities.join(", ")})`,
-      });
-    }
-
-    // Rule: phases add abilities rather than replacing them.
-    if (i > 0) {
-      const before = new Set(phases[i - 1]!.abilities);
-      const dropped = [...before].filter((id) => !phase.abilities.includes(id));
-      if (dropped.length > 0) {
-        out.push({ rule: "additive", detail: `${where} dropped ${dropped.join(", ")}` });
-      }
-      // Rule: the room gets busier as it dies.
-      if (phase.haste > phases[i - 1]!.haste) {
-        out.push({ rule: "additive", detail: `${where} casts slower than the phase before it` });
-      }
-    }
-  }
-
-  return out;
-}
+//
+// Moved to `tools/bossrules.ts` when raids (UAT §15) arrived and needed to be held to
+// exactly the same rules. Same audit, same constants, one copy — a second one would be
+// the copy that got a rule wrong.
 
 // --- 1. the legend roster --------------------------------------------------
 

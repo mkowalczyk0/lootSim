@@ -132,6 +132,11 @@ function eventsOn(floor: RunConfig, proving: ClassId | null) {
   // what the floor rolls are the same call. Keyed on the height, exactly as the roll site
   // keys it; `Dungeon.dropClearCache` is the thing this must not drift from.
   if (floor.tower) events.push({ kind: "tower", floor: floor.tower.height });
+  // A raid emits its own kind at both of its payouts (UAT §15) — the kill and the cache —
+  // and the tier rides along because the rarest half of a raid's table is gated behind one
+  // (§16). One query here, exactly as `Dungeon` asks it, so the tier you are standing in
+  // front of is the tier the preview lists.
+  if (floor.raid) events.push({ kind: "raid", raidId: floor.raid.spec.id, tier: floor.raid.tier });
   return events;
 }
 
@@ -209,6 +214,7 @@ function lineFor(def: NamedItemDef, src: NamedSource): string {
 
 function titleFor(config: RunConfig, proving: ClassId | null): string {
   if (proving) return bossSpecForRun(config, proving).name;
+  if (config.raid) return `${config.raid.spec.name} · tier ${config.raid.tier}`;
   if (config.planet) return `${config.planet.spec.name} · tier ${config.planet.tier}`;
   if (config.daily) return MODES.vigil.name;
   if (config.mode.isRift) return `${config.mode.name} · tier ${config.tier}`;

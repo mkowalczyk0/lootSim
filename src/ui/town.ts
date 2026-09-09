@@ -30,6 +30,9 @@ import {
 import {
   MODES, RIFT_LORE, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
 } from "../data/modes";
+import {
+  RAIDS, raidConfig, raidLayer, raidTiersOpen, raidUnlocked, type RaidSpec,
+} from "../data/raids";
 import { towerBiomeFor, towerConfig } from "../data/tower";
 import { layerFor, type WorldLayer } from "../data/layers";
 import { PLANETS, planetConfig, planetUnlocked, type PlanetSpec } from "../data/planets";
@@ -93,14 +96,14 @@ const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
-const STATION_TABS = ["Dive", "Tower", "Rifts", "StarMap", "Craft", "Party", "Vigil", "Convergence"] as const;
+const STATION_TABS = ["Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Party", "Vigil", "Convergence"] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
 const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY", Vigil: "THE VIGIL", Convergence: "THE CONVERGENCE",
-  Tower: "THE TOWER",
+  Tower: "THE TOWER", Raid: "THE WAR TABLE",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -206,6 +209,10 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMar
     case "Rifts": return `${sel} choose tier · ${adj} switch rift, or set Challenger from its row · ${e} open the rift`;
     case "StarMap": return `${sel} choose tier · ${adj} switch sector, or set Challenger from its row · `
       + `${e} open a portal for it`;
+    // The Raid tab has no Challenger row yet — it landed in the same merge that added
+    // the row to the other four ladders, and giving it one is a change to `rowCount`,
+    // `challengerRowIndex` and `primary()`, not a merge resolution. Tracked as follow-up.
+    case "Raid": return `${sel} choose tier · ${adj} switch raid · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Convergence": return `${e} open the Convergence · the same four floors for everyone this week · a warden and a real prize at the end`;
     case "Craft": return forgeMode === "reforge"
@@ -254,6 +261,9 @@ export class TownUI {
   private riftMode: RunModeId = "hoard";
   /** Which Reliquary sector the gate screen is showing. */
   private starMapPlanet: PlanetSpec = PLANETS[0]!;
+  /** Which of the four raids the War Table is showing (UAT §15). A/D switches it, the
+   *  cursor picks a tier — the Reliquary Gate's shape exactly. */
+  private warTableRaid: RaidSpec = RAIDS[0]!;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
   /** The Stash's mass-salvage: which ids the mouse has checked, and whether the "salvage
@@ -311,6 +321,8 @@ export class TownUI {
     private readonly onDive: (config: RunConfig) => void,
     /** The star map doesn't launch a run itself — it spawns a portal for one back in the hub. */
     private readonly onExpedition: (planet: PlanetSpec, tier: number) => void,
+    /** Nor does the War Table (UAT §15) — same contract, one portal per chosen raid. */
+    private readonly onRaid: (raid: RaidSpec, tier: number) => void,
     /** The party, for the Comms Relay screen. It owns the connection; this only shows it. */
     private readonly party: Party,
     /** Settings' "Log out" row. `main.ts` owns what logging out actually does. */
@@ -648,6 +660,9 @@ export class TownUI {
       case "Tower": return this.state.maxUnlockedHeight + 1;
       case "Rifts": return this.state.riftTiers[this.riftMode] + 1;
       case "StarMap": return (this.state.planetProgress[this.starMapPlanet.id] ?? 1) + 1;
+      // No +1: `challengerRowIndex()` deliberately excludes "Raid", so the Raid ladder
+      // has no Challenger row to reserve a slot for. See the note in `tabHelp`.
+      case "Raid": return raidTiersOpen(this.warTableRaid, this.state.raidProgress);
       case "Vigil": return 1;
       case "Convergence": return 1;
       case "Craft": return this.forgeMode === "reforge"
@@ -743,6 +758,12 @@ export class TownUI {
     if (this.tab === "StarMap") {
       const i = PLANETS.indexOf(this.starMapPlanet);
       this.starMapPlanet = PLANETS[clamp(i + dir, 0, PLANETS.length - 1)]!;
+      this.cursor = 0;
+      return true;
+    }
+    if (this.tab === "Raid") {
+      const i = RAIDS.indexOf(this.warTableRaid);
+      this.warTableRaid = RAIDS[clamp(i + dir, 0, RAIDS.length - 1)]!;
       this.cursor = 0;
       return true;
     }
@@ -1074,6 +1095,20 @@ export class TownUI {
         }
         this.state.player.fullHeal();
         this.onDive(weeklyConfig(week, 1, this.state.challengerTier));
+        break;
+      }
+      case "Raid": {
+        if (!this.requireClass()) break;
+        const spec = this.warTableRaid;
+        if (!raidUnlocked(spec, this.state.frontier)) {
+          this.notify(
+            `Sealed. Reach ${spec.unlockFrontier} on either ladder — ${escapeHtml(raidLayer(spec)?.name ?? "that layer")} `
+            + "has to be yours before it will look at you.", "#ef4444");
+          break;
+        }
+        const tier = Math.min(this.cursor + 1, raidTiersOpen(spec, this.state.raidProgress));
+        this.onRaid(spec, tier);
+        this.notify(`Portal opened for ${spec.name} T${tier} — find it back at the ship.`, "#f472b6");
         break;
       }
       case "StarMap": {
@@ -1633,6 +1668,7 @@ export class TownUI {
       case "Party": return this.renderParty();
       case "Rifts": return this.renderRifts();
       case "StarMap": return this.renderStarMap();
+      case "Raid": return this.renderRaid();
       case "Vigil": return this.renderVigil();
       case "Convergence": return this.renderConvergence();
       case "Craft": return this.renderCraft();
@@ -2172,6 +2208,76 @@ export class TownUI {
         extraction and the next tier — the deeper the sector, the better it pays.</p>
         <p>Opening a portal doesn't dive — it spawns one by the Reliquary Gate. Walk into
         it when you're ready.</p>
+      </aside>`;
+  }
+
+  /**
+   * The War Table (UAT §15) — the Reliquary Gate's screen, pointed at the four things too
+   * large for the Keepers to contain.
+   *
+   * Deliberately the same shape as `renderStarMap`: A/D picks which raid, the cursor picks
+   * a tier, and confirming spawns a portal rather than diving. A raid is chosen exactly
+   * the way a sector is, so the screen that sells it should not be a new idiom — what
+   * differs is that there is one floor, the loot table is the reason to be here, and the
+   * top of that table does not exist below a tier (§16).
+   */
+  private renderRaid(): string {
+    const spec = this.warTableRaid;
+    const unlocked = raidUnlocked(spec, this.state.frontier);
+    const maxTier = raidTiersOpen(spec, this.state.raidProgress);
+    const challenger = this.state.challengerTier;
+    const layer = raidLayer(spec);
+
+    const rows: string[] = [];
+    for (let tier = 1; tier <= maxTier; tier++) {
+      const config = raidConfig(spec, tier, challenger);
+      const p = profileFor(config.depth, config);
+      const under = this.state.player.level < p.recommendedLevel;
+      const best = tier === maxTier && maxTier > 1;
+      rows.push(`
+        <div class="row ${tier - 1 === this.cursor ? "on" : ""}" data-index="${tier - 1}">
+          <div class="row-main">
+            <span class="depth">T${String(tier).padStart(2, "0")}</span>
+            <span class="name">${escapeHtml(spec.name)}</span>
+            ${best ? '<span class="badge boss">NEW</span>' : ""}
+          </div>
+          <div class="row-side ${under ? "warn" : ""}">
+            req. lv ${p.recommendedLevel} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
+          </div>
+        </div>`);
+    }
+
+    const sel = raidConfig(spec, Math.min(this.cursor + 1, maxTier), challenger);
+    const other = RAIDS.map((r) =>
+      `<span style="color:${r === spec ? MODES.raid.color : "#5a6270"}">${escapeHtml(r.name)}</span>`,
+    ).join(" / ");
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <p class="muted" style="font-style:italic">${escapeHtml(MODES.raid.lore)}</p>
+        ${layer ? `<p class="muted"><b>${escapeHtml(layer.name)}</b> · ${escapeHtml(layer.lore)}</p>` : ""}
+        <h3 style="color:${MODES.raid.color}">${escapeHtml(spec.name)}</h3>
+        <p class="muted">${other}
+          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
+          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span></p>
+        <p class="muted" style="font-style:italic">${escapeHtml(spec.lore)}</p>
+        <p>${escapeHtml(spec.blurb)}</p>
+        ${unlocked ? "" : `<p class="danger">Sealed. Reach ${spec.unlockFrontier} on either
+          ladder — the layer it stands at has to be yours before it will look at you.</p>`}
+        <table class="cmp">
+          <tr><td>Floors</td><td>1 — it is the boss</td></tr>
+          <tr><td>Depth</td><td>${sel.depth}</td></tr>
+          <tr><td>Danger</td><td>×${sel.danger.toFixed(2)}</td></tr>
+          <tr><td>Local element</td><td style="color:${ELEMENT_COLORS[spec.element]}">${ELEMENT_LABELS[spec.element]}</td></tr>
+        </table>
+        ${this.previewBlock(previewForRun(sel))}
+        <p class="muted">Its table is the only place its items come from, and the top of
+        that table opens at a tier. Clearing it and banking opens the next one.</p>
+        <p class="danger">Solo, for now. Die and you lose every coin, key and item you
+        picked up in there.</p>
+        <p>Opening a portal doesn't dive — it spawns one on the deck. Walk into it when
+        you're ready.</p>
+        ${this.challengerNote()}
       </aside>`;
   }
 

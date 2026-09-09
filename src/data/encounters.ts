@@ -1,10 +1,11 @@
 /**
  * Which encounter a run's boss floor will actually spawn — the one answer, shared.
  *
- * There are four ways a boss gets picked and they take precedence over each other: the
- * Proving at the bottom of the Delve is the class (`legendBossSpec`), a Reliquary sector
- * is the sector (`planetBossSpec`), the Tower is the height (`towerBossSpec`), and
- * everything else works down the depth-bucketed ladder (`bossFor`). That is a small conditional, and it used to live inline in
+ * There are five ways a boss gets picked and they take precedence over each other: the
+ * Proving at the bottom of the Delve is the class (`legendBossSpec`), a raid is the raid
+ * (`raidBossSpec`), a Reliquary sector is the sector (`planetBossSpec`), the Tower is the
+ * height (`towerBossSpec`), and everything else works down the depth-bucketed ladder
+ * (`bossFor`). That is a small conditional, and it used to live inline in
  * `Dungeon.spawnBoss` where it was the only thing that needed it.
  *
  * It lives here now because the drop preview (UAT §20) has to ask the same question, and
@@ -26,6 +27,7 @@ import type { ClassId } from "./classes";
 import { legendBossSpec } from "./legends";
 import type { RunConfig } from "./modes";
 import { planetBossSpec } from "./planets";
+import { raidBossSpec } from "./raids";
 import { towerBossSpec } from "./tower";
 
 /**
@@ -40,6 +42,11 @@ import { towerBossSpec } from "./tower";
  */
 export function bossSpecForRun(config: RunConfig, proving: ClassId | null = null): BossSpec {
   if (proving) return legendBossSpec(proving);
+  // A raid *is* its encounter (UAT §15) — one floor, one mythological event — so it wins
+  // over every depth-derived answer below it. Ahead of the sector and the height for the
+  // same reason the Proving is ahead of everything: the more specific answer is the one
+  // the player was promised at the portal, and the §20 preview reads this same call.
+  if (config.raid) return raidBossSpec(config.raid.spec);
   if (config.planet) return planetBossSpec(config.planet.spec);
   // The ascent has its own five (UAT §21), borrowed and reskinned the same way a sector's
   // is, and picked by height rather than depth. Here rather than in `spawnBoss` for the

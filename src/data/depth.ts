@@ -198,15 +198,20 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
 /**
  * What a floor is made of.
  *
- * Three ways a run answers this and they take precedence over each other: a Reliquary
- * sector brings its own `BiomeStyle` wholesale, the Tower is bucketed by *height* into
- * the three bands of `data/tower.ts`, and everything else is the depth-bucketed `biomeFor`.
+ * Four ways a run answers this and they take precedence over each other: a raid and a
+ * Reliquary sector each bring their own `BiomeStyle` wholesale, the Tower is bucketed by
+ * *height* into the three bands of `data/tower.ts`, and everything else is the
+ * depth-bucketed `biomeFor`.
  *
  * It lives here as one function for the reason `data/encounters.ts` exists: the profile
  * and `generateLevel` both need the answer, and a floor whose HUD colour came from one
  * table while its walls came from another would be a bug nobody would think to look for.
  */
 export function biomeForRun(run: RunConfig): BiomeStyle {
+  // A raid is a place, not a depth (UAT §15): the arena belongs to the encounter, so the
+  // Ferryman's crossing looks like itself at every tier rather than like whichever Delve
+  // biome its effective depth happens to land in.
+  if (run.raid) return run.raid.spec.biome;
   if (run.planet) return run.planet.spec.biome;
   if (run.tower) return towerBiomeFor(run.tower.height);
   return biomeFor(run.depth);
@@ -216,7 +221,9 @@ export function biomeForRun(run: RunConfig): BiomeStyle {
 function buildTag(run: RunConfig): string {
   const parts: string[] = [];
   if ((run.players ?? 1) > 1) parts.push(`${run.players} players`);
-  if (run.planet) {
+  if (run.raid) {
+    parts.push(`${run.raid.spec.name} · T${run.raid.tier}`);
+  } else if (run.planet) {
     parts.push(`${run.planet.spec.name} · T${run.planet.tier} · Floor ${run.floor}/${run.planet.spec.floors}`);
   } else if (run.daily) {
     parts.push(`${run.mode.name} · ${run.daily.modifiers.map((id) => DAILY_MODIFIERS[id].name).join(" · ")}`);
