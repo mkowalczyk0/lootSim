@@ -1564,3 +1564,81 @@ html, body {
     grid-template-areas: "left right" "centre centre" "locked locked";
   }
 }
+
+/* --- the Augment view (docs/augments.md §6) -------------------------------
+   Three regions on purpose: the loadout is what you're editing, the grid is what you
+   own, and the actions live in the side panel's own chip row rather than being buried
+   at the bottom of the scrolling text that explains them. */
+
+.aug-loadout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.aug-slot {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--r, var(--line));
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.aug-slot:hover { border-color: var(--accent); }
+.aug-slot.on { border-color: var(--accent); background: var(--panel); }
+
+.aug-slot-axis {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.aug-slot-name { color: var(--r, var(--text)); font-weight: 600; }
+
+/* A grid that looks like a grid, so it navigates like one. */
+.aug-grid {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.aug-card {
+  flex: 0 0 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--r, var(--line));
+  background: var(--panel-2);
+  text-align: center;
+  cursor: pointer;
+}
+
+.aug-card:hover { border-color: var(--accent); }
+.aug-card.sel { border-color: var(--accent); background: var(--panel); }
+.aug-card img { image-rendering: pixelated; width: 44px; height: 44px; }
+.aug-card-name { font-size: 12px; color: var(--r, var(--text)); }
+
+.side p.warn { color: var(--danger); }

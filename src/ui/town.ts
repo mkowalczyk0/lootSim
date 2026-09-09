@@ -3,6 +3,10 @@ import { clamp, formatNumber } from "../core/math";
 import { challengerMultiplier, challengerName, MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHEST_CATEGORIES, CHESTS, CHEST_TIERS, chestName } from "../data/chests";
 import {
+  AUGMENT_AXES, AUGMENT_BY_ID, augmentAxisLabel, augmentsOnAxis, emptyLoadout,
+  loadoutProblems, loadoutSummary, withAugment, type AugmentAxis, type AugmentLoadout,
+} from "../data/augments";
+import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, COSMETIC_SLOT_LABELS,
   COSMETICS_BY_ID, EYE_COLORS, HAIR_COLORS, HAIR_STYLES, HAIR_STYLE_LABELS,
   OUTFIT_DYES, SKIN_TONES, type CosmeticSlot,
@@ -89,7 +93,7 @@ import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
-import { chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, relicArt, relicArtKey, weaponSprite } from "../render/sprites";
+import { augmentArt, chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, relicArt, relicArtKey, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
 import { pixelImage, pixelImageBody, pixelImageFit } from "./pixelimage";
 import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
@@ -99,6 +103,20 @@ import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
  * rift and the star map are destinations, not menu rows. Everything in `CYCLE_TABS` is
  * the Quartermaster's screen, browsed the old way with [I]/[O].
  */
+/**
+ * The Augment view's rows: the base chest plus one slot per axis, in that order. **The
+ * base comes first on purpose** — it is the thing that is always there, and putting it
+ * first is what makes "the default is always a Basic chest" visible rather than implied.
+ *
+ * `null` is the base row; every other row is the axis it edits. One row per axis is the
+ * whole of conflict resolution: two element augments cannot both be slotted because there
+ * is one element row.
+ */
+const AUGMENT_SLOTS: readonly (AugmentAxis | null)[] = [null, ...AUGMENT_AXES];
+
+/** One past the last real category: the Augment view. */
+const AUGMENT_CATEGORY = CHEST_CATEGORIES.length;
+
 const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
@@ -209,7 +227,7 @@ const FORGE_OP_GROUPS: readonly { label: string; ops: readonly ForgeOp[] }[] = [
 
 function tabHelp(
   tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMarked = 0,
-  altarMode: AltarMode = "vault",
+  altarMode: AltarMode = "vault", augmentView = false,
 ): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
@@ -242,7 +260,9 @@ function tabHelp(
         ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
-    case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
+    case "Chests": return augmentView
+      ? `${sel} pick a slot · ${adj} change what's in it · ${e} open · ${q} buy a key · ${semi} clear`
+      : `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
       + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk`);
@@ -276,8 +296,20 @@ export class TownUI {
   private tab: Tab = "Dive";
   private cursor = 0;
   private bulk = false;
-  /** Which of `CHEST_CATEGORIES` the chest shop's carousel is showing. */
+  /**
+   * Which of `CHEST_CATEGORIES` the chest shop's carousel is showing — or
+   * `AUGMENT_CATEGORY`, one past the end, which is the Augment view (`docs/augments.md`
+   * §6). A category rather than a separate tab because the brief asked for it "in the
+   * chests", and because a loadout without a chest under it is not a thing you can open.
+   */
   private chestCategory = 0;
+  /**
+   * The augment loadout being assembled. **Reset to a Basic chest every time the view is
+   * entered**, which is a rule and not a default (§5.2): augments never require an
+   * expensive chest, or the moment this whole system was designed around arrives with a
+   * shopping trip attached to it.
+   */
+  private loadout: AugmentLoadout = emptyLoadout();
   private rarityFilter: Rarity | "all" = "all";
   private riftMode: RunModeId = "hoard";
   /** Which Reliquary sector the gate screen is showing. */
@@ -387,8 +419,21 @@ export class TownUI {
       }
       const catEl = target.closest<HTMLElement>("[data-category]");
       if (catEl) {
-        this.chestCategory = Number(catEl.dataset.category);
-        this.cursor = 0;
+        // Through the same setter the keyboard uses, so entering the Augment view resets
+        // the loadout by either path rather than only one of them.
+        this.setChestCategory(Number(catEl.dataset.category));
+        this.render();
+        return;
+      }
+      const augEl = target.closest<HTMLElement>("[data-augment]");
+      if (augEl) {
+        const id = augEl.dataset.augment!;
+        // Clicking one you already have slotted takes it back out — the mouse mirror of
+        // cycling the ring back to "empty".
+        const axis = AUGMENT_BY_ID[id]?.effect.axis;
+        this.loadout = axis && this.loadout[axis] === id
+          ? { ...this.loadout, [axis]: null }
+          : withAugment(this.loadout, id);
         this.render();
         return;
       }
@@ -664,8 +709,7 @@ export class TownUI {
       // themselves are a left/right carousel within whichever category is showing.
       if (input.wasPressedOrRepeated("down") && count > 0) {
         if (this.tab === "Chests") {
-          this.chestCategory = (this.chestCategory + 1) % CHEST_CATEGORIES.length;
-          this.cursor = 0;
+          this.setChestCategory(this.chestCategory + 1);
         } else {
           this.cursor = (this.cursor + 1) % count;
         }
@@ -674,8 +718,7 @@ export class TownUI {
       }
       if (input.wasPressedOrRepeated("up") && count > 0) {
         if (this.tab === "Chests") {
-          this.chestCategory = (this.chestCategory - 1 + CHEST_CATEGORIES.length) % CHEST_CATEGORIES.length;
-          this.cursor = 0;
+          this.setChestCategory(this.chestCategory - 1);
         } else {
           this.cursor = (this.cursor - 1 + count) % count;
         }
@@ -731,7 +774,11 @@ export class TownUI {
         ? this.reforgeCandidates().length
         : this.forgeMode === "named" ? craftableNamed().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
-      case "Chests": return CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
+      // Five loadout slots in the Augment view (the base chest plus one per axis), the
+      // category's chests otherwise.
+      case "Chests": return this.augmentView
+        ? AUGMENT_SLOTS.length
+        : CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length + RELIC_SLOTS;
       case "Skills": return SKILL_SLOTS;
@@ -799,6 +846,9 @@ export class TownUI {
       return true;
     }
     if (this.tab === "Chests") {
+      // In the Augment view left/right cycles the focused slot's value rather than walking
+      // a carousel: the slot IS the choice, and there is nothing else on the row to walk.
+      if (this.augmentView) return this.cycleAugmentSlot(this.cursor, dir);
       const tiers = CHEST_CATEGORIES[this.chestCategory]!.tiers;
       this.cursor = (this.cursor + dir + tiers.length) % tiers.length;
       return true;
@@ -1314,6 +1364,7 @@ export class TownUI {
         break;
       }
       case "Chests": {
+        if (this.augmentView) { this.openLoadout(); break; }
         const tier = CHEST_CATEGORIES[this.chestCategory]!.tiers[this.cursor]!;
         const want = this.bulk ? 10 : 1;
         if (this.state.keys[tier] < want) {
@@ -1566,8 +1617,12 @@ export class TownUI {
         break;
       }
       case "Chests": {
-        const tier = CHEST_CATEGORIES[this.chestCategory]!.tiers[this.cursor]!;
-        const count = this.bulk ? 10 : 1;
+        // In the Augment view this key buys a key for the *base* chest, so a loadout can
+        // always be paid for without leaving the screen you assembled it on.
+        const tier = this.augmentView
+          ? this.loadout.base
+          : CHEST_CATEGORIES[this.chestCategory]!.tiers[this.cursor]!;
+        const count = this.augmentView || !this.bulk ? 1 : 10;
         const cost = CHESTS[tier].price * count;
         if (this.state.buyKey(tier, count)) {
           this.notify(`Bought ${count} ${chestName(tier)} key${count > 1 ? "s" : ""}`, CHESTS[tier].color);
@@ -1688,6 +1743,16 @@ export class TownUI {
       return;
     }
     if (this.tab === "Chests") {
+      // An augmented pull is always 1x and the view does not offer the button: ten
+      // simultaneous augmented opens is exactly the "a currency you spend routinely"
+      // failure mode the whole system is designed against, and the cheapest defence
+      // against it is not offering it.
+      if (this.augmentView) {
+        this.loadout = emptyLoadout();
+        this.notify("Loadout cleared. Back to a bare Basic chest.", "#9aa4b2");
+        this.render();
+        return;
+      }
       this.bulk = !this.bulk;
       this.notify(`Bulk: ${this.bulk ? "10×" : "1×"}`, "#9aa4b2");
       this.render();
@@ -1818,7 +1883,7 @@ export class TownUI {
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode, this.stashSelected.size, this.altarMode)}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode, this.stashSelected.size, this.altarMode, this.augmentView)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
@@ -3184,13 +3249,196 @@ export class TownUI {
    * blurb for whichever chest is selected lives in the aside, in real reading size,
    * rather than squeezed into the card itself.
    */
+  /** True when the chest screen is showing the Augment view rather than a shop category. */
+  private get augmentView(): boolean {
+    return this.tab === "Chests" && this.chestCategory === AUGMENT_CATEGORY;
+  }
+
+  /**
+   * Moves the chest carousel to a category, wrapping through the Augment view at the end.
+   * Entering the Augment view **resets the loadout to a bare Basic chest** — §5.2's rule,
+   * enforced at the one door into the screen rather than trusted to every exit out of it.
+   */
+  private setChestCategory(index: number): void {
+    const count = CHEST_CATEGORIES.length + 1;
+    const next = ((index % count) + count) % count;
+    if (next === AUGMENT_CATEGORY && this.chestCategory !== AUGMENT_CATEGORY) {
+      this.loadout = emptyLoadout();
+    }
+    this.chestCategory = next;
+    this.cursor = 0;
+  }
+
+  /** Everything the account owns on one axis, in registry order. */
+  private ownedOnAxis(axis: AugmentAxis): string[] {
+    return augmentsOnAxis(axis).filter((a) => this.state.augmentCount(a.id) > 0).map((a) => a.id);
+  }
+
+  /**
+   * Cycles one loadout row. For an axis the ring is `[empty, ...owned]`, so backing a slot
+   * out is always one press away; for the base row it is the surviving chest tiers.
+   */
+  private cycleAugmentSlot(row: number, dir: number): boolean {
+    const axis = AUGMENT_SLOTS[row];
+    if (axis === undefined) return false;
+    if (axis === null) {
+      const i = CHEST_TIERS.indexOf(this.loadout.base);
+      const next = (((i + dir) % CHEST_TIERS.length) + CHEST_TIERS.length) % CHEST_TIERS.length;
+      this.loadout = { ...this.loadout, base: CHEST_TIERS[next]! };
+      return true;
+    }
+    const ring: (string | null)[] = [null, ...this.ownedOnAxis(axis)];
+    if (ring.length === 1) return false;
+    const at = ring.indexOf(this.loadout[axis]);
+    const next = (((at + dir) % ring.length) + ring.length) % ring.length;
+    const id = ring[next]!;
+    this.loadout = id === null ? { ...this.loadout, [axis]: null } : withAugment(this.loadout, id);
+    return true;
+  }
+
+  /**
+   * Opens the loadout. Refuses with a printed reason rather than spending anything — a
+   * combine that cannot work is caught here, at authoring time, instead of being accepted
+   * and silently doing nothing inside the roll.
+   */
+  private openLoadout(): void {
+    const problems = loadoutProblems(this.loadout);
+    if (problems.length > 0) {
+      this.notify(problems[0]!, "#f87171");
+      return;
+    }
+    if (this.state.keys[this.loadout.base] <= 0) {
+      this.notify(`No ${chestName(this.loadout.base)} keys — ${k(this.state.settings, "cancel")} to buy one.`, "#fbbf24");
+      return;
+    }
+    const spent = AUGMENT_AXES.map((a) => this.loadout[a]).filter((id): id is string => id !== null);
+    const found = this.state.openAugmented(this.loadout, 1);
+    if (found.length === 0) {
+      this.notify("Nothing to open.", "#fbbf24");
+      return;
+    }
+    // Augments are consumed whatever came out, so a slot whose augment is now gone is
+    // cleared — leaving a spent id sitting in the loadout would read as "still armed".
+    let next = this.loadout;
+    for (const id of spent) {
+      const axis = AUGMENT_BY_ID[id]?.effect.axis;
+      if (axis && this.state.augmentCount(id) <= 0) next = { ...next, [axis]: null };
+    }
+    this.loadout = next;
+    // The same reel every other chest opens through, so an augmented pull is announced
+    // exactly as loudly as an ordinary one and there is one animation to keep working.
+    this.roll.play(
+      {
+        items: found,
+        title: `${chestName(this.loadout.base).toUpperCase()} · AUGMENTED`,
+        color: CHESTS[this.loadout.base].color,
+        skipHint: `${k(this.state.settings, "confirm")} or click — skip`,
+      },
+      () => {
+        this.lastPulls = found;
+        const best = found.reduce<Item | null>(
+          (b, it) => (!b || rarityIndex(it.rarity) > rarityIndex(b.rarity) ? it : b), null);
+        if (best) this.notify(`${rarityLabel(best.rarity)}: ${best.name}`, RARITY_COLORS[best.rarity]);
+        this.render();
+      },
+    );
+  }
+
+  /**
+   * The Augment view (`docs/augments.md` §6). Three regions, and the split is deliberate:
+   * the loadout is what you are editing, the grid is what you own, and the actions sit in
+   * their own fixed bar rather than being buried at the bottom of a scrolling panel that
+   * also explains things.
+   */
+  private renderAugments(): string {
+    const cats = this.chestCategoryStrip();
+    const problems = loadoutProblems(this.loadout);
+    const owned = this.state.ownedAugments().length;
+
+    const slots = AUGMENT_SLOTS.map((axis, i) => {
+      const on = i === this.cursor ? " on" : "";
+      if (axis === null) {
+        const info = CHESTS[this.loadout.base];
+        return `<div class="aug-slot${on}" data-index="${i}" style="--r:${info.color}">
+            <span class="aug-slot-axis">Base</span>
+            <span class="aug-slot-name">${escapeHtml(chestName(this.loadout.base))}</span>
+            <span class="badge">${this.state.keys[this.loadout.base]} keys</span>
+          </div>`;
+      }
+      const id = this.loadout[axis];
+      const def = id ? AUGMENT_BY_ID[id] : undefined;
+      const have = this.ownedOnAxis(axis).length;
+      const colour = def ? RARITY_COLORS[def.grade] : "#3a4152";
+      const name = def ? def.name : have > 0 ? "— empty —" : "— none owned —";
+      return `<div class="aug-slot${on}" data-index="${i}" style="--r:${colour}">
+          <span class="aug-slot-axis">${escapeHtml(augmentAxisLabel(axis))}</span>
+          <span class="aug-slot-name">${escapeHtml(name)}</span>
+          <span class="badge">${have}</span>
+        </div>`;
+    }).join("");
+
+    // The grid of what the account owns on the focused axis. Clicking one slots it; the
+    // keyboard cycles the same ring with left/right, so neither path is the special one.
+    const axis = AUGMENT_SLOTS[this.cursor] ?? null;
+    const grid = axis === null
+      ? `<p class="muted">The base chest the augments are requisitioned around.
+           ${escapeHtml(k(this.state.settings, "left"))}/${escapeHtml(k(this.state.settings, "right"))} to change it —
+           it always starts as a Basic chest, and it never needs to be more than one.</p>`
+      : augmentsOnAxis(axis).filter((d) => this.state.augmentCount(d.id) > 0).map((d) => `
+          <div class="aug-card ${this.loadout[axis] === d.id ? "sel" : ""}" data-augment="${escapeHtml(d.id)}"
+               style="--r:${RARITY_COLORS[d.grade]}">
+            <img src="${pixelImageFit(augmentArt(d), 44, 44, `augment.${d.id}`)}" alt="">
+            <span class="aug-card-name">${escapeHtml(d.name)}</span>
+            <span class="badge">×${this.state.augmentCount(d.id)}</span>
+          </div>`).join("")
+        || `<p class="muted">No ${escapeHtml(augmentAxisLabel(axis).toLowerCase())} augments yet.</p>`;
+
+    const pulls = this.lastPulls.length
+      ? this.lastPulls.map((it) => `<li style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}
+           <em>${escapeHtml(statLine(it))}</em></li>`).join("")
+      : '<li class="muted">Nothing opened yet.</li>';
+
+    return `<div class="chests-pane">
+        <div class="chest-cats">${cats}</div>
+        <div class="aug-loadout">${slots}</div>
+        <div class="aug-grid">${grid}</div>
+      </div>
+      <aside class="side">
+        <h3>Outcome</h3>
+        <p class="chest-desc">${escapeHtml(loadoutSummary(this.loadout))}</p>
+        ${problems.length > 0
+          ? `<p class="warn">${escapeHtml(problems[0]!)}</p>`
+          : `<p class="muted">Consumes 1 ${escapeHtml(chestName(this.loadout.base))} key${
+              AUGMENT_AXES.filter((a) => this.loadout[a]).length > 0
+                ? ` and ${AUGMENT_AXES.filter((a) => this.loadout[a]).length} augment(s)`
+                : ""}.</p>`}
+        <p>
+          <span class="chip" data-action="primary">${k(this.state.settings, "confirm")} · open</span>
+          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} · clear</span>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · buy a key</span>
+        </p>
+        <h3>Last pull</h3>
+        <ul class="pulls">${pulls}</ul>
+        <p class="muted">${owned > 0
+          ? "Augments are consumed whatever comes out. One per axis — a second of the same kind swaps the first out."
+          : "Augments drop in Avarice Rifts, and once each from the Vigil and the Convergence. They are found, never bought."}</p>
+      </aside>`;
+  }
+
+  /** The category strip, shared by both chest views so the Augment tab sits in the row. */
+  private chestCategoryStrip(): string {
+    const labels = [...CHEST_CATEGORIES.map((c) => c.label), "Augments"];
+    return labels.map((label, i) => `
+      <div class="chest-cat ${i === this.chestCategory ? "on" : ""}" data-category="${i}">${escapeHtml(label)}</div>
+    `).join("");
+  }
+
   private renderChests(): string {
+    if (this.augmentView) return this.renderAugments();
     const n = this.bulk ? 10 : 1;
     const cat = CHEST_CATEGORIES[this.chestCategory]!;
 
-    const cats = CHEST_CATEGORIES.map((c, i) => `
-      <div class="chest-cat ${i === this.chestCategory ? "on" : ""}" data-category="${i}">${escapeHtml(c.label)}</div>
-    `).join("");
+    const cats = this.chestCategoryStrip();
 
     const cards = cat.tiers.map((tier, i) => {
       const info = CHESTS[tier];
