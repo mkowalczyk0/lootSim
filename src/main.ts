@@ -2,7 +2,9 @@ import { GameLoop } from "./core/loop";
 import { Input, isEditableTarget } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
-import { delveConfig, MODES, modeUnlocked, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
+import {
+  delveConfig, MODES, modeUnlocked, riftConfig, trainingConfig, type RunConfig, type RunModeId,
+} from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { memoryConfig } from "./data/memories";
 import { dailyUnlocked } from "./data/daily";
@@ -351,6 +353,10 @@ function start(state: GameState, who: AccountInfo): void {
         break;
       }
       case "altar": enterTown("Altar"); break;
+      case "training":
+        state.player.fullHeal();
+        enterDungeon(trainingConfig(state.challengerTier));
+        break;
       case "vigil": enterTown("Vigil"); break;
       case "convergence": enterTown("Convergence"); break;
       case "memoryPortal": {

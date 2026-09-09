@@ -28,7 +28,7 @@ import {
   HUB_HEIGHT, HUB_WIDTH, stationLore, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
-import { DECK_INTERIOR_WALLS, DECK_SPACE, DECK_WALLS } from "../game/deck";
+import { DECK_INTERIOR_WALLS, DECK_SPACE, DECK_WALLS, PAINTED_HALL_WIDTH } from "../game/deck";
 import type { Wall } from "../game/level";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import { heroSprite } from "./sprites";
@@ -49,13 +49,16 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   // that is neither Heaven's gold nor a wound: a Memory is a place being held still
   // rather than a place being torn open.
   altar: "#67e8f9", memoryPortal: "#67e8f9",
+  // Deliberately unassuming: every other colour on this deck means something about the
+  // war. The dummy isn't part of it, and its ring shouldn't read as if it were.
+  training: "#94a3b8",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
  *  Everything else is a relic already painted into the deck image. */
 const PORTAL_KINDS = new Set<HubStationKind>([
   "dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower", "raidPortal",
-  "memoryPortal",
+  "memoryPortal", "training",
 ]);
 /**
  * Terminals the Citadel deck art does *not* have painted into it, so they draw their own
@@ -264,10 +267,17 @@ function bakeDeck(): { canvas: HTMLCanvasElement; look: DeckLook } {
     // Stamped from real stone, walls and all — nothing left to draw.
     look = "tiled";
   } else if (scene) {
-    c.drawImage(scene, 0, 0, HUB_WIDTH, HUB_HEIGHT);
+    // The build-tester room sits past the width the painting was authored for — flat-
+    // bake that strip first (the look the whole hall has before any art loads) and then
+    // stretch the painting over only the width it actually covers, or the room's own
+    // walls and floor would be squeezed into a relic that was never drawn for them.
+    flatDeck(c);
+    c.drawImage(scene, 0, 0, PAINTED_HALL_WIDTH, HUB_HEIGHT);
     // The painting already shows the hall's outer wall. Anything authored inside the ring
-    // is not in it and has to be drawn, or it would be an invisible obstacle.
+    // is not in it and has to be drawn, or it would be an invisible obstacle — and so is
+    // every wall east of the painting, room included.
     drawDeckWalls(c, DECK_INTERIOR_WALLS);
+    drawDeckWalls(c, DECK_WALLS.filter((w) => w.x >= PAINTED_HALL_WIDTH));
     look = "painted";
   } else {
     flatDeck(c);

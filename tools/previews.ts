@@ -397,6 +397,8 @@ console.log("\n=== a mode says what it is a consequence of, not only what it pay
     "warTable", "raidPortal",
     // The Memory pair: the Altar and the portal it opens, on the same contract.
     "altar", "memoryPortal",
+    // The build-tester room: one door, no config screen, so it's its own pair-of-one.
+    "training",
   ];
   const notDoors: HubStationKind[] = ["forge", "quartermaster", "comms"];
   check("every station kind is on the deck under test", [...doors, ...notDoors].every((k) => kinds.has(k)),

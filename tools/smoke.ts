@@ -34,7 +34,9 @@ import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
 import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
-import { EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, type RunConfig } from "../src/data/modes";
+import {
+  EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, trainingConfig, type RunConfig,
+} from "../src/data/modes";
 import {
   DAILY_DEPTH_MAX, DAILY_DEPTH_MIN, DAILY_KEY_ODDS, DAILY_MODIFIERS, DAILY_MODIFIER_IDS, DAILY_UNLOCK_DEPTH,
   DAY_MS, dailyConfig, dailyEffects, dailyPlan, dailyUnlocked, dayNumber, daySeed, msUntilReset,
@@ -1417,7 +1419,8 @@ console.log("\n=== the Citadel deck (the hub, on the tile lattice) ===");
   const kinds = all.stations.map((s) => s.kind).sort();
   const expected = ([
     "abyss", "altar", "comms", "convergence", "dive", "expedition", "forge", "hoard",
-    "memoryPortal", "quartermaster", "raidPortal", "starmap", "tower", "vigil", "warTable",
+    "memoryPortal", "quartermaster", "raidPortal", "starmap", "tower", "training", "vigil",
+    "warTable",
   ] as string[]).sort();
   check("every station the deck used to hold is still on it",
     kinds.length === expected.length && kinds.every((k, i) => k === expected[i]),
@@ -1470,6 +1473,47 @@ console.log("\n=== the Citadel deck (the hub, on the tile lattice) ===");
   }
   check("walking flat into the walls never leaves the hall or ends up inside the stone",
     escaped === 0, `${escaped} of 8 directions`);
+}
+
+console.log("\n=== the build-tester room: a dummy, and nothing else ===");
+{
+  const st = geared(20, 5501, 12, "lancer");
+  // Everything a training session must leave untouched — the persistent, save-level
+  // half of the character. `combatStats` (the DPS overlay this room exists for) is
+  // deliberately excluded: that number is supposed to move, every time.
+  const snapshot = () => JSON.stringify({
+    coins: st.coins, gems: st.gems, keys: st.keys, materials: st.materials,
+    xp: st.player.xp, level: st.player.level, treePoints: st.player.universalAllocated,
+    deepestDepth: st.stats.deepestDepth, highestHeight: st.stats.highestHeight,
+    frontier: st.frontier, inventory: st.inventory.length, runsCompleted: st.stats.runsCompleted,
+    riftTiers: st.riftTiers,
+  });
+  const before = snapshot();
+
+  const result = playFloor(st, trainingConfig(st.challengerTier), 15, 5502, 0.6);
+  const d = result.d;
+  check("the floor spawns exactly one enemy, and it's the dummy",
+    d.enemies.length === 1 && d.enemies[0]?.archetype.kind === "dummy",
+    d.enemies.map((e) => e.archetype.kind).join(","));
+  const dummy = d.enemies[0]!;
+  check("the dummy resists nothing — every element lands at full value",
+    Object.values(dummy.resists).every((v) => v === 0));
+  check("a real fifteen-second fight through the actual damage path still couldn't kill it",
+    dummy.health >= 1, `${dummy.health} / ${dummy.maxHealth}`);
+  check("…and it took real damage rather than never being touched",
+    dummy.health < dummy.maxHealth, `${dummy.health} / ${dummy.maxHealth}`);
+  check("the dummy never dealt the player a point of damage back",
+    d.localHero.player.health === d.localHero.player.maxHealth,
+    `${d.localHero.player.health} / ${d.localHero.player.maxHealth}`);
+  check("the objective can never read met — no completion portal ever spawns",
+    !d.floorQuotaMet() && d.completionPortal === null);
+
+  // Bail out the only way this floor can end, and confirm the character came back
+  // exactly as it went in. This is the same promise `data/cosmetics.ts`'s powerlessness
+  // is held to, asserted the same way: not by inspection, by comparing the whole sheet.
+  d.earlyExtractLoot();
+  check("a training session leaves the character byte-identical",
+    snapshot() === before, snapshot());
 }
 
 console.log("\n=== the ship hub ===");

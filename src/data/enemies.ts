@@ -3,7 +3,10 @@ import type { Element } from "./elements";
 
 export type EnemyKind =
   | "grunt" | "archer" | "brute" | "swarmer" | "caster" | "boss"
-  | "charger" | "bomber" | "shieldbearer" | "summoner" | "sniper" | "leech";
+  | "charger" | "bomber" | "shieldbearer" | "summoner" | "sniper" | "leech"
+  // The build-tester room's dummy — never rolled by the wave director (`weight: 0`,
+  // same guarantee `boss` already relies on). See `ARCHETYPES.dummy`.
+  | "dummy";
 
 /**
  * What a monster does beyond "walk at the player and swing" (UAT §2). The five original
@@ -118,6 +121,21 @@ export const ARCHETYPES: Record<EnemyKind, EnemyArchetype> = {
     health: 14, damage: 2.4, speed: 0.75, radius: 22, xp: 12, lootWeight: 14,
     standoff: 0, attackRange: 46, attackCooldown: 1.2, ranged: false,
     weight: 0, minDepth: 5, element: "physical", resist: 45,
+  },
+  /**
+   * The build-tester room's dummy (`game/dungeon.ts`'s `spawnDummy`). `weight: 0` is the
+   * same guarantee `boss` already relies on: the ordinary weighted archetype roll never
+   * reaches it, so it cannot turn up on a real floor by accident. Every number here is a
+   * placeholder — `spawnDummy` builds the enemy by hand rather than through the normal
+   * archetype pipeline, so nothing here is actually read at spawn time; it exists so the
+   * `Record<EnemyKind, EnemyArchetype>` stays exhaustive and every other system that
+   * switches on `EnemyKind` has an entry to be exhaustive about too.
+   */
+  dummy: {
+    kind: "dummy", name: "Training Dummy", behavior: "melee",
+    health: 0, damage: 0, speed: 0, radius: 14, xp: 0, lootWeight: 0,
+    standoff: 0, attackRange: 0, attackCooldown: 0, ranged: false,
+    weight: 0, minDepth: 0, element: "physical", resist: 0,
   },
 };
 

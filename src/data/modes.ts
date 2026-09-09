@@ -50,6 +50,7 @@ import type { WeeklyRun } from "./weekly";
 
 export const RUN_MODES = [
   "delve", "abyss", "hoard", "planet", "vigil", "convergence", "tower", "raid", "memory",
+  "training",
 ] as const;
 export type RunModeId = (typeof RUN_MODES)[number];
 
@@ -313,6 +314,33 @@ export const MODES: Record<RunModeId, RunMode> = {
     dangerPerTier: 1, rarityBias: 0, quantity: 1,
     coinMult: 1, keyMult: 1, gemMult: 1, xpMult: 1, unlockDepth: 0,
   },
+  /**
+   * The build-tester room (`data/training.ts`): one dummy, no encounter, no reward.
+   *
+   * One floor, `isRift: true` for the same reason a raid is — a fixed run ending in the
+   * one thing on it — but every reward multiplier below is zero and `rarityBias`/
+   * `quantity` are zero too, which is what makes "can't exist in a run" structural
+   * rather than promised: nothing in `data/drops.ts` lists `training` as a source, so
+   * there is no table for a future change to accidentally wire up, and the reward curve
+   * (`data/rewards.ts`) has nothing to multiply even if one did. `baseDepth`/
+   * `dangerPerTier` are nominal and fixed at the gentlest possible reading (depth 1,
+   * danger 1) — a build-tester compares two builds against each other, not against a
+   * scaled difficulty, so the target has to be the same target every time regardless of
+   * how deep the account has gone. `unlockDepth: 0` because it is a tool, not a reward
+   * for progress; nothing about clearing it opens anything either — see `recordDepth`.
+   */
+  training: {
+    id: "training", name: "Training Dummy", short: "Training",
+    blurb: "One dummy, no encounter, no reward. Hit it and read the numbers.",
+    lore: "The Keepers keep one behind a door off the Citadel hall for every Legend who "
+      + "shows up certain their new grip is faster than the last one. It has no opinion "
+      + "about the war. It barely has an opinion about being hit.",
+    color: "#94a3b8",
+    isRift: true, floors: 1,
+    baseDepth: 1, depthPerTier: 0, depthPerFloor: 0,
+    dangerPerTier: 1, rarityBias: 0, quantity: 0,
+    coinMult: 0, keyMult: 0, gemMult: 0, xpMult: 0, unlockDepth: 0,
+  },
 };
 
 /** One floor's worth of run configuration. Everything downstream reads this. */
@@ -417,6 +445,28 @@ export function riftConfig(modeId: RunModeId, tier: number, floor: number, chall
     bossFloor: f === mode.floors,
     lastFloor: f === mode.floors,
     challengerTier,
+  };
+}
+
+/**
+ * The build-tester room. `danger` is pinned at exactly 1 regardless of the Challenger
+ * dial — the dial exists to make content harder and pay better, and this floor does
+ * neither (the dummy's stats are fixed in `game/dungeon.ts`'s `spawnDummy`, its
+ * resistances are all zero, and every reward multiplier on the mode itself is zero), so
+ * letting Challenger nudge `danger` here would only put a "Death March" label on a
+ * floor that number does nothing to.
+ */
+export function trainingConfig(challengerTier = 0, players = 1): RunConfig {
+  return {
+    mode: MODES.training,
+    tier: 0,
+    floor: 1,
+    depth: 1,
+    danger: 1,
+    bossFloor: true,
+    lastFloor: true,
+    challengerTier,
+    players,
   };
 }
 

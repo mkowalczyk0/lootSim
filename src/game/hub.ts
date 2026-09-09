@@ -47,6 +47,7 @@ const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   vigil: "vigil", convergence: "convergence", tower: "tower",
   warTable: "raid", raidPortal: "raid",
   altar: "memory", memoryPortal: "memory",
+  training: "training",
   forge: null, quartermaster: null, comms: null,
 };
 
@@ -69,7 +70,8 @@ export interface HubMate {
   appearance: Appearance | null;
 }
 
-/** The hall's world size, straight off the deck grid — 20 x 15 tiles. */
+/** The hall's world size, straight off the deck grid — 30 x 15 tiles now that the
+ *  build-tester room extends it east. */
 export const HUB_WIDTH = DECK_WIDTH;
 export const HUB_HEIGHT = DECK_HEIGHT;
 
@@ -94,6 +96,7 @@ const STATION_LABEL: Record<HubStationKind, string> = {
   warTable: "The War Table", raidPortal: "Raid Portal",
   altar: "The Altar", memoryPortal: "Memory Portal",
   tower: "The Tower", vigil: "The Vigil", convergence: "The Convergence",
+  training: "Training Dummy",
 };
 
 const STATION_RADIUS: Record<HubStationKind, number> = {
@@ -103,6 +106,7 @@ const STATION_RADIUS: Record<HubStationKind, number> = {
   warTable: 20, raidPortal: 22,
   altar: 20, memoryPortal: 22,
   tower: 22, vigil: 22, convergence: 22,
+  training: 18,
 };
 
 /** A station, placed on its anchor tile. */
@@ -115,6 +119,7 @@ function station(kind: HubStationKind): HubStation {
  *  `Hub.stations`, which is the one place that decides what is open right now. */
 const ALWAYS_OPEN: readonly HubStationKind[] = [
   "dive", "abyss", "hoard", "starmap", "forge", "quartermaster", "comms", "warTable",
+  "training",
 ];
 
 /** How far past a portal's own radius still counts as standing in it for the party

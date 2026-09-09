@@ -84,6 +84,10 @@ import type { GameState } from "./state";
 
 const PLAYER_SPEED = 155;
 const PLAYER_RADIUS = 9;
+/** The build-tester room's dummy: high enough that a real testing session dents it
+ *  visibly without ever running it out — `damageEnemy` clamps it at 1, the same way a
+ *  death-guarded hero never quite hits 0. */
+const DUMMY_HEALTH = 500_000;
 const DASH_SPEED = 470;
 const DASH_TIME = 0.14;
 const DASH_COOLDOWN = 0.75;
@@ -456,6 +460,14 @@ export class Dungeon implements CombatHost, RuleHost {
   wave = 0;
   /** The one enemy that is a raid boss, while it lives. */
   boss: Enemy | null = null;
+  /**
+   * The build-tester room's own single-spawn guard, kept off `boss` on purpose — the
+   * dummy is not a real boss (`Enemy.boss` stays null on it, so the boss HUD frame, the
+   * boss-death reward path in `killEnemy` and `updateBoss`'s AI all correctly never see
+   * it), so `spawnBurst`'s "one boss-shaped floor, one spawn" guard needs its own flag
+   * rather than reusing `!this.boss`.
+   */
+  private dummySpawned = false;
   /** Elites spawned / killed on this floor — the mini-boss tier is rate-limited per floor
    *  (UAT §4) and the counts feed the floor-clear objective (UAT §5). */
   private elitesSpawned = 0;
@@ -777,6 +789,14 @@ export class Dungeon implements CombatHost, RuleHost {
    * which also happens to be exactly the shape a cleave or an arc wants to eat.
    */
   private spawnBurst(): void {
+    if (this.config.mode.id === "training") {
+      if (!this.dummySpawned) {
+        this.spawnDummy();
+        this.dummySpawned = true;
+      }
+      this.queued = Math.max(0, this.queued - 1);
+      return;
+    }
     if (this.profile.isBoss && !this.boss) {
       this.spawnBoss();
       this.queued = Math.max(0, this.queued - 1);
@@ -1050,6 +1070,34 @@ export class Dungeon implements CombatHost, RuleHost {
     this.boss = boss;
     this.events.push({ kind: "bossSpawn", name: spec.name, title: spec.title });
     this.events.push({ kind: "shake", amount: 14 });
+  }
+
+  /**
+   * The build-tester room's one enemy. Built through `makeEnemy` for the generic
+   * plumbing every `Enemy` needs (an id, a status container, the affix-state shape) and
+   * then overridden the same way `spawnBoss` overrides a borrowed template — health,
+   * damage, speed, element and resistances pinned to fixed, neutral numbers rather than
+   * anything `profileFor` would compute for a depth-1 floor. Zero resistance across
+   * every element on purpose (UAT: a build-tester comparing a fire build to a cold one
+   * needs a target that doesn't happen to favour either). `noAffixes: true` because a
+   * Stony or Frenzied dummy would be measuring the affix, not the build. `Enemy.boss`
+   * stays null — it is not a real boss, and nothing here gives it one.
+   */
+  private spawnDummy(): void {
+    const archetype = ARCHETYPES.dummy;
+    const spot = this.openSpot(archetype.radius, 150);
+    const base = this.makeEnemy(archetype, spot.x, spot.y, { noAffixes: true });
+    const dummy: Enemy = {
+      ...base,
+      name: "Training Dummy",
+      health: DUMMY_HEALTH, maxHealth: DUMMY_HEALTH,
+      damage: 0,
+      speed: 0,
+      element: "physical",
+      resists: zeroResists(),
+      knockResist: 1,
+    };
+    this.enemies.push(dummy);
   }
 
   /** Adds, thrown out by a boss ability. Chaff: weaker, and they evaporate with it. */
@@ -2667,6 +2715,11 @@ export class Dungeon implements CombatHost, RuleHost {
       dealt -= absorbed;
     }
     e.health -= dealt;
+    // "Takes damage and never dies" — the training dummy holds at 1 HP exactly the way a
+    // death-guarded hero does, rather than regenerating back to full: the bar reads as
+    // having actually taken the hit, and `e.health <= 0` below (the only path into
+    // `killEnemy`) can never see zero.
+    if (e.archetype.kind === "dummy") e.health = Math.max(1, e.health);
     e.hitFlash = 0.12;
     // Stats credit only a hit with a known author — an anonymous ailment tick or hazard
     // falls back to the nearest hero for kill-credit purposes below, but crediting that
