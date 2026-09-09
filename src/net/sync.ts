@@ -378,6 +378,15 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
     trap.state = wire[0] === 0 ? "idle" : wire[0] === 1 ? "warn" : "active";
     trap.t = wire[1]!;
     trap.angle = wire[2]!;
+    // A saw's *position* is derived, never sent: its track is generated deterministically
+    // from the seed, so `t` along that track is the whole story and two numbers stay off
+    // the wire. Deriving it is not optional, though — without this the snapshot moved the
+    // number and nothing moved the blade, so a client drew every saw parked at its track
+    // start while the host's blade patrolled and hurt them from somewhere else.
+    if (trap.kind === "saw") {
+      trap.x = trap.ax + (trap.bx - trap.ax) * trap.t;
+      trap.y = trap.ay + (trap.by - trap.ay) * trap.t;
+    }
   }
   d.level.resourceNodes.forEach((node, i) => {
     node.depleted = (s.nd & (1 << i)) !== 0;
