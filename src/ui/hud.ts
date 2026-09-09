@@ -35,6 +35,7 @@ export class Hud {
     this.drawLoot(ctx, d, w);
     this.drawSkills(ctx, d, w, h);
     this.drawControls(ctx, h, d);
+    if (d.settings.combatStats) this.drawCombatStats(ctx, d, h);
     if (d.boss) this.drawBossFrame(ctx, d, w);
     else this.drawEliteBars(ctx, d, w);
 
@@ -473,6 +474,69 @@ export class Hud {
       ctx.fillStyle = "#6b7480";
       ctx.fillText(`+${d.loot.items.length - 6} more`, x, y);
     }
+  }
+
+  /**
+   * The optional stats overlay (Settings → "Combat stats", off by default). A build-
+   * testing instrument, so every figure here is a direct read of something the
+   * simulation already computed honestly, never a second guess:
+   *
+   * - DPS (5s) / DPS (avg), total damage, largest hit, damage taken and healing done all
+   *   come straight off `Hero.combatStats` — the same accumulator `game/dungeon.ts`
+   *   updates at the one place each of those numbers is actually resolved (see
+   *   `game/combatStats.ts`'s header). Nothing here holds its own tally.
+   * - Attack speed and move speed are read off `Player.attackCooldown` /
+   *   `Player.moveMult` directly — the exact numbers the sim itself swings and walks
+   *   by — rather than timed from the outside, which would be an approximation of a
+   *   number the game already has exactly.
+   *
+   * Local hero only, on purpose: a "party DPS" that silently omitted remote heroes
+   * would be a wrong number wearing a right label, and the figures a build-tester
+   * actually wants are about the character they're playing.
+   */
+  private drawCombatStats(ctx: CanvasRenderingContext2D, d: Dungeon, h: number): void {
+    const stats = d.localHero.combatStats;
+    const p = d.localHero.player;
+    // `formatNumber`'s K/M rounding is right for a coin counter and wrong here: this
+    // readout exists to catch a small delta a tree respec made, and "12K" hides exactly
+    // the digits that would show it. Full precision, comma-grouped.
+    const exact = (n: number) => Math.round(n).toLocaleString("en-US");
+    const rows: [string, string][] = [
+      ["DPS (5s)", exact(stats.rollingDps(d.elapsed))],
+      ["DPS (avg)", exact(stats.averageDps(d.elapsed))],
+      ["Dmg dealt", exact(stats.totalDamageDealt)],
+      ["Largest hit", exact(stats.largestHit)],
+      ["Dmg taken", exact(stats.totalDamageTaken)],
+      ["Healing done", exact(stats.totalHealingDone)],
+      ["Attack speed", `${(1 / p.attackCooldown).toFixed(2)}/s`],
+      ["Move speed", `${p.moveMult >= 1 ? "+" : ""}${Math.round((p.moveMult - 1) * 100)}%`],
+    ];
+
+    const x = 18;
+    const panelW = 176;
+    const rowH = 15;
+    const panelH = rows.length * rowH + 26;
+    const y = h - 24 - 12 - panelH;
+    panel(ctx, x, y, panelW, panelH);
+
+    ctx.textAlign = "left";
+    ctx.font = `bold 11px ${MONO}`;
+    ctx.fillStyle = "#7dd3fc";
+    ctx.fillText("COMBAT STATS", x + 10, y + 8);
+
+    let ry = y + 28;
+    for (const [label, value] of rows) {
+      ctx.textAlign = "left";
+      ctx.font = `10px ${MONO}`;
+      ctx.fillStyle = "#9aa4b2";
+      ctx.fillText(label, x + 10, ry);
+      ctx.textAlign = "right";
+      ctx.font = `bold 11px ${MONO}`;
+      ctx.fillStyle = "#e8eef7";
+      ctx.fillText(value, x + panelW - 10, ry);
+      ry += rowH;
+    }
+    ctx.textAlign = "left";
   }
 
   private drawControls(ctx: CanvasRenderingContext2D, h: number, d: Dungeon): void {

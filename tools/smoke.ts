@@ -48,6 +48,7 @@ import {
 } from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
 import { towerConfig } from "../src/data/tower";
+import { CombatStats } from "../src/game/combatStats";
 import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
@@ -2977,6 +2978,59 @@ console.log("\n=== gems and the wardrobe ===");
   check("cosmetics never touch your numbers", JSON.stringify(dressed.player.mods) === before);
   check("wearing everything fills every slot",
     COSMETIC_SLOTS.every((slot) => dressed.appearance[slot] !== null));
+}
+
+console.log("\n=== combat stats overlay: powerless, like cosmetics ===");
+{
+  // Everything a run's outcome could depend on: not the whole `Dungeon` (an `Rng`
+  // instance, event queues and the rest don't survive `JSON.stringify` cleanly), just
+  // the numbers that would diverge first if the overlay ever changed how a tick played
+  // out — health, resources, position, kills, loot, and every enemy's own state.
+  function outcomeSnapshot(d: Dungeon): string {
+    const hero = d.localHero;
+    return JSON.stringify({
+      phase: d.phase, elapsed: d.elapsed, wave: d.wave,
+      killsSoFar: d.killsSoFar, elitesKilled: d.elitesKilled,
+      health: hero.player.health, mana: hero.player.mana,
+      xp: hero.player.xp, level: hero.player.level, downed: hero.downed,
+      avatar: { x: hero.avatar.x, y: hero.avatar.y, facing: hero.avatar.facing },
+      // Item ids come off a module-level counter (`nextId` in game/item.ts) rather than
+      // anything the run itself produced, so two back-to-back runs in the same process
+      // never share numbering even when they're otherwise identical — strip it, keep
+      // everything the roll actually decided (rarity, stats, mods, affixes, name).
+      loot: { ...hero.loot, items: hero.loot.items.map(({ id: _id, ...rest }) => rest) },
+      enemies: d.enemies.map((e) => ({ id: e.id, x: e.x, y: e.y, health: e.health, kind: e.archetype.kind })),
+    });
+  }
+
+  const off = geared(14, 7711, 12, "lancer");
+  const on = geared(14, 7711, 12, "lancer");
+  on.settings.combatStats = true;
+  check("the setting starts off by default", !off.settings.combatStats && !new GameState().settings.combatStats);
+
+  const runOff = playFloor(off, 9, 90, 4141, 0.6);
+  const runOn = playFloor(on, 9, 90, 4141, 0.6);
+  check("a run plays out identically whether the overlay is on or off",
+    outcomeSnapshot(runOff.d) === outcomeSnapshot(runOn.d));
+
+  // The property that actually matters is that the *accumulator* runs regardless of the
+  // setting — the toggle only gates whether the HUD draws it — so the numbers a build-
+  // tester would read are there even with the overlay off, and turning it on doesn't
+  // create them out of nothing.
+  check("stats accumulate even with the overlay off, and match the overlay-on run exactly",
+    runOff.d.localHero.combatStats.totalDamageDealt > 0
+    && runOff.d.localHero.combatStats.totalDamageDealt === runOn.d.localHero.combatStats.totalDamageDealt
+    && runOff.d.localHero.combatStats.largestHit === runOn.d.localHero.combatStats.largestHit,
+    `${runOff.d.localHero.combatStats.totalDamageDealt} dealt`);
+
+  // A direct unit check on the clamp itself: heal for far more than the missing health
+  // and confirm only the missing health is recorded, not the amount requested.
+  const p = geared(20, 1).player;
+  p.health = p.maxHealth - 10;
+  const stats = new CombatStats();
+  stats.recordHealing(p.heal(p.maxHealth * 50));
+  check("healing records only what was actually restored, not the amount requested",
+    stats.totalHealingDone === 10, `recorded ${stats.totalHealingDone}, missing health was 10`);
 }
 
 console.log("\n=== controls ===");
