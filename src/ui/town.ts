@@ -1217,7 +1217,7 @@ export class TownUI {
         }
         const tier = Math.min(this.cursor + 1, raidTiersOpen(spec, this.state.raidProgress));
         this.onRaid(spec, tier);
-        this.notify(`Portal opened for ${spec.name} T${tier} — find it back at the ship.`, "#f472b6");
+        this.notify(`Portal opened for ${spec.name} T${tier} — find it back at the Citadel.`, "#f472b6");
         break;
       }
       case "StarMap": {
@@ -1230,7 +1230,7 @@ export class TownUI {
         }
         const tier = this.cursor + 1;
         this.onExpedition(this.starMapPlanet, tier);
-        this.notify(`Portal opened for ${this.starMapPlanet.name} T${tier} — find it back at the ship.`, "#4ade80");
+        this.notify(`Portal opened for ${this.starMapPlanet.name} T${tier} — find it back at the Citadel.`, "#4ade80");
         break;
       }
       case "Altar": {
@@ -1811,7 +1811,7 @@ export class TownUI {
         <nav class="tabs">
           ${(STATION_TABS as readonly Tab[]).includes(this.tab)
             ? `<span class="tab on">${escapeHtml(STATION_LABELS[this.tab as StationTab])}</span>
-               <span class="tabhint">a station, not a tab — [${k(this.state.settings, "pause")}] back to the ship</span>`
+               <span class="tabhint">a station, not a tab — [${k(this.state.settings, "pause")}] back to the Citadel</span>`
             : `${CYCLE_TABS.map((t) =>
                 `<span class="tab ${t === this.tab ? "on" : ""}" data-tab="${t}">${t}</span>`).join("")}
                <span class="tabhint">[${k(this.state.settings, "tabPrev")}] / [${k(this.state.settings, "tabNext")}] switch, or click a tab</span>`}
@@ -1898,7 +1898,7 @@ export class TownUI {
       case "plan":
         this.notify(
           this.party.isHost
-            ? "Back out to the ship, walk into any portal and confirm it — that picks the party's run."
+            ? "Back out to the Citadel, walk into any portal and confirm it — that picks the party's run."
             : "The host picks the run by walking into a portal. You'll see it here.",
           "#9aa4b2",
         );
@@ -2047,7 +2047,7 @@ export class TownUI {
               <div class="row-side ${you || !ready ? "warn" : ""}">
                 ${you
                   ? "at the relay — you only count as ready while you're standing in the portal"
-                  : ready ? "in the portal" : "on the ship"}
+                  : ready ? "in the portal" : "at the Citadel"}
               </div>
             </div>`);
           break;
@@ -2075,7 +2075,7 @@ export class TownUI {
         them in. Then the <b>host walks into any portal</b> — the Delve, a rift, a sector
         from the Reliquary Gate — and confirms it; that portal becomes the party's. Everyone
         walks into it, and the run starts when the last person steps in, not before.
-        Standing at this terminal doesn't count; back out to the ship first.</p>
+        Standing at this terminal doesn't count; back out to the Citadel first.</p>
         <h3>What a party does to a floor</h3>
         <p>Monsters get tougher and there are more of them the more of you there are.
         They do not hit meaningfully harder — you still can't dodge for each other.</p>
