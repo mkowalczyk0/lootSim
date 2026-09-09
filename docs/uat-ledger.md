@@ -236,13 +236,42 @@ so the arena kit census has never counted an ultimate; a `minDepth` read off a u
 includes the reserved raid/tower kinds; and a `requireTags` gate tested against a tag the
 game can never emit.
 
-Fixed as two commits — the config guard first, then the eight — with a standing rule that a
-newly-red check is escalated, never pinned. `KNOWN_AUTHORED_VIOLATIONS` is for accepted
-design debt; using it for a fresh unknown failure would launder a bug into a sanctioned
-exception.
+**RESOLVED.** `npm run check` is now `tsc --noEmit && tsc --noEmit -p tsconfig.tools.json`,
+so the gate is inside the gate, in the command everyone already runs. All eight fixed; none
+of the repaired checks went red. In particular **the early-extract key forfeiture was always
+correct in production code** (`earlyExtractLoot` does `this.loot.keys = emptyKeys()`) — only
+its check was broken. It is now mutation-proved and prints its own counts
+(`4 keys carried, 0 -> 0 banked`), because a check whose only possible output was `0 -> 0`
+is precisely how it went quiet.
+
+A second `tsconfig.tools.json` rather than widening the existing include, so `src` keeps
+`"types": []` and the game half still cannot see Node's globals — one config would have
+handed `process` to `src/data/`, the exact layering rule that directory lives under.
+
+**Still open, and deliberately not counted as done:** five capabilities are
+reachable-but-untested — `consumeCorpses`, `commandSummons`, `sacrificeSummons`,
+`redirectDamage`, and zone targeting via `host.zones()`. Implemented so a check *can* be
+written; writing them is unscoped work.
+
+**Also logged, not done:** `CastResult` wants to be a discriminated union — `ok: true` should
+carry `targets`. Until it does, every call site is one optional chain away from silently
+reporting "reaches nothing" about an ability that reaches plenty.
 
 **A real crash in `AbilityRuntime.notify`** (`src/combat/runtime.ts`). It iterates
 `this.pending` backwards, splices inside the loop, and calls `runEffect`, which re-enters
 `notify` and splices again — so the outer index can end up past the end of a now-shorter
 array and `this.pending[i]!` reads `undefined`. The `!` is what hid it from the type system.
 Reproduced (duelist, depth 20, seed 72231); in a browser it ends the run. Being fixed.
+
+**Two live bugs fixed 2026-09-09**, both found while doing something else:
+
+- **A counter that caused the event it countered crashed the run.** `AbilityRuntime.notify`
+  *and* `tick` both walked `this.pending` by index and spliced as they went, then called
+  `runEffect` inside that walk — so a re-entrant emit spliced the same array and the outer
+  index read `undefined`. In a browser this ended the run and every unbanked item in it.
+  Fixed by claiming matching entries before any of them runs.
+- **Co-op clients drew stationary saws.** A snapshot sends three numbers per hazard and
+  deliberately omits a saw's position, since its track is deterministic from the seed and
+  `t` along it is the whole story — but nothing on the client ever turned `t` back into a
+  position. Found while mapping the trap wire for the Tower's regard ward, which needs the
+  same derivation and would otherwise have shipped the bug twice.
