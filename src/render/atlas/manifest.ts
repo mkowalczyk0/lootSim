@@ -19,6 +19,40 @@
  * clarity, nothing else.
  */
 
+/**
+ * One named span of frames inside a sprite's strip — a "tag", in the Aseprite sense.
+ *
+ * **Durations are in seconds, never in frames or ticks.** The sim runs at a fixed 60 Hz
+ * but rendering does not, and two players on 60 Hz and 144 Hz monitors have to see the
+ * same animation play at the same speed. A frame count would make animation speed a
+ * property of the viewer's hardware.
+ */
+export interface AnimTag {
+  /** First frame index of the span, inclusive. */
+  readonly from: number;
+  /** Last frame index of the span, inclusive. `from === to` is a legal one-frame tag. */
+  readonly to: number;
+  /** Seconds each frame is held. Must be > 0 — `npm run anim` refuses 0. */
+  readonly seconds: number;
+  /** Loop forever, or hold the last frame once the span has played through. */
+  readonly loop: boolean;
+}
+
+/**
+ * The animation table for a sprite whose PNG is a horizontal strip of frames.
+ *
+ * A sprite's `w`/`h` stay the size of **one frame**, so every existing consumer of a row
+ * — world scale, feet, the portrait sizing, the density tools — keeps reading the same
+ * numbers it always did. The strip's own width is `w * cols`, which is what `npm run anim`
+ * checks the PNG against.
+ */
+export interface AtlasAnim {
+  /** Frames across the strip. */
+  readonly cols: number;
+  /** Named spans. `idle` is the conventional fallback — see `render/anim.ts`. */
+  readonly tags: Readonly<Record<string, AnimTag>>;
+}
+
 export interface AtlasSprite {
   /** File id: the PNG basename without extension, e.g. `boss.corrupted-saint`. */
   readonly id: string;
@@ -37,6 +71,12 @@ export interface AtlasSprite {
    * read as hovering.
    */
   readonly feet: number;
+  /**
+   * Optional. Absent means this sprite is a single static frame and behaves exactly as it
+   * did before animation existed — this field is a **superset, not a migration**, and a
+   * row that never gains one is not a row that is behind.
+   */
+  readonly anim?: AtlasAnim;
 }
 
 /**
