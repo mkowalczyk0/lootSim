@@ -98,6 +98,30 @@ mattered — one candidate size looked safely past the line on the first sweep a
 to barely above it on the second. Widening a check's sample size needs the same two-pass
 discipline a design-promise comparison does, not a round number that merely looks careful.
 
+**A third lesson, and it reaches back and reframes the first (2026-09-09)**: measuring
+whether the sharp-vs-reckless campaign check had the same thinness, its margin was
+sampled across five disjoint 12-seed blocks. It read **2.42** on the hardcoded
+`CAMPAIGN_SEEDS`, then **2.92**, **4.83**, **6.08** — and **−0.33**. That last block is a
+live inversion: the reckless bot out-depthed the sharp one, reproduced on an arbitrary
+seed choice with **no code change at all**. So the check that this whole section is a
+story about can still invert today, and master's own seeds read comfortably not because
+the promise holds reliably but because those twelve seeds happen not to be a bad block.
+
+The refinement is worth stating plainly, because "assert it as a comparison" was the
+lesson everyone took from the original incident and it is **necessary but not
+sufficient**: *a comparison also needs power.* A thin comparison fails the same way a
+one-sided bound does — silently, and in whichever direction the seeds fall. It is
+entirely possible the original inversion was this thinness rather than (or as well as) a
+real regression; nobody can now tell, which is itself the argument for measuring a
+check's spread before trusting what it says.
+
+Deliberately **not fixed**. Widening this one is expensive in a way the telegraph check
+was not: ~85s per 12-seed block, ~7s per seed-side, so a full 8×8 power sweep here costs
+hours rather than minutes. That is a cost decision for the owner, not a follow-on to an
+unrelated change. **What must not happen is someone reading a green campaign check as
+proof the promise holds** — read this paragraph instead, and if you need the answer, pay
+for the sweep on purpose.
+
 ## The game loop (this is the design; respect it)
 
 Pick a class → the ship → walk to a portal or a terminal → **dive** → fight waves of
