@@ -621,13 +621,35 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   lands each on its predecessor's world footprint; `data/bosses.ts` `spriteScale` stays
   as the fallback for the procedural grids the smoke test still walks. 8 rotations per
   monster archived under `art/monsters/rotations/`.
-- `hero.legend-base` → the composed player. **v2 redraw (Sept 2026):** the plain low-res
-  hero read as out of place next to the redrawn bosses, so it was regenerated at
-  boss-level detail and fidelity (39×68, painterly plate/leather/cloak, still a plain calm
-  face per §1.3 — no hot accent, no sharp brows). World footprint unchanged (`worldScale`
-  0.471 lands the same ~32-unit height the v1 sprite had). 8 PixelLab rotations
-  re-archived under `art/characters/` for the eventual animation runtime; only `south` is
-  wired.
+- `hero.legend-base` → the composed player. **v4 redraw (Sept 2026), 39×57.** Playtest
+  feedback on the shipped hero was that he was *"really hard to look at and ugly, didn't
+  really fit in with the game"* — a verdict on the execution, not on §1.3's plain-calm
+  direction, which stands. Three defects, all in the art:
+  1. **No dominant mass.** He carried five competing hues — navy cloak, near-white chest
+     plate, brown boots, gold buckle, pink skin — so his silhouette broke into stripes
+     while every monster and boss is one low dirty colour (§1.4).
+  2. **The brightest thing on screen was his torso**, not anything meaningful: that
+     near-white plate out-read the hot accent on every monster in the frame.
+  3. **He had a hot accent** — two flat saturated-blue bars for eyes. §1.4 and the §19
+     checklist both forbid that on the hero specifically, because it is the monsters'
+     "the part that is looking at you" signal.
+
+  v4 answers all three: one unified charcoal/ash mass, nothing bright anywhere, and a
+  plain calm face with small dark eyes. The height went 48 → 57 because at 28px wide the
+  face was ~7px and physically could not hold a calm expression — this is §17.1's "author
+  larger, for clarity", not detail for its own sake. **57 is a ceiling, not a preference:**
+  `tools/smoke.ts` bounds the Hero/Style portrait spread at 12%, both composers scale by
+  whole numbers, and 59+ puts the Style tab over it. World footprint unchanged —
+  `worldScale` 0.5614 lands the same 32-unit height every previous version had, so no
+  hitbox, telegraph or camera geometry moves. 8 PixelLab rotations re-archived under
+  `art/characters/` for the eventual animation runtime; only `south` is wired.
+
+  *Correcting the record:* this bullet previously described a "v2 redraw … 39×68,
+  `worldScale` 0.471". No such sprite was ever committed — the file on disk was 28×48 at
+  `worldScale` 0.667 (a *lossless trim* of a 68px generation that simply did not fill its
+  canvas, not a downscale). The 39×68 figure came from an earlier 92px generation that was
+  documented and then replaced by a smaller one without the doc following. Both the sprite
+  and this paragraph are now measured off the committed PNG.
 - **Cosmetic layers (Sept 2026)** — the "a decorated hero still uses the old sprite"
   complaint this bullet used to document is now fixed for **9 of the 25** hat/ears/face/
   back cosmetic ids: `hatWitch`, `hatCrown` (shared with `hatUnspoken`), `earsCat`,
@@ -637,14 +659,33 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   the same reason the procedural `CHAR_W` is wider than its 20-wide body); a cosmetic worn
   in one of those four slots that *hasn't* migrated still falls the whole character back
   to the procedural stack, so a half-migrated wardrobe never mixes two art styles on one
-  body. **This is the concrete §17.4 "indexed-mode PNG + palette map" mechanism**, applied
-  to a PixelLab generation for the first time (the weapon tint below is a single-colour
-  overlay, not a real palette swap): each cosmetic PNG is Aseprite-quantized onto
-  `[ink, colors[0], colors[1], colors[2]]` and then `replace_color`'d onto three reserved
-  marker RGBs (`COSMETIC_MARK_1/2/3` in `manifest.ts`); `recoloredCosmetic` in
-  `sprites.ts` swaps those markers for a cosmetic's real colours at draw time via
+  body. **This is the concrete §17.4 "indexed-mode PNG + palette map" mechanism**: each
+  cosmetic PNG carries only `ink` plus three reserved marker RGBs (`COSMETIC_MARK_1/2/3`
+  in `manifest.ts`) standing in for `colors[0..2]`; `recoloredCosmetic` in `sprites.ts`
+  swaps those markers for a cosmetic's real colours at draw time via
   `getImageData`/`putImageData`, leaving the ink outline (never a marker) untouched. The
-  Style tab's wardrobe list (`cosmeticPreview`) reads the same migrated art. Left for a
+  Style tab's wardrobe list (`cosmeticPreview`) reads the same migrated art.
+
+  **All nine were re-authored for the v4 hero (Sept 2026)** and the method changed with
+  them. They were previously PixelLab generations quantized down to four colours, and the
+  quantize was destroying them — the wings came out one flat slab, the ears an
+  unrecognisable blob — because a generated image has nowhere near four colours' worth of
+  structure left after being crushed to four. At 15–70px an accessory is better *drawn*
+  than generated, so these are now authored as shapes: fill the silhouette, then §17.2's
+  outline pass, then interior detail, in a small shape kit. Three things this pass
+  learned, all of which cost a visible iteration:
+  - **Author in stage space, not in the sprite's own box.** Each piece is drawn onto the
+    full `HERO_STAGE_W`×`HERO_STAGE_H` canvas at the position it belongs, then trimmed —
+    so the trim offset *is* the manifest's `dx`/`dy`. Placement stops being a guess.
+  - **Measure the head, don't estimate it.** The eye band is hero rows 9–11, i.e. stage
+    y 34. The first pass put the glasses and visor at y 30 and they sat on his forehead.
+  - **A cosmetic's own `colors` decide what can carry structure.** `backAngel` is three
+    near-whites, so its feather separation has to be drawn in **ink** — the one key that
+    is never swapped — or it is invisible. `earsCat`'s `colors[0]` is near-black and
+    vanished into his hair, so the pink `colors[1]` carries the ear shape and the dark is
+    only a rim. Check the palette in `data/cosmetics.ts` *before* drawing.
+
+  Left for a
   follow-up session, not a design call made here: the other 16 hat/ears/face/back ids
   (same recipe, just unrun); the 7 weapon skins (`WeaponPalette` has four regions, not
   three, and would mean re-processing the 14 already-shipped `ATLAS_WEAPONS` PNGs, a

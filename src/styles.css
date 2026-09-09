@@ -557,13 +557,17 @@ html, body {
  * The character portrait is bottom-aligned and pinned, not hugging its image. Whether a
  * character composes from the art pipeline or falls back to the procedural stack depends
  * on what it's wearing (see `heroSprite`), and the two canvases carry different amounts of
- * hat-headroom above the same-sized body — 204px tall against 182px here. Pinning the
+ * hat-headroom above the same-sized body — 243px tall against 182px here. Pinning the
  * taller of the two keeps the aside below from jumping when a migrated hat goes on; the
  * body stands on the box floor either way, because both canvases put the feet on their
  * own bottom row.
+ *
+ * The pipeline figure grew from 204px to 243px with the v4 hero redraw (a 57-row hero on
+ * an 81-row stage, drawn x3 here), so this pin grew with it — `tools/smoke.ts` reads the
+ * number straight out of this file and fails if it stops clearing the taller canvas.
  */
 .portrait.hero {
-  height: 220px;
+  height: 264px;
 }
 
 .portrait.weapon {
@@ -1443,9 +1447,9 @@ html, body {
 }
 
 /*
- * Pinned for the same reason as `.portrait.hero`: the pipeline stage is 272px tall here
+ * Pinned for the same reason as `.portrait.hero`: the pipeline stage is 243px tall here
  * against the procedural stack's 208px, and without a fixed height the class name, level
- * and XP track below would all shift down 64px the moment a character's whole wardrobe
+ * and XP track below would all shift down 35px the moment a character's whole wardrobe
  * happened to be migrated art. Bottom-aligned, so the feet stay put and the spare room
  * is headroom over the hat.
  */

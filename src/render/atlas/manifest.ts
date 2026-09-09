@@ -50,13 +50,29 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // `ATLAS_COSMETICS` below and `composePipelineHero` in `render/sprites.ts` — only a
   // still-unmigrated cosmetic in the hat/ears/face/back slots does that now.
   //
-  // v3 redraw (Sept 2026): re-authored at the Citadel deck's pixel pitch — chunkier and
-  // stockier, low top-down, muted stone palette — so the hero reads as standing *in* the
-  // world, not pasted over it (the owner's "two PNGs on top of each other" note). Still
-  // the plain calm face. Footprint unchanged: 48 * 0.667 = 32, the same height as v1/v2,
-  // so no hitbox / telegraph / camera moves. The hub draws it larger through its own
-  // figure-height rule (render/hub.ts) — cosmetic and local to the hub scene.
-  "hero.legend-base": { id: "hero.legend-base", w: 28, h: 48, worldScale: 0.667, feet: 0.03 },
+  // v4 redraw (Sept 2026): playtest feedback on v3 was that the hero was "really hard to
+  // look at and ugly, didn't really fit in with the game". Three defects, all in the art:
+  // (1) he carried five competing hues — navy cloak, near-white chest plate, brown boots,
+  // gold buckle, pink skin — with no dominant mass, so the silhouette broke into stripes
+  // while every monster and boss is one low dirty colour; (2) that near-white plate was
+  // the brightest thing in any frame, pulling the eye to his torso; (3) his eyes were two
+  // flat saturated blue bars, i.e. a **hot accent on the hero**, which §1.4/§19 forbid
+  // outright — it is the monsters' "this is looking at you" signal, worn by the one
+  // character meant to be calm. At 28px wide the face was ~7px and could not hold
+  // anything better.
+  //
+  // v4 answers all three: one unified charcoal/ash mass, no bright note anywhere, and a
+  // plain calm face with small dark eyes. The extra 9 rows of height are what make that
+  // face drawable at all (§17.1's "author larger, for clarity"); 57 is also the tallest
+  // the Hero/Style portrait-spread bound in `tools/smoke.ts` permits — the two composers
+  // scale by whole numbers, and 59+ puts the Style tab over its 12%.
+  //
+  // Footprint unchanged: 57 * 0.5614 = 32, the same height as v1/v2/v3, so no hitbox /
+  // telegraph / camera moves. `feet` stays 0.03 because the sliver it describes is
+  // `feet * h * worldScale` = `feet * 32` — invariant under a height change. The hub
+  // draws it larger through its own figure-height rule (render/hub.ts) — cosmetic and
+  // local to the hub scene.
+  "hero.legend-base": { id: "hero.legend-base", w: 39, h: 57, worldScale: 0.5614, feet: 0.03 },
 
   // --- monsters (§10) --- worldScale ≈ predecessor grid height × SPRITE_SCALE (1.2),
   // then ~1.13× for legibility (the rot-scuttler precedent). Legacy grids: imp/ranger
@@ -364,7 +380,7 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
 // --- cosmetic layers (§15/§17.3, the "v2 redraw" gap) ---------------------
 
 /**
- * The pipeline hero (`hero.legend-base`, 28x48) is a single flattened image — unlike the
+ * The pipeline hero (`hero.legend-base`, 39x57) is a single flattened image — unlike the
  * procedural stack it isn't split into body/hair layers, so a cosmetic layer composites
  * directly on top of (or, for `back`, behind) it rather than onto a bare body. That needs
  * a bit of headroom the bare 28x48 canvas doesn't have: room above the head for a hat,
@@ -378,18 +394,18 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
  * `feet` fraction needs rescaling, because it is a fraction of *canvas* height and the
  * canvas just grew. See `composePipelineHero` in `render/sprites.ts`.
  *
- * Margins were sized empirically against `hero.legend-base` (see
- * `art/cosmetics/preview.py`, a throwaway compositing checker kept under `art/`, not the
- * committed atlas, for the next art session): the hero's own head sits flush against its
- * top row and its silhouette fills the full 28px width, so hats/ears need headroom this
+ * Margins are proportional to the hero they hold: ~half his width either side and ~42%
+ * of his height above him, the same ratios the 28x48 v3 stage used, so the v4 redraw
+ * moved the numbers without changing the rule. The hero's own head sits flush against
+ * his top row and his silhouette fills his full width, so hats/ears need headroom this
  * canvas doesn't have, and wings/a cape need side margin for the same reason the
  * procedural `CHAR_W` is wider than its 20-wide body.
  */
-export const HERO_STAGE_W = 56;
-export const HERO_STAGE_H = 68;
+export const HERO_STAGE_W = 79;
+export const HERO_STAGE_H = 81;
 /** Where `hero.legend-base` itself is pasted into the stage. */
-export const HERO_STAGE_DX = 14;
-export const HERO_STAGE_DY = 20;
+export const HERO_STAGE_DX = 20;
+export const HERO_STAGE_DY = 24;
 
 /**
  * The three reserved marker colours a cosmetic-layer PNG is quantized onto in place of
@@ -441,15 +457,15 @@ export interface AtlasCosmetic {
  * base needing its own separate back-item layer.
  */
 export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
-  hatWitch: { id: "cosmetic.hat-witch", w: 36, h: 24, dx: 10, dy: 2 },
+  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 20, dy: 2 },
   // Shared by hatCrown (legendary) and hatUnspoken (divine, same grid in pixels.ts too).
-  hatCrown: { id: "cosmetic.hat-crown", w: 27, h: 16, dx: 14, dy: 8 },
-  earsCat: { id: "cosmetic.ears-cat", w: 20, h: 13, dx: 18, dy: 18 },
-  earsHorn: { id: "cosmetic.ears-horn", w: 24, h: 18, dx: 16, dy: 12 },
-  faceGlasses: { id: "cosmetic.face-glasses", w: 26, h: 11, dx: 15, dy: 25 },
-  faceVisor: { id: "cosmetic.face-visor", w: 28, h: 14, dx: 14, dy: 24 },
+  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 27, dy: 12 },
+  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 31, dy: 18 },
+  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 29, dy: 23 },
+  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 29, dy: 31 },
+  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 29, dy: 31 },
   // `Cosmetic.art` id for backCape.
-  cape: { id: "cosmetic.back-cape", w: 30, h: 26, dx: 13, dy: 30 },
+  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 10, dy: 35 },
   // `Cosmetic.art` id for backAngel.
-  wingsAngel: { id: "cosmetic.back-wings-angel", w: 50, h: 36, dx: 3, dy: 32 },
+  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 5, dy: 30 },
 };
