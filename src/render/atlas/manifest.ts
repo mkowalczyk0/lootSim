@@ -164,7 +164,7 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "prop.citadel-starmap":  { id: "prop.citadel-starmap",  w: 44, h: 70, worldScale: 0.49, feet: 0.03 },
   "prop.citadel-wartable": { id: "prop.citadel-wartable", w: 78, h: 42, worldScale: 0.57, feet: 0.05 },
   "prop.citadel-altar":    { id: "prop.citadel-altar",    w: 55, h: 75, worldScale: 0.45, feet: 0.05 },
-  "prop.citadel-dummy":    { id: "prop.citadel-dummy",    w: 33, h: 82, worldScale: 0.41, feet: 0.03 },
+  "prop.citadel-dummy":    { id: "prop.citadel-dummy",    w: 27, h: 82, worldScale: 0.41, feet: 0.03 },
   // Floor dressing (§17.7b) — same idiom as `DECK_DRESSING`'s brazier/rubble/statue/
   // pillar/banner glyphs: purely visual, placed blind on the text grid, wants an eye.
   "prop.citadel-brazier":  { id: "prop.citadel-brazier",  w: 22, h: 35, worldScale: 0.69, feet: 0.03 },
