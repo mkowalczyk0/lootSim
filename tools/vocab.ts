@@ -743,5 +743,74 @@ function chargeMultWith(value: number): number {
   return p.ultimateChargeMult;
 }
 
+// =========================================================================
+console.log("\n=== reactive re-entrancy: a counter that causes the event it counters ===");
+{
+  // A live crash, found Sept 2026 by playing all 21 classes on one floor: the Duelist
+  // ended the run outright with `Cannot read properties of undefined (reading 'kind')`
+  // inside `AbilityRuntime.notify`. Reproduced deterministically on the depth-20 trash
+  // floor at seed 72231, and in a browser it does not throw into a harness — it ends the
+  // player's run and their unbanked loot with it.
+  //
+  // The mechanism: `notify` walked `this.pending` by index and spliced as it went, then
+  // called `runEffect` *inside* that walk. A counter deals damage; damage makes the host
+  // emit; the emit lands back in `notify`, which splices the same array. The outer walk's
+  // index then points into an array that no longer has those entries. The Duelist opens
+  // three `damageTaken` windows and is built entirely around countering, so it is the
+  // class that reaches three-deep re-entrancy first — but nothing about this is Duelist-
+  // specific, which is why the check below is the invariant rather than that one floor.
+  //
+  // Modelled here on `hit` rather than `damageTaken` only because `MockWorld.dealDamage`
+  // emits `hit` — the wiring is otherwise the real thing: `REACTIVE_EVENTS` bridged to
+  // `notify` exactly as `src/game/abilities.ts` bridges it.
+  const { w, hero, enemies } = world();
+  const rt = new AbilityRuntime();
+  w.bus.on("hit", (evt) => {
+    if (evt.actorId === hero.id) rt.notify("hit", w);
+  });
+
+  const counter = (window: number): EffectStep => ({
+    kind: "reactive", event: "hit", window,
+    effects: [{ kind: "damage", damage: { base: 0.5, scale: "attack", type: "physical" }, to: "enemies" }],
+  });
+  const aim = { ...CAST, aim: { x: enemies[0]!.x, y: enemies[0]!.y } };
+
+  /** Arms `n` counter windows, throws one hit, and reports what came back. */
+  const provoke = (n: number): { threw: string; packets: number; left: number } => {
+    const stance: Ability = {
+      id: "test.stance", name: "Counter Stance", description: "", category: "skill",
+      tags: ["melee"], cooldown: 0, targeting: "self", range: 60,
+      effects: Array.from({ length: n }, () => counter(4)),
+    };
+    rt.castAbility(w, hero.id, stance, aim);
+    const before = w.damageLog.length;
+    let threw = "";
+    try {
+      // The kick-off: one hit by the hero. Everything after this is the runtime
+      // re-entering itself.
+      w.bus.emit({ type: "hit", actorId: hero.id });
+    } catch (e) {
+      threw = String(e).split("\n")[0]!;
+    }
+    return { threw, packets: w.damageLog.length - before, left: rt.pending.length };
+  };
+
+  // One window is the control: it re-enters once, finds nothing owed, and stops. Whatever
+  // one firing costs in damage packets, three firings must cost exactly three times — a
+  // comparison rather than a pinned number, so a change to how many bodies a counter
+  // reaches can't quietly turn this check into a tautology.
+  const one = provoke(1);
+  check("a single counter window fires and re-enters harmlessly",
+    one.threw === "" && one.packets > 0 && one.left === 0, one.threw || `${one.packets} packets`);
+
+  // Three is where it used to die: the outer walk removes the third, the re-entrant call
+  // clears the other two, and the outer walk then reads an index that is no longer there.
+  const three = provoke(3);
+  check("a counter that causes its own event does not crash the runtime", three.threw === "", three.threw);
+  check("every window that was owed still fired", three.packets === one.packets * 3,
+    `${three.packets} vs ${one.packets} × 3`);
+  check("…and none of them fired twice", three.left === 0, `${three.left} left pending`);
+}
+
 console.log(`\n${failures === 0 ? "ALL VOCAB CHECKS PASSED" : `${failures} VOCAB CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);
