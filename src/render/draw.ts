@@ -11,12 +11,15 @@ import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entitie
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
-import { ATLAS } from "./atlas/manifest";
+import { ATLAS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import { castFrame, frameAt, frameAtProgress } from "./anim";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
-  heroKey, heroSprite, itemSprite, monsterSprite, silhouette, silhouetteCanvas, sprite, spriteFeet,
+  heroKey, heroSprite, itemSprite, monsterSprite, silhouetteAt, silhouetteCanvas,
+  sprite, spriteAt, spriteFeet,
   spriteWorldScale,
-  tinted, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale, type SpriteName,
+  tinted, tintedAt, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale,
+  type SpriteName,
   augmentSprite,
   relicSprite,
 } from "./sprites";
@@ -749,6 +752,21 @@ export class WorldRenderer {
       ctx.restore();
     }
 
+    // Which frame of this sprite to draw, if it has any. The clock lives here in `render/`
+    // and only reads the simulation — see `render/anim.ts` and docs/animation.md.
+    //
+    // A boss winding an ability up is keyed to the wind-up's PROGRESS rather than to a
+    // clock, because the cast is the player's whole warning and its length changes with
+    // depth; everything else free-runs, phase-shifted by entity id so a pack of the same
+    // monster doesn't animate in lockstep. A sprite with no animation resolves to frame 0,
+    // which is the picture it has always drawn.
+    const spriteId = SPRITE_OVERRIDES[name];
+    const animMeta = spriteId ? ATLAS[spriteId] : undefined;
+    const cast = castFrame(e.boss, e.health > 0);
+    const frame = cast
+      ? frameAtProgress(animMeta, cast.tag, cast.progress).index
+      : frameAt(animMeta, "idle", time + e.id * 0.37).index;
+
     // A boss winding something up glows in its own element — the same colour as the
     // shape it is about to paint on the floor, so the two read as one warning.
     const casting = e.boss ? e.boss.castTimer > 0 : false;
@@ -756,21 +774,21 @@ export class WorldRenderer {
       // A boss is being hit constantly. A full white silhouette would strobe for the
       // entire fight and hide the thing you're supposed to be reading, so it only
       // brightens.
-      drawSprite(ctx, tinted(name, "#ffffff", 0.4), x, y, flip, scale, feet);
+      drawSprite(ctx, tintedAt(name, frame, "#ffffff", 0.4), x, y, flip, scale, feet);
     } else if (e.hitFlash > 0) {
-      drawSprite(ctx, silhouette(name), x, y, flip, scale, feet);
+      drawSprite(ctx, silhouetteAt(name, frame), x, y, flip, scale, feet);
     } else if (casting) {
-      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale, feet);
+      drawSprite(ctx, tintedAt(name, frame, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale, feet);
     } else if (e.windup > 0) {
       // Flash red while winding up — this is the player's cue to dash.
-      drawSprite(ctx, silhouette(name, "#ff8a5c"), x, y, flip, scale, feet);
+      drawSprite(ctx, silhouetteAt(name, frame, "#ff8a5c"), x, y, flip, scale, feet);
     } else if (e.elite) {
-      drawSprite(ctx, tinted(name, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale, feet);
+      drawSprite(ctx, tintedAt(name, frame, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale, feet);
     } else if (e.element !== "physical") {
       // Infused monsters wear their element, so you can tell what is about to hit you.
-      drawSprite(ctx, tinted(name, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale, feet);
+      drawSprite(ctx, tintedAt(name, frame, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale, feet);
     } else {
-      drawSprite(ctx, sprite(name), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteAt(name, frame), x, y, flip, scale, feet);
     }
 
     // The boss's own health lives on the frame at the top of the screen, and so does an

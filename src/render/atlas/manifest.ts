@@ -150,7 +150,13 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // they are preserving numbers tuned elsewhere: telegraph radii, arena sizing and camera
   // framing are all set against them, and none may move because a sprite got redrawn.
   // `art/bosses/finish.ts` recomputes these from the raw generations and prints these rows.
-  "boss.ferryman":            { id: "boss.ferryman",            w: 75,  h: 107, worldScale: 0.9318, feet: 0.03 },
+  // First animated row (docs/animation.md). `w`/`h` are ONE FRAME and are unchanged, so
+  // `worldScale` is unchanged too and the encounter's world height, telegraph radii, arena
+  // sizing and camera framing all stay exactly where they were tuned. The strip PNG is
+  // `w * cols` = 375 wide. Frame 0 is pixel-identical to the sprite that shipped before
+  // this, which is what makes the static fallback and the first frame the same picture.
+  "boss.ferryman":            { id: "boss.ferryman",            w: 75,  h: 107, worldScale: 0.9318, feet: 0.03,
+    anim: { cols: 5, tags: { idle: { from: 0, to: 4, seconds: 0.22, loop: true } } } },
   "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 108, worldScale: 1.0185, feet: 0.03 },
   "boss.labyrinth-minotaur":  { id: "boss.labyrinth-minotaur",  w: 102, h: 106, worldScale: 1.2642, feet: 0.03 },
   "boss.exiled-tyrant":       { id: "boss.exiled-tyrant",       w: 100, h: 103, worldScale: 0.9738, feet: 0.03 },

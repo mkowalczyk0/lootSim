@@ -31,7 +31,8 @@ import { readFileSync } from "node:fs";
 import { decodePng } from "./png";
 import { ATLAS, type AtlasSprite } from "../src/render/atlas/manifest";
 import {
-  FALLBACK_TAG, STATIC_FRAME, castFrame, frameAt, frameAtProgress, frameRect, resolveTag, stripWidth,
+  CAST_TAG, FALLBACK_TAG, STATIC_FRAME, castFrame, frameAt, frameAtProgress, frameRect,
+  resolveTag, stripWidth,
 } from "../src/render/anim";
 
 let failures = 0;
@@ -79,6 +80,20 @@ for (const meta of animated) {
     png ? `${png.width}x${png.height}` : "PNG missing");
 }
 
+// The frames tile the strip exactly. `render/sprites.ts` cuts a frame out with this rect,
+// so a rect that ran past the PNG would silently draw transparent pixels — a boss that
+// vanishes for part of its own animation rather than an error anyone would notice.
+for (const meta of animated) {
+  const rects = Array.from({ length: meta.anim!.cols }, (_, i) =>
+    frameRect(meta, { index: i, cols: meta.anim!.cols }));
+  const tiles = rects.every((r, i) =>
+    r.sx === i * meta.w && r.sy === 0 && r.sw === meta.w && r.sh === meta.h);
+  const last = rects[rects.length - 1]!;
+  check(`${meta.id}: the ${meta.anim!.cols} frame rects tile the strip exactly`,
+    tiles && last.sx + last.sw === stripWidth(meta),
+    `last rect ends at ${last.sx + last.sw}, strip is ${stripWidth(meta)}`);
+}
+
 console.log("\nanimation — the design promises\n");
 
 // --- fixtures. Synthetic rows, so these properties hold whether or not any art has
@@ -92,7 +107,7 @@ const ANIM_ROW: AtlasSprite = {
       idle: { from: 0, to: 1, seconds: 0.25, loop: true },
       walk: { from: 2, to: 5, seconds: 0.1, loop: true },
       // Six frames of wind-up at 0.12s = 0.72s if it is left to free-run.
-      cast: { from: 6, to: 11, seconds: 0.12, loop: false },
+      [CAST_TAG]: { from: 6, to: 11, seconds: 0.12, loop: false },
     },
   },
 };
@@ -246,8 +261,8 @@ const ROWS: readonly (AtlasSprite | undefined)[] = [STATIC_ROW, ANIM_ROW, BROKEN
   const casting = { ability: "sunder", castTimer: 0.6, castTotal: 1.2 };
   const idle = { ability: null, castTimer: 0, castTotal: 0 };
 
-  check("a live boss mid-cast reports its ability id as the tag, and its progress",
-    castFrame(casting, true)?.tag === "sunder"
+  check("a live boss mid-cast reports its ability id first in the chain, and its progress",
+    castFrame(casting, true)?.tag[0] === "sunder"
       && Math.abs((castFrame(casting, true)?.progress ?? -1) - 0.5) < 1e-9);
   check("a boss between casts reports nothing to play", castFrame(idle, true) === null);
   check("a boss killed MID-CAST reports nothing — the ability died with it, so the pose must not freeze",
@@ -262,6 +277,53 @@ const ROWS: readonly (AtlasSprite | undefined)[] = [STATIC_ROW, ANIM_ROW, BROKEN
   const early = castFrame({ ability: "sunder", castTimer: 5, castTotal: 1.2 }, true);
   check("progress stays inside 0..1 even if castTimer exceeds castTotal",
     !!early && early.progress >= 0 && early.progress <= 1, `${early?.progress}`);
+}
+
+// 6. THE LADDER'S ECONOMY. The four raid bosses draw from a shared pool of ~15 abilities
+//    and a boss cast's tag is the BossAbilityId, so one animation per ability would be
+//    dozens of generations per boss. The chain means a boss ships ONE wind-up covering
+//    every ability, and a specific ability can be given its own art later with no rewiring.
+{
+  const ABILITIES = [
+    "cleave", "slam", "beam", "quake", "summon", "windmill", "corruption", "ringOut",
+    "enrage", "volley", "starLance", "wall", "meteor", "charge", "backlash",
+  ];
+  // ANIM_ROW has `cast` but none of the ability tags — the state a freshly-animated boss
+  // is in. Every ability must still resolve to the generic wind-up.
+  const viaCast = ABILITIES.filter((id) => {
+    const f = castFrame({ ability: id, castTimer: 0.5, castTotal: 1 }, true)!;
+    return resolveTag(ANIM_ROW, f.tag) === ANIM_ROW.anim!.tags[CAST_TAG];
+  });
+  check(`one '${CAST_TAG}' animation covers all ${ABILITIES.length} boss abilities`,
+    viaCast.length === ABILITIES.length,
+    `${viaCast.length}/${ABILITIES.length} resolved to the generic wind-up`);
+
+  // And the override works without rewiring: give one ability its own tag and it wins,
+  // while every other ability keeps falling through to the generic one.
+  const withSlam: AtlasSprite = {
+    ...ANIM_ROW,
+    anim: {
+      cols: 14,
+      tags: { ...ANIM_ROW.anim!.tags, slam: { from: 12, to: 13, seconds: 0.1, loop: false } },
+    },
+  };
+  const slamChain = castFrame({ ability: "slam", castTimer: 0.5, castTotal: 1 }, true)!.tag;
+  const beamChain = castFrame({ ability: "beam", castTimer: 0.5, castTotal: 1 }, true)!.tag;
+  check("an ability given its own art starts winning without anything being rewired",
+    resolveTag(withSlam, slamChain) === withSlam.anim!.tags.slam
+      && resolveTag(withSlam, beamChain) === withSlam.anim!.tags[CAST_TAG]);
+
+  // A boss with only an idle — the rung below — still resolves every ability, so art can
+  // land idle-first and casts later.
+  const idleOnly: AtlasSprite = {
+    ...ANIM_ROW,
+    anim: { cols: 2, tags: { idle: { from: 0, to: 1, seconds: 0.25, loop: true } } },
+  };
+  check("a boss with only an idle still resolves every ability, so art can land in stages",
+    ABILITIES.every((id) => {
+      const f = castFrame({ ability: id, castTimer: 0.5, castTotal: 1 }, true)!;
+      return resolveTag(idleOnly, f.tag) === idleOnly.anim!.tags.idle;
+    }));
 }
 
 console.log(failures === 0 ? "\nanimation: all checks passed\n" : `\nanimation: ${failures} FAILED\n`);

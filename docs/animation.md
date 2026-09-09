@@ -46,8 +46,25 @@ already the exhaustive table to key off.
 
 ## Every rung is a fallback, never an error
 
-The same idiom `monsterSprite` already uses for `MONSTER_SETS`. Requested tag → `idle` →
-frame 0. A sprite with no `anim` table, an unknown tag, a tag naming frames the strip
+The same idiom `monsterSprite` already uses for `MONSTER_SETS`. The ladder takes a **chain**
+of names, most specific first, then `idle`, then frame 0 — for a boss cast that chain is
+`[<BossAbilityId>, "cast", "idle"]`.
+
+**The chain is what makes the art affordable, and it is the reason this is a chain rather
+than one name.** The four raid bosses draw their rotations from a shared pool of about
+fifteen abilities (`cleave`, `slam`, `beam`, `quake`, `summon`, `windmill`, `corruption`,
+`ringOut`, `enrage`, `volley`, `starLance`, `wall`, `meteor`, `charge`, `backlash`), and the
+tag for a cast is the ability id. One animation per ability would be forty-odd generations
+per boss for a fight the player sees for two minutes. Instead a boss ships **one** generic
+`cast` wind-up that covers every ability it has, and a specific ability can be given its own
+art later with nothing rewired — the more specific name simply starts resolving.
+
+That also means art can land **in stages**: a boss with only an `idle` still resolves every
+ability it will ever cast. The gate asserts all three of those (one `cast` covers all
+fifteen; a per-ability override wins without rewiring; an idle-only boss still resolves
+everything).
+
+Requested tag → `idle` → frame 0. A sprite with no `anim` table, an unknown tag, a tag naming frames the strip
 doesn't have, a NaN clock, no sprite at all — all resolve to a valid frame and none of them
 throw. Missing art is never a broken screen; the worst case is the static single frame the
 game drew before any of this existed.
@@ -129,6 +146,35 @@ what the gate checks it against.
 > `w x h`. That check needs to become `stripWidth(meta) x h` in the same commit that gives
 > `hero.legend-base` an `anim` table, or the hero is the one sprite whose animation fails
 > the gate next door.
+
+## Making the art (Phase 2)
+
+Two scripts sit next to the raws, following the pattern `art/bosses/finish.ts` states for
+every art batch: **a treatment that lives in a script survives a re-roll; one applied by
+hand is lost the first time anybody regenerates a single animation.**
+
+- **`art/pixellab-upload.py`** turns a committed sprite into base64 that survives an MCP
+  tool call. This is not busywork — sending a sprite's bytes straight through *fails*, and
+  the error blames truncation, which is misleading. Measured on `boss.ferryman.png`: the
+  RGBA original arrived at the **right byte count** and still would not decode, so it is
+  corruption rather than length; an indexed PNG with PIL's default 256-entry palette also
+  failed, because its unused entries are zeros and produce long runs of identical base64
+  characters; the same image with the palette **trimmed to exactly the colours used**
+  (longest identical run: 8) went through first time. Padding after `IEND` does not help —
+  that was tried. The conversion is pixel-exact and asserts so, and it refuses rather than
+  quietly shipping altered art to the generator. **Never downscale a sprite to make it
+  fit**; the art direction is explicit that art is authored high and drawn near 1:1.
+- **`art/anim/strip.py`** assembles the returned frames into the strip PNG the `ATLAS` row
+  describes and prints the row. It trims the frames **as a set** — one bounding box across
+  all of them, never per-frame — because trimming each independently re-centres each pose
+  and the sprite jitters against its own feet anchor. It also recomputes `worldScale` as
+  `targetWorldHeight / h` so animating a boss never changes how big it is in the arena.
+
+`animate_image` is the right generator call here: it works on a loose sprite, where
+`animate_character` / `animate_object` need an id of something PixelLab generated, and the
+committed boss art is not that. Cost is about one generation per short animation at these
+sizes. Pass `no_background: true` — the default follows the input, but passing `false`
+flattens a transparent sprite onto **white**.
 
 ## Known open ends
 

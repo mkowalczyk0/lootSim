@@ -58,19 +58,32 @@ export interface Frame {
 const STATIC: Frame = { index: STATIC_FRAME, cols: 1 };
 
 /**
- * The tag a sprite will actually use for a request, walking the fallback ladder:
- * the tag asked for → `idle` → nothing. Exported because the gate asserts the ladder
- * terminates, and because a caller occasionally wants to know whether real art exists
- * (to pick a different effect) rather than silently drawing a stand-in.
+ * The tag a sprite will actually use for a request, walking the fallback ladder: each name
+ * given, in order, then `idle`, then nothing.
+ *
+ * **A chain rather than a single name is what makes the art affordable.** The four raid
+ * bosses draw their rotations from a shared pool of about fifteen abilities, and the tag
+ * for a boss cast is the `BossAbilityId` — so one animation per ability would be forty-odd
+ * generations per boss for a fight the player sees for two minutes. Asking for
+ * `[ability, "cast", "idle"]` instead means a boss ships **one** wind-up that covers every
+ * ability it has, and a specific ability can be given its own art later without anything
+ * being rewired: the more specific name simply starts resolving.
+ *
+ * Exported because the gate asserts the ladder terminates, and because a caller
+ * occasionally wants to know whether real art exists (to pick a different effect) rather
+ * than silently drawing a stand-in.
  */
-export function resolveTag(meta: AtlasSprite | undefined, tag: string): AnimTag | null {
+export function resolveTag(
+  meta: AtlasSprite | undefined, tag: string | readonly string[],
+): AnimTag | null {
   const anim = meta?.anim;
   if (!anim) return null;
-  const exact = anim.tags[tag];
-  if (exact && valid(exact, anim.cols)) return exact;
+  for (const name of typeof tag === "string" ? [tag] : tag) {
+    const t = anim.tags[name];
+    if (t && valid(t, anim.cols)) return t;
+  }
   const fallback = anim.tags[FALLBACK_TAG];
-  if (fallback && valid(fallback, anim.cols)) return fallback;
-  return null;
+  return fallback && valid(fallback, anim.cols) ? fallback : null;
 }
 
 /** A tag only counts if it names frames the strip actually has and holds them for real time. */
@@ -89,7 +102,9 @@ const span = (t: AnimTag): number => t.to - t.from + 1;
  * A non-looping tag holds its last frame once it has played through, which is what makes
  * a one-shot (a death, a spawn) safe to keep asking for after it has finished.
  */
-export function frameAt(meta: AtlasSprite | undefined, tag: string, seconds: number): Frame {
+export function frameAt(
+  meta: AtlasSprite | undefined, tag: string | readonly string[], seconds: number,
+): Frame {
   const t = resolveTag(meta, tag);
   if (!t || !meta?.anim) return STATIC;
   const n = span(t);
@@ -117,7 +132,9 @@ export function frameAt(meta: AtlasSprite | undefined, tag: string, seconds: num
  *
  * Callers get `p` from the simulation without it knowing why: `1 - castTimer / castTotal`.
  */
-export function frameAtProgress(meta: AtlasSprite | undefined, tag: string, p: number): Frame {
+export function frameAtProgress(
+  meta: AtlasSprite | undefined, tag: string | readonly string[], p: number,
+): Frame {
   const t = resolveTag(meta, tag);
   if (!t || !meta?.anim) return STATIC;
   const n = span(t);
@@ -160,11 +177,18 @@ export interface CastReadout {
   readonly castTotal: number;
 }
 
-/** What to draw for a boss this instant: which tag, and how far through it. */
+/** What to draw for a boss this instant: which tags to try, and how far through the cast. */
 export interface CastFrame {
-  readonly tag: string;
+  /**
+   * The fallback chain, most specific first: this ability's own animation, then the
+   * boss's generic wind-up, then `idle`. Pass it straight to {@link frameAtProgress}.
+   */
+  readonly tag: readonly string[];
   readonly progress: number;
 }
+
+/** The generic wind-up every boss can share, sitting between an ability and `idle`. */
+export const CAST_TAG = "cast";
 
 /**
  * The tag and progress for a boss's current wind-up, or null if it isn't casting.
@@ -176,13 +200,14 @@ export interface CastFrame {
  * a clock that trusted `castTimer` to reach zero would leave a corpse frozen in a cast pose
  * that is never going to land. Gone from the fight means the cast is cancelled, full stop.
  *
- * By convention the tag **is** the `BossAbilityId`, so a new ability needs no coordination
- * with the render side at all: it either has art or it falls down the ladder to the static
- * frame, and the fight is exactly as readable either way.
+ * By convention the most specific tag **is** the `BossAbilityId`, so a new ability needs no
+ * coordination with the render side at all: it either has its own art, or it falls through
+ * the boss's generic `cast` wind-up, or it falls all the way to the static frame — and the
+ * fight is readable at every rung.
  */
 export function castFrame(boss: CastReadout | null | undefined, alive: boolean): CastFrame | null {
   if (!alive || !boss || !boss.ability) return null;
   if (!(boss.castTotal > 0) || !(boss.castTimer > 0)) return null;
   const remaining = Math.min(boss.castTimer, boss.castTotal);
-  return { tag: boss.ability, progress: 1 - remaining / boss.castTotal };
+  return { tag: [boss.ability, CAST_TAG], progress: 1 - remaining / boss.castTotal };
 }
