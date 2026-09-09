@@ -1517,6 +1517,44 @@ Physical-material focused.
 
 ---
 
+## The Gilded Ossuary
+
+A reliquary in the oldest sense of the word.
+
+Saints were not buried here.
+
+They were gilded and put on display.
+
+The gold has kept growing since.
+
+Holy-heavy.
+
+---
+
+## The Unbound Spire
+
+A mage-tower that outlived the war it was built to win.
+
+Its wards broke a long time ago.
+
+Rooms rewrite themselves while you stand in them.
+
+Arcane-heavy.
+
+---
+
+## The Hollow Orchard
+
+An orchard planted over a civilization's mass grave.
+
+It is still growing.
+
+It is still fed.
+
+Nature-heavy.
+
+---
+
 # Reliquary Events
 
 This system gives us an opportunity to make resource farming feel less repetitive.
