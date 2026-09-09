@@ -70,6 +70,10 @@ export interface Settings {
   screenShake: boolean;
   /** Floating damage numbers and pickup labels. */
   damageNumbers: boolean;
+  /** The in-run combat stats overlay — DPS, total damage, largest hit, healing done,
+   *  for telling whether a build change actually did something. Off by default: it's a
+   *  build-testing instrument, not something a first-time player needs on screen. */
+  combatStats: boolean;
   /** "keyboard" for the original no-mouse game; "mouse" to aim and attack with it. */
   controlScheme: ControlScheme;
   /** What the right mouse button casts, in "mouse" scheme. */
@@ -84,6 +88,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   screenShake: true,
   damageNumbers: true,
+  combatStats: false,
   controlScheme: "mouse",
   mouseSecondary: "skill1",
   keybinds: { ...DEFAULT_KEYBINDS },
@@ -95,7 +100,7 @@ export function cleanPlayerName(raw: string): string {
   return raw.replace(/[^\w \-']/g, "").trim().slice(0, 12);
 }
 
-export type SettingKey = "screenShake" | "damageNumbers";
+export type SettingKey = "screenShake" | "damageNumbers" | "combatStats";
 
 export interface SettingSpec {
   readonly key: SettingKey;
@@ -114,6 +119,11 @@ export const SETTING_SPECS: readonly SettingSpec[] = [
     key: "damageNumbers",
     label: "Damage numbers",
     blurb: "Numbers float off everything you hit. Off is quieter and tells you less.",
+  },
+  {
+    key: "combatStats",
+    label: "Combat stats",
+    blurb: "DPS, total damage, largest hit and healing done, on screen while you dive. For telling whether a build change actually worked.",
   },
 ];
 

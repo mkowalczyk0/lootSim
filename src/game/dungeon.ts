@@ -38,6 +38,7 @@ import {
 } from "../data/traps";
 import { updateBoss } from "./boss";
 import { mitigateWithResists } from "./combat";
+import { CombatStats } from "./combatStats";
 import {
   AbilityRuntime, EventBus, ResourceSet, StatusContainer, creditResourcesForHit,
   isUltimateSourced, makeDamagePacket,
@@ -312,6 +313,10 @@ export class Hero {
   readonly posHistory: { x: number; y: number }[] = [];
   /** Keystone / hybrid / archetype rule bookkeeping — primed strikes, aura timers, … */
   readonly ruleState = new HeroRuleState();
+  /** Damage dealt/taken and healing done this floor, for the optional stats overlay.
+   *  A passive accumulator — see `game/combatStats.ts` — never read by the simulation
+   *  itself, only by the HUD when `Settings.combatStats` is on. */
+  readonly combatStats = new CombatStats();
   /**
    * The world point this hero is aiming at this tick — the cursor, in mouse-aim mode.
    * Null when only a facing is known (keyboard scheme, a remote player), in which case a
@@ -1685,7 +1690,7 @@ export class Dungeon implements CombatHost, RuleHost {
       for (let i = hero.hots.length - 1; i >= 0; i--) {
         const hot = hero.hots[i]!;
         const step = Math.min(dt, hot.remaining);
-        player.heal(hot.perSec * step);
+        hero.combatStats.recordHealing(player.heal(hot.perSec * step));
         hot.remaining -= dt;
         if (hot.remaining <= 0) hero.hots.splice(i, 1);
       }
@@ -1985,7 +1990,7 @@ export class Dungeon implements CombatHost, RuleHost {
 
     // What landing a hit gives back, counted once per swing rather than per element.
     const life = p.mods.lifeOnHit + hero.avatar.buffLifeOnHit;
-    if (life > 0) p.heal(life);
+    if (life > 0) hero.combatStats.recordHealing(p.heal(life));
     if (p.mods.manaOnHit > 0) p.restoreMana(p.mods.manaOnHit);
 
     let ailmentInflicted = false;
@@ -2578,6 +2583,7 @@ export class Dungeon implements CombatHost, RuleHost {
     if (p.health >= p.maxHealth && p.mana >= p.maxMana) return;
     hero.potions--;
     const healed = p.heal(p.maxHealth * POTION_HEAL);
+    hero.combatStats.recordHealing(healed);
     p.restoreMana(p.maxMana * POTION_MANA);
     this.events.push({
       kind: "pickup", x: hero.avatar.x, y: hero.avatar.y,
@@ -2654,6 +2660,11 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     e.health -= dealt;
     e.hitFlash = 0.12;
+    // Stats credit only a hit with a known author — an anonymous ailment tick or hazard
+    // falls back to the nearest hero for kill-credit purposes below, but crediting that
+    // guess to somebody's own DPS would be exactly the kind of approximation this
+    // overlay exists to avoid.
+    if (opts.source) opts.source.combatStats.recordDamageDealt(dealt, this.elapsed);
 
     const knock = (opts.knock ?? (opts.crit ? 190 : 120)) * e.knockResist;
     e.knockX += Math.cos(knockAngle) * knock;
@@ -3635,6 +3646,7 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     if (dealt > 0) {
       p.health = Math.max(0, p.health - dealt);
+      hero.combatStats.recordDamageTaken(dealt);
       a.hitFlash = 0.25;
       this.retaliate(hero);
       this.events.push({ kind: "damage", x: a.x, y: a.y - 14, amount: dealt, crit: false, onPlayer: true, element });
@@ -4212,7 +4224,7 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   healHero(hero: Hero, amount: number): void {
-    hero.player.heal(amount);
+    hero.combatStats.recordHealing(hero.player.heal(amount));
   }
 
   shieldHero(hero: Hero, amount: number): void {
@@ -4308,7 +4320,7 @@ export class Dungeon implements CombatHost, RuleHost {
       // classes' signature heals declare (Bard's Restorative Verse, Warden's Regrowth,
       // Paladin's Sanctuary, …) resolved to a single tiny instant tick.
       if (overTime && overTime > 0) hero.hots.push({ perSec: amount / overTime, remaining: overTime });
-      else hero.player.heal(amount);
+      else hero.combatStats.recordHealing(hero.player.heal(amount));
       return;
     }
     const enemy = this.enemyByHostId(targetId);
@@ -4403,7 +4415,7 @@ export class Dungeon implements CombatHost, RuleHost {
     const p = hero.player;
     switch (g.benefit) {
       case "heal":
-        p.heal(p.maxHealth * BENEFIT_HEAL_FRACTION);
+        hero.combatStats.recordHealing(p.heal(p.maxHealth * BENEFIT_HEAL_FRACTION));
         break;
       case "shield":
         hero.ward = Math.max(hero.ward, p.maxHealth * BENEFIT_SHIELD_FRACTION);
