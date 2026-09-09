@@ -2,7 +2,11 @@ import { clamp } from "../core/math";
 import { Rng } from "../core/rng";
 import { MemorySaveStore, serializeSave, type SavedGame, type SaveStore } from "../core/save";
 import { MAX_CHALLENGER_TIER } from "../data/challenger";
-import { CHESTS, CHEST_TIERS, type ChestTier } from "../data/chests";
+import { CHESTS, CHEST_TIERS, RETIRED_CHEST_TIERS, type ChestTier } from "../data/chests";
+import {
+  AUGMENT_BY_ID, augmentedPull, emptyLoadout, isAugmentId, loadoutIds, loadoutProblems,
+  type AugmentLoadout,
+} from "../data/augments";
 import {
   BASE_COSMETIC_WEIGHTS, CAPSULES, COSMETICS, COSMETICS_BY_ID,
   DUPE_REFUND, defaultAppearance, normalizeAppearance, normalizeOwned,
@@ -76,6 +80,8 @@ export interface RunStats {
   ashEarned: number;
   /** Times each relic or artifact was banked, by id (UAT §19). Above one means a co-op duplicate. */
   relicsFound: Record<string, number>;
+  /** Lifetime augments found, by id (`data/augments.ts`). */
+  augmentsFound: Record<string, number>;
 }
 
 function freshStats(): RunStats {
@@ -100,6 +106,7 @@ function freshStats(): RunStats {
     itemsSalvaged: 0,
     ashEarned: 0,
     relicsFound: {},
+    augmentsFound: {},
   };
 }
 
@@ -202,6 +209,13 @@ export class GameState {
    * earned. Which three a character *wears* is `Player.relics`.
    */
   relics: string[] = [];
+  /**
+   * Every augment this account holds (`data/augments.ts`, `docs/augments.md`), by id and
+   * count — account-wide like the stash and the relic collection, because a fragment does
+   * not care which Legend requisitions with it. Not a currency: nothing sells one, nothing
+   * crafts one, and the only thing that spends one is opening a chest around it.
+   */
+  augments: Record<string, number> = {};
   /**
    * The player's own difficulty dial — zero is plain. Set at a portal or the star map
    * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
@@ -502,6 +516,28 @@ export class GameState {
     return fresh;
   }
 
+  /**
+   * Banks augments carried out of a run. Unlike a relic there is no "already owned" skip:
+   * a second Bow Augment is a second Bow Augment, and stacking two on one axis is
+   * impossible by the shape of `AugmentLoadout` rather than by making dupes worthless.
+   */
+  bankAugments(ids: readonly string[]): void {
+    for (const id of ids) {
+      if (!isAugmentId(id)) continue;
+      this.augments[id] = (this.augments[id] ?? 0) + 1;
+      this.stats.augmentsFound[id] = (this.stats.augmentsFound[id] ?? 0) + 1;
+    }
+  }
+
+  augmentCount(id: string): number {
+    return this.augments[id] ?? 0;
+  }
+
+  /** Ids the account currently holds at least one of, in registry order. */
+  ownedAugments(): string[] {
+    return Object.keys(this.augments).filter((id) => isAugmentId(id) && this.augments[id]! > 0);
+  }
+
   /** Puts an owned relic in one of the active character's slots. False with the reason otherwise. */
   socketRelic(slot: number, id: string): { ok: true; replaced: string | null } | { ok: false; reason: string } {
     if (!this.ownsRelic(id)) return { ok: false, reason: "You don't have that one yet." };
@@ -747,23 +783,53 @@ export class GameState {
    * gear the class opening it can actually catch up to and equip.
    */
   openChests(tier: ChestTier, count = 1): Item[] {
-    const available = Math.min(count, this.keys[tier]);
+    return this.openAugmented({ ...emptyLoadout(), base: tier }, count);
+  }
+
+  /**
+   * The one chest-opening path (`docs/augments.md`). An un-augmented pull is the empty
+   * loadout, so there is no second code path to keep in agreement — `openChests` above is
+   * literally this function with nothing slotted.
+   *
+   * Everything the loadout decides is decided by `augmentedPull`, which the augment tab's
+   * outcome panel also calls. That is UAT §20 in its literal form: the preview is not
+   * describing this roll, it is running this roll's own composition and not throwing dice.
+   *
+   * Augments are consumed whatever comes out. A rarity augment that "missed" still floored
+   * the roll and still forced the form, element and affix it was stacked with.
+   */
+  openAugmented(load: AugmentLoadout, count = 1): Item[] {
+    if (loadoutProblems(load).length > 0) return [];
+    const ids = loadoutIds(load);
+    // An augmented pull is always 1x, and the tab does not offer the bulk button — ten
+    // simultaneous augmented opens is exactly the "routine currency" failure mode this
+    // system is designed against.
+    const want = ids.length > 0 ? 1 : count;
+    for (const id of ids) if (this.augmentCount(id) <= 0) return [];
+
+    const tier = load.base;
+    const available = Math.min(want, this.keys[tier]);
     if (available <= 0) return [];
     this.keys[tier] -= available;
+    for (const id of ids) this.augments[id] = this.augmentCount(id) - 1;
 
     const info = CHESTS[tier];
-    const weights = {} as Record<Rarity, number>;
-    for (const r of RARITIES) weights[r] = BASE_RARITY_WEIGHTS[r] * info.weights[r];
-
+    const pull = augmentedPull(load);
     const ilvl = Math.max(1, this.player.frontier);
     const affinity = this.player.heroClass.affinity;
+    // Declared on the chest row rather than switched on its id, so the Legend's Cache is
+    // data like every other chest (`ChestTierInfo.classElement`).
+    const favorElement = pull.favorElement
+      ?? (info.classElement ? this.heroClass.element : undefined);
     const found: Item[] = [];
     for (let i = 0; i < available; i++) {
-      const rarity = this.rng.weighted(weights);
-      const type = info.types && info.types.length > 0
-        ? this.rng.pick(info.types)
+      const rarity = this.rng.weighted(pull.weights);
+      const type = pull.types && pull.types.length > 0
+        ? this.rng.pick(pull.types)
         : randomItemType(this.rng, affinity, info.classAdaptive);
-      const item = rollItem({ rarity, type, ilvl, rng: this.rng, favorElement: info.favorElement });
+      const item = rollItem({
+        rarity, type, ilvl, rng: this.rng, favorElement, ensureMod: pull.ensureMod,
+      });
       found.push(item);
       this.stats.raritiesFound[rarity]++;
       // Named items (UAT §28) ride alongside the ordinary pull rather than replacing it, so
@@ -1072,6 +1138,7 @@ export class GameState {
       materials: this.materials,
       ash: this.ash,
       relics: this.relics,
+      augments: this.augments,
       memories: this.memories,
       memorySeq: this.memorySeq,
       challengerTier: this.challengerTier,

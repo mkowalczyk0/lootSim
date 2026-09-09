@@ -1,10 +1,11 @@
 # Augments — the chest overhaul, and the one thing you aim
 
-**Status: the design record, written before the code. Not built.** One section (§5.3, the
-rarity ceiling) is an explicit owner call and is written as a choice rather than a
-decision — see the flag there. Everything else is settled and is what the implementation
-will be measured against; `tools/augments.ts` will assert the load-bearing half of it as
-comparisons.
+**Status: the design record, and current.** Written before the code, then ruled on twice
+while it was being built (§3, §5.3). One question is still open with the owner and is
+written as a choice rather than a decision — §5.3, the rarity ceiling — but nothing in the
+implementation waits on it. This is the design the implementation is measured against;
+`tools/augments.ts` asserts the load-bearing half of it as comparisons. Read this before
+tuning a number in `src/data/augments.ts`.
 
 The owner's brief, close to verbatim:
 
@@ -228,11 +229,13 @@ like the Adept's Trove, but one step further: it rolls the active class's affini
 *and* biases the affix roll toward that class's own element. Elite-grade odds, priced
 between the Elite chest and the Trove.
 
-> One augment-shaped question left open: the brief says "class/capstone chests", which
-> could also mean **one chest per class, twenty-one of them.** I read it as one adaptive
-> chest, because `classAdaptive` already exists, twenty-one near-identical shop rows is the
-> exact unreadability this overhaul is removing, and an alt can use the adaptive one on day
-> one. If the literal reading was meant it is a generated table and costs an afternoon.
+**Ruled: one adaptive chest, not twenty-one.** The brief's "class/capstone chests" could
+have meant one chest per class. It does not, and the reason is worth keeping: twenty-one
+near-identical definitions differing only in which class they bias toward is content in the
+sense of a spreadsheet, not in the sense of a decision. Nobody browsing a shop of
+twenty-one rows is choosing; they are scrolling past twenty things. It is also how the rest
+of the codebase already handles this shape — a `RunMode` does not get twenty-one copies
+either — and an alt can use the adaptive one on the day it is created.
 
 ### 3.1 Migration — `SAVE_VERSION` 26
 
@@ -343,10 +346,10 @@ the system would quietly become a coin sink wearing a chase-item's clothes, and 
 the brief is built around — *"holy fucking shit I just got an unspoken augment"* — would
 arrive with a shopping trip attached to it.
 
-### 5.3 What the Unspoken Augment does — **OWNER CALL, not decided here**
+### 5.3 What the Unspoken Augment does — **B is built; A is an open owner question**
 
-This is the one decision in the design I am not making, because it sets a precedent about
-the top of the rarity ladder and the brief can be read two ways.
+This is the one decision in the design that was escalated rather than made, because it sets
+a precedent about the top of the rarity ladder and the brief can be read two ways.
 
 `src/data/rarity.ts` keeps divine and unspoken absurd on purpose — "the long tail is the
 hook" — and crafting caps at mythic on every path *specifically* so the ceiling cannot be
@@ -383,11 +386,29 @@ identity becomes fully player-chosen. That is a real loss and it is why this is 
 call and not mine.
 
 **A and B differ by exactly one field on one definition** — `weights` on the Unspoken
-Augment's effect — so this can be decided after playing it, not before building it. I will
-build whichever is chosen and the acceptance tool will assert the chosen one as a comparison
-either way. Until the call comes back, **the implementation ships B**, because B is the
-reversible choice: shipping the conservative version and loosening it later is a patch,
-shipping the permissive version and tightening it later takes items away from players.
+Augment's effect — which is why this did not block the build.
+
+**Ruled: B is built. A goes to the owner as a question, with augments working in front of
+them rather than on paper.** Three reasons, recorded because the next person to reach for A
+should have to answer them:
+
+1. **The Memories precedent distinguishes A rather than supporting it.** The owner
+   overturned a "the ceiling never moves" rule once, for Memories — but the words they used
+   for the shape they wanted were *"it's not by much, but that little percent that it does
+   raise the ceiling does make it worth it."* A percent, said twice, and the same instinct
+   as their standing rule that a multiplier in a brief means "a meaningful increase of this
+   kind" rather than a literal factor. **A guarantee is the one thing a percent can never
+   become, however large it gets.**
+2. **The Memories lift is paid for; A is not.** That carve-out buys its overshoot with
+   burden load, *squared*, on the hardest content in the game, and it lands around 1-in-43
+   rather than at certainty. A is a token that converts a chase into a purchase order. That
+   may well still be what the owner wants — but they should choose it knowing that is what
+   it is, rather than inherit it from a design doc.
+3. **B is the reversible one.** Loosening later is a patch. Tightening later takes items out
+   of people's stashes.
+
+If A is later ruled, §5.4's *targeting is not a shortcut to rarity* becomes the only thing
+standing between "aim your unspoken" and "farm your unspoken". Keep it either way.
 
 ### 5.4 What augments must never do
 

@@ -100,6 +100,15 @@ export interface RollOptions {
   readonly rng: Rng;
   /** Crafting only: weights the roll pool toward this element's damage/resist mod. */
   readonly favorElement?: Element;
+  /**
+   * An augment (`data/augments.ts`): reserves one affix slot for this `ModRoll` id.
+   *
+   * The one place item rolling *forces* rather than weights, and deliberately so — nobody
+   * spends the rarest object in the game to find out it probably worked. It stays honest
+   * because the augment tab refuses the combine when the roll is unreachable, rather than
+   * accepting it and quietly doing nothing here.
+   */
+  readonly ensureMod?: string;
 }
 
 /** Sell/reforge-cost basis: rarity and item level plus what the affix list carries. */
@@ -121,7 +130,7 @@ export function levelScaleFor(ilvl: number): number {
   return 1 + (ilvl - 1) * 0.033;
 }
 
-export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions): Item {
+export function rollItem({ rarity, type, ilvl, rng, favorElement, ensureMod }: RollOptions): Item {
   const names = ITEM_NAMES[rarity][type];
   const baseName = rng.pick(names);
   const tier = rarityIndex(rarity);
@@ -131,7 +140,7 @@ export function rollItem({ rarity, type, ilvl, rng, favorElement }: RollOptions)
   const variance = rng.range(0.85, 1.15);
 
   const stats = baseStats(type, mult, levelScale, variance);
-  const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement);
+  const rolls = rollMods(type, rarity, tier, levelScale, rng, favorElement, ensureMod);
   const grant = rollGrant(type, tier, rng);
   const trigger = rollTrigger(tier, rng);
   const value = computeValue(rarity, levelScale, rolls.length, grant, trigger);
@@ -274,6 +283,7 @@ export function reforgeAffixes(item: Item, rng: Rng): Item {
  */
 export function rollMods(
   type: ItemType, rarity: Rarity, tier: number, levelScale: number, rng: Rng, favorElement?: Element,
+  ensureMod?: string,
 ): { mod: ItemMod; roll: ModRoll }[] {
   const [lo, hi] = MOD_COUNTS[rarity];
   const want = rng.int(lo, hi);
@@ -300,6 +310,22 @@ export function rollMods(
   }
   const out: { mod: ItemMod; roll: ModRoll }[] = [];
   const used = new Set<string>();
+  // An affix augment's whole promise is that the roll it names is *there*, so it takes the
+  // first slot rather than being weighted into the pool the way an essence is. If the roll
+  // is not allowed on this type at this rarity the augment simply does not apply — which
+  // `loadoutProblems` has already refused at authoring time, so it cannot be reached from
+  // the chest screen; the guard is here for every other caller.
+  if (ensureMod) {
+    const forced = MOD_POOL.find((m) => m.id === ensureMod);
+    if (forced && modAllowed(forced, type, tier)) {
+      used.add(forced.key);
+      const raw = modValue(forced, rarity, levelScale, rng.range(0.85, 1.15));
+      out.push({
+        mod: { id: forced.id, key: forced.key, value: forced.scale === "flat" ? raw : Math.round(raw * 1000) / 1000 },
+        roll: forced,
+      });
+    }
+  }
   // Only so many attempts: a small pool with a high mod count shouldn't spin forever.
   for (let attempt = 0; attempt < want * 8 && out.length < want; attempt++) {
     const roll = rng.pick(pool);

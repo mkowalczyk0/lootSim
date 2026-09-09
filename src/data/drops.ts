@@ -194,10 +194,23 @@ export function forSource<T extends TableEntry>(defs: readonly T[], q: DropQuery
 }
 
 /**
- * Rolls a table for one event. Each matching source is an independent roll, so a
- * definition listed under two sources gets two shots but drops at most once; an elite
- * triples a world-drop source's odds; `danger` (rift tier × Challenger) lifts every
- * chance through `dropChance`. `skip` is ids that must not drop — a relic the account
+ * Rolls a table for one event, **rolling every match independently**.
+ *
+ * There are two shapes a drop table can have and this file deliberately provides both,
+ * because getting them the wrong way round is the kind of thing that gets re-derived
+ * incorrectly by whoever adds the next table:
+ *
+ *  - **`rollTable` — a table whose entries are distinct chases.** Named items and relics.
+ *    Each definition is its own thing you are hunting, two can land in the same cache, and
+ *    a definition listed under two sources gets two shots but drops at most once. Every
+ *    entry rolls.
+ *  - **`rollOne` — a table whose entries are interchangeable.** Augments. You are hunting
+ *    "an augment", and which one it turns out to be is a second, weighted question. Rolling
+ *    each of forty-three definitions independently would drop four augments a cache; one
+ *    roll and then a pick is the honest shape.
+ *
+ * An elite triples a world-drop source's odds; `danger` (rift tier × Challenger) lifts
+ * every chance through `dropChance`. `skip` is ids that must not drop — a relic the account
  * already owns. Returns the definitions that hit, in registry order; the caller forges.
  */
 export function rollTable<T extends TableEntry>(
@@ -221,6 +234,47 @@ export function rollTable<T extends TableEntry>(
     }
   }
   return out;
+}
+
+/**
+ * Rolls a table for one event, **once**, and then picks which entry it was.
+ *
+ * The counterpart to `rollTable` above — see the note there for which shape a new table
+ * wants. `rate` is the chance the event pays out anything at all (lifted by `danger`
+ * through the same `dropChance` every other table uses); `weightOf` then decides which of
+ * the matching definitions it was. A definition matching through two sources is still one
+ * candidate, not two, because the question "did something drop" was already answered.
+ *
+ * Returns null when nothing dropped or nothing matched — a caller that gets null must not
+ * fall back to a default, or the rarest entry stops being rare.
+ */
+export function rollOne<T extends TableEntry>(
+  defs: readonly T[],
+  q: DropQuery,
+  rng: { chance(p: number): boolean; next(): number },
+  rate: number,
+  weightOf: (def: T) => number,
+  danger = 1,
+): T | null {
+  if (!rng.chance(dropChance(rate, danger))) return null;
+  // Deduplicated: `forSource` returns one match per source, and a definition reachable two
+  // ways is not twice as likely to be the one that dropped.
+  const seen = new Set<string>();
+  const pool: T[] = [];
+  for (const m of forSource(defs, q)) {
+    if (seen.has(m.def.id)) continue;
+    seen.add(m.def.id);
+    pool.push(m.def);
+  }
+  let total = 0;
+  for (const d of pool) total += Math.max(0, weightOf(d));
+  if (total <= 0) return null;
+  let roll = rng.next() * total;
+  for (const d of pool) {
+    roll -= Math.max(0, weightOf(d));
+    if (roll < 0) return d;
+  }
+  return pool[pool.length - 1] ?? null;
 }
 
 // --- authoring sugar -------------------------------------------------------------

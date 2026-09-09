@@ -1,27 +1,44 @@
 import type { Element } from "./elements";
 import type { ItemType } from "./items";
 import type { Rarity } from "./rarity";
-import { WEAPON_FAMILIES, type WeaponFamily } from "./weapons";
+import { WEAPON_FAMILIES } from "./weapons";
 
 /**
- * The four original tiers, exactly as the Python game had them, plus everything opened
- * beneath them: chests that don't compete on rarity so much as on *what* they promise.
- * A Sword Cache never once rolls you a necklace; an Ember Cache never rolls you cold
- * damage; the Adept's Trove never hands you a weapon you can't use. That certainty is
- * what the higher price buys — the four originals stay untouched on purpose, so a
- * player who remembers the old game still recognizes exactly what they cost and what
- * they pay.
+ * The four original tiers, exactly as the Python game had them, plus the handful of
+ * chests that promise a *category* rather than a rarity.
+ *
+ * **This list used to be twenty-eight.** Fourteen single-weapon caches and five elemental
+ * caches were removed by the augment overhaul (`docs/augments.md` §3) and replaced, one for
+ * one, by nineteen form and element augments. The argument for the trade is the whole
+ * design in a sentence: a Bow Cache could promise a family and a Storm Cache could promise
+ * an element, and **neither could promise both.** An augment stacks; a chest tier cannot.
+ *
+ * The three slot caches stayed deliberately. They are the coin-only path, and a player who
+ * owns no augments still has to have a shop. `RETIRED_CHEST_TIERS` below is what keeps
+ * every save that holds a retired key from losing anything.
  */
 export const CHEST_TIERS = [
   "Basic", "Advanced", "Elite", "Legendary",
   "WeaponCache", "ArmorCase", "TrinketBox",
-  "SwordCache", "AxeCache", "SpearCache", "DaggerCache", "StaffCache", "TalismanCache",
-  "HammerCache", "BowCache", "WhipCache", "ClawCache", "ChakramCache", "ScytheCache",
-  "RapierCache", "FistCache",
-  "EmberCache", "FrostCache", "StormCache", "VenomCache", "VoidCache",
-  "AdeptsTrove", "CollectorsHoard",
+  "LegendsCache", "AdeptsTrove", "CollectorsHoard",
 ] as const;
 export type ChestTier = (typeof CHEST_TIERS)[number];
+
+/**
+ * Chests that no longer exist, and what they cost — the only thing a save needs to know
+ * about them (`GameState.fromSaved`). Keys for a retired tier are refunded as coins at
+ * **full purchase price**, not converted at a ratio into a surviving tier: a ratio is
+ * arithmetic nobody can check and it loses value at the edges, and a migration players
+ * cannot verify is how trust in a save format dies.
+ *
+ * `openedInto` is where the lifetime `chestsOpened` count folds, so a record does not
+ * silently shrink. Every retired chest used the Advanced-grade odds table.
+ */
+export const RETIRED_CHEST_TIERS: Record<string, { price: number; openedInto: ChestTier }> = Object.fromEntries([
+  ...["Sword", "Axe", "Spear", "Dagger", "Staff", "Talisman"].map((w) => [`${w}Cache`, { price: 1600, openedInto: "Advanced" as ChestTier }]),
+  ...["Hammer", "Bow", "Whip", "Claw", "Chakram", "Scythe", "Rapier", "Fist"].map((w) => [`${w}Cache`, { price: 1800, openedInto: "Advanced" as ChestTier }]),
+  ...["Ember", "Frost", "Storm", "Venom", "Void"].map((e) => [`${e}Cache`, { price: 1200, openedInto: "Advanced" as ChestTier }]),
+]);
 
 export interface ChestTierInfo {
   /** The 24 niche chests need a display name; the four originals keep using the id. */
@@ -37,6 +54,13 @@ export interface ChestTierInfo {
   readonly favorElement?: Element;
   /** Never hands out a weapon the current class wasn't built for. */
   readonly classAdaptive?: boolean;
+  /**
+   * Weights the affix roll toward the *active class's* own element. Declarative rather
+   * than a `favorElement` on the row, because the element isn't known until a class is
+   * playing — and declarative rather than a special case in `openChests`, because a
+   * `switch` on a chest id is the shape this codebase keeps learning not to write.
+   */
+  readonly classElement?: boolean;
 }
 
 /** Shape of the odds an "Advanced"-grade pull uses: uncommon and up. */
@@ -61,32 +85,6 @@ const ADEPT_WEIGHTS: Record<Rarity, number> = {
 const CAPSTONE_WEIGHTS: Record<Rarity, number> = {
   common: 0.0, uncommon: 0.0, rare: 0.0, epic: 0.0,
   legendary: 2.8, mythic: 2.2, divine: 1.9, unspoken: 1.4,
-};
-
-/** One entry per single-weapon-family cache, so the table below reads as data. */
-const WEAPON_CACHE_INFO: Record<WeaponFamily, { blurb: string }> = {
-  sword: { blurb: "Nothing but swords. No gimmick, same as the family itself." },
-  axe: { blurb: "Nothing but great axes. Heavy, and priced like it." },
-  spear: { blurb: "Nothing but spears. Reach, guaranteed." },
-  daggers: { blurb: "Nothing but twin daggers. Every pull already knows what it wants to be." },
-  staff: { blurb: "Nothing but staves. The bolt was always going to be in here somewhere." },
-  talisman: { blurb: "Nothing but talismans. Every pull already circles you." },
-  hammer: { blurb: "Nothing but warhammers. Slow, guaranteed, expensive for it." },
-  bow: { blurb: "Nothing but bows. Distance, every time." },
-  whip: { blurb: "Nothing but whips. Reach without the weight, every pull." },
-  claws: { blurb: "Nothing but claws. Fast, every time." },
-  chakram: { blurb: "Nothing but chakrams. The circle, guaranteed." },
-  scythe: { blurb: "Nothing but scythes. The widest arc, every pull." },
-  rapier: { blurb: "Nothing but rapiers. Precision, guaranteed." },
-  fists: { blurb: "Nothing but fists. The fastest hands in town, every time." },
-};
-
-const ELEMENT_CACHE_INFO: Partial<Record<Element, { blurb: string }>> = {
-  fire: { blurb: "Weighted toward fire. Everything in here burns a little." },
-  cold: { blurb: "Weighted toward cold. Everything in here slows a little." },
-  lightning: { blurb: "Weighted toward lightning. Everything in here conducts." },
-  poison: { blurb: "Weighted toward poison. Everything in here festers." },
-  void: { blurb: "Weighted toward void. Everything in here eats a little." },
 };
 
 /**
@@ -142,44 +140,12 @@ export const CHESTS: Record<ChestTier, ChestTierInfo> = {
     weights: CACHE_WEIGHTS, types: ["ring", "gloves", "necklace"],
   },
 
-  // --- single-weapon specialist chests: guaranteed family, Advanced odds -----
+  // --- the class chest -----------------------------------------------------
 
-  SwordCache: { name: "Sword Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["sword"], blurb: WEAPON_CACHE_INFO.sword.blurb },
-  AxeCache: { name: "Axe Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["axe"], blurb: WEAPON_CACHE_INFO.axe.blurb },
-  SpearCache: { name: "Spear Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["spear"], blurb: WEAPON_CACHE_INFO.spear.blurb },
-  DaggerCache: { name: "Dagger Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["daggers"], blurb: WEAPON_CACHE_INFO.daggers.blurb },
-  StaffCache: { name: "Staff Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["staff"], blurb: WEAPON_CACHE_INFO.staff.blurb },
-  TalismanCache: { name: "Talisman Cache", price: 1600, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["talisman"], blurb: WEAPON_CACHE_INFO.talisman.blurb },
-  HammerCache: { name: "Hammer Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["hammer"], blurb: WEAPON_CACHE_INFO.hammer.blurb },
-  BowCache: { name: "Bow Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["bow"], blurb: WEAPON_CACHE_INFO.bow.blurb },
-  WhipCache: { name: "Whip Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["whip"], blurb: WEAPON_CACHE_INFO.whip.blurb },
-  ClawCache: { name: "Claw Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["claws"], blurb: WEAPON_CACHE_INFO.claws.blurb },
-  ChakramCache: { name: "Chakram Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["chakram"], blurb: WEAPON_CACHE_INFO.chakram.blurb },
-  ScytheCache: { name: "Scythe Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["scythe"], blurb: WEAPON_CACHE_INFO.scythe.blurb },
-  RapierCache: { name: "Rapier Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["rapier"], blurb: WEAPON_CACHE_INFO.rapier.blurb },
-  FistCache: { name: "Fist Cache", price: 1800, color: "#dbe3ef", weights: SPECIALIST_WEIGHTS, types: ["fists"], blurb: WEAPON_CACHE_INFO.fists.blurb },
-
-  // --- elemental caches: any slot, biased affix roll, Advanced odds ----------
-
-  EmberCache: {
-    name: "Ember Cache", price: 1200, color: "#ff7a2f", weights: SPECIALIST_WEIGHTS,
-    favorElement: "fire", blurb: ELEMENT_CACHE_INFO.fire!.blurb,
-  },
-  FrostCache: {
-    name: "Frost Cache", price: 1200, color: "#7dd3fc", weights: SPECIALIST_WEIGHTS,
-    favorElement: "cold", blurb: ELEMENT_CACHE_INFO.cold!.blurb,
-  },
-  StormCache: {
-    name: "Storm Cache", price: 1200, color: "#fde047", weights: SPECIALIST_WEIGHTS,
-    favorElement: "lightning", blurb: ELEMENT_CACHE_INFO.lightning!.blurb,
-  },
-  VenomCache: {
-    name: "Venom Cache", price: 1200, color: "#84cc16", weights: SPECIALIST_WEIGHTS,
-    favorElement: "poison", blurb: ELEMENT_CACHE_INFO.poison!.blurb,
-  },
-  VoidCache: {
-    name: "Void Cache", price: 1200, color: "#c084fc", weights: SPECIALIST_WEIGHTS,
-    favorElement: "void", blurb: ELEMENT_CACHE_INFO.void!.blurb,
+  LegendsCache: {
+    name: "Legend's Cache", price: 3000, color: "#f8d477", weights: ADEPT_WEIGHTS,
+    classAdaptive: true, classElement: true,
+    blurb: "Requisitioned against the Legend you are wearing. Its weapon, its element, rare and up.",
   },
 
   // --- the two capstones -------------------------------------------------
@@ -223,23 +189,9 @@ export const CHEST_CATEGORIES: readonly ChestCategory[] = [
     tiers: ["WeaponCache", "ArmorCase", "TrinketBox"],
   },
   {
-    label: "Weapon Specific",
-    blurb: "One weapon family, guaranteed, at Advanced-grade odds. Pay for certainty, not for luck.",
-    tiers: [
-      "SwordCache", "AxeCache", "SpearCache", "DaggerCache", "StaffCache", "TalismanCache",
-      "HammerCache", "BowCache", "WhipCache", "ClawCache", "ChakramCache", "ScytheCache",
-      "RapierCache", "FistCache",
-    ],
-  },
-  {
-    label: "Elemental",
-    blurb: "Any slot, but the affix roll leans hard toward one element — an essence in chest form.",
-    tiers: ["EmberCache", "FrostCache", "StormCache", "VenomCache", "VoidCache"],
-  },
-  {
     label: "Capstone",
     blurb: "The top of the coin sink. Never hands you junk, and it's priced like it.",
-    tiers: ["AdeptsTrove", "CollectorsHoard"],
+    tiers: ["LegendsCache", "AdeptsTrove", "CollectorsHoard"],
   },
 ];
 
