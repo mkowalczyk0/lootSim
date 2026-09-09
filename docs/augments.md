@@ -310,23 +310,37 @@ must not have. The gates put each grade's first appearance at a tier where the i
 guarantees is already plausible. The acceptance tool asserts the gates by measuring what
 tier 1 pays, not by reading the constants.
 
-**Measured rates** (`tools/augments.ts` computes these; they are recorded here for the
-argument, not depended on):
+**One dial.** `AUGMENT_GRADE_RATE` in `src/data/augments.ts` is a single named constant per
+grade — the chance an Avarice boss cache pays an augment of that grade — and it is the whole
+economy. A definition's own chance is its grade's rate split evenly among the definitions at
+that grade, so growing the weapon roster splits the rare share instead of quietly making
+every other rare augment rarer. `rollOne` reads those numbers straight off the table; there
+is no parallel event rate, no share and no denominator to re-derive. **Retuning the economy
+is one edit per grade and nothing else moves.**
 
-| Grade | First tier | Augment, per boss cache | The item it guarantees, per boss cache |
-| --- | --- | --- | --- |
-| divine | 5 | 1 in 3,408 | 1 in 1,755 (**1.94× commoner**) |
-| unspoken | 8 | 1 in 6,912 | 1 in 1,749 (**3.95× commoner**) |
+The shipped numbers are the design's original baseline **halved** — the owner's literal
+price, "2x harder to get dropped from the avarice rifts because they guarantee it".
 
-The margin widens with tier (at tier 20 it is 9× and 14×), because the cache's own rarity
-bias climbs faster than the augment rate does — `dropChance` caps, and the loot curve does
-not. So the binding case is always a grade's **first** tier, which is where the tool checks
-it hardest.
+**Measured** (`tools/augments.ts` computes these; recorded here for the argument, not
+depended on):
 
-These are much rarer than the design's first guess of "roughly one in six hundred". The
-halving was not what moved them: the binding constraint turned out to be §7's comparison,
-and the grade weights were set from it rather than from feel. An Unspoken Augment is
-genuinely the rarest object in the game, which is what the brief asked for.
+| Grade | First tier | Augment / boss cache | The item it guarantees | At the first tier |
+| --- | --- | --- | --- | --- |
+| divine | 5 | 1 in 419 | 1 in 1,755 | **4.19× cheaper** |
+| unspoken | 8 | 1 in 1,700 | 1 in 1,749 | **1.03× cheaper** |
+
+So the discount is real but small, and it is concentrated in *divine* rather than in
+unspoken — which is close to parity at its first tier and becomes strictly dearer than
+chance by tier 12. The discount also **shrinks as the ladder climbs** (by tier 20 an
+unspoken augment is 3.5× dearer than just seeing an unspoken drop), because the cache's own
+rarity bias rises faster than `dropChance` does. That is why the binding case is always a
+grade's *first* tier, and why the acceptance tool checks it hardest there.
+
+**An earlier draft was ten times rarer than this**, because it was tuned to a derived rule —
+"the expected cost of reaching the ceiling must never fall at all" — rather than to the
+price the owner set. That rule was stronger than anything the owner said. When a derived
+constraint and an explicit instruction disagree, the instruction wins. What survives is a
+bound on the *size* of the discount rather than a denial that there is one: see §7.
 
 Augments drop as **physical pickups in the cache, lost on death and on bail-out**, exactly
 like relics. They are the reward for finishing, and never make death free.
@@ -390,11 +404,21 @@ So **every axis guarantees**, and the drop rate pays for it. Three consequences,
    of the two — `dmg-` on an offensive slot, `res-` on a defensive one — is decided by
    `modAllowed`, not authored.
 
-**What the player buys is agency, not a discount.** That is the whole justification, and it
-is the sentence meant to stop the next person widening this. The cost of reaching the
-ceiling is *unchanged* — §7's headline comparison holds it there. What changes is that the
-ceiling, when you finally reach it, arrives as the bow you wanted rather than gloves for a
-class you do not play. That is the "fun crafting element" the brief named.
+**What the player mostly buys is agency; the discount is small and bounded.** That is the
+justification, and the sentence meant to stop the next person widening this. The owner
+granted a discount deliberately — it is consistent with their standing position that
+unspokens should become farmable at the very top end, *"not by much, but that little
+percent"* — and §7 bounds its size rather than pretending it is zero. The main thing that
+changes is that the ceiling, when you reach it, arrives as the bow you wanted rather than
+gloves for a class you do not play. That is the "fun crafting element" the brief named.
+
+**The rule that replaced the retired one: a rarity augment must be a pure floor — a suffix
+of the ladder, all at weight 1.** The owner retired "nothing may guarantee past mythic", but
+the thing it was really protecting still needs protecting, and it moved. The expensive
+future mistake is no longer the guarantee; it is somebody writing `{ unspoken: 40 }` and
+quietly creating the second rarity curve `src/data/rewards.ts` forbids everywhere in the
+game. **A floor cannot become a curve**, which is why the mask is constrained to a shape
+rather than to a ceiling. `augmentProblems` enforces it.
 
 **This is not a repeal of the crafting cap.** Crafting still stops at mythic on every path.
 The guarantee lives only on a rare *dropped* object, and four restrictions are load-bearing
@@ -470,40 +494,41 @@ inversion, and the shape `tools/forge.ts` already uses.
 1. **Targeting works.** A full loadout on a Basic chest produces the exact named
    family+element+affix item every single time, where four thousand un-augmented Legendary
    chests produce it never. If this comparison ever fails the system has no reason to exist.
-2. **The headline: the ceiling is not cheaper — agency, not a discount.** At every tier a
-   grade can drop at, earning that grade's augment is **strictly rarer** than simply seeing
-   an item of that rarity fall out of the same cache. Both routes are measured in the same
+2. **The headline: the ceiling's discount stays inside a stated factor.** At every tier a
+   grade can drop at, earning that grade's augment is never more than
+   `MAX_CEILING_DISCOUNT` (6×) cheaper than simply seeing an item of that rarity fall out of
+   the same cache. A named constant, compared directly. Both routes are measured in the same
    unit (Avarice boss caches), and the by-chance side counts *only* the items the cache
    itself drops — ignoring the coins the run also pays, which would buy chests and would
-   only make the by-chance route look better. It is the strictest benchmark available on
-   purpose. **If this ever inverts, augments have become a cheaper route to the ceiling and
-   the crafting cap has been repealed through a side door.**
+   only make the by-chance route look better. **Beyond that factor the top of the ladder has
+   been made farmable, and the number has to be argued for rather than nudged.** A companion
+   check asserts the discount *shrinks* as the Avarice ladder climbs rather than compounding,
+   since deep Avarice is where an unbounded rate would do its damage.
 3. **The other three axes move zero rarity.** A form+element+affix loadout on a Basic chest
    has a rarity distribution identical to a plain Basic chest's, to within floating point.
    This got *more* important under the owner's ruling, not less: it is what stops "I wanted
    a bow" from quietly becoming "I wanted a better bow".
-4. **The ladder is ordered, and a rarity augment is a pure floor.** Each floors at exactly
-   its own rarity, the ladder ascends strictly, and a floor never caps. The mask must keep a
-   *suffix* of the ladder at weight 1 — so the ceiling may now be reached deliberately, but
-   it still may not be *weighted* toward. The expensive mistake here is no longer the
-   guarantee; it is somebody later writing `{ unspoken: 40 }` and creating a second rarity
-   curve.
-5. **One roll path.** An augmented pull and a plain pull produce structurally identical
+4. **The ladder is ordered, and a rarity augment is a pure floor** — a suffix of the ladder,
+   all at weight 1. Each floors at exactly its own rarity, the ladder ascends strictly, and a
+   floor never caps. The ceiling may be reached deliberately but may not be *weighted*
+   toward: a floor cannot become a curve. See §5.3 for why this is the rule that replaced the
+   one the owner retired.
+5. **One dial.** Each grade's definitions divide exactly that grade's rate, and the source
+   the roll reads declares that same number — so a rate edit means what it says.
+6. **One roll path.** An augmented pull and a plain pull produce structurally identical
    `Item`s, because both went through `rollItem`. A forced affix the type cannot carry is
    absent rather than invented — and that combine is refused at authoring time anyway.
-6. **The preview holds no table.** `augmentedPull` drives both the outcome panel and
+7. **The preview holds no table.** `augmentedPull` drives both the outcome panel and
    `openChests`, verified by opening real chests and checking every result against the
    composed pull.
-7. **Every reference resolves**, no augment carries a `craft` source or hides behind a
-   reserved kind, and a grade's total weight equals its grade weight however many
-   definitions sit there — so growing the weapon roster splits the rare share instead of
-   quietly diluting every other rare augment.
-8. **The overhaul is complete.** Nineteen tiers retired, none surviving anywhere, every
+8. **Every reference resolves**, and no augment carries a `craft` source or hides behind a
+   reserved kind.
+9. **The overhaul is complete.** Nineteen tiers retired, none surviving anywhere, every
    remaining tier in exactly one category, the four originals untouched.
-9. **Migration is lossless.** A synthetic v26 save holding retired keys loads into v27 with
+10. **Migration is lossless.** A synthetic v26 save holding retired keys loads into v27 with
    the coins refunded at full price, lifetime counts folded into the surviving tier, no
    `undefined` in either record, and an unknown augment id dropped rather than kept.
-10. **One per axis is unreachable**, augments are consumed exactly once each, a loadout you
+11. **One per axis is unreachable**, augments are consumed exactly once each, a loadout you
     cannot pay for spends nothing, and an augmented pull is always 1× however many are
     asked for — while an un-augmented one still bulks.
 

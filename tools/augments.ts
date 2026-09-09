@@ -4,14 +4,19 @@
  * The owner ruled that **every axis guarantees**, unspoken included. That makes one
  * property load-bearing above all the others, and it is the reason this file exists:
  *
- *   **What the player buys is agency, not a discount.**
+ *   **What the player mostly buys is agency; the discount is small and bounded.**
  *
- * A guaranteed unspoken item is only defensible if the token that guarantees it is rarer
- * than the item would have been anyway. So the headline assertion is a **direct
- * comparison**, not a bound: at every tier a grade can drop at, earning that grade's
- * augment must be *strictly rarer* than simply seeing an item of that rarity fall out of
- * the same cache. If that ever inverts, augments have become a cheaper route to the
- * ceiling and the crafting cap has been repealed through a side door.
+ * An earlier draft of this file asserted the stronger claim — that the expected cost of
+ * reaching the ceiling must never fall at all. That was a *derived* rule, and it drove the
+ * drop rates about ten times rarer than the price the owner actually set ("2x harder to get
+ * dropped ... because they guarantee it"). When a derived constraint and an explicit owner
+ * instruction disagree, the instruction wins and the constraint is what was wrong.
+ *
+ * So the headline assertion guards the *size* of the discount rather than denying it: at
+ * every tier a grade can drop at, earning that grade's augment is never more than
+ * `MAX_CEILING_DISCOUNT` times cheaper than simply seeing an item of that rarity fall out
+ * of the same cache — a named constant, compared directly. Beyond that factor the top of
+ * the ladder has been made farmable and the number has to be argued for, not nudged.
  *
  * The comparison is deliberately the strictest one available. It measures both routes in
  * **the same unit — Avarice boss caches** — and it counts only the items the cache itself
@@ -24,7 +29,7 @@
  *
  *   1. targeting works at all — a full loadout produces the exact item asked for, where
  *      un-augmented chests essentially never do
- *   2. the ceiling is not cheaper (above)
+ *   2. the ceiling's discount stays inside a stated, named factor (above)
  *   3. form, element and affix augments move **zero** rarity — targeting *what* an item is
  *      must never be a back door into *how good* it is. More important under the owner's
  *      ruling, not less: it is what stops "I wanted a bow" becoming "I wanted a better bow"
@@ -38,8 +43,8 @@
  */
 
 import {
-  AUGMENTS, AUGMENT_AXES, AUGMENT_GRADE_WEIGHTS, AUGMENT_RATES,
-  DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP, augmentProblems, augmentWeight, augmentedPull,
+  AUGMENTS, AUGMENT_AXES, AUGMENT_GRADE_RATE, MAX_CEILING_DISCOUNT,
+  DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP, augmentProblems, augmentRate, augmentedPull,
   augmentsOnAxis, augmentsUpTo, emptyLoadout, loadoutFloor, loadoutProblems, loadoutSummary,
   modRollById, pickAugment, withAugment, type AugmentLoadout,
 } from "../src/data/augments";
@@ -124,7 +129,7 @@ section("targeting");
 
 // --- 2. the ceiling is not cheaper -------------------------------------------------
 
-section("the ceiling: agency, not a discount");
+section("the ceiling: a bounded discount");
 
 /**
  * The chance one Avarice boss cache at `tier` pays an augment of exactly `grade`, and the
@@ -135,10 +140,12 @@ function cacheOdds(tier: number, grade: Rarity): { augment: number; item: number
   const cfg = riftConfig("hoard", tier, 4);
   const p = profileFor(cfg.depth, cfg);
   const q = { kind: "clearCache", depth: p.depth, mode: "hoard", tier, lastFloor: true } as const;
+  // Read straight off the table the roll reads, so a rate edit moves this measurement with
+  // it. `forSource` is the same matcher `rollOne` uses, so the tier gates apply here too.
   const matched = [...new Set(forSource(AUGMENTS, q).map((m) => m.def))];
-  const total = matched.reduce((a, d) => a + augmentWeight(d), 0);
-  const share = matched.filter((d) => d.grade === grade).reduce((a, d) => a + augmentWeight(d), 0);
-  const augment = total > 0 ? dropChance(AUGMENT_RATES.avariceBoss, cfg.danger) * (share / total) : 0;
+  const total = matched.reduce((a, d) => a + augmentRate(d), 0);
+  const share = matched.filter((d) => d.grade === grade).reduce((a, d) => a + augmentRate(d), 0);
+  const augment = total > 0 ? dropChance(Math.min(1, total), cfg.danger) * (share / total) : 0;
 
   const w = depthWeights(p.depth + 2, p.rarityBias);
   let sum = 0;
@@ -152,22 +159,56 @@ for (const grade of ["divine", "unspoken"] as const) {
   for (const tier of [1, 3, 5, 8, 12, 20]) {
     const { augment, item } = cacheOdds(tier, grade);
     if (augment <= 0) continue;
+    // The owner deliberately granted a discount here, so "no discount" would be false by
+    // design. What is guarded is its *size*: above `MAX_CEILING_DISCOUNT` the top of the
+    // ladder has been made farmable, and the number has to be argued for rather than nudged.
+    const discount = item > 0 ? augment / item : Infinity;
     check(
-      `a ${grade} augment is rarer than a ${grade} item — Avarice tier ${tier}`,
-      augment < item,
+      `a ${grade} augment stays within ${MAX_CEILING_DISCOUNT}x of a ${grade} item — Avarice tier ${tier}`,
+      discount <= MAX_CEILING_DISCOUNT,
       `augment 1/${(1 / augment).toFixed(0)} vs item 1/${(1 / item).toFixed(0)}` +
-      ` (${(item / augment).toFixed(2)}x)`,
+      ` — ${discount >= 1 ? `${discount.toFixed(2)}x cheaper` : `${(1 / discount).toFixed(2)}x dearer`}`,
     );
   }
 }
 
 {
-  // The tier gates are what make the comparison survivable at the bottom of the ladder:
-  // a shallow cache almost never drops a divine, so an ungated divine augment would be
-  // commoner there than the thing it guarantees.
+  // The discount must also shrink as the tier climbs, not grow: the cache's own rarity bias
+  // rises faster than `dropChance` does, so deep Avarice is where an unbounded rate would
+  // do its damage. Asserted as a comparison between two tiers rather than as a bound.
+  const low = cacheOdds(8, "unspoken");
+  const high = cacheOdds(20, "unspoken");
+  check(
+    "the discount shrinks as the Avarice ladder climbs, rather than compounding",
+    (high.augment / high.item) < (low.augment / low.item),
+    `tier 8 ${(low.augment / low.item).toFixed(2)}x vs tier 20 ${(high.augment / high.item).toFixed(2)}x`,
+  );
+}
+
+{
+  // The tier gates are what make the shallow end survivable at all.
   const ungated = cacheOdds(1, "divine");
   check("divine and unspoken grades are gated off the low tiers", ungated.augment === 0,
     ungated.augment > 0 ? `tier 1 pays divine augments at 1/${(1 / ungated.augment).toFixed(0)}` : "");
+}
+
+{
+  // One dial: the economy is `AUGMENT_GRADE_RATE` and nothing else. If a definition's own
+  // chance ever stops being its grade's rate split by count, a rate edit has stopped
+  // meaning what it says.
+  for (const grade of RARITIES) {
+    const at = AUGMENTS.filter((a) => a.grade === grade);
+    if (at.length === 0) continue;
+    const summed = at.reduce((sum, a) => sum + augmentRate(a), 0);
+    check(`the ${grade} grade's definitions divide exactly its rate`,
+      Math.abs(summed - AUGMENT_GRADE_RATE[grade]) < 1e-12,
+      `${summed} vs ${AUGMENT_GRADE_RATE[grade]}`);
+    // ...and the table is what the roll actually reads.
+    const declared = at[0]!.sources.find((src) => src.kind === "clearCache" && src.lastFloor);
+    check(`...and the ${grade} grade's boss-cache source declares that same number`,
+      declared !== undefined && declared.kind === "clearCache"
+      && Math.abs(declared.chance - augmentRate(at[0]!)) < 1e-12);
+  }
 }
 
 // --- 3. the other three axes move zero rarity --------------------------------------
@@ -297,11 +338,6 @@ section("the roster");
     augmentsUpTo(WEEKLY_AUGMENT_CAP).every((a) => a.grade !== "divine" && a.grade !== "unspoken"));
   check("the guaranteed pick always returns something", pickAugment(augmentsUpTo(DAILY_AUGMENT_CAP), 0.5) !== null);
 
-  // Grade weights are per grade, split inside it — so a bigger weapon roster splits the
-  // rare share rather than diluting every other rare augment.
-  const rareShare = AUGMENTS.filter((a) => a.grade === "rare").reduce((s, a) => s + augmentWeight(a), 0);
-  check("a grade's total weight is its grade weight, however many definitions sit there",
-    Math.abs(rareShare - AUGMENT_GRADE_WEIGHTS.rare) < 1e-12, `${rareShare} vs ${AUGMENT_GRADE_WEIGHTS.rare}`);
 }
 
 // --- 8. the overhaul is complete ----------------------------------------------------

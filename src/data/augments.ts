@@ -101,13 +101,13 @@ function floorMask(floor: Rarity): Record<Rarity, number> {
  * > would be a guaranteed bow, etc. But they should be 2x harder to get dropped from the
  * > avarice rifts because they guarantee it. It adds this fun 'crafting' element."
  *
- * **What the player buys is agency, not a discount.** That is the whole justification and
- * it is the sentence that should stop the next person widening this. The cost of reaching
- * the ceiling is *unchanged* — `AUGMENT_RATES` was halved to pay for the guarantee, and
- * `tools/augments.ts` asserts as a direct comparison that farming Avarice for augments
- * never beats farming it for coins and buying chests. What changes is that the ceiling,
- * when you finally reach it, arrives as the bow you wanted rather than gloves for a class
- * you do not play.
+ * **What the player mostly buys is agency; the discount is small and bounded.** The
+ * guarantee is paid for by halving `AUGMENT_GRADE_RATE` — the owner's literal price — and
+ * what is left over is a modest discount they granted on purpose, consistent with their
+ * standing position that unspokens should become farmable at the very top end, *"not by
+ * much, but that little percent."* `MAX_CEILING_DISCOUNT` is what stops that percent from
+ * growing. The main thing that changes is that the ceiling, when you reach it, arrives as
+ * the bow you wanted rather than gloves for a class you do not play.
  *
  * This is **not** a repeal of the crafting cap. Crafting still stops at mythic on every
  * path. The guarantee lives only on a rare *dropped* object, and all four restrictions
@@ -138,60 +138,70 @@ export const RARITY_AUGMENT_GRADES: readonly Rarity[] = ["rare", "epic", "legend
  * top-tier Avarice boss caches. `tools/augments.ts` measures that rather than asserting
  * the arithmetic here, because a rate written in a comment is a rate that goes stale.
  */
-export const AUGMENT_GRADE_WEIGHTS: Record<Rarity, number> = {
+/**
+ * **The whole augment economy: one named rate per grade, per Avarice boss cache.**
+ *
+ * **This table is the whole augment economy. One edit per grade, and nothing else has to
+ * move** — the definitions divide their grade's rate among themselves, `rollOne` reads the
+ * numbers straight off the table, and `tools/augments.ts` measures the result rather than
+ * restating it. Nobody tuning this should have to re-derive a share, a denominator or a
+ * separate event rate; there is no longer any of those.
+ *
+ * The current numbers are the design's original baseline **halved**, which is the owner's
+ * literal instruction and the price they set:
+ *
+ * > "they should be 2x harder to get dropped from the avarice rifts because they guarantee it"
+ *
+ * A factor is meant literally here, and that is not in tension with the standing rule that
+ * a multiplier in a brief means a percentage: that rule governs gameplay modifiers on
+ * content, where a literal 5x is unbalanceable. This is the rarity of an object, where a
+ * factor is the correct unit and is checkable.
+ *
+ * **The owner deliberately bought a discount with that 2x, and it is not zero.** An earlier
+ * draft was tuned to a derived rule — "the expected cost of reaching the ceiling must never
+ * fall" — which drove these ~10x rarer than the owner's price. That rule was stronger than
+ * anything the owner said, and when a derived constraint disagrees with an explicit
+ * instruction the instruction wins. What is still guarded is the *size* of the discount:
+ * `MAX_CEILING_DISCOUNT` below, asserted as a comparison, so augments can never become
+ * common enough to trivialise the ceiling.
+ */
+export const AUGMENT_GRADE_RATE: Record<Rarity, number> = {
   common: 0,
-  uncommon: 0.36,
-  rare: 0.40,
-  epic: 0.175,
-  legendary: 0.05,
-  mythic: 0.03,
-  // Set by the §7 comparison rather than by feel: each of these has to leave its grade's
-  // augment strictly rarer than the item it guarantees, measured at the lowest tier the
-  // grade can drop at. See `tools/augments.ts`.
-  divine: 0.001,
+  uncommon: 0.088,
+  rare: 0.098,
+  epic: 0.043,
+  legendary: 0.012,
+  mythic: 0.0073,
+  divine: 0.0020,
   unspoken: 0.00044,
 };
 
-/** How many definitions sit at each grade — the denominator that keeps grades honest. */
-const GRADE_COUNT: Record<string, number> = {};
 
 /**
- * One definition's weight in the pick.
+ * The most a grade's augment may be cheaper than simply finding an item of that rarity in
+ * the same cache, measured at the lowest tier the grade can drop at.
  *
- * **Per grade, then split evenly inside it.** The grade weights above are probabilities of
- * landing on that grade; a definition's share is that divided by how many definitions sit
- * there. Written this way so that **adding a form augment splits the rare share rather
- * than quietly making every other rare augment rarer** — the drift that a bare
- * per-definition weight would introduce the next time the weapon roster grows, which is
- * exactly the failure this codebase keeps rediscovering.
+ * A real guard rather than a restatement of the tuning: the owner granted a discount, so
+ * asserting "no discount" would be false by design, but an unbounded one would mean a later
+ * rate bump could quietly make the top of the ladder farmable. Above this factor,
+ * `tools/augments.ts` fails and the number has to be argued for rather than nudged.
  */
-export function augmentWeight(def: AugmentDef): number {
-  const n = GRADE_COUNT[def.grade] ?? 1;
-  return AUGMENT_GRADE_WEIGHTS[def.grade] / n;
-}
+export const MAX_CEILING_DISCOUNT = 6;
 
-/** Avarice tier a grade needs before it can drop at all — §16's "tier 8 drops what tier 1 cannot". */
+/** Floors 1-3 of an Avarice Rift pay this share of the boss cache's rate. */
+export const AVARICE_FLOOR_SHARE = 0.18;
+
+/** Avarice tier a grade needs before it can drop at all — §16's "tier 8 drops what tier 1 cannot".
+ *
+ * These gates are load-bearing, not flavour. A shallow Avarice cache almost never drops a
+ * divine item, so an *ungated* divine augment comes out commoner than the thing it
+ * guarantees down there — the exact inversion the system exists to prevent. The gates put
+ * each grade's first appearance at a tier where the item it guarantees is already plausible.
+ */
 const GRADE_MIN_TIER: Partial<Record<Rarity, number>> = { divine: 5, unspoken: 8 };
 
-/**
- * How often each tap pays anything at all, before `dropChance` lifts it by danger.
- *
- * **These are the pre-guarantee rates halved, literally.** The owner's reason was causal —
- * *"because they guarantee it"* — and every augment guarantees its axis, so every augment
- * pays, not just the top of the rarity ladder.
- *
- * This is deliberately the one place the standing "a multiplier in a brief means a
- * meaningful increase, never a literal factor" rule does **not** apply. That rule is about
- * gameplay modifiers on content, where a literal 5x is unbalanceable. This is the drop rate
- * of an object, where a factor is the correct unit and is checkable — and
- * `tools/augments.ts` checks exactly what it bought.
- */
-export const AUGMENT_RATES = {
-  /** Floors 1-3 of an Avarice Rift. Keeps the run paying without being the reason to run it. */
-  avariceFloor: 0.045,
-  /** The cache that closes an Avarice Rift — the main tap, and the reason to kill the boss. */
-  avariceBoss: 0.25,
-} as const;
+/** How many definitions sit at each grade — filled in below, once the roster is known. */
+const GRADE_COUNT: Record<string, number> = {};
 
 /**
  * Avarice Rifts, the Vigil and the Convergence. Nowhere else — the brief's "exclusively",
@@ -204,12 +214,17 @@ export const AUGMENT_RATES = {
  * sites (`game/dungeon.ts`), capped at a grade, rather than as a source here — a
  * guaranteed payout is not a chance and should not pretend to be one.
  */
-function augmentSources(grade: Rarity): FoundSource[] {
+function augmentSources(grade: Rarity, share: number): FoundSource[] {
   const minTier = GRADE_MIN_TIER[grade];
   const tier = minTier !== undefined ? { minTier } : {};
+  // A definition's own chance is its grade's rate split evenly among the definitions at
+  // that grade — so **adding a form augment splits the rare share rather than quietly
+  // making every other rare augment rarer**, the drift a bare per-definition rate would
+  // introduce the next time the weapon roster grows.
+  const boss = AUGMENT_GRADE_RATE[grade] * share;
   return [
-    { kind: "clearCache", mode: "hoard", minDepth: 1, chance: AUGMENT_RATES.avariceBoss, lastFloor: true, ...tier },
-    { kind: "clearCache", mode: "hoard", minDepth: 1, chance: AUGMENT_RATES.avariceFloor, ...tier },
+    { kind: "clearCache", mode: "hoard", minDepth: 1, chance: boss, lastFloor: true, ...tier },
+    { kind: "clearCache", mode: "hoard", minDepth: 1, chance: boss * AVARICE_FLOOR_SHARE, ...tier },
   ];
 }
 
@@ -235,20 +250,32 @@ export function augmentsUpTo(cap: Rarity): readonly AugmentDef[] {
 /** Weighted pick over a pool, by grade. Shared by the guaranteed payouts and the tool. */
 export function pickAugment(pool: readonly AugmentDef[], roll: number): AugmentDef | null {
   let total = 0;
-  for (const a of pool) total += augmentWeight(a);
+  for (const a of pool) total += augmentRate(a);
   if (total <= 0) return null;
   let r = roll * total;
   for (const a of pool) {
-    r -= augmentWeight(a);
+    r -= augmentRate(a);
     if (r < 0) return a;
   }
   return pool[pool.length - 1] ?? null;
 }
 
+/** One definition's own drop chance from a boss cache — its grade's rate, split by count. */
+export function augmentRate(def: AugmentDef): number {
+  return AUGMENT_GRADE_RATE[def.grade] / (GRADE_COUNT[def.grade] ?? 1);
+}
+
 // --- the roster ---------------------------------------------------------------
 
-function def(id: string, name: string, grade: Rarity, blurb: string, effect: AugmentEffect): AugmentDef {
-  return { id, name, grade, blurb, effect, sources: augmentSources(grade) };
+/**
+ * A definition minus its sources. The roster is built in two passes because a grade's rate
+ * is split among the definitions at that grade, and that count is not known until every
+ * family has been authored.
+ */
+type AugmentDraft = Omit<AugmentDef, "sources">;
+
+function def(id: string, name: string, grade: Rarity, blurb: string, effect: AugmentEffect): AugmentDraft {
+  return { id, name, grade, blurb, effect };
 }
 
 const RARITY_BLURBS: Partial<Record<Rarity, string>> = {
@@ -260,7 +287,7 @@ const RARITY_BLURBS: Partial<Record<Rarity, string>> = {
   unspoken: "The Keepers have no category for this and have stopped trying to make one.",
 };
 
-const RARITY_AUGMENTS: readonly AugmentDef[] = RARITY_AUGMENT_GRADES.map((r) =>
+const RARITY_AUGMENTS: readonly AugmentDraft[] = RARITY_AUGMENT_GRADES.map((r) =>
   def(`rarity-${r}`, `${rarityLabel(r)} Augment`, r, RARITY_BLURBS[r]!, {
     axis: "rarity", weights: RARITY_AUGMENT_MASKS[r]!,
   }));
@@ -271,7 +298,7 @@ const RARITY_AUGMENTS: readonly AugmentDef[] = RARITY_AUGMENT_GRADES.map((r) =>
  * promise a family and a Storm Cache could promise an element, and neither could promise
  * both. That symmetry is the argument for the whole overhaul.
  */
-const FORM_AUGMENTS: readonly AugmentDef[] = ITEM_TYPES.map((type) => {
+const FORM_AUGMENTS: readonly AugmentDraft[] = ITEM_TYPES.map((type) => {
   const weapon = isWeaponType(type);
   return def(
     `form-${type}`,
@@ -290,7 +317,7 @@ const FORM_AUGMENTS: readonly AugmentDef[] = ITEM_TYPES.map((type) => {
  * out of every random roll (`LOOT_ELEMENTS`) and are reachable today only through a
  * crafting essence. An augment is their second route and it stays a rare one.
  */
-const ELEMENT_AUGMENTS: readonly AugmentDef[] = ELEMENTS.filter((e) => e !== "physical").map((element) => {
+const ELEMENT_AUGMENTS: readonly AugmentDraft[] = ELEMENTS.filter((e) => e !== "physical").map((element) => {
   const reserved = element === "holy" || element === "arcane" || element === "nature";
   return def(
     `element-${element}`,
@@ -321,7 +348,7 @@ export function affixMinRarity(mod: ModRoll): Rarity {
   return RARITIES[Math.min(mod.minTier, RARITIES.length - 1)]!;
 }
 
-const AFFIX_AUGMENTS: readonly AugmentDef[] = AFFIX_MOD_IDS.map((modId) => {
+const AFFIX_AUGMENTS: readonly AugmentDraft[] = AFFIX_MOD_IDS.map((modId) => {
   const mod = modRollById(modId)!;
   // One rung above what the roll needs: guaranteeing an affix is worth more than
   // reaching the rarity that merely makes it possible.
@@ -335,15 +362,20 @@ const AFFIX_AUGMENTS: readonly AugmentDef[] = AFFIX_MOD_IDS.map((modId) => {
   );
 });
 
-export const AUGMENTS: readonly AugmentDef[] = [
+const DRAFTS: readonly AugmentDraft[] = [
   ...RARITY_AUGMENTS, ...FORM_AUGMENTS, ...ELEMENT_AUGMENTS, ...AFFIX_AUGMENTS,
 ];
+
+for (const d of DRAFTS) GRADE_COUNT[d.grade] = (GRADE_COUNT[d.grade] ?? 0) + 1;
+
+export const AUGMENTS: readonly AugmentDef[] = DRAFTS.map((d) => ({
+  ...d,
+  sources: augmentSources(d.grade, 1 / (GRADE_COUNT[d.grade] ?? 1)),
+}));
 
 export const AUGMENT_BY_ID: Record<string, AugmentDef> = Object.fromEntries(
   AUGMENTS.map((a) => [a.id, a]),
 );
-
-for (const a of AUGMENTS) GRADE_COUNT[a.grade] = (GRADE_COUNT[a.grade] ?? 0) + 1;
 
 export function isAugmentId(id: unknown): id is string {
   return typeof id === "string" && id in AUGMENT_BY_ID;
