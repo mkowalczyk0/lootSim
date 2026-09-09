@@ -40,7 +40,7 @@ export const ACTION_LABELS: Record<RebindableAction, string> = {
   attack: "Attack", dash: "Dash", potion: "Potion", special: "Ultimate",
   skill1: "Skill 1", skill2: "Skill 2", skill3: "Skill 3", skill4: "Granted skill",
   confirm: "Confirm / interact", cancel: "Back / cancel",
-  tabPrev: "Previous tab", tabNext: "Next tab", pause: "Pause / back to ship",
+  tabPrev: "Previous tab", tabNext: "Next tab", pause: "Pause / back to the Citadel",
   mark: "Mark for a batch (Stash)",
 };
 
