@@ -1,4 +1,4 @@
-import { angleDelta, approach, circlesOverlap, clamp, dist, normalize, TAU } from "../core/math";
+import { angleDelta, approach, circlesOverlap, clamp, dist, distToSegment, normalize, TAU } from "../core/math";
 import { Rng } from "../core/rng";
 import { BOSS_ABILITIES, BOSS_KNOCK_RESIST, BOSS_ACTION_GAP } from "../data/bosses";
 import { challengerRewardMult } from "../data/challenger";
@@ -128,6 +128,10 @@ const BENEFIT_COLORS: Record<"heal" | "shield" | "haste", string> = {
 };
 /** Per-tick payout of a benefit zone, as a fraction of the standing hero's max health. */
 const BENEFIT_HEAL_FRACTION = 0.02;
+/** A friendly projectile charged by Predator's Trail draws in this tint instead of its
+ *  element's colour — distinct from every `ELEMENT_COLORS` value, so the charge reads
+ *  as its own thing rather than "the arrow turned cold". */
+const PREDATOR_TRAIL_TINT = "#ff3d9a";
 const BENEFIT_SHIELD_FRACTION = 0.12;
 /** Fraction of a mechanic's damage that its leftover ground deals per tick. */
 const GROUND_DAMAGE = 0.28;
@@ -293,6 +297,13 @@ export class Hero {
   readonly itemsPending: Item[] = [];
   /** Relics picked up since then, by id — same reliable path, same reason. */
   readonly relicsPending: string[] = [];
+  /**
+   * Active heal-over-time effects — Restorative Verse, Regrowth, Sanctuary, and every
+   * other `{ kind: "heal", overTime }` step. Each delivers `perSec` health per second
+   * until `remaining` runs out. Host-authoritative; the health it restores already
+   * travels on the snapshot, so nothing new goes on the wire.
+   */
+  readonly hots: { perSec: number; remaining: number }[] = [];
   /** Routes monsters to this hero when they can't see them directly. */
   flow: FlowField | null = null;
   /** Recent positions, newest first — for abilities that snap back to where you were. */
@@ -1578,7 +1589,7 @@ export class Dungeon implements CombatHost, RuleHost {
         for (const hero of this.heroes) {
           if (!hero.alive) continue;
           const a = hero.avatar;
-          if (dist(a.x, a.y, g.x, g.y) <= g.radius + a.radius) this.applyZoneBenefit(hero, g);
+          if (this.zoneContains(g, a.x, a.y, a.radius)) this.applyZoneBenefit(hero, g);
         }
         continue;
       }
@@ -1641,6 +1652,18 @@ export class Dungeon implements CombatHost, RuleHost {
     }
     // Mana comes back slowly enough that a skill is a decision, not a rotation filler.
     player.restoreMana(player.manaRegen * dt);
+
+    // Heal-over-time effects (Restorative Verse, Regrowth, …). A downed hero doesn't
+    // tick one up — you're revived by an ally, not by a lingering verse.
+    if (hero.hots.length > 0 && hero.alive) {
+      for (let i = hero.hots.length - 1; i >= 0; i--) {
+        const hot = hero.hots[i]!;
+        const step = Math.min(dt, hot.remaining);
+        player.heal(hot.perSec * step);
+        hot.remaining -= dt;
+        if (hot.remaining <= 0) hero.hots.splice(i, 1);
+      }
+    }
 
     // Self-buff statuses (Frenzy, Blessed, Inspired, …) feed the legacy attack path
     // through the same two fields the old buff skills used, plus a damage multiplier the
@@ -3625,8 +3648,22 @@ export class Dungeon implements CombatHost, RuleHost {
         continue;
       }
 
+      // Predator's Trail: a friendly bolt that flies through its owner's trail picks up
+      // the charge for the rest of its flight — tinted so the charge reads at a glance.
+      if (p.friendly && p.owner >= 0 && !p.empowered) {
+        for (const g of this.ground) {
+          if (g.empowerProjectiles === undefined || g.owner !== p.owner) continue;
+          if (this.zoneContains(g, p.x, p.y, p.radius)) {
+            p.empowered = g.empowerProjectiles;
+            p.color = PREDATOR_TRAIL_TINT;
+            break;
+          }
+        }
+      }
+
       if (p.friendly) {
         let spent = false;
+        const dmg = p.empowered ? p.damage * p.empowered : p.damage;
         for (const e of [...this.enemies]) {
           if (e.state === "spawning" || e.health <= 0 || p.hits.has(e.id)) continue;
           if (!circlesOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
@@ -3635,11 +3672,11 @@ export class Dungeon implements CombatHost, RuleHost {
           const owner = this.heroes[p.owner] ?? null;
           // A staff bolt *is* your attack, so it earns crits, leech and triggers.
           if (p.basic && owner) {
-            this.weaponStrike(owner, e, p.damage, angle, weaponAbilityFor(owner.player.weaponFamily), 60);
+            this.weaponStrike(owner, e, dmg, angle, weaponAbilityFor(owner.player.weaponFamily), 60);
           } else {
             const ail = STATUS_FOR_ELEMENT[p.element];
             const hadAil = ail ? e.sc.has(ail) : false;
-            const dealt = this.damageEnemy(e, p.damage, angle, p.element, { ailment: p.ailment, source: owner });
+            const dealt = this.damageEnemy(e, dmg, angle, p.element, { ailment: p.ailment, source: owner });
             // A skill bolt feeds the caster's resources; a basic bolt already did, above.
             this.creditIndirectHit(p.packet, e, dealt, !!ail && !hadAil && e.sc.has(ail));
           }
@@ -4201,9 +4238,17 @@ export class Dungeon implements CombatHost, RuleHost {
     });
   }
 
-  healActor(targetId: number, amount: number, _sourceId: number, _overTime?: number): void {
+  healActor(targetId: number, amount: number, _sourceId: number, overTime?: number): void {
     const hero = this.heroByHostId(targetId);
-    if (hero) { hero.player.heal(amount); return; }
+    if (hero) {
+      // `amount` is the total the step delivers; `overTime` spreads that total across
+      // its duration instead of dumping it in one frame. Without this the HoT that six
+      // classes' signature heals declare (Bard's Restorative Verse, Warden's Regrowth,
+      // Paladin's Sanctuary, …) resolved to a single tiny instant tick.
+      if (overTime && overTime > 0) hero.hots.push({ perSec: amount / overTime, remaining: overTime });
+      else hero.player.heal(amount);
+      return;
+    }
     const enemy = this.enemyByHostId(targetId);
     if (enemy) enemy.health = Math.min(enemy.maxHealth, enemy.health + amount);
   }
@@ -4271,10 +4316,24 @@ export class Dungeon implements CombatHost, RuleHost {
       ...(req.follows && owner ? { follows: owner.index } : {}),
       ...(owner ? { owner: owner.index } : {}),
       ...(req.status ? { status: req.status.id } : {}),
+      ...(req.x2 !== undefined ? { x2: req.x2, y2: req.y2 } : {}),
+      ...(req.empowerProjectiles !== undefined ? { empowerProjectiles: req.empowerProjectiles } : {}),
       // A hero's damage zone keeps its packet so each tick feeds the caster's resources.
       ...(owner && req.damage ? { packet: req.damage } : {}),
     });
     return this.ground.length - 1;
+  }
+
+  /**
+   * True when `(x,y)` (padded by `pad`, a body's own radius) is inside a ground zone —
+   * a circle around `(g.x,g.y)`, or, for a `line` zone (`x2`/`y2` set), a lane along the
+   * segment `(g.x,g.y)`-`(g.x2,g.y2)`, `g.radius` wide either side.
+   */
+  private zoneContains(g: GroundZone, x: number, y: number, pad: number): boolean {
+    if (g.x2 !== undefined && g.y2 !== undefined) {
+      return distToSegment(x, y, g.x, g.y, g.x2, g.y2) <= g.radius + pad;
+    }
+    return dist(x, y, g.x, g.y) <= g.radius + pad;
   }
 
   /** One tick of a friendly zone on one hero standing in it. */

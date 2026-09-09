@@ -242,7 +242,13 @@ export const RANGER_PREDATORS_TRAIL: Ability = {
   range: 300,
   shape: { width: 40, length: 300 },
   effects: [
-    { kind: "zone", zone: { radius: 40, duration: 10, tickInterval: 1, shape: "line", follows: false, benefit: "haste" } },
+    {
+      kind: "zone",
+      zone: {
+        radius: 40, duration: 10, tickInterval: 1, shape: "line", follows: false,
+        benefit: "haste", empowerProjectiles: 1.75,
+      },
+    },
   ],
   mutationHooks: [{ id: "predators_trail.zone", kind: "zone", note: "Run and Gun lets the trail follow you." }],
 };

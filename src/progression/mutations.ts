@@ -354,6 +354,13 @@ function applyOp(draft: Ability, op: MutationOp): void {
 
     case "zone":
       walkSteps(steps, (s) => {
+        // "heal-over-time effects last longer" (Bard's Sustained Note) targets `withTag:
+        // "heal"` — that catches a bare heal step as well as a heal zone, and a HoT's
+        // length lives on `overTime.duration`.
+        if (s.kind === "heal" && s.overTime && op.scaleDuration !== undefined) {
+          s.overTime.duration *= op.scaleDuration;
+          return;
+        }
         if (s.kind !== "zone") return;
         const z = s.zone;
         if (op.scaleRadius !== undefined) z.radius *= op.scaleRadius;

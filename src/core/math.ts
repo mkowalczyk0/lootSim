@@ -22,6 +22,17 @@ export function dist2(ax: number, ay: number, bx: number, by: number): number {
   return dx * dx + dy * dy;
 }
 
+/** Shortest distance from point `(px,py)` to the segment `(ax,ay)`-`(bx,by)`. */
+export function distToSegment(
+  px: number, py: number, ax: number, ay: number, bx: number, by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+  return dist(px, py, ax + dx * t, ay + dy * t);
+}
+
 export function circlesOverlap(
   ax: number, ay: number, ar: number,
   bx: number, by: number, br: number,

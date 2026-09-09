@@ -1322,6 +1322,23 @@ function drawTelegraph(ctx: CanvasRenderingContext2D, t: Telegraph, time: number
 function drawGroundZone(ctx: CanvasRenderingContext2D, g: GroundZone, time: number): void {
   const fade = clamp(g.remaining, 0, 1);
   ctx.save();
+  // A `line` zone (Predator's Trail) is a lane, not a puddle — draw the whole segment
+  // as a capsule so the player can see where it runs, not just where it started.
+  if (g.x2 !== undefined && g.y2 !== undefined) {
+    ctx.globalAlpha = 0.28 * fade;
+    ctx.strokeStyle = g.color;
+    ctx.lineWidth = g.radius * 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y);
+    ctx.lineTo(g.x2, g.y2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.6 * fade;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   ctx.globalAlpha = 0.28 * fade;
   ctx.fillStyle = g.color;
   ctx.beginPath();
