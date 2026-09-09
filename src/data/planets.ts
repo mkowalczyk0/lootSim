@@ -40,6 +40,7 @@ import type { Element } from "./elements";
 import type { EnemyKind } from "./enemies";
 import { memoryConfig } from "./memories";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "./modes";
+import { towerConfig } from "./tower";
 import { weeklyConfig } from "./weekly";
 
 export interface PlanetSpec {
@@ -357,6 +358,13 @@ export function nextFloorConfig(config: RunConfig): RunConfig {
   // week's seed, modifiers and key tier the same way it would lose a planet's spec.
   if (config.weekly) {
     return { ...weeklyConfig(config.weekly.week, config.floor + 1, config.challengerTier), players };
+  }
+  // The Tower is the one other endless, non-rift mode (`isRift` false, same as the Delve)
+  // — without this branch it falls straight into the delve fallback below and a climb
+  // silently drops the player back onto the Delve's own ladder. `tower.height` is the one
+  // durable ladder position here, the same role `depth` plays for the Delve.
+  if (config.tower) {
+    return towerConfig(config.tower.height + 1, config.challengerTier, players);
   }
   if (!config.mode.isRift) return delveConfig(config.depth + 1, config.challengerTier, players);
   return { ...riftConfig(config.mode.id, config.tier, config.floor + 1, config.challengerTier), players };
