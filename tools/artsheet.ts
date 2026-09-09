@@ -34,7 +34,7 @@ import { ATLAS } from "../src/render/atlas/manifest";
 import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 2000;
+const H = 2150;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -156,13 +156,14 @@ function strip(entries: readonly (readonly [Grid, Palette])[], boxed: boolean, g
   y += tallest + gap + 10;
 }
 
-/** `strip`'s counterpart for decoded real PNGs — one row per call, no auto-wrap mid-row
- * (the caller picks a scale that fits), so a row of rarities stays visually one line. */
+/** `strip`'s counterpart for decoded real PNGs — wraps exactly like `strip` does once a
+ * row would run past W, so a growing set (relics, artifacts, named items) never clips. */
 function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean, gap = 12): void {
   let x = 16;
   let tallest = 0;
   for (const png of entries) {
     const w = png.width * scale;
+    if (x + w > W - 16) { x = 16; y += tallest + gap; tallest = 0; }
     if (boxed) frame(x - 3, y - 3, w + 6, png.height * scale + 6);
     blitPng(png, x, y, scale);
     x += w + gap;
@@ -243,9 +244,9 @@ strip(
 
 {
   // Relics and artifacts (UAT §19) — same unwashed treatment as named items: a relic's
-  // colour is fixed forever, so it never goes through the rarity wash. stripPng doesn't
-  // auto-wrap, so relics and artifacts get their own row each — 21 authored icons at
-  // scale 3 no longer fit one line under W.
+  // colour is fixed forever, so it never goes through the rarity wash. Relics and
+  // artifacts get their own row (well, wrapped rows) each, so the two tiers stay visually
+  // separate even as both wrap.
   const authored = RELICS.filter((d) => d.art && d.art in ATLAS);
   const relicTier = authored.filter((d) => d.tier === "relic");
   const artifactTier = authored.filter((d) => d.tier === "artifact");
