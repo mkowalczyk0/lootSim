@@ -233,6 +233,21 @@ html, body {
 .field::placeholder { color: var(--muted); letter-spacing: 1px; }
 .chip.warn { color: var(--danger); border-color: var(--danger); }
 
+/* The workbench's selected op had no visual state of its own beyond the tooltip — every
+   chip in the row looked equally pickable whether or not it was the one about to run. */
+.chip.on {
+  color: var(--accent);
+  background: var(--panel);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* A workbench op the current item can't take (missing level, wrong slot, no room left
+   under the rarity's mod count, ...) — the tooltip already says why; this is so the
+   chip itself doesn't sit there looking exactly as pickable as the rest of the row. */
+.chip.dim { opacity: 0.4; cursor: not-allowed; }
+.chip.dim:hover { border-color: var(--line); }
+
 .row.disabled { opacity: 0.55; }
 
 .tabhint { margin-left: auto; font-size: 11px; color: var(--muted); }
@@ -1161,6 +1176,18 @@ html, body {
    choosing one is a click instead of cycling blind through eight with arrows. */
 .essence-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 
+/* The workbench's eleven ops, clustered by what they act on instead of one flat row —
+   a small caption per group, same chips underneath. */
+.op-groups { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; }
+.op-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.op-group-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 82px;
+}
+
 .stash-none {
   grid-column: 1 / -1;
   text-align: center;
@@ -1184,6 +1211,13 @@ html, body {
 }
 
 .item-card:hover { border-color: var(--r, var(--accent)); }
+
+/* A marked card has to read from across the grid, not just from the small checkbox in
+   its corner — this is the pile that's about to be destroyed together. */
+.item-card.marked {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
 
 .item-card.on {
   border-color: var(--r, var(--accent));

@@ -88,13 +88,45 @@ charges come from one function, so they cannot disagree, and a refusal spends no
 
 ### The UI (unverified by eye — nobody here has a browser)
 
-The Reforge card grid is unchanged; its side panel gained the workbench: a row of op
-chips with their cost, the selected op's blurb, an affix picker with each affix's range
-when the op needs a target, the melt-down list for Ascend, the yield for Salvage, the
-cost table against your balances, and the blocker in red when there is one. Keys:
-`special` cycles the op, `cancel` cycles the affix, `confirm` applies; every chip is also
-clickable (`data-forge-op`, `data-forge-affix`). The card's lock badge now means "the
-current op can't run on this one", with the reason in its tooltip.
+The Reforge card grid is unchanged; its side panel gained the workbench: op chips with
+their cost, the selected op's blurb, an affix picker with each affix's range when the
+op needs a target, the melt-down list for Ascend, the yield for Salvage, the cost table
+against your balances, and the blocker in red when there is one. Keys: `special` cycles
+the op, `cancel` cycles the affix, `confirm` applies; every chip is also clickable
+(`data-forge-op`, `data-forge-affix`). The card's lock badge now means "the current op
+can't run on this one", with the reason in its tooltip.
+
+**The eleven ops read as one flat row; the Sept 2026 pass clustered them by what they
+act on** (`FORGE_OP_GROUPS` in `ui/town.ts`, presentation only — `special` still cycles
+the underlying flat `FORGE_OPS` list, unaffected): Reroll (Reforge, Temper, Recast,
+Augment), Granted skill (Inscribe, Rescribe, Erase skill), Trigger (Awaken, Erase
+trigger), Rarity (Ascend), Destroy (Salvage). The selected op previously had no visual
+state of its own beyond its tooltip — every chip in the row looked equally pickable
+whether or not it was the one about to run — and a blocked op looked exactly as pickable
+as a legal one; both now read at a glance (`.chip.on`, `.chip.dim`).
+
+**Salvaging what you're wearing needs a second confirm** (§ the owner's own complaint:
+"easy to make mistakes and salvage your Equipped gear"). The card grid already flags a
+worn item with a `WORN` badge; picking Salvage on one no longer runs it — the first
+confirm (`confirm`, or clicking the card) arms it with a red warning, and only an
+identical second confirm on the same item actually destroys it. Any navigation, or
+switching the op, disarms it — the confirm has to be for the exact item you're looking
+at right now, same rule `resetArmed` already used for wiping a save. Selling can't reach
+an equipped item at all: the Stash screen (where `sell` is called) only ever lists
+`state.inventory`, which a worn item is never in — verified rather than re-gated, since
+a confirm dialog that can never fire would just be more UI to read past.
+
+**The Stash gained mass-salvage** (`GameState.salvageItems`, `tools/forge.ts` §9 — exactly
+`salvageItem` run once per id and summed, so the batch can never pay a different rate
+than doing it one at a time). Each card grew a checkbox; the new `mark` key (default `F`,
+rebindable like everything else) toggles whichever card the cursor is on, so a
+keyboard-only player doesn't need the mouse for it. Marked cards get a red outline, and
+`special` (which sells all junk when nothing is marked) switches to a two-press
+arm-then-confirm salvage of the marked pile the moment anything is marked — the same
+"press again" idiom as everywhere else in this UI. Since the Stash grid never lists a
+worn item, the batch can't touch equipped gear by construction; a named item can be
+marked (single-salvage already allows it) and the arm step calls that out by count so it
+isn't a surprise.
 
 ## Multi-item recipes (§24 / §25)
 

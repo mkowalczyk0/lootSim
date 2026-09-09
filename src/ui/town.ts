@@ -177,12 +177,26 @@ function k(settings: Settings, action: RebindableAction): string {
 type ForgeMode = "craft" | "reforge" | "named";
 const FORGE_MODES: readonly ForgeMode[] = ["craft", "reforge", "named"];
 
-function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string {
+/**
+ * The workbench's eleven ops read as a wall when they're one flat row — this is purely
+ * presentational grouping (docs/forge.md's own table order, unchanged), so `FORGE_OPS`
+ * stays the one list `tertiary()`'s cycle and every other lookup walks.
+ */
+const FORGE_OP_GROUPS: readonly { label: string; ops: readonly ForgeOp[] }[] = [
+  { label: "Reroll", ops: ["reforge", "temper", "recast", "augment"] },
+  { label: "Granted skill", ops: ["inscribe", "rescribe", "eraseGrant"] },
+  { label: "Trigger", ops: ["awaken", "eraseTrigger"] },
+  { label: "Rarity", ops: ["ascend"] },
+  { label: "Destroy", ops: ["salvage"] },
+];
+
+function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMarked = 0): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
   const e = k(s, "confirm");
   const q = k(s, "cancel");
   const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
+  const mark = k(s, "mark");
   const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion`;
@@ -198,7 +212,9 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft"): string 
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
     case "Chests": return `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
-    case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell · ${semi} sell all junk`;
+    case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
+      + ` · ${mark} mark for a batch, or click a card's checkbox · `
+      + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk`);
     case "Hero": return `${sel} pick a slot · ${e} unequip · on a relic slot, ${adj} browses your collection and ${e} sockets or removes`;
     case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
@@ -367,10 +383,7 @@ export class TownUI {
       }
       const selectEl = target.closest<HTMLElement>("[data-select]");
       if (selectEl) {
-        const id = selectEl.dataset.select!;
-        if (this.stashSelected.has(id)) this.stashSelected.delete(id);
-        else this.stashSelected.add(id);
-        this.massSalvageArmed = false;
+        this.toggleStashSelect(selectEl.dataset.select!);
         this.render();
         return;
       }
@@ -599,6 +612,7 @@ export class TownUI {
     if (input.wasPressed("confirm")) { this.primary(); dirty = true; }
     if (input.wasPressed("cancel")) { this.secondary(); dirty = true; }
     if (input.wasPressed("special")) { this.tertiary(); dirty = true; }
+    if (input.wasPressed("mark")) { this.markHighlighted(); dirty = true; }
 
     if (this.toast && performance.now() > this.toast.until) {
       this.toast = null;
@@ -1420,6 +1434,13 @@ export class TownUI {
       return;
     }
     if (this.tab !== "Stash") return;
+    // Marking anything at all repurposes this key: with a batch pending, "sell all
+    // junk" would be a second, unrelated bulk action sitting behind the same button —
+    // confusing exactly when the player is already mid-decision about a pile of items.
+    if (this.stashSelected.size > 0) {
+      this.massSalvage();
+      return;
+    }
     const equipped = this.state.player.equipment;
     const junk = this.state.inventory.filter((it) => {
       // A named item is never junk, whatever its score says — it's a thing you farmed for.
@@ -1435,6 +1456,60 @@ export class TownUI {
     const gained = this.state.sell(junk.map((i) => i.id));
     this.notify(`Sold ${junk.length} junk items for ${formatNumber(gained)}`, "#fbbf24");
     this.cursor = 0;
+    this.state.save();
+  }
+
+  /** Toggles one item's membership in the Stash's mass-salvage batch — the one method
+   *  both the card's checkbox click and the `mark` key funnel through, so they can
+   *  never disagree. Any change to the batch disarms a pending mass-salvage: the
+   *  confirm you're about to press has to be for the pile you're looking at right now. */
+  private toggleStashSelect(id: string): void {
+    if (this.stashSelected.has(id)) this.stashSelected.delete(id);
+    else this.stashSelected.add(id);
+    this.massSalvageArmed = false;
+  }
+
+  /** The `mark` key's job on Stash: toggle whichever card the cursor is on. Silently a
+   *  no-op anywhere else (Stash is the only screen with a batch to build). */
+  private markHighlighted(): void {
+    if (this.tab !== "Stash") return;
+    const item = this.filteredStash()[this.cursor];
+    if (!item) return;
+    this.toggleStashSelect(item.id);
+  }
+
+  /**
+   * The Stash's mass-salvage, gated the same way every other one-way action in this UI
+   * is: the first press only previews the total and arms it, the second actually runs
+   * it. Selected ids are always plain `state.inventory` items — the Stash grid never
+   * lists what's equipped, so unlike the workbench's single-item Salvage this needs no
+   * separate "you're wearing this" gate of its own.
+   */
+  private massSalvage(): void {
+    const items = this.state.inventory.filter((it) => this.stashSelected.has(it.id));
+    if (items.length === 0) {
+      this.stashSelected.clear();
+      this.massSalvageArmed = false;
+      this.notify("Nothing marked.", "#9aa4b2");
+      return;
+    }
+    if (!this.massSalvageArmed) {
+      this.massSalvageArmed = true;
+      const ash = items.reduce((sum, it) => sum + salvageYield(it).ash, 0);
+      const namedCount = items.filter((it) => it.named).length;
+      this.notify(
+        `Salvage ${items.length} item${items.length === 1 ? "" : "s"} for ~${formatNumber(ash)} ${ASH_NAME}`
+        + (namedCount ? ` (${namedCount} named)` : "") + `? `
+        + `${k(this.state.settings, "special")} again to confirm — this can't be undone.`,
+        "#ef4444",
+      );
+      return;
+    }
+    const y = this.state.salvageItems(items.map((it) => it.id));
+    this.notify(`Salvaged ${items.length} items for ${formatNumber(y.ash)} ${ASH_NAME}`, "#fbbf24");
+    this.stashSelected.clear();
+    this.massSalvageArmed = false;
+    this.cursor = clamp(this.cursor, 0, Math.max(0, this.filteredStash().length - 1));
     this.state.save();
   }
 
@@ -1483,7 +1558,7 @@ export class TownUI {
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode)}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode, this.stashSelected.size)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
@@ -2251,7 +2326,7 @@ export class TownUI {
     const worn = this.wornItemIds().has(item.id);
     const salvagingWorn = this.forgeOp === "salvage" && worn;
     const armed = this.salvageArmed === item.id;
-    const ops = FORGE_OPS.map((op) => {
+    const opChip = (op: ForgeOp) => {
       const q = this.state.forgeQuote(item.id, op, this.forgeAffix);
       const info = FORGE_OP_INFO[op];
       const on = op === this.forgeOp;
@@ -2262,7 +2337,16 @@ export class TownUI {
       ].filter(Boolean).join(" · ") : "";
       return `<span class="chip ${on ? "on" : ""} ${q?.blocker ? "dim" : ""}" data-forge-op="${op}"
         title="${escapeHtml(info.blurb)}${q?.blocker ? `\n${escapeHtml(q.blocker)}` : ""}">${escapeHtml(info.label)}${cost ? ` <em>${escapeHtml(cost)}</em>` : ""}</span>`;
-    }).join(" ");
+    };
+    // Eleven ops in one flat row read as a wall; splitting them into what they act on
+    // (reroll an affix, the granted-skill slot, the trigger slot, rarity, destruction)
+    // is the same read `docs/forge.md`'s table already gives them — this just puts it
+    // on screen. `FORGE_OP_GROUPS` is presentation only: cycling with `special` still
+    // walks the flat `FORGE_OPS` list underneath, unaffected.
+    const ops = FORGE_OP_GROUPS.map((g) =>
+      `<div class="op-group"><span class="op-group-label">${escapeHtml(g.label)}</span>
+        ${g.ops.map(opChip).join(" ")}</div>`,
+    ).join("");
 
     const info = FORGE_OP_INFO[this.forgeOp];
     const quote = this.state.forgeQuote(item.id, this.forgeOp, this.forgeAffix);
@@ -2297,7 +2381,7 @@ export class TownUI {
     return `
       <h3>Workbench <span class="muted">${formatNumber(this.state.ash)} ${ASH_NAME}</span>
         <span class="chip" data-action="tertiary">${k(s, "special")} cycle</span></h3>
-      <p>${ops}</p>
+      <div class="op-groups">${ops}</div>
       <h4>${escapeHtml(info.label)}</h4>
       <p class="muted">${escapeHtml(info.blurb)}</p>
       ${affixes}
@@ -2601,11 +2685,14 @@ export class TownUI {
       const tip = `${it.name} — ${rarityLabel(it.rarity)} ${it.type} · ilvl ${it.ilvl}\n`
         + (named ? `${named.flavor}\n` : "")
         + `${statLine(it)}\nsells for ${formatNumber(sellPrice(it))}c`;
+      const marked = this.stashSelected.has(it.id);
       return `
-        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+        <div class="item-card ${i === this.cursor ? "on" : ""} ${marked ? "marked" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(tip)}">
           ${mark}
           ${locked ? `<span class="ic-lock">lv ${requiredLevel(it)}</span>` : ""}
+          <span class="ic-select ${marked ? "on" : ""}" data-select="${it.id}"
+                title="mark for a batch salvage">${marked ? "☑" : "☐"}</span>
           <div class="ic-art"><img src="${icon}" alt=""></div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
           <span class="ic-slot">${it.slot}</span>
@@ -2614,6 +2701,7 @@ export class TownUI {
     }).join("");
 
     const sel = onBar ? undefined : items[this.cursor];
+    const marked = this.stashSelected.size;
     return `<div class="stash-grid">${filterBar}${cards}</div>
       <aside class="side">
         ${sel
@@ -2623,8 +2711,16 @@ export class TownUI {
               : "Pick a piece to compare it against what you're wearing."}</p>`}
         <p>
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · sell selected</span>
-          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")} · sell all junk</span>
+          <span class="chip" data-action="tertiary">${k(this.state.settings, "special")}
+            · ${marked > 0 ? `salvage ${marked} marked` : "sell all junk"}</span>
         </p>
+        ${marked > 0
+          ? `<p class="muted">${k(this.state.settings, "mark")} or a card's checkbox toggles what's marked.
+              ${this.massSalvageArmed
+                ? `<b style="color:#ef4444">Press ${k(this.state.settings, "special")} again to salvage — this can't be undone.</b>`
+                : `Salvage is one-way; the confirm asks once more before it runs.`}</p>`
+          : `<p class="muted">${k(this.state.settings, "mark")}, or a card's checkbox, marks
+              several items to salvage together at the Forge's Ash rate.</p>`}
         <p class="muted">${this.state.inventory.length} / 200 slots used.</p>
       </aside>`;
   }
