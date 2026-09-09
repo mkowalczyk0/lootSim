@@ -128,11 +128,12 @@ player in gear they cannot equip, which is a worse reward than a smaller number.
 `tools/rewards.ts` measures the cost directly — the bonus is worth at most its own cap in
 wearable levels, and nothing at ordinary difficulty.
 
-*Noticed while writing that check, pre-existing and not touched:* at ordinary difficulty a
-floor's own drops already need roughly one level more than the floor recommends bringing
-(`requiredLevel` is `ilvl - 1`; `recommendedLevel` is `depth * 0.9`). You level into your
-own loot as you clear. It looks deliberate, and the test pins that §16 doesn't widen it by
-more than the capped bonus.
+*Noticed while writing that check:* a floor's drops used to need roughly one level more
+than the floor recommended bringing, because `recommendedLevel` was `depth * 0.9` while
+`requiredLevel` is `ilvl - 1`. `recommendedLevel` is now floored at `depth + itemPower - 1`
+— exactly the floor's own `requiredLevel` — so the advice can always equip what the floor
+pays out. The test still pins that §16's power bonus doesn't widen a drop's own
+`requiredLevel` gap by more than the capped amount.
 
 ### Special variants
 

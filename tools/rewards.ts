@@ -324,11 +324,11 @@ console.log("\n=== the power bonus never outruns the level that can wear it ==="
    * is why it is measured against the same drop without the bonus rather than against the
    * floor's recommended level.
    *
-   * (Worth knowing separately, and not caused here: at ordinary difficulty a floor's own
-   * drops already need roughly one level more than the floor recommends bringing —
-   * `requiredLevel` is `ilvl - 1` and `recommendedLevel` is `depth * 0.9`. You level into
-   * your own loot as you clear. That is pre-existing and deliberate-looking; this test
-   * pins that §16 doesn't widen it by more than the capped bonus.)
+   * (Worth knowing separately, and not caused here: `recommendedLevel` is now floored at
+   * `depth + itemPower - 1`, which is exactly `requiredLevel` of the floor's own drops, so
+   * the advice can always wear what the floor pays out. This test pins that §16's power
+   * bonus doesn't widen the gap between a drop's `requiredLevel` and its no-bonus
+   * counterpart by more than the capped amount.)
    */
   const cost: number[] = [];
   for (const depth of [1, 5, 10, 15, 20, 25, 30]) {

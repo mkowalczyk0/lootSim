@@ -178,8 +178,19 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // reason `rollElement` skips infusing monsters on one.
     variantChance: biome.element === "physical" ? 0 : reward.variantChance,
     variantElement: biome.element,
-    // Levelling now tracks depth closely, so the advice should too.
-    recommendedLevel: Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35))),
+    // Levelling now tracks depth closely, so the advice should too. The hard floor is
+    // the level a character needs to *equip this floor's own drops*: loot rolls at
+    // `ilvl = depth + itemPower` (see `rollDrop` / `dropClearCache` in `game/dungeon.ts`)
+    // and `requiredLevel` is `ilvl - 1` (`game/item.ts`), so advising anything below
+    // `d + itemPower - 1` tells the player to bring a character that can't wear what the
+    // floor pays out. The old `0.9 * d * danger^0.35` sat just under that from depth ~10
+    // on. Keep it as the shallow-floor / high-danger term, but never advise below the
+    // equip floor.
+    recommendedLevel: Math.max(
+      1,
+      d + reward.itemPower - 1,
+      Math.round(d * 0.9 * Math.pow(danger, 0.35)),
+    ),
     tag: buildTag(run),
   };
 }
