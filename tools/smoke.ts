@@ -3056,13 +3056,21 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
    * reported to the PM instead. Same pinned-violation shape `tools/legends.ts` and
    * `tools/chroma.ts` use: the found set must equal this exactly, so a NEW collision
    * fails loudly and so does one of these getting fixed without the pin being removed.
-   * All three are fire- or void-toned floors under a same-element wash — a warm floor
-   * disappearing under a fire tint, a dark floor disappearing under a void one.
+   *
+   * The Cinder Catacombs and The Veil were here and are fixed (Sept 2026, `docs/
+   * ashen-wastes-infusion-fix.md`) — floor-only regenerations, wall pixel-anchored to
+   * the original generation, verified against this exact gate before the pin came off.
+   * **Ashen Wastes stays pinned on purpose.** A floor-only fix was attempted and
+   * measured close (grunt one luminance point under the bar, every other archetype
+   * clear) but the owner's eye read the fix as not obviously better than the original —
+   * it is the first floor of the game, the fix is not free of judgement calls, and a
+   * number that's one point short is not grounds to override that. See the design
+   * record for the full attempt, the direction that actually worked, and why "darken
+   * the floor" (the rule that fixed the other two) made this one worse before
+   * "brighten it" was tried.
    */
   const KNOWN_INFUSION_COLLISIONS: readonly string[] = [
-    "Ashen Wastes",       // tiles.delve-wrath, fire-on-fire
-    "The Veil",           // tiles.delve-veil, void-on-void
-    "The Cinder Catacombs", // tiles.reliquary-catacombs, fire-on-fire
+    "Ashen Wastes", // tiles.delve-wrath, fire-on-fire — see docs/ashen-wastes-infusion-fix.md
   ];
 
   let worstMonsterDelta = Infinity;
