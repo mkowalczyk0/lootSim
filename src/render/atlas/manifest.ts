@@ -500,6 +500,13 @@ export const TILESETS: Record<string, AtlasTileset> = {
   "tiles.reliquary-basilica":  { id: "tiles.reliquary-basilica",  w: 64, h: 64, tile: 16 }, // cathedral frozen solid
   "tiles.reliquary-sepulcher": { id: "tiles.reliquary-sepulcher", w: 64, h: 64, tile: 16 }, // battlefield of higher armies, embedded blades
   "tiles.reliquary-archive":   { id: "tiles.reliquary-archive",   w: 64, h: 64, tile: 16 }, // where the Reliquary touches the Abyss
+  // The last three sectors (§3.3's closed question): monsters carry these three elements
+  // at the infusion cap from tier 1 (see `SHARED_MONSTER_SETS`'s comment), so the ground
+  // is deliberately NOT the sector's own colour — the element belongs to the gilding, the
+  // arcane light and the growth, not the floor those things stand on.
+  "tiles.reliquary-ossuary": { id: "tiles.reliquary-ossuary", w: 64, h: 64, tile: 16 }, // gilded saints on display, dark stone under growing gold
+  "tiles.reliquary-spire":   { id: "tiles.reliquary-spire",   w: 64, h: 64, tile: 16 }, // mage-tower, rune-scarred ash under fractured arcane stone
+  "tiles.reliquary-orchard": { id: "tiles.reliquary-orchard", w: 64, h: 64, tile: 16 }, // orchard over a mass grave, turned earth under root-grown walls
 
   // The Abyssal Rift (§7) — null-black, one wrong colour, geometry that doesn't close.
   "tiles.abyss": { id: "tiles.abyss", w: 64, h: 64, tile: 16 },
