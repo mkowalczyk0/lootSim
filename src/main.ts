@@ -2,7 +2,7 @@ import { GameLoop } from "./core/loop";
 import { Input, isEditableTarget } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
-import { delveConfig, MODES, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
+import { delveConfig, MODES, modeUnlocked, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
@@ -310,6 +310,7 @@ function start(state: GameState, who: AccountInfo): void {
       case "forge": enterTown("Craft"); break;
       case "quartermaster": enterTown("Stash"); break;
       case "comms": enterTown("Party"); break;
+      case "tower": enterTown("Tower"); break;
       case "vigil": enterTown("Vigil"); break;
       case "convergence": enterTown("Convergence"); break;
       case "expedition": {
@@ -693,6 +694,9 @@ function start(state: GameState, who: AccountInfo): void {
 
     if (scene === "hub") {
       hub.update(dt, input);
+      // The Tower's portal is on the deck once the delve has gone deep enough (UAT §21) —
+      // the depth record, not the frontier, so the climb can't unlock itself.
+      hub.towerOpen = modeUnlocked(MODES.tower, state.stats.deepestDepth);
       // The Vigil's portal is on the deck once the delve has gone deep enough (UAT §17).
       hub.vigilOpen = dailyUnlocked(state.stats.deepestDepth);
       // Same for the Convergence, at its own (deeper) unlock threshold.

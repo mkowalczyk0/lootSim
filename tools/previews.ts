@@ -360,9 +360,10 @@ console.log("\n=== a mode says what it is a consequence of, not only what it pay
   const hub = new Hub();
   hub.vigilOpen = true;
   hub.weeklyOpen = true;
+  hub.towerOpen = true;
   hub.setExpedition(PLANETS[0]!.id, 1);
   const kinds = new Set<HubStationKind>(hub.stations.map((s) => s.kind));
-  const doors: HubStationKind[] = ["dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence"];
+  const doors: HubStationKind[] = ["dive", "abyss", "hoard", "starmap", "expedition", "vigil", "convergence", "tower"];
   const notDoors: HubStationKind[] = ["forge", "quartermaster", "comms"];
   check("every station kind is on the deck under test", [...doors, ...notDoors].every((k) => kinds.has(k)),
     [...kinds].join(", "));

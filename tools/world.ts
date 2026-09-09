@@ -37,6 +37,8 @@ import { DELVE_BOTTOM } from "../src/data/legends";
 import { dailyConfig, dayNumber } from "../src/data/daily";
 import { weekNumber, weeklyConfig } from "../src/data/weekly";
 import { biomeForRun, profileFor } from "../src/data/depth";
+import { GameState } from "../src/game/state";
+import { universalPointsFor } from "../src/progression/universal";
 import { provingFloor } from "../src/data/legends";
 import { TOWER_BIOMES, towerBiomeFor, towerBossSpec, towerConfig } from "../src/data/tower";
 import { bossSpecForRun } from "../src/data/encounters";
@@ -247,6 +249,46 @@ check("height 30 is not the Proving — the two records are not one record",
 // The Tower appears once the first Warden is behind you, and not before (ruling 4).
 check("the Tower opens at deepest depth 5, not sooner",
   !modeUnlocked(MODES.tower, 4) && modeUnlocked(MODES.tower, 5));
+
+// --- the two records stay two records --------------------------------------
+
+console.log("\n=== a height is not a depth ===");
+
+// The check that stops the split being "simplified" later. Everything the depth record
+// gates — the Proving, the rift ladders, the Vigil and Convergence thresholds, the
+// Tower's own unlock — must be untouched by a climb, however high.
+{
+  const state = new GameState(1);
+  state.recordDepth(3, delveConfig(3));
+  const beforeDepth = state.stats.deepestDepth;
+  const beforeUnlocked = state.maxUnlockedDepth;
+
+  state.recordDepth(40, towerConfig(40));
+  check("banking a tower floor moves the height record",
+    state.stats.highestHeight === 40 && state.player.highestHeight === 40,
+    `account ${state.stats.highestHeight}, character ${state.player.highestHeight}`);
+  check("…and unlocks the next floor of the climb", state.maxUnlockedHeight === 41);
+  check("…and moves neither depth record, however high the climb",
+    state.stats.deepestDepth === beforeDepth && state.player.deepestDepth === beforeDepth
+    && state.maxUnlockedDepth === beforeUnlocked,
+    `depth ${state.stats.deepestDepth}, unlocked ${state.maxUnlockedDepth}`);
+  check("…so a climber has still not opened a single rift tier",
+    RUN_MODES.filter((id) => MODES[id].isRift).every((id) => state.riftTiers[id] === 1));
+  check("…and has not opened the Tower's own gate either — the climb can't unlock itself",
+    !modeUnlocked(MODES.tower, state.stats.deepestDepth));
+
+  // The frontier is the widening half: both ladders feed it, and it only ever grows.
+  check("the account frontier is the further of the two ladders",
+    state.frontier === 40, String(state.frontier));
+  check("the universal pool reads the frontier, so a climb pays for the basics",
+    state.universalPool === universalPointsFor(40));
+  state.recordDepth(55, delveConfig(55));
+  check("…and a deeper dig widens it again", state.frontier === 55);
+
+  // Per-character, which is the rule the ilvl split protects.
+  check("a character's own frontier is the further of its own two records",
+    state.player.frontier === Math.max(state.player.deepestDepth, state.player.highestHeight));
+}
 
 // --- 4. the prose says something the mode's own line doesn't ---------------
 
