@@ -722,11 +722,20 @@ export class TownUI {
       // they flip between categories (General, Weapon Specific, ...), because the chests
       // themselves are a left/right carousel within whichever category is showing. The
       // Augment view breaks that shape: it's a stack of loadout slots, not a carousel, so
-      // up/down have to walk *those* rows instead — otherwise a direction press silently
-      // carries you out into the neighbouring category, which is not a deliberate way to
-      // leave the view. Leaving stays a click on the category strip.
+      // up/down walk *those* rows instead — a direction press must not silently carry you
+      // out into the neighbouring category. But `chestCategory` is instance state that
+      // outlives this screen (it survives an I/O tab switch and even a dive), so the view
+      // still needs a keyboard way out or a keyboard-only player is parked here for good —
+      // every key here is safe to rebind specifically because no keyboard state is allowed
+      // to lock a player out of a screen. So it wraps at the edges, same as the ordinary
+      // category carousel one level up: down on the last slot and up on the first slot
+      // leave to the neighbouring category exactly like they would outside the Augment
+      // view, everywhere else they walk the slot list. Leaving still isn't a side effect of
+      // an arbitrary direction press — it's something you have to walk to the edge to do.
       if (input.wasPressedOrRepeated("down") && count > 0) {
         if (this.tab === "Chests" && !this.augmentView) {
+          this.setChestCategory(this.chestCategory + 1);
+        } else if (this.augmentView && this.cursor === count - 1) {
           this.setChestCategory(this.chestCategory + 1);
         } else {
           this.cursor = (this.cursor + 1) % count;
@@ -736,6 +745,8 @@ export class TownUI {
       }
       if (input.wasPressedOrRepeated("up") && count > 0) {
         if (this.tab === "Chests" && !this.augmentView) {
+          this.setChestCategory(this.chestCategory - 1);
+        } else if (this.augmentView && this.cursor === 0) {
           this.setChestCategory(this.chestCategory - 1);
         } else {
           this.cursor = (this.cursor - 1 + count) % count;
