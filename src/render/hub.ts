@@ -31,22 +31,29 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   // The raid pair (UAT §15) share `MODES.raid.color`: the terminal that picks one and the
   // portal it opens are the same door, and the deck should say so without a legend.
   warTable: "#f472b6", raidPortal: "#f472b6",
+  // The Memory pair share theirs for the same reason. Cyan is the one colour on the deck
+  // that is neither Heaven's gold nor a wound: a Memory is a place being held still
+  // rather than a place being torn open.
+  altar: "#67e8f9", memoryPortal: "#67e8f9",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
  *  Everything else is a relic already painted into the deck image. */
-const PORTAL_KINDS = new Set<HubStationKind>(["dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower", "raidPortal"]);
+const PORTAL_KINDS = new Set<HubStationKind>([
+  "dive", "abyss", "hoard", "expedition", "vigil", "convergence", "tower", "raidPortal",
+  "memoryPortal",
+]);
 /**
  * Terminals the Citadel deck art does *not* have painted into it, so they draw their own
  * relic on top of the deck rather than only when the image is missing.
  *
  * The four original stations (Comms, Quartermaster, Reliquary Gate, Forge) are baked into
  * `hub.citadel-deck` — see the coordinate note in `game/hub.ts`. The War Table (UAT §15)
- * arrived after that bake, so until an art pass paints it in it is a drawn terminal. That
- * is the honest state, not a placeholder somebody forgot: the alternative is a floating
- * caption with nothing underneath it.
+ * and the Altar both arrived after that bake, so until an art pass paints them in they are
+ * drawn terminals. That is the honest state, not a placeholder somebody forgot: the
+ * alternative is a floating caption with nothing underneath it.
  */
-const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable"]);
+const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable", "altar"]);
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.

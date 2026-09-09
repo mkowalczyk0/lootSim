@@ -28,6 +28,7 @@ import { BOSSES, type BossSpec } from "./bosses";
 import { challengerMultiplier } from "./challenger";
 import type { Element } from "./elements";
 import type { EnemyKind } from "./enemies";
+import { memoryConfig } from "./memories";
 import { MODES, delveConfig, riftConfig, type RunConfig } from "./modes";
 import { weeklyConfig } from "./weekly";
 
@@ -270,6 +271,17 @@ export function nextFloorConfig(config: RunConfig): RunConfig {
       ...planetConfig(config.planet.spec, config.planet.tier, config.floor + 1, config.challengerTier),
       players,
     };
+  }
+  // A Memory rebuilds from the instance, for exactly the reason the two branches above
+  // exist: a generic `riftConfig` rebuild would hand floor two a config with no Memory on
+  // it, which would silently drop the place, the encounter, both modifier lists and the
+  // danger — the same shape of bug this function was written to fix for planets.
+  //
+  // The import is a deliberate cycle (`memories.ts` reads the sector roster for its own
+  // pool). It is safe because neither module touches the other during evaluation — only
+  // inside functions — but do not add a *top-level* read of one from the other.
+  if (config.memory) {
+    return { ...memoryConfig(config.memory, config.floor + 1, config.challengerTier), players };
   }
   // The Convergence (UAT §17) rebuilds itself from the week rather than `riftConfig`,
   // exactly why the planet branch above exists — a generic rebuild would lose the

@@ -15,6 +15,13 @@ import { affixRange, salvageYield } from "../game/forge";
 import { itemMeetsRequirement } from "../data/crafting";
 import { modShort } from "../game/item";
 import { biomeFor } from "../data/biomes";
+import {
+  MEMORY_BOONS, MEMORY_BURDENS, MEMORY_OPS, MEMORY_OP_INFO, MEMORY_RARITIES,
+  MEMORY_RARITY_CAP, MEMORY_UNLOCK_DEPTH, MEMORY_UNLOCK_HEIGHT, MEMORY_VAULT_CAP,
+  memoryConfig, memoryForgetAsh, memoryRarityAllowance,
+  memoryModLabel, memoryModMagnitude, memoryOpCost, memoryPairs, memoryRecallCost,
+  type MemoryInstance, type MemoryOp,
+} from "../data/memories";
 import { profileFor } from "../data/depth";
 import {
   ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS, resistFraction, type Element,
@@ -96,7 +103,10 @@ const CYCLE_TABS = [
   "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
-const STATION_TABS = ["Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Party", "Vigil", "Convergence"] as const;
+const STATION_TABS = [
+  "Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Altar", "Party", "Vigil",
+  "Convergence",
+] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
 
@@ -104,6 +114,7 @@ const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY", Vigil: "THE VIGIL", Convergence: "THE CONVERGENCE",
   Tower: "THE TOWER", Raid: "THE WAR TABLE",
+  Altar: "THE ALTAR",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -178,6 +189,9 @@ function k(settings: Settings, action: RebindableAction): string {
  */
 /** The Forge's three screens: an ordinary craft, a reforge, and the named-item recipes (UAT §25). */
 type ForgeMode = "craft" | "reforge" | "named";
+/** The Altar's three screens, in the order [I]/[O] walk them. */
+const ALTAR_MODES = ["vault", "recall", "workbench"] as const;
+type AltarMode = (typeof ALTAR_MODES)[number];
 const FORGE_MODES: readonly ForgeMode[] = ["craft", "reforge", "named"];
 
 /**
@@ -193,7 +207,10 @@ const FORGE_OP_GROUPS: readonly { label: string; ops: readonly ForgeOp[] }[] = [
   { label: "Destroy", ops: ["salvage"] },
 ];
 
-function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMarked = 0): string {
+function tabHelp(
+  tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMarked = 0,
+  altarMode: AltarMode = "vault",
+): string {
   const sel = `${k(s, "up")}/${k(s, "down")}`;
   const adj = `${k(s, "left")}/${k(s, "right")}`;
   const e = k(s, "confirm");
@@ -201,6 +218,7 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMar
   const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
   const mark = k(s, "mark");
   const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
+  const altarToggle = forgeToggle;
   switch (tab) {
     case "Dive": return `${sel} choose depth · ${e} dive · ${q} buy a potion · `
       + `walk down to Challenger, ${adj} to set it`;
@@ -215,6 +233,11 @@ function tabHelp(tab: Tab, s: Settings, forgeMode: ForgeMode = "craft", stashMar
     case "Raid": return `${sel} choose tier · ${adj} switch raid · ${e} open a portal for it`;
     case "Vigil": return `${e} keep the Vigil · the same floor for everyone today · one key for closing it`;
     case "Convergence": return `${e} open the Convergence · the same four floors for everyone this week · a warden and a real prize at the end`;
+    case "Altar": return altarMode === "recall"
+      ? `${sel} choose a rarity · ${e} recall a Memory · ${altarToggle} switch screen`
+      : altarMode === "workbench"
+        ? `${sel} choose a Memory · ${semi} cycle the operation · ${e} do it · ${altarToggle} switch screen`
+        : `${sel} choose a Memory · ${e} open its portal back at the Citadel · ${altarToggle} switch screen`;
     case "Craft": return forgeMode === "reforge"
       ? `${sel} / ${adj} choose an item · ${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
       : forgeMode === "named"
@@ -277,6 +300,10 @@ export class TownUI {
    *  something already found. Toggled with tabPrev/tabNext, which are otherwise inert
    *  on a station tab. */
   private forgeMode: ForgeMode = "craft";
+  /** Which of the Altar's three screens is showing, and which op the workbench is armed
+   *  with. Mirrors `forgeMode`/`forgeOp` exactly — it is the same station idiom. */
+  private altarMode: AltarMode = "vault";
+  private altarOp: MemoryOp = "distort";
   /** The workbench: which op the Reforge screen will apply, and to which affix when it needs one. */
   private forgeOp: ForgeOp = "reforge";
   private forgeAffix = 0;
@@ -323,6 +350,9 @@ export class TownUI {
     private readonly onExpedition: (planet: PlanetSpec, tier: number) => void,
     /** Nor does the War Table (UAT §15) — same contract, one portal per chosen raid. */
     private readonly onRaid: (raid: RaidSpec, tier: number) => void,
+    /** Nor does the Altar — picking a Memory spawns its portal back at the Citadel, and
+     *  walking into that is what spends it (`docs/memories.md` §7.4). */
+    private readonly onMemory: (memoryId: string) => void,
     /** The party, for the Comms Relay screen. It owns the connection; this only shows it. */
     private readonly party: Party,
     /** Settings' "Log out" row. `main.ts` owns what logging out actually does. */
@@ -352,6 +382,19 @@ export class TownUI {
       if (catEl) {
         this.chestCategory = Number(catEl.dataset.category);
         this.cursor = 0;
+        this.render();
+        return;
+      }
+      const altarModeEl = target.closest<HTMLElement>("[data-altar-mode]");
+      if (altarModeEl) {
+        this.altarMode = altarModeEl.dataset.altarMode as AltarMode;
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const altarOpEl = target.closest<HTMLElement>("[data-altar-op]");
+      if (altarOpEl) {
+        this.altarOp = altarOpEl.dataset.altarOp as MemoryOp;
         this.render();
         return;
       }
@@ -554,6 +597,12 @@ export class TownUI {
       this.salvageArmed = null;
       dirty = true;
     }
+    if (this.tab === "Altar" && (input.wasPressed("tabNext") || input.wasPressed("tabPrev"))) {
+      const step = input.wasPressed("tabNext") ? 1 : -1;
+      this.altarMode = ALTAR_MODES[(ALTAR_MODES.indexOf(this.altarMode) + step + ALTAR_MODES.length) % ALTAR_MODES.length]!;
+      this.cursor = 0;
+      dirty = true;
+    }
     if (input.wasPressed("tabNext")) {
       const i = (CYCLE_TABS as readonly Tab[]).indexOf(this.tab);
       if (i >= 0) {
@@ -665,6 +714,9 @@ export class TownUI {
       case "Raid": return raidTiersOpen(this.warTableRaid, this.state.raidProgress);
       case "Vigil": return 1;
       case "Convergence": return 1;
+      case "Altar": return this.altarMode === "recall"
+        ? MEMORY_RARITIES.length
+        : this.state.memories.length;
       case "Craft": return this.forgeMode === "reforge"
         ? this.reforgeCandidates().length
         : this.forgeMode === "named" ? craftableNamed().length : CRAFTABLE_RARITIES.length;
@@ -1124,6 +1176,60 @@ export class TownUI {
         this.notify(`Portal opened for ${this.starMapPlanet.name} T${tier} — find it back at the ship.`, "#4ade80");
         break;
       }
+      case "Altar": {
+        if (!this.requireClass()) break;
+        if (!this.state.altarUnlocked) {
+          this.notify(
+            `The Altar is shut. This character has to have banked depth ${MEMORY_UNLOCK_DEPTH} `
+            + `and height ${MEMORY_UNLOCK_HEIGHT} — both ends of the war, on this character.`,
+            "#ef4444");
+          break;
+        }
+        if (this.altarMode === "recall") {
+          const rarity = MEMORY_RARITIES[this.cursor];
+          if (!rarity) break;
+          const made = this.state.recallMemory(rarity);
+          if (made) {
+            this.notify(
+              `Recalled: ${rarityLabel(made.rarity)} Memory of ${made.placeId}, depth ${made.depth}.`,
+              RARITY_COLORS[made.rarity]);
+            this.state.save();
+          } else {
+            this.notify(
+              this.state.memories.length >= MEMORY_VAULT_CAP
+                ? "The Vault is full. Spend one, or forget one."
+                : "Not enough for that. Recalling costs materials and coins.",
+              "#ef4444");
+          }
+          break;
+        }
+        const memory = this.state.memories[this.cursor];
+        if (!memory) {
+          this.notify("Nothing in the Vault. Recall one first.", "#9aa4b2");
+          break;
+        }
+        if (this.altarMode === "workbench") {
+          const before = memory.rarity;
+          const next = this.state.applyMemoryOp(memory.id, this.altarOp);
+          if (!next) {
+            this.notify("It won't take that. Check the price and what the rarity allows.", "#ef4444");
+            break;
+          }
+          this.notify(
+            this.altarOp === "forget"
+              ? `Forgotten. ${formatNumber(memoryForgetAsh(before))} ${ASH_NAME} back.`
+              : `${MEMORY_OP_INFO[this.altarOp].label}: ${rarityLabel(next.rarity)} Memory of ${next.placeId}.`,
+            RARITY_COLORS[next.rarity]);
+          this.cursor = clamp(this.cursor, 0, Math.max(0, this.state.memories.length - 1));
+          this.state.save();
+          break;
+        }
+        // The Vault: picking is a plan, not a commitment. The Memory is spent when its
+        // portal is walked into, back at the Citadel.
+        this.onMemory(memory.id);
+        this.notify(`Portal opened for that Memory — find it back at the Citadel.`, "#67e8f9");
+        break;
+      }
       case "Craft": {
         if (this.forgeMode === "reforge") {
           this.workbenchConfirm();
@@ -1504,6 +1610,12 @@ export class TownUI {
    * left/right drive the carousel instead.
    */
   private tertiary(): void {
+    if (this.tab === "Altar" && this.altarMode === "workbench") {
+      const i = MEMORY_OPS.indexOf(this.altarOp);
+      this.altarOp = MEMORY_OPS[(i + 1) % MEMORY_OPS.length]!;
+      this.render();
+      return;
+    }
     if (this.tab === "Craft" && this.forgeMode === "reforge") {
       const i = FORGE_OPS.indexOf(this.forgeOp);
       this.forgeOp = FORGE_OPS[(i + 1) % FORGE_OPS.length]!;
@@ -1649,7 +1761,7 @@ export class TownUI {
         </nav>
         <section class="body">${this.renderTab()}</section>
         <footer class="town-foot">
-          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode, this.stashSelected.size)}</span>
+          <span class="help">${tabHelp(this.tab, this.state.settings, this.forgeMode, this.stashSelected.size, this.altarMode)}</span>
           ${this.toast ? `<span class="toast" style="color:${this.toast.color}">${escapeHtml(this.toast.text)}</span>` : ""}
         </footer>
       </div>`;
@@ -1671,6 +1783,7 @@ export class TownUI {
       case "Raid": return this.renderRaid();
       case "Vigil": return this.renderVigil();
       case "Convergence": return this.renderConvergence();
+      case "Altar": return this.renderAltar();
       case "Craft": return this.renderCraft();
       case "Chests": return this.renderChests();
       case "Stash": return this.renderStash();
@@ -2288,6 +2401,168 @@ export class TownUI {
         <div class="chest-cat ${this.forgeMode === "reforge" ? "on" : ""}" data-forge-mode="reforge">Reforge</div>
         <div class="chest-cat ${this.forgeMode === "named" ? "on" : ""}" data-forge-mode="named">Named</div>
       </div>`;
+  }
+
+  /**
+   * The Altar (`docs/memories.md`) — three screens sharing one station, the same idiom
+   * the Forge uses, flipped with [I]/[O].
+   *
+   * A Memory is a recollection the Keepers pinned down: one place the war went through,
+   * made to come back whole. The Vault lists what you hold, Recall makes a new one at a
+   * rarity you pay for, and the workbench shapes one you already have — every op rolls,
+   * none of them lets you pick a modifier, which is what keeps a Memory from becoming a
+   * spreadsheet.
+   */
+  private renderAltar(): string {
+    if (!this.state.altarUnlocked) {
+      const p = this.state.player;
+      return `<div class="list"></div>
+        <aside class="side">
+          <h3>Shut</h3>
+          <p class="muted">Purgatory is built out of what it remembers, and it never
+          remembers the same way twice. Pinning one down takes a character who has been to
+          both ends of the war.</p>
+          <table class="cmp">
+            <tr><td>Depth banked</td><td class="${p.deepestDepth >= MEMORY_UNLOCK_DEPTH ? "" : "warn"}">${p.deepestDepth} / ${MEMORY_UNLOCK_DEPTH}</td></tr>
+            <tr><td>Height banked</td><td class="${p.highestHeight >= MEMORY_UNLOCK_HEIGHT ? "" : "warn"}">${p.highestHeight} / ${MEMORY_UNLOCK_HEIGHT}</td></tr>
+          </table>
+          <p class="muted">Both, on this character. The record is per class on purpose —
+          the Altar is what a finished character earns, not something an alt inherits.</p>
+        </aside>`;
+    }
+    if (this.altarMode === "recall") return this.renderRecall();
+    return this.renderVault();
+  }
+
+  private renderAltarSwitcher(): string {
+    return `<div class="chest-cats">
+        ${ALTAR_MODES.map((m) => `<div class="chest-cat ${this.altarMode === m ? "on" : ""}" data-altar-mode="${m}">${
+          m === "vault" ? "Vault" : m === "recall" ? "Recall" : "Workbench"
+        }</div>`).join("")}
+      </div>`;
+  }
+
+  /** One Memory as a list row — its rarity, the place it remembers and how deep it is. */
+  private memoryRows(): string {
+    if (this.state.memories.length === 0) {
+      return `<div class="row"><div class="row-main"><span class="name muted">The Vault is empty. Recall one.</span></div></div>`;
+    }
+    return this.state.memories.map((m, i) => `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="dot" style="background:${RARITY_COLORS[m.rarity]}"></span>
+            <span class="name" style="color:${RARITY_COLORS[m.rarity]}">${escapeHtml(m.placeId)}</span>
+          </div>
+          <div class="row-side">depth ${m.depth} · ${m.burdens.length}/${memoryPairs(m.rarity)} pairs</div>
+        </div>`).join("");
+  }
+
+  /** The two lists, side by side — what it kept, and what it got wrong. */
+  private memoryModBlock(memory: MemoryInstance): string {
+    const boons = memory.boons.map((b) => `<li>
+        <b style="color:#4ade80">${escapeHtml(memoryModLabel(MEMORY_BOONS[b.id].name, b.grade))}</b>
+        <span class="muted">${escapeHtml(memoryModMagnitude(b))}</span>
+        <em>${escapeHtml(MEMORY_BOONS[b.id].blurb)}</em></li>`).join("");
+    const burdens = memory.burdens.map((b) => `<li>
+        <b style="color:#ef4444">${escapeHtml(memoryModLabel(MEMORY_BURDENS[b.id].name, b.grade))}</b>
+        <span class="muted">${escapeHtml(memoryModMagnitude(b))}</span>
+        <em>${escapeHtml(MEMORY_BURDENS[b.id].blurb)}</em></li>`).join("");
+    return `
+      <h3>What it kept</h3>
+      <ul class="pulls">${boons || '<li class="muted">Nothing.</li>'}</ul>
+      <h3>What it got wrong</h3>
+      <ul class="pulls">${burdens || '<li class="muted">Nothing.</li>'}</ul>`;
+  }
+
+  /** The Vault and the workbench share a list; only the aside differs. */
+  private renderVault(): string {
+    const memory = this.state.memories[this.cursor];
+    const pane = `<div class="forge-pane">${this.renderAltarSwitcher()}<div class="list">${this.memoryRows()}</div></div>`;
+    if (!memory) {
+      return `${pane}
+        <aside class="side">
+          <h3>Nothing to remember</h3>
+          <p class="muted">Recall a Memory first. The rarity is what you pay for; the
+          place, the encounter and everything it carries are what you get.</p>
+        </aside>`;
+    }
+    const config = memoryConfig(memory, 1, this.state.challengerTier);
+    const profile = profileFor(config.depth, config);
+    if (this.altarMode === "workbench") {
+      const cost = memoryOpCost(this.altarOp, memory.rarity);
+      const ops = MEMORY_OPS.map((op) =>
+        `<span class="chip ${op === this.altarOp ? "on" : ""}" data-altar-op="${op}">${MEMORY_OP_INFO[op].label}</span>`,
+      ).join(" ");
+      return `${pane}
+        <aside class="side">
+          <h3>${rarityLabel(memory.rarity)} Memory of ${escapeHtml(memory.placeId)}</h3>
+          <p class="muted">${ops}</p>
+          <p>${escapeHtml(MEMORY_OP_INFO[this.altarOp].blurb)}</p>
+          <table class="cmp">
+            ${this.altarOp === "forget"
+              ? `<tr><td>Returns</td><td>${formatNumber(memoryForgetAsh(memory.rarity))} ${ASH_NAME}</td></tr>`
+              : `<tr><td>${ASH_NAME}</td><td class="${this.state.ash >= cost.ash ? "" : "warn"}">${formatNumber(cost.ash)}</td></tr>
+                 <tr><td>Coins</td><td class="${this.state.coins >= cost.coins ? "" : "warn"}">${formatNumber(cost.coins)}</td></tr>
+                 ${cost.scrap > 0 ? `<tr><td>${escapeHtml(MATERIALS.physical.name)}</td><td class="${this.state.materials.physical >= cost.scrap ? "" : "warn"}">${formatNumber(cost.scrap)}</td></tr>` : ""}`}
+          </table>
+          ${this.memoryModBlock(memory)}
+          <p class="muted">Every operation rolls. None of them lets you choose — you push
+          a Memory toward what you want, you do not write it.</p>
+        </aside>`;
+    }
+    return `${pane}
+      <aside class="side">
+        <h3>${rarityLabel(memory.rarity)} Memory of ${escapeHtml(memory.placeId)}</h3>
+        <p class="muted">${escapeHtml(MODES.memory.lore)}</p>
+        <table class="cmp">
+          <tr><td>Depth</td><td>${memory.depth} → ${memory.depth + MODES.memory.floors - 1}</td></tr>
+          <tr><td>Floors</td><td>${MODES.memory.floors}, the last one the encounter</td></tr>
+          <tr><td>Recommended</td><td>level ${profile.recommendedLevel}</td></tr>
+        </table>
+        ${this.memoryModBlock(memory)}
+        ${memoryRarityAllowance(memory) > MEMORY_RARITY_CAP
+          ? `<p class="muted">This one is burdened enough to bend the table past anything
+             else in the game — barely, and only because of what it is asking of you.</p>`
+          : ""}
+        ${this.previewBlock(previewForRun(config))}
+        <p class="muted">Spent the moment you walk into its portal. Dying in it does not
+        give it back.</p>
+      </aside>`;
+  }
+
+  /** Recall: buy the tier, roll the character. */
+  private renderRecall(): string {
+    const rows = MEMORY_RARITIES.map((rarity, i) => {
+      const cost = memoryRecallCost(rarity);
+      const afford = this.state.materials.physical >= cost.scrap && this.state.coins >= cost.coins;
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+          <div class="row-main">
+            <span class="dot" style="background:${RARITY_COLORS[rarity]}"></span>
+            <span class="name" style="color:${RARITY_COLORS[rarity]}">${rarityLabel(rarity)}</span>
+          </div>
+          <div class="row-side ${afford ? "" : "warn"}">
+            ${formatNumber(cost.scrap)} ${escapeHtml(MATERIALS.physical.name)} · ${formatNumber(cost.coins)} coins
+          </div>
+        </div>`;
+    }).join("");
+    const selected = MEMORY_RARITIES[this.cursor] ?? MEMORY_RARITIES[0]!;
+    return `<div class="forge-pane">${this.renderAltarSwitcher()}<div class="list">${rows}</div></div>
+      <aside class="side">
+        <h3>Recall a ${rarityLabel(selected)} Memory</h3>
+        <p class="muted">You pay for the tier. The place it remembers, what is standing in
+        it, how deep it runs and everything it carries are Purgatory's to decide.</p>
+        <table class="cmp">
+          <tr><td>Pairs</td><td>${memoryPairs(selected)}</td></tr>
+          <tr><td>Vault</td><td>${this.state.memories.length} / ${MEMORY_VAULT_CAP}</td></tr>
+          <tr><td>${escapeHtml(MATERIALS.physical.name)}</td><td>${formatNumber(this.state.materials.physical)}</td></tr>
+          <tr><td>${ASH_NAME}</td><td>${formatNumber(this.state.ash)}</td></tr>
+        </table>
+        <p class="muted">Every Memory carries as many boons as burdens and never more —
+        nothing here is given away. Rarity buys more of both, and worse grades of both.</p>
+        <p class="muted">Divine and unspoken are the item ladder's, not this one. A Memory
+        stops at mythic.</p>
+      </aside>`;
   }
 
   /**

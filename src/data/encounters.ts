@@ -25,6 +25,7 @@
 import { bossFor, type BossSpec } from "./bosses";
 import type { ClassId } from "./classes";
 import { legendBossSpec } from "./legends";
+import { memoryBossSpec } from "./memories";
 import type { RunConfig } from "./modes";
 import { planetBossSpec } from "./planets";
 import { raidBossSpec } from "./raids";
@@ -47,6 +48,10 @@ export function bossSpecForRun(config: RunConfig, proving: ClassId | null = null
   // same reason the Proving is ahead of everything: the more specific answer is the one
   // the player was promised at the portal, and the §20 preview reads this same call.
   if (config.raid) return raidBossSpec(config.raid.spec);
+  // A Memory brings its own encounter, drawn from every one the game owns and reskinned
+  // with a `memory-` id so nothing it borrows leaks that encounter's own drop table
+  // (`memoryBossSpec`). Same precedence and the same reason as the raid above it.
+  if (config.memory) return memoryBossSpec(config.memory.bossId);
   if (config.planet) return planetBossSpec(config.planet.spec);
   // The ascent has its own five (UAT §21), borrowed and reskinned the same way a sector's
   // is, and picked by height rather than depth. Here rather than in `spawnBoss` for the

@@ -4,6 +4,7 @@ import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
 import { delveConfig, MODES, modeUnlocked, riftConfig, type RunConfig, type RunModeId } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
+import { memoryConfig } from "./data/memories";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
 import { RARITY_COLORS } from "./data/rarity";
@@ -126,6 +127,12 @@ function start(state: GameState, who: AccountInfo): void {
       // party branch here: raids are solo in v1, and `handleHubInteraction` is where that
       // is enforced, so there is one place to delete when co-op raids land.
       hub.setRaid(raid.id, tier);
+      enterHub();
+    },
+    (memoryId) => {
+      // The Altar doesn't dive either — it opens the Memory's portal on the deck. Solo in
+      // v1 (see `handleHubInteraction`), so there is no party plan to set here.
+      hub.setMemory(memoryId);
       enterHub();
     },
     party,
@@ -310,6 +317,12 @@ function start(state: GameState, who: AccountInfo): void {
       flash("Raids are solo for now. Leave the room to take one on.");
       return;
     }
+    // Memories are solo in v1, the same call the Vigil and the Proving made: a Memory
+    // lives in one account's Vault, so "whose Memory was spent" has no good answer yet.
+    if (party.inRoom && (station.kind === "altar" || station.kind === "memoryPortal")) {
+      flash("The Altar is closed while a room is open. Memories are yours alone, for now.");
+      return;
+    }
     if (party.inRoom && station.kind === "expedition") {
       // The sector portal in a room is the party's ready spot, never a solo launch.
       flash(party.plan?.config.planet
@@ -336,8 +349,21 @@ function start(state: GameState, who: AccountInfo): void {
         enterDungeon(raidConfig(raid, plan.tier, state.challengerTier));
         break;
       }
+      case "altar": enterTown("Altar"); break;
       case "vigil": enterTown("Vigil"); break;
       case "convergence": enterTown("Convergence"); break;
+      case "memoryPortal": {
+        // The Memory is spent here, when the run actually begins — never at the Altar.
+        // Picking one is a plan; this is the commitment.
+        const plan = hub.memoryPlan;
+        const memory = plan ? state.takeMemory(plan.memoryId) : null;
+        hub.clearMemory();
+        if (!memory) break;
+        state.player.fullHeal();
+        state.save();
+        enterDungeon(memoryConfig(memory, 1, state.challengerTier));
+        break;
+      }
       case "expedition": {
         const expedition = hub.expedition;
         const planet = expedition ? PLANETS_BY_ID[expedition.planetId] : undefined;
@@ -729,6 +755,9 @@ function start(state: GameState, who: AccountInfo): void {
       hub.vigilOpen = dailyUnlocked(state.stats.deepestDepth);
       // Same for the Convergence, at its own (deeper) unlock threshold.
       hub.weeklyOpen = weeklyUnlocked(state.stats.deepestDepth);
+      // The Altar is on the deck once *this character* has banked both ends of the war
+      // (`docs/memories.md` §7.2) — per class, so it can close again when you switch.
+      hub.altarOpen = state.altarUnlocked;
       // Tells the room where you're standing, draws everybody else on the deck, and —
       // if you're hosting — starts the run once the last person is in the portal.
       party.syncHub(hub, dt);

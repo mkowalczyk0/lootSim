@@ -23,7 +23,12 @@ export type HubStationKind =
   // The raid pair (UAT §15): a terminal that picks one, and the portal that picking spawns
   // — the Reliquary Gate's shape exactly, because a raid is chosen the same way a sector
   // is (which one, at which tier) and there are four of them to choose between.
-  | "warTable" | "raidPortal";
+  | "warTable" | "raidPortal"
+  // The Memory pair (`data/memories.ts`, `docs/memories.md`): an altar that shapes and
+  // picks one, and the portal that picking spawns. The Reliquary Gate's shape exactly,
+  // because a Memory is chosen the same way a sector is — you configure it at a terminal
+  // and then walk into what that opens.
+  | "altar" | "memoryPortal";
 
 export interface HubStation {
   readonly kind: HubStationKind;
@@ -43,6 +48,7 @@ const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   dive: "delve", abyss: "abyss", hoard: "hoard", starmap: "planet", expedition: "planet",
   vigil: "vigil", convergence: "convergence", tower: "tower",
   warTable: "raid", raidPortal: "raid",
+  altar: "memory", memoryPortal: "memory",
   forge: null, quartermaster: null, comms: null,
 };
 
@@ -96,6 +102,14 @@ const FIXED_STATIONS: readonly HubStation[] = [
 /** Where a chosen sector's portal stands once the Reliquary Gate has picked one — open
  *  floor left of the central seal. */
 const EXPEDITION_SPOT = { x: 270, y: 250 };
+/** Where the Altar stands once a character has banked both ends of the war — open
+ *  flagstone in the upper left, between the Tower's ring and the Abyss's archway, since
+ *  a Memory is a recollection of everywhere the war has been rather than one direction of
+ *  it. Position unverified by eye: nobody working on this branch has a browser. */
+const ALTAR_SPOT = { x: 255, y: 125 };
+/** Where a chosen Memory's portal stands once the Altar has shaped one — open floor in
+ *  the middle right of the deck, clear of the Delve, the Quartermaster and the Forge. */
+const MEMORY_SPOT = { x: 365, y: 300 };
 /** Where the Vigil's portal opens once it's unlocked — the open flagstone bottom-left,
  *  a short walk from the spawn, since it's meant to be the first thing you do each day. */
 const VIGIL_SPOT = { x: 150, y: 390 };
@@ -126,6 +140,17 @@ export class Hub {
   /** At least one raid is open for this account, which is what puts the War Table's portal
    *  on the deck. Set from the account *frontier* (§21), so a climber reaches them too. */
   raidOpen = false;
+  /**
+   * Set by the Altar; walking into the portal this spawns spends the Memory and launches
+   * the run. Same lifetime as `expedition` — a plan, not a commitment, and it does not
+   * survive a reload. That is deliberate: the Memory is spent when the run *begins*, so
+   * a page refresh costs nothing (`docs/memories.md` §7.4).
+   */
+  memoryPlan: { memoryId: string } | null = null;
+  /** The Altar is open for the character currently loaded — both ladders banked to 30
+   *  (`memoryUnlocked`). Per class, not per account, so switching characters can close
+   *  it again; that is the gate meaning what it says. */
+  altarOpen = false;
   /** The Tower is unlocked (UAT §21), which is what puts its portal on the deck. Set from
    *  the account's *depth* record, never the frontier: you earn the second direction by
    *  holding the first one. */
@@ -169,6 +194,15 @@ export class Hub {
       stations.push({
         kind: "raidPortal", label: "Raid Portal",
         x: RAID_SPOT.x, y: RAID_SPOT.y, radius: 22,
+      });
+    }
+    if (this.altarOpen) {
+      stations.push({ kind: "altar", label: "The Altar", x: ALTAR_SPOT.x, y: ALTAR_SPOT.y, radius: 20 });
+    }
+    if (this.memoryPlan) {
+      stations.push({
+        kind: "memoryPortal", label: "Memory Portal",
+        x: MEMORY_SPOT.x, y: MEMORY_SPOT.y, radius: 22,
       });
     }
     if (this.towerOpen) {
@@ -233,5 +267,13 @@ export class Hub {
 
   clearRaid(): void {
     this.raid = null;
+  }
+
+  setMemory(memoryId: string): void {
+    this.memoryPlan = { memoryId };
+  }
+
+  clearMemory(): void {
+    this.memoryPlan = null;
   }
 }

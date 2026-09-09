@@ -13,6 +13,11 @@ import {
   type CraftCategory,
 } from "../data/crafting";
 import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
+import {
+  CRYSTALLISE_COMPONENTS, MEMORY_RARITIES, MEMORY_VAULT_CAP, crystalliseMemory, deepenMemory,
+  distortMemory, etchMemory, memoryForgetAsh, memoryOpCost, memoryPairs, memoryRecallCost,
+  memoryProblems, memoryUnlocked, rollMemory, type MemoryInstance, type MemoryOp,
+} from "../data/memories";
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
@@ -202,6 +207,15 @@ export class GameState {
    * terminal and applies to whatever's entered next: the delve, a rift, or a planet.
    */
   challengerTier = 0;
+  /**
+   * The Vault (`data/memories.ts`, `docs/memories.md`) — every Memory this account holds,
+   * account-wide like the stash and the relic collection. Capped so a save can't grow
+   * without bound. A Memory is spent the moment its run begins, so this is a short list
+   * in practice.
+   */
+  memories: MemoryInstance[] = [];
+  /** Hands out Vault ids. Persisted so an id is never reused after a reload. */
+  private memorySeq = 0;
   /** Potions carried into a dive. Refilled by picking them up in the dungeon. */
   potions = 3;
   /**
@@ -877,6 +891,13 @@ export class GameState {
       if (next > (this.planetProgress[id] ?? 1)) this.planetProgress[id] = next;
       return;
     }
+    // A Memory is rift-shaped but has no tier ladder — depth and modifiers *are* its
+    // ladder (`docs/memories.md` §2), so clearing one books the Record and opens nothing.
+    if (config?.memory) {
+      if (!config.lastFloor) return;
+      this.stats.riftsCleared.memory++;
+      return;
+    }
     if (!config || !config.mode.isRift) {
       if (depth + 1 > this.maxUnlockedDepth) this.maxUnlockedDepth = depth + 1;
       return;
@@ -910,6 +931,109 @@ export class GameState {
     return CLASS_IDS.filter((id) => this.players[id].legendComplete).length;
   }
 
+  // --- the Altar (UAT: Memories — see `docs/memories.md`) ------------------
+
+  /**
+   * Whether the *active character* has earned the Altar: the bottom of the descent and
+   * the top of the authored ascent, both banked.
+   *
+   * Per class rather than per account, because the brief asks for "all the heaven and hell
+   * floors **for a class**" — the Altar is what a finished character earns, not something
+   * an alt inherits. And read off the two records separately rather than off `frontier`,
+   * which is a max: a climber who has never seen Hell would clear a frontier gate.
+   */
+  get altarUnlocked(): boolean {
+    return memoryUnlocked(this.player.deepestDepth, this.player.highestHeight);
+  }
+
+  memoryById(id: string): MemoryInstance | null {
+    return this.memories.find((m) => m.id === id) ?? null;
+  }
+
+  /**
+   * Recalls a fresh Memory at a chosen rarity: the tier is bought, the character is
+   * rolled (`rollMemory`). Materials and coins, no Ash — making costs materials, shaping
+   * costs Ash, and the Altar introduces no fourth currency (§27).
+   *
+   * Returns null and spends nothing if the Altar is shut, the rarity isn't a Memory
+   * rarity, the Vault is full, or the price can't be paid.
+   */
+  recallMemory(rarity: Rarity): MemoryInstance | null {
+    if (!this.altarUnlocked) return null;
+    if (!MEMORY_RARITIES.includes(rarity)) return null;
+    if (this.memories.length >= MEMORY_VAULT_CAP) return null;
+    const cost = memoryRecallCost(rarity);
+    if (this.materials.physical < cost.scrap || this.coins < cost.coins) return null;
+    this.materials.physical -= cost.scrap;
+    this.spendCoins(cost.coins);
+    const memory = rollMemory(rarity, Math.max(1, this.frontier), this.rng, `m${++this.memorySeq}`);
+    this.memories.push(memory);
+    return memory;
+  }
+
+  /**
+   * One workbench op on a Memory in the Vault. Every one of them rolls; none of them lets
+   * the player pick a modifier, which is the rule §26 already established for items and
+   * the thing that keeps a Memory from becoming a spreadsheet.
+   *
+   * Returns the resulting Memory, or null having spent nothing.
+   */
+  applyMemoryOp(id: string, op: MemoryOp): MemoryInstance | null {
+    const memory = this.memoryById(id);
+    if (!memory) return null;
+
+    if (op === "forget") {
+      this.memories = this.memories.filter((m) => m.id !== id);
+      this.ash += memoryForgetAsh(memory.rarity);
+      return memory;
+    }
+
+    // Nothing to add: refuse before charging, rather than taking the price for a no-op.
+    if (op === "etch" && memory.burdens.length >= memoryPairs(memory.rarity)) return null;
+
+    const cost = memoryOpCost(op, memory.rarity);
+    // Crystallising melts two other Memories of the same rarity, the way an ascension
+    // melts two stash items. They are picked cheapest-first — the ones carrying the fewest
+    // pairs — so the op never eats the good roll sitting next to the one being raised.
+    const components = op === "crystallise"
+      ? this.memories
+          .filter((m) => m.id !== id && m.rarity === memory.rarity)
+          .sort((a, b) => a.burdens.length - b.burdens.length)
+          .slice(0, CRYSTALLISE_COMPONENTS)
+      : [];
+    if (op === "crystallise" && components.length < CRYSTALLISE_COMPONENTS) return null;
+    if (this.ash < cost.ash || this.coins < cost.coins || this.materials.physical < cost.scrap) return null;
+
+    const next =
+      op === "distort" ? distortMemory(memory, this.rng)
+      : op === "etch" ? etchMemory(memory, this.rng)
+      : op === "deepen" ? deepenMemory(memory)
+      : crystalliseMemory(memory, this.rng);
+    if (!next) return null;
+
+    this.ash -= cost.ash;
+    this.spendCoins(cost.coins);
+    this.materials.physical -= cost.scrap;
+    for (const c of components) this.memories = this.memories.filter((m) => m.id !== c.id);
+    this.memories = this.memories.map((m) => (m.id === id ? next : m));
+    return next;
+  }
+
+  /**
+   * Spends a Memory — called when its run actually **begins**, never when it is picked at
+   * the Altar. Picking is a plan (the Reliquary Gate's shape) and plans don't survive a
+   * reload; losing a Memory to a page refresh would be a bad joke.
+   *
+   * Dying in it does not give it back, and neither does bailing out. The Memory *was* the
+   * resource.
+   */
+  takeMemory(id: string): MemoryInstance | null {
+    const memory = this.memoryById(id);
+    if (!memory) return null;
+    this.memories = this.memories.filter((m) => m.id !== id);
+    return memory;
+  }
+
   // --- persistence -------------------------------------------------------
 
   toJSON(): object {
@@ -930,6 +1054,8 @@ export class GameState {
       materials: this.materials,
       ash: this.ash,
       relics: this.relics,
+      memories: this.memories,
+      memorySeq: this.memorySeq,
       challengerTier: this.challengerTier,
       stats: this.stats,
       inventory: this.inventory,
@@ -983,6 +1109,20 @@ export class GameState {
       state.relics = Array.isArray(d.relics)
         ? [...new Set((d.relics as unknown[]).filter(isRelicId))]
         : [];
+      // Version 25 added the Vault (`docs/memories.md`); an older save holds no Memories.
+      // Each entry is validated through `memoryProblems` rather than trusted, so a Memory
+      // naming a place or an encounter that no longer exists is dropped on load instead of
+      // crashing the Altar — the same rule `normalizeAppearance` follows for a retired
+      // cosmetic id.
+      state.memories = Array.isArray(d.memories)
+        ? (d.memories as MemoryInstance[])
+            .filter((m) => m && typeof m === "object" && memoryProblems(m).length === 0)
+            .slice(0, MEMORY_VAULT_CAP)
+        : [];
+      state.memorySeq = Math.max(
+        Number(d.memorySeq ?? 0) || 0,
+        ...state.memories.map((m) => Number(String(m.id).replace(/^m/, "")) || 0),
+      );
       state.cosmetics = normalizeOwned(d.cosmetics);
       state.appearance = normalizeAppearance(d.appearance);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
