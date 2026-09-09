@@ -6,6 +6,47 @@ clean. This file is the state of play for whoever picks it up next.
 
 ---
 
+## Addendum (lootsim-97, after this file's first commit): the axis is confirmed
+
+Item #5 on the docket below — "the item-level axis" — is no longer an open question. The
+owner, live in the `lootsim-97` session, was asked directly and confirmed: item level for
+chests and crafting should track the active character's own **`level`**, not `frontier`.
+This was a real, in-conversation confirmation, not an inference from the inline comment.
+
+Confirmed explicitly for **two of the three sites**: `openAugmented`/`openChests`
+(`state.ts:815`, the edit already in the tree) and `craftItem` (`state.ts:477`). The owner
+was *not* separately asked about the third site, `craftNamed` (`state.ts:578`) — when told
+it existed, they chose to stop and hand off rather than extend the confirmation to it
+in-session, so treat it as still open.
+
+**What is still genuinely left to do** (this session deliberately did not do it, on the
+owner's own choice to stop rather than finish under time pressure — see "Working rules"
+below on why a wrap-up is the wrong time to make a balance change):
+
+1. Confirm (or extend by inference — it's the same axis) `craftNamed` at `state.ts:578`.
+2. Change all confirmed sites from `this.player.frontier` to `this.player.level` together.
+3. Rewrite the regression guard in `tools/smoke.ts` (the "fresh alt's chests" block) — it
+   currently asserts the *old* rule (frontier-based) and will and should keep failing until
+   it's rewritten to assert the *new* one. A fresh alt is no longer "ilvl 1 because its
+   frontier is 0" — it's "ilvl equal to its own level," and the test's own alt gets bumped to
+   level 30 by an earlier step in the same block (for an unrelated equip-catchup check)
+   before the "fresh alt" assertion runs, so the test will need either a genuinely fresh
+   second alt or a reordering, not just a changed expected value.
+4. Re-measure the "reading the telegraphs actually gets you out of them" comparison with the
+   change applied, widened across seeds and A/B'd against master in a throwaway worktree
+   (see "Working rules" — never report a balance delta from one default run). The one
+   sampled reading this session took was 78% eaten vs 40%, close to master's 77% vs 34%, but
+   one reading proves nothing either way.
+5. Update `CLAUDE.md`'s two references to this rule (the frontier/Tower section and the
+   per-class-save section) to describe `level`, not `frontier` or `deepestDepth`.
+
+Also: this file's own opening line ("all sessions have wrapped and all worktrees are
+clean") stopped being true partway through its own commit — `lootsim-97` was still active
+and picked this up afterward. Worth knowing if a future handoff assumes the file it's
+reading is itself the last word.
+
+---
+
 ## Read this first: there is an uncommitted owner edit in the working tree
 
 `src/game/state.ts` has a one-line change that **is the owner's own**, made directly on the
