@@ -47,6 +47,24 @@ function opaquePixels(data: Uint8Array, width: number, height: number): number[]
   return out;
 }
 
+/**
+ * Opaque pixels of ONE frame of a horizontal strip. `w` is a single frame's width, so
+ * frame `i` occupies columns `i*w .. i*w+w` of a `w*cols`-wide PNG.
+ */
+function framePixels(
+  data: Uint8Array, stripW: number, w: number, h: number, index: number,
+): number[] {
+  const out: number[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const s = ((y * stripW) + index * w + x) * 4;
+      if (data[s + 3]! < 128) continue;
+      out.push((data[s]! << 16) | (data[s + 1]! << 8) | data[s + 2]!);
+    }
+  }
+  return out;
+}
+
 /** The hot-accent detector itself: max chroma among colours covering 2+ pixels. */
 function maxAccentChroma(pixels: readonly number[]): { max: number; hex: string } {
   const counts = new Map<number, number>();
@@ -172,6 +190,88 @@ const KNOWN_ACCENT_VIOLATIONS: readonly string[] = [
   check("the hero's accent violates §1.4 against exactly the monsters we already knew about",
     found.join(",") === pinned.join(","),
     `found [${found.join(", ") || "none"}]  pinned [${pinned.join(", ") || "none"}]`);
+}
+
+// --- 5. per-FRAME presence, for animated sprites -----------------------------------------
+//
+// A strip-level measurement cannot see an accent that blinks out. `boss.ferryman` passed
+// section 4 at 36.9 while its cold eye was **absent** from two of its five frames — the
+// animation generator had washed those two pixels to a blue-grey, and the three surviving
+// frames carried the number for the whole strip.
+//
+// **This asserts PRESENCE, not CONSTANCY.** An accent that brightens and dims as a thing
+// breathes is good art and must not be forbidden; an accent that *vanishes* for two frames
+// of five is the part looking at you blinking out of existence, which is the defect.
+//
+// The bar is HUE, and that is not the obvious choice, so: the obvious bar — "every frame's
+// max accent chroma stays above the hero's" — was written first and **falsified against the
+// real broken art, which it passed.** With the eye gone, the loudest surviving colour in
+// those frames was a dull olive on the robe at 31.4, a hair over the hero's 30.2. Chroma
+// alone cannot tell "the eye dimmed" from "the eye is gone and a robe pixel is now the
+// loudest thing", because it never asks *which* colour is the accent.
+//
+// Hue can. A pulse keeps its hue and varies its chroma; a vanish swaps the accent to an
+// unrelated part of the sprite, and the hue jumps — 212° (cold blue) to 55° (olive) in the
+// case above. So: every frame's accent must sit near the strip's own accent hue, and its
+// chroma is left entirely free to pulse.
+
+section("§1.4 per frame: an animated accent may pulse, but it may not vanish");
+
+/** Hue in degrees, 0-360. Meaningless for a greyscale colour, which `HUE_TOLERANCE` guards. */
+function hue(c: number): number {
+  const r = ((c >> 16) & 255) / 255, g = ((c >> 8) & 255) / 255, b = (c & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d === 0) return 0;
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return ((h * 60) % 360 + 360) % 360;
+}
+
+/** Shortest angular distance between two hues, 0-180. */
+function hueGap(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+/**
+ * How far an accent may drift in hue across a cycle. Generous — an eye catching light can
+ * shift a little — but nowhere near the 157° jump that says the accent was replaced by an
+ * unrelated colour rather than dimmed.
+ */
+const HUE_TOLERANCE = 45;
+
+{
+  const animated = Object.values(ATLAS).filter((m) => m.anim && m.anim.cols > 1
+    && (m.id.startsWith("boss.") || /\.monster\./.test(m.id)));
+  if (animated.length === 0) {
+    console.log("  (no animated monster/boss sprites yet — nothing to measure per frame)");
+  }
+  for (const meta of animated) {
+    const path = `src/render/atlas/${dirFor(meta.id)}/${meta.id}.png`;
+    if (!existsSync(path)) continue;
+    const png = decodePng(readFileSync(path));
+    const cols = meta.anim!.cols;
+    const strip = maxAccentChroma(opaquePixels(png.data, png.width, png.height));
+    const stripHue = hue(parseInt(strip.hex.slice(1), 16));
+    const perFrame = Array.from({ length: cols }, (_, i) =>
+      maxAccentChroma(framePixels(png.data, png.width, meta.w, meta.h, i)));
+
+    const drifted = perFrame
+      .map((f, i) => ({ i, f, gap: hueGap(hue(parseInt(f.hex.slice(1), 16)), stripHue) }))
+      .filter((e) => e.gap > HUE_TOLERANCE);
+
+    console.log(`  ${meta.id}: accent ${strip.hex} (hue ${stripHue.toFixed(0)}°) — per frame `
+      + perFrame.map((f) => `${f.max.toFixed(1)}${f.hex}`).join(" "));
+    check(`${meta.id}: the accent is present in all ${cols} frames, not just some`,
+      drifted.length === 0,
+      drifted.map((e) => `frame ${e.i} is ${e.f.hex} (${e.gap.toFixed(0)}° away — the accent is gone, not dimmed)`).join("; "));
+
+    const lo = Math.min(...perFrame.map((f) => f.max));
+    const hi = Math.max(...perFrame.map((f) => f.max));
+    if (hi - lo > 1) {
+      console.log(`       · pulses ${lo.toFixed(1)}-${hi.toFixed(1)} across the cycle`
+        + " — allowed on purpose; only vanishing is a defect");
+    }
+  }
 }
 
 console.log(`\n${failures === 0 ? "chroma gate: all checks passed" : `chroma gate: ${failures} FAILED`}`);
