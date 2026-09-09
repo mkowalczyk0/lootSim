@@ -41,7 +41,8 @@
     "regard": "esbuild tools/regard.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/regard.mjs --log-level=error && node node_modules/.cache/regard.mjs",
     "builds": "esbuild tools/builds.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/builds.mjs --log-level=error && node node_modules/.cache/builds.mjs",
     "deadpaths": "esbuild tools/deadpaths.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/deadpaths.mjs --log-level=error && node node_modules/.cache/deadpaths.mjs",
-    "raids": "esbuild tools/raids.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/raids.mjs --log-level=error && node node_modules/.cache/raids.mjs"
+    "raids": "esbuild tools/raids.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/raids.mjs --log-level=error && node node_modules/.cache/raids.mjs",
+    "bossvariety": "esbuild tools/bossvariety.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/bossvariety.mjs --log-level=error && node node_modules/.cache/bossvariety.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
