@@ -286,7 +286,42 @@ export const ATLAS: Record<string, AtlasSprite> = {
                               // anim.ts#frameAtProgress) — it is the cast's own duration
                               // that plays these seven frames.
                               cast: { from: 5, to: 11, seconds: 0.09, loop: false } } } },
-  "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 87, worldScale: 1.54, feet: 0.03 },
+  // Animated, CAST ONLY — and that is a deliberate shape, not a half-finished one. Third of
+  // the Delve's own ladder (depth 15, `BOSSES[2]`) and the richest static sprite that was
+  // left: 5 encounters, 4 of them Provings.
+  //
+  // **A tag table with no `idle` is legal and is exactly today's behaviour when not
+  // casting.** `render/anim.ts`'s ladder ends at `STATIC_FRAME` (0), so a Colossus that
+  // isn't winding up draws frame 0 — and frame 0 is the committed rest pose, substituted in
+  // by `strip.py`'s `first=` rather than taken from the generator. Measured: the strip's
+  // frame 0 differs from the sprite that shipped before this commit by **0 pixels**. The
+  // generator's own frame 0 was 8 opaque pixels short (the thin-feature erosion recorded for
+  // the Tyrant's wing tips), which is small but is not nothing when it is what the player
+  // looks at for the whole fight.
+  //
+  // **No idle, because two generations failed the loop seam and one must not be talked past.**
+  // `art/anim/loop-check.py` (new here) measures the wrap from a loop's last frame back to
+  // its first as a fraction of the body: every shipped idle passes (warden 0.7%, saint 3.7%,
+  // ferryman 7.6%) and both Colossus candidates do not (14.2% and 11.8%, limit 10%). The
+  // second was prompted explicitly for stillness and came back BUSIER than the first, so
+  // this is a property of the sprite and the tool rather than of one unlucky seed. Both raws
+  // are kept under `art/anim/raw/colossus-idle*/` with the numbers. A wind-up on a boss that
+  // had nothing is the gain; a popping idle is not.
+  //
+  // The wind-up: it hauls both fists overhead, chains taut, ready to bring them down — the
+  // right read for a phase-one kit of `slam`/`charge`. **The `boss.war-queen` finding did not
+  // reproduce**: overhead arms on that sprite came back as detached tubes, and the working
+  // theory was that a big limb extension exceeds a detailed sprite's detail budget. This one
+  // is 31 colours and chunky, and its arms came back on-model, which supports the theory
+  // rather than contradicting it — expect the failure on dense sprites, not on all of them.
+  // Same drift treatment as the other two: silhouette-vs-rest ran 13 24 35 61 63 61 59 53,
+  // so the tag is the monotonic build and the three drift frames go via `:drop=`.
+  //
+  // `w`/`worldScale` UNCHANGED, `h` 87 -> 117 for the overhead headroom, `feet` re-derived
+  // alongside it (2.61px of ground offset, now over 117px). The drawn Colossus does not move.
+  "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 117, worldScale: 1.54, feet: 0.022308,
+    anim: { cols: 7, tags: { // `seconds` is unread for a progress-keyed tag (anim.ts#frameAtProgress).
+                             cast: { from: 0, to: 6, seconds: 0.09, loop: false } } } },
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
   "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },
 

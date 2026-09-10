@@ -1004,6 +1004,36 @@ above the bar in **every** frame, independently. Three properties, in the order 
    near one of its declared hues. With one declared accent that is identical to the derived
    check; with two it is the same property over a set.
 
+#### A falsification can itself be vacuous: an A/B between two checks is only meaningful on input the baseline PASSES
+
+Stated here as a rule because three sessions have now discovered it independently, in three
+different shapes, and it is the reason the demonstration below is run where it is run.
+
+When the claim is "the new check catches something the old one missed", the evidence is a
+single injection and two verdicts. **That evidence is worthless unless the old check is green
+on the un-injected input.** Inject into something the baseline already fails and you get
+red/red, which is consistent with the new check being brilliant, blind, or absent — it
+distinguishes nothing. It is the same defect as a survivability row pinned at 0/16 or 16/16:
+a measurement that cannot move in the direction you are asking about cannot answer.
+
+It very nearly happened here. The obvious place to inject was the shipped 12-frame strip, and
+the old gate goes red on that strip — for the rank-trade reason this entire section is about,
+with or without any injection. Watching it fail there would have proved exactly nothing.
+The comparison has to run on the 5-frame idle the old gate was actually green on.
+
+The two sibling instances, so the family is recognisable:
+
+- A falsification that passed green because the change under test had made the failure
+  direction *structurally impossible* — the violation could no longer be expressed, so
+  nothing went red and that was read as the check being satisfied.
+- CLAUDE.md's own note on falsifying a same-seed determinism check: the injected violation
+  has to actually consume or reorder the shared `Rng` stream. A real behaviour change that
+  only reaches something the run does not compare passes the check while proving nothing.
+
+The check to run on your own falsification, before believing it: **would this injection have
+gone red under the old regime for the reason I am claiming, or for some reason that was
+already there?** If you cannot answer that, you have not falsified anything yet.
+
 #### The falsification, which is the only part of this that is evidence
 
 Everything above is an argument, and this document already records what happens when an
