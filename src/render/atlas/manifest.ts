@@ -148,13 +148,15 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // prints these). Powers/Throne-Bearer generated with zero hot accent (a helm/mask of dark
   // hollow eyes, the exact Tyrant failure the style guide warns about) and got one painted
   // into the void; Virtue Lancer and Dominion Herald generated with 2-11x the shipped hot-
-  // pixel ceiling (scattered trim, a whole gold robe front) and got muted down to it. See
-  // the script header for the measured before/after on all five.
+  // pixel ceiling (scattered trim, a whole gold robe front) and got muted down to it.
+  // Halo Fragment shipped once, read as terrain (mean RGB next to `prop.rock`'s own) and was
+  // rejected and regenerated — see the script header for that one and the measured
+  // before/after on all five.
   "tower.monster.power":           { id: "tower.monster.power",           w: 27, h: 70, worldScale: 0.4286, feet: 0.05 },
   "tower.monster.virtue-lancer":   { id: "tower.monster.virtue-lancer",   w: 25, h: 69, worldScale: 0.4348, feet: 0.05 },
   "tower.monster.throne-bearer":   { id: "tower.monster.throne-bearer",   w: 46, h: 77, worldScale: 0.4156, feet: 0.05 },
   "tower.monster.dominion-herald": { id: "tower.monster.dominion-herald", w: 29, h: 70, worldScale: 0.4286, feet: 0.05 },
-  "tower.monster.halo-fragment":   { id: "tower.monster.halo-fragment",   w: 28, h: 29, worldScale: 0.5862, feet: 0.05 },
+  "tower.monster.halo-fragment":   { id: "tower.monster.halo-fragment",   w: 25, h: 17, worldScale: 1,      feet: 0.05 },
 
   // --- bosses (§11) --- worldScale lands the art on the full old grid extent
   // (26 × spriteScale from data/bosses.ts): warden 100, choir 92, colossus 134,

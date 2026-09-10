@@ -31,6 +31,23 @@
  * - **Virtue Lancer generated at 6.4%** (73px), roughly 2x the shipped ceiling, split across
  *   the lance tip (the intended accent) and five separate trim highlights (shoulder rings,
  *   belt, greaves). `muteHot` keeps only the lance-tip box and mutes the rest.
+ * - **Halo Fragment shipped once, was rejected, and got a second pass.** v1 read as terrain
+ *   (mean RGB (128,115,82), next to `prop.rock`'s own (91,89,73)) because its prompt asked
+ *   for "cracked, ancient, pitted" stone — a boulder cue no palette fix survives — and its
+ *   glow had already been muted from 12.2% hot down to the centre third, which was correct
+ *   in isolation but, on that earthy a body, left too little brightness to read as lit
+ *   rather than textured. **That interaction is the reusable lesson: how much an accent can
+ *   be muted depends on how pale the body already is** — the same muting fraction that was
+ *   fine on Virtue Lancer's ivory armour reads as "the light went out" on a brown one. v2
+ *   drops the stone language and lands pale (mean RGB ~170-180, the armoured four's own
+ *   family) with an open broken-ring silhouette — but at 0% hot, because the break's own
+ *   paint highlight is a near-white SPECULAR ridge: high value, low saturation, invisible
+ *   to §1.4's saturation-gated detector (the same value-vs-saturation trap §1.4b names for
+ *   the hero's face). `liftHighlight` is the new primitive this needed: push the material's
+ *   own highlight over the saturation line, rather than painting a second light source into
+ *   a void (`paintAccent`) or lifting an already-warm cluster (`hotAccent`). The rejected v1
+ *   is kept at `art/monsters/rejected/tower.monster.halo-fragment.v1-rock.*` rather than
+ *   only living in history, since it's the one candidate here worth a before/after.
  *
  * Every op is measured before and after with the same detector §1.4 describes by hand:
  * opaque pixels with HSV saturation > 0.55 and a channel > 90, bucketed by hue. The
@@ -200,6 +217,30 @@ function paintAccent(img: Img, box: Box, color: string, voidCeiling = 45): numbe
   return n;
 }
 
+/**
+ * Convert a SHINE into an ACCENT: within `box`, every opaque pixel brighter than
+ * `lumCeiling` becomes `color`, whatever its saturation. §1.4b is the reason this is a
+ * separate op from `hotAccent`/`paintAccent` rather than a third case of one of them — a
+ * near-white paint highlight is high VALUE and low SATURATION, so it never trips `isHot`
+ * and never registers as an accent, even though it is the brightest thing on the sprite.
+ * The Halo Fragment v2 generation caught exactly this: a bone-white specular ridge along
+ * the break, 63 opaque pixels above L210, 0% "hot" by §1.4's own saturation-based test. The
+ * fix is not to paint into a void (there is no void here) but to push the material's own
+ * highlight over the saturation line instead of adding a second light source.
+ */
+function liftHighlight(img: Img, box: Box, color: string, lumCeiling = 210): number {
+  const [r, g, b] = hex(color);
+  let n = 0;
+  for (let y = box[1]; y <= box[3]; y++) for (let x = box[0]; x <= box[2]; x++) {
+    const i = (y * img.w + x) * 4;
+    if (img.rgba[i + 3]! < 128) continue;
+    const lum = 0.2126 * img.rgba[i]! + 0.7152 * img.rgba[i + 1]! + 0.0722 * img.rgba[i + 2]!;
+    if (lum <= lumCeiling) continue;
+    img.rgba[i] = r; img.rgba[i + 1] = g; img.rgba[i + 2] = b; n++;
+  }
+  return n;
+}
+
 /** The §1.4 report: hot-pixel share and hue buckets, same method the style guide describes. */
 function accentReport(img: Img): string {
   let total = 0, hot = 0;
@@ -282,12 +323,23 @@ const MONSTERS: readonly Spec[] = [
     id: "tower.monster.halo-fragment", raw: "art/monsters/tower.monster.halo-fragment.raw.png",
     world: 17, // matches reliquary.monster.rot-scuttler (24 * 0.72 = 17.3) — the swarmer row
     op: (img) => {
-      // The chosen candidate (frame 13 of a 64-frame review batch) generated with a glow
-      // along the WHOLE broken edge — 63/515 px (12.2%), 4x the shipped Reliquary ceiling
-      // of 3.0%, because a full-length edge reads as trim rather than a single accent at
-      // this size. Keep only the centre third of the diagonal (y 14-22) and mute the rest.
-      const n = muteHot(img, [[0, 14, img.w - 1, 22]], hex("#a89a78"));
-      console.log(`  muted ${n}px of the edge glow, kept the centre third`);
+      // v2. v1 (kept at art/monsters/rejected/tower.monster.halo-fragment.v1-rock.*) read
+      // as terrain, not as a threat: mean RGB (128,115,82) sat almost on top of
+      // `prop.rock`'s own (91,89,73) — the same hue family as the game's ordinary
+      // environmental rock prop — because the generation prompt asked for "cracked,
+      // ancient, pitted" stone, a specific boulder cue no palette fix survives, and a
+      // shortened glow (muted from 12.2% hot down to the centre third, correct in
+      // isolation) left too little brightness on an already-earthy body to read as lit.
+      // v2's prompt drops the stone language entirely — smooth faceted planes, ivory
+      // bone-gold, broken like ceramic — and lands pale (mean RGB ~170-180, the same
+      // family as the armoured four) with an open "broken ring" silhouette instead of a
+      // wedge. That swung the failure the other way: 0% hot, because the break's natural
+      // paint highlight is a near-white SPECULAR ridge — high value, low saturation, so
+      // §1.4's saturation-gated detector never sees it (§1.4b's value-vs-saturation trap,
+      // the same one the hero's face fix hit). `liftHighlight` pushes the brightest end of
+      // that ridge over the saturation line instead of adding a second light source.
+      const n = liftHighlight(img, [24, 9, 33, 14], ACCENT, 225);
+      console.log(`  lifted ${n}px of the break's own specular highlight into the accent`);
     },
   },
 ];
