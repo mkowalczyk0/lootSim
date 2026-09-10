@@ -374,7 +374,16 @@ Constraints on whatever gets built:
   numbers are the whole story — `the_last_hunt.packet` is a declared mutation hook, and
   Winter's Quarry adds a freeze plus a shattering nova chain on top.
 
-## 9. Two more ultimates with the same shape as item 8 — NOT owner-reported
+## 9. Two more ultimates with the same shape as item 8 — CLOSED, folded into §20
+
+**Closed 2026-09-10 by the owner's own ruling**, recorded in §20's addendum: asked whether
+the Reaper and Assassin should be swept, they said yes and called the *mechanic* broken
+rather than the three numbers. Both abilities were fixed by §20's threshold, which lives
+in the vocabulary rather than on the packets. **Read §20's closing paragraph before
+citing this entry as precedent** — the standing rule against pre-emptively rebalancing
+classes nobody has complained about survived this sweep intact; what made §20 different is
+that the question was put to the owner rather than answered on their behalf. The original
+entry follows.
 
 **Nobody has complained about these.** They are recorded because they were found while
 fixing item 8 and would otherwise have to be rediscovered. Do not treat this as a request.
@@ -436,7 +445,18 @@ moves one value inside `affixRange`, and Inscribe/Awaken draw from the granted-s
 trigger tables behind their own rarity gates. A single generic "here are all affixes" list
 would be a wrong answer four times out of five.
 
-## 11. WASD does not reach the shop, or the bottom row of the Hero tab
+## 11. WASD does not reach the shop, or the bottom row of the Hero tab — LANDED
+
+**Shipped 2026-09-10**, merge `2b86f46`. Both dead spots, one cause: `TownUI.update`
+sent all four movement keys through a real grid helper only for a hardcoded list of
+tabs. Shop was not on it and fell through to a flat list whose left/right cycled the
+shop tier; Hero *was* on it, but `navHero`'s layout did not know the relic row, so a
+relic cursor silently defaulted to `weapon` and that row was clickable but neither
+reachable nor escapable by keyboard. A/D now walk the relic row and picking a relic
+opens a picker modelled on the Trophy Hall's, taking the movement keys off a secondary
+browse axis. Socketing became a real two-step in the same pass — the old screen would
+socket from a candidate row while merely hovering an empty slot. **Unverified in a
+browser**, like every UI change in this run. The brief below is kept for context.
 
 > "WASD in the shop and on the bottom row of equipment (artifacts/relics/helmet/boots/
 > off-hand) in the hero tab doesn't work"
@@ -452,7 +472,16 @@ adjust/filter axis. Fix the navigation, and prefer fixing whatever shared cursor
 these screens go through over patching each screen's key handler; two dead spots in one
 report is a hint about a common cause.
 
-## 12. The Skills screen should be a grid you click, not a list you scroll through
+## 12. The Skills screen should be a grid you click, not a list you scroll through — LANDED
+
+**Shipped 2026-09-10**, merge `6775a18`. The Skills screen took the Stash's shape: a slot
+bar above a card grid of the class's whole learnable pool, locked abilities dimmed with
+their unlock level, 2-D movement, and a click that sets a skill directly. A/D stopped
+cycling a skill in place. `navSkills` mirrors `navStash` rather than inventing a pattern,
+and every keyboard path is the literal function a click calls, so mouse support still
+costs no second code path. **Unverified in a browser** — `ui/` has no test-harness
+coverage and no session on this machine can drive one; the owner's eye is the acceptance
+test. The brief below is kept for context.
 
 > "Refactor the Skills UI to use WASD to navigate and view all available skills almost like
 > the stash tab. We should be able to set them by clicking rather than awkwardly maneuvering
@@ -466,7 +495,17 @@ Every keyboard method must stay the literal function a click calls (`src/ui/town
 existing `data-index` / `data-action` delegate) — that is how this file has always kept the
 two paths from disagreeing, and it is why mouse support never costs a second code path.
 
-## 13. Salvage should be one button, like "sell all junk"
+## 13. Salvage should be one button, like "sell all junk" — LANDED
+
+**Shipped 2026-09-10**, merge `337ea11`. The marking step is gone; the two-press arm
+stays, because salvage is one-way and that gate was never the complaint. "Junk" is
+factored into `junkItems()` and read by **both** bulk actions, so "sell all junk" and
+"salvage all junk" are the same rule by construction rather than two definitions that
+happen to agree today — and worn items cannot be swept up because `junkItems()` filters
+the stash, which never holds one. Salvage-all took its own binding rather than
+overloading the key that already does one-press sell-all-junk; collapsing the two would
+have meant replacing that action outright, which is more than the item asked for. The
+brief below is kept for context.
 
 > "The salvage feature in the Stash UI needs to function like the 'sell all junk', press one
 > button to salvage all the stuff."
@@ -520,7 +559,18 @@ of its own. The existing `salvageArmed` two-press gate is the precedent for what
 means here; the salvage path should end up going through the same control rather than
 keeping a private one.
 
-## 16. The Trophy Hall prints its own markup — BUG, and it is two lines
+## 16. The Trophy Hall prints its own markup — LANDED
+
+**Shipped 2026-09-10**, merge `1ba7aab`. Fixed by adding `pixelImageTag()` and sweeping
+**all 13** template call sites rather than only the 2 that were broken — a mistake made
+once in a file with 13 chances to make it is a pattern.
+
+**Deliberately not claimed as structural**, and this is the part worth carrying: the
+entry below argues for a rule that cannot be violated, and a branded return type would
+**not** have delivered one here, because `tsc` does not restrict what may appear inside a
+template literal. Real enforcement means moving `town.ts` off string-templated HTML,
+which is a much larger change than this bug justified. **Unverified in a browser.** The
+brief below is kept for context.
 
 > "trophy case only showing string literal file paths 'data:image/png;base64,iVBORw0KGgo...'"
 
@@ -760,7 +810,22 @@ right and is still in §9's original entry — what made this different is that 
 complaint was explicitly about the mechanic rather than about one ability's tuning, and the
 question was put to them rather than answered on their behalf.
 
-## 21. A chest pays out 11 items on a 10-pull when a named item drops
+## 21. A chest pays out 11 items on a 10-pull when a named item drops — LANDED
+
+**Shipped 2026-09-10**, merge `791457d`, gate `npm run chests`. A named drop now fills
+the **slot** of the ordinary roll rather than arriving on top of it, so a single pull
+returns 1 and a ten-pull returns 10; the comment that called the old behaviour deliberate
+was rewritten in the same commit, as the entry asked.
+
+The count promise is **structural rather than data-dependent**: if more than one named
+def ever hits the same pull — impossible with today's data, since only one item sources
+from a chest — the first fills the slot and the rest are a miss for that pull. That cap
+is named as a decision with its alternative in `2789940`, not left as an accident.
+
+The gate walks all ten tiers at single, bulk and augmented pulls with the named roll
+rigged to always hit (the `npm run previews` force-the-dice idiom the entry asked for),
+and carries a guard that a replacement **actually occurred**, so it cannot pass
+vacuously. The brief below is kept for context.
 
 > "whenever you open chests and you get a named item, it returns eleven items versus ten. So
 > let's take a look at that and make sure every chest output, including all this new stuff,
@@ -804,7 +869,28 @@ Three things to get right:
   keep saying what the roll actually does; if it advertises "10 items" it is about to become
   true rather than false, but confirm rather than assume.
 
-## 22. Enemies and items end up inside walls — and an unstick net for when they do
+## 22. Enemies and items end up inside walls — and an unstick net for when they do — LANDED
+
+**Shipped 2026-09-10**, merge `1ea6328`. **Both causes this entry predicted were wrong,
+and that is the finding worth keeping.** 0 of 188 sampled boss spawns were ever embedded,
+and knockback stress-tested to 9,600 (real values top out near 140) produced no
+measurable penetration — `resolveCircle` already ran after it.
+
+The actual culprit was `separateEnemies()`/`separateMinions()`, the pairwise **crowd
+push**, shoving a body back into rock immediately after that tick's own wall-resolve had
+already cleared it, with nothing left in the tick to catch the shove. Fixing that took 43
+penetration episodes to 9. A second, rarer contributor surfaced only once the first was
+gone: seven spawn-scatter sites threw an offset from a validated anchor through
+`resolveCircle` without checking the result actually cleared — `resolveOrFallback`
+verifies and retries. Combined: **0 episodes across ~323k ticks**.
+
+The 2–3s unstick net was built second, as the entry directed, and is wired host-only on
+its own `embedTimer` (distinct from `stuckTimer`, which rises on ordinary wall-sliding and
+is not a bug). It moves a body via a deterministic `nearestOpenPoint` and never touches
+health or removal, so the wave quota is safe by construction. **It now activates zero
+times in real play, and a future nonzero `unstickCount` is a regression signal rather than
+the net doing its job** — a quiet net must not be read as nothing to worry about. The
+brief below is kept for context.
 
 > "could we look into enemies spawning in walls? And also, if you have enough knockback, I'm
 > also noticing you can potentially knock them back into walls. Maybe we add something where
