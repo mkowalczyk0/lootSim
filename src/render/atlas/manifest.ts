@@ -201,18 +201,36 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // 99.702600 x 69.885000 world units, before and after. `feet` is a fraction of `h` and
   // had to be re-derived (3.21px of ground offset over 128px instead of 107px).
   "boss.ferryman":            { id: "boss.ferryman",            w: 75,  h: 128, worldScale: 0.9318, feet: 0.025078,
-    anim: { cols: 24, tags: { idle:   { from: 0,  to: 4,  seconds: 0.22, loop: true },
+    anim: { cols: 25, tags: { idle:   { from: 0,  to: 4,  seconds: 0.22, loop: true },
                               // The generic wind-up: `cast` covers every ability the
                               // Ferryman has, and `seconds` is unread for a
                               // progress-keyed tag (see anim.ts#frameAtProgress).
                               cast:   { from: 5,  to: 12, seconds: 0.09, loop: false },
-                              // The release: a rise, not a blow — see boss.war-queen.
-                              // Both segments were PINNED at both ends because this
-                              // sprite's accent is two pixels and a free-form run drops
-                              // it entirely on some frames (measured: 0 cold pixels on
-                              // two of eight). Two settle frames whose accent still fell
-                              // below the hero's 35.3 were left out rather than shipped.
-                              strike: { from: 13, to: 23, seconds: 0.05, loop: false } } } },
+                              // The release, and this one IS a blow: rise (13-18, the
+                              // shipped frames, unchanged) -> the pole swings over the
+                              // top (19-20) -> IMPACT (21) -> recover (22-23) -> rest
+                              // (24, the committed idle frame itself, so the hand-off
+                              // back to the loop is byte-identical).
+                              //
+                              // The third pose is what makes it a blow rather than an
+                              // unwind, exactly as boss.war-queen's note predicted. Note
+                              // WHERE it had to be: this sprite rests with its pole
+                              // already butt-down on the ground, so "slam it down" ends
+                              // on a pose almost identical to rest — which is precisely
+                              // why the old release read as a settle. The impact pose is
+                              // therefore differentiated by BODY (braced low stance, pole
+                              // swept diagonally across the body) rather than by pole
+                              // height, and it measures further from rest (2378 silhouette
+                              // px) than the apex does (2306). A pose closer to rest than
+                              // the apex is cannot read as a strike, whatever it is called.
+                              //
+                              // Two sweep frames were dropped rather than shipped, both on
+                              // accent: one lost the eye entirely (unrepairable) and one
+                              // came back at one pixel per eye, which
+                              // repair-split-accent.py refuses BY DESIGN — a one-pixel
+                              // accent is not a split one. Do not widen it to force the
+                              // frame in; that is a change to shipped art.
+                              strike: { from: 13, to: 24, seconds: 0.05, loop: false } } } },
   // Animated: `w`/`h` are ONE FRAME.
   //
   // **The art in `strike` is a RISE, not a blow — read this before assuming it is done.**

@@ -354,3 +354,133 @@ play, and the Ranger's numbers were only confirmed as a problem because a person
 If it is picked up, `docs/ranger-last-hunt-nerf.md` has the method: measure the two symptoms
 separately (trash-clear reach, and boss time-to-kill at a *contested* depth where neither
 side is saturated), and A/B against master on widened seeds in a throwaway worktree.
+
+---
+
+*Added 2026-09-10, evening, from the owner playing the game. Items 10-17. **These are all
+direct reports of something wrong in front of them**, so by the ordering this file already
+establishes they outrank items 3-6 and item 9. Items 16 and 17 are outright bugs — a screen
+printing its own markup and art that does not appear — and lead the group.*
+
+## 10. The Forge workbench needs to show the *pool* — what a Recast could give you
+
+> "New UI in the Forge under the workbench view to show 'possibilities' of the reforge. We
+> as players need to see what the available pool of affix's are if we recast etc."
+
+Standing in front of Recast, Augment, Reforge or Awaken, the player is asked to spend Ash on
+a roll whose outcome space is invisible. Show the pool.
+
+**The rule that governs this is the §20 drop-preview rule and it is not optional: the
+preview holds no table of its own.** `docs/drop-previews.md` and the `previews.ts` header
+both say why — a preview that can drift out of sync with the real roll is worse than no
+preview. The pool shown here must be read from the same `ModRoll` list, the same
+`ModRoll.minTier` rarity gates and the same slot/category filters that `game/forge.ts`
+actually rolls against. If the panel and the roll can ever disagree, the panel is wrong by
+construction. No lookup table in the UI.
+
+Each op has a genuinely different outcome space and the panel has to say which one it is
+showing — Recast swaps *one* affix from the pool reachable at that item's rarity and slot,
+Augment adds one and is bounded by `MOD_COUNTS`, Reforge rerolls the whole list, Temper
+moves one value inside `affixRange`, and Inscribe/Awaken draw from the granted-skill and
+trigger tables behind their own rarity gates. A single generic "here are all affixes" list
+would be a wrong answer four times out of five.
+
+## 11. WASD does not reach the shop, or the bottom row of the Hero tab
+
+> "WASD in the shop and on the bottom row of equipment (artifacts/relics/helmet/boots/
+> off-hand) in the hero tab doesn't work"
+
+Two separate dead spots in keyboard navigation. The Hero tab's equipment is laid out as a
+grid and the bottom row (artifacts / relics / helmet / boots / off-hand) cannot be reached;
+the Shop screen does not take movement keys at all.
+
+This is the third time a grid-shaped screen has turned out not to navigate like a grid.
+**The owner's standing expectation is that anything that looks like a grid navigates like
+one, in 2D, with the movement keys** — and that A/D are not spent on a secondary
+adjust/filter axis. Fix the navigation, and prefer fixing whatever shared cursor helper
+these screens go through over patching each screen's key handler; two dead spots in one
+report is a hint about a common cause.
+
+## 12. The Skills screen should be a grid you click, not a list you scroll through
+
+> "Refactor the Skills UI to use WASD to navigate and view all available skills almost like
+> the stash tab. We should be able to set them by clicking rather than awkwardly maneuvering
+> using A/D"
+
+The Stash is the shape to copy — a grid of cards, 2D movement, and a click sets the thing
+directly. The current screen makes the player walk a cursor along an axis to change what is
+in a slot, which is the "A/D spent on a secondary axis" pattern item 11 is also about.
+
+Every keyboard method must stay the literal function a click calls (`src/ui/town.ts`'s
+existing `data-index` / `data-action` delegate) — that is how this file has always kept the
+two paths from disagreeing, and it is why mouse support never costs a second code path.
+
+## 13. Salvage should be one button, like "sell all junk"
+
+> "The salvage feature in the Stash UI needs to function like the 'sell all junk', press one
+> button to salvage all the stuff."
+
+The mass-salvage batch already exists (`toggleMarked`, `salvageArmed`, `GameState.salvageItems`)
+but it makes the player mark items one at a time first. "Sell all junk" is the interaction
+the owner wants and it is already in this screen — mirror it.
+
+**Keep the two-press arm.** Salvage is one-way and the arm gate is deliberate; the ask is to
+remove the *marking*, not the confirmation. And "all the stuff" needs a defensible
+definition — "sell all junk" already has one, so use the same one rather than inventing a
+second notion of junk. Equipped items must not be swept up by a bulk action even though
+salvaging a worn item is legal when chosen deliberately.
+
+## 14. The Forge needs the green-up / red-down arrows the Stash has
+
+> "In the Forge UI we need to add the 'better/worse' visual to all the items green up red
+> down arrows."
+
+The Stash's upgrade arrows already know how to compare an item against what is worn
+(including the weapon-affinity term). The Forge's item lists do not show them, so the
+player picking something to Reforge cannot see whether it is an upgrade. Reuse the Stash's
+comparison — do not write a second scoring path.
+
+## 15. The Forge needs a confirm button, and clicking an item must not fire the op
+
+> "In the forge UI we need to also add a 'confirm button' to execute the action. There a
+> weird bug where you have to be careful not to click the item itself with a mouse as it
+> will just execute the action. Essentially some people on mouse want to click the item
+> without it executing the action in the reforging."
+
+A destructive, Ash-spending operation is currently one stray click away. Selecting an item
+and executing an op must become two distinct acts: clicking a card selects it, and a
+separate confirm control spends the resources.
+
+**This is the owner's third report in this family and the direction behind it is settled:
+action controls belong in their own fixed region, not mixed into the scrolling list or the
+reading panel that describes the item.** Put the confirm control in a compact action area
+of its own. The existing `salvageArmed` two-press gate is the precedent for what "confirm"
+means here; the salvage path should end up going through the same control rather than
+keeping a private one.
+
+## 16. The Trophy Hall prints its own markup — BUG, and it is two lines
+
+> "trophy case only showing string literal file paths 'data:image/png;base64,iVBORw0KGgo...'"
+
+`pixelImageFit` returns a **bare data URL**, not an `<img>` tag — every other call site in
+`src/ui/town.ts` wraps it (`<img src="${...}" alt="">`). `renderTrophy` does not, in both of
+its lists: the case grid and the stash picker. So the base64 string is interpolated straight
+into the HTML and rendered as text.
+
+Worth a moment's thought beyond the two-line fix: this is a function whose return type
+(`string`) cannot distinguish "a URL" from "some markup", which is why a caller could get it
+wrong silently and why `npm test` had nothing to say. A rule that cannot be violated beats a
+check that notices — see the CLAUDE.md passage on `SpriteName` and `worldScale`.
+
+## 17. Some boss animations are not coming through
+
+> "Some boss animations are not coming through"
+
+Reported from play, and it belongs with item 7 rather than replacing it. **Diagnose before
+authoring anything.** "Not coming through" can mean at least three different things and they
+have unrelated fixes: a boss whose `strike`/`cast` tag is absent from its manifest row and
+so falls back down the `[ability, "strike", "idle"]` chain; a tag that exists but is never
+*reached* at runtime because the encounter's cast window is shorter than the animation or
+because `cast` beats `strike` in a case nobody intended; or art that simply was never
+authored for that boss. Establish which bosses the owner is actually seeing this on, and
+which of the three causes each one has, before generating a single frame.
