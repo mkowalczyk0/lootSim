@@ -8,7 +8,30 @@ strike them when they land, and add the design record's path next to the entry.
 
 ---
 
-## 1. Multiplayer stuttering
+## 1. Multiplayer stuttering — INVESTIGATED, NOT FIXED, BLOCKED ON THE OWNER
+
+**Measured 2026-09-10**, finding in `docs/mp-stuttering.md`, harness `tools/mp-stutter.ts`.
+Two of the three suspects below came back **clean** with real numbers:
+
+- **Host compute** (sim + snapshot encode) peaks at ~1.5 ms against a 16.67 ms frame
+  budget even at 60 monsters and 4 players. Cleared.
+- **Client interpolation and render load** on both ends: a real two-browser rig, a real
+  room, a real 20-second fight at Nightmare VI with 34 monsters and 3 elites, held a clean
+  ~60 fps on host and client with zero frames over 33 ms. Cleared.
+- **Snapshot size** is genuinely stale — 2–2.3x the documented figure at depth (see the
+  CLAUDE.md correction) — but 105 kB/s is ~0.84 Mbps and is not by itself a stutter cause
+  on ordinary broadband.
+
+**What is left is the one thing no session on this machine can test: a real internet path.**
+Everything above ran over localhost — 0 ms RTT, no jitter, no loss — and `tools/relay.ts` is
+a bare TCP/WebSocket pipe, so head-of-line blocking on one delayed packet stalls everything
+queued behind it. Also unmeasured: a multi-minute session (this was 20 s, too short for a
+leak or a GC pattern), a genuinely deep dive rather than a Challenger-inflated shallow one,
+and the reporter's own hardware.
+
+**This needs the owner and the original reporter on two real machines.** It is not
+actionable before then, and the next session to pick it up should start from the
+docs rather than re-measuring the two cleared suspects.
 
 > "user reported stuttering and frame drops on multiplayer after joining my lobby."
 
@@ -35,7 +58,14 @@ Places the answer is likely to be, in the order worth checking:
 
 Note the reporter joined the owner's lobby, so the owner's own machine was the host.
 
-## 2. The rotating shop
+## 2. The rotating shop — LANDED
+
+**Shipped 2026-09-10**, design record `docs/rotating-shop.md`, gate `npm run shop`.
+Three tiers on UTC day/week/month rotation, coins to buy, gems to reroll. The ruling
+that governs it — **gems buy choice, never quantity** — is enforced structurally in
+`GameState.buyShopSlot`: a reroll can never move `purchaseCap`. Mythic is the ceiling as
+a *type* (`ShopRarity`), so a future tier cannot even express divine or unspoken.
+The paragraphs below are the original brief, kept for context.
 
 > "daily/weekly/monthly shop (price appropriately mythics should be in the millions) costs
 > gems to refresh shops, gets more expensive after each refresh."

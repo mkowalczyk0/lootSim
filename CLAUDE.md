@@ -574,7 +574,14 @@ four-letter room code, with **nothing to install and nothing to configure**.
   carries a seed and a flattened `RunConfig` and every browser builds the identical
   floor. A snapshot is only what moves — heroes as objects (now including status
   ailments and a departed flag), minions, corpses and monster affixes, everything else as
-  flat number arrays. A busy floor costs a bit over 40 kB/s per player.
+  flat number arrays. **Snapshot cost scales with depth and party size and this line used
+  to quote one number for all of them** — "a bit over 40 kB/s per player", measured once at
+  an unstated depth. Re-measured Sept 2026 (`tools/mp-stutter.ts`, `docs/mp-stuttering.md`):
+  ~45 kB/s at depth 8 two-player, which is where the old number came from and confirms the
+  method, rising to **66–105 kB/s by depth 18–26**, higher at four players. Quote a depth
+  and a party size with any figure you take from here — a deep floor carries far more
+  bodies than a shallow one, and this is the same "a constant that was correct for one rung"
+  shape the atlas scale and the biome tint both hit.
 - **A disconnected player can't wedge the run.** A departed hero is excluded from the
   portal count, the revive loop and the wipe check rather than sitting there as a
   targetable, unrevivable body; the run's roster freezes for the whole run the moment it
