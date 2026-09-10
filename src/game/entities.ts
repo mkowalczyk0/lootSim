@@ -416,11 +416,23 @@ export interface GroundZone extends Body {
  */
 export type PickupKind = "coin" | "key" | "item" | "potion" | "xp" | "gem" | "material" | "relic" | "augment";
 
+/**
+ * What a drop **is**, for anything that only needs its identity — the picture on the floor,
+ * its name, its rarity, which named definition it is. Null for the kinds that aren't items.
+ *
+ * Any hero's copy answers this question identically: the party's copies of one drop differ
+ * only in the magnitudes derived from each hero's own level (see `Pickup.copies`), never in
+ * rarity, type, family or `named`. Code that needs a *specific* hero's copy — crediting it,
+ * reading its `ilvl` or its stats — must index `copies` by that hero instead.
+ */
+export function pickupItem(p: Pickup): Item | null {
+  return p.copies[0] ?? null;
+}
+
 export interface Pickup extends Body {
   readonly kind: PickupKind;
   /** Coin amount, XP amount, or material amount; unused for item/key/potion. */
   value: number;
-  item: Item | null;
   keyTier: string | null;
   rarity: Rarity | null;
   /** Which material this is, for a `material` pickup. Null for everything else. */
@@ -433,21 +445,33 @@ export interface Pickup extends Body {
    */
   defId: string | null;
   /**
-   * The hero index this drop belongs to, or `-1` for a drop that belongs to the floor.
+   * One copy of this drop per hero index, for the kinds that are an `Item`; empty for
+   * every other kind. Read it as `copies[hero.index]`.
    *
-   * Loot is per-hero (CLAUDE.md, "Loot is per-hero and physical"), and the rule is that
-   * **ownership goes exactly where assignment already exists**: an item, relic or augment
-   * is rolled *for* a specific hero — its level and its affinity bias come from that
-   * hero's own character (docket §23) — so it carries that hero's index and only that
-   * hero may collect it or magnetise it. Coins, gems, keys, materials and potions take no
-   * hero input at roll time (`coinFindMult`/`gemFindMult` are applied to whoever picks
-   * them up, at `collect`), so they are genuinely the floor's and stay first-come.
+   * **A drop is shared, not owned** (owner ruling, 2026-09-10): one physical object lies
+   * on the floor, anybody in the party may walk onto it, and collecting it credits *every*
+   * hero still in the run with their own copy — "whoever kills, it doesn't matter, and we
+   * both get it, so we can both collectively farm the same stuff". Kill credit decides
+   * which account notices a named item for its codex and which class biases the weapon
+   * family; it decides nothing about who gets paid.
    *
-   * Solo needs no special case and deliberately doesn't get one: a one-hero party has
-   * exactly one owner, so every owned drop carries index 0 and every shared drop resolves
-   * to the same hero `nearestHero` was already returning.
+   * The copies are **the same item at each hero's own level**, not a roll each. Every rng
+   * draw inside `rollItem` is independent of `ilvl`/`powerIlvl` — the level reaches the
+   * result only through `levelScale`, a parameter — so replaying one seed per hero yields
+   * an identical name, identical affix ids, identical grant and trigger and identical
+   * variance, with the magnitudes and `requiredLevel` derived at each hero's own level.
+   * That is what keeps docket §23 ("a character earns gear they can equip") true for a
+   * level 20 standing next to a level 50, while the loot banner still tells them both they
+   * found the same thing. Each copy is a distinct `Item.id`: they land in separate stashes.
+   *
+   * Nothing here crosses the wire — a client is handed its own copy as a `got` message the
+   * moment the host credits it (`net/party.ts`), because an unspoken drop is not a thing to
+   * lose to a dropped frame. The snapshot carries only what the floor *looks* like.
+   *
+   * Solo needs no special case and deliberately doesn't get one: a one-hero party has one
+   * entry, forged at that hero's level, credited to that hero.
    */
-  owner: number;
+  copies: readonly Item[];
   /** Pop-out velocity so drops scatter instead of stacking on the corpse. */
   vx: number;
   vy: number;

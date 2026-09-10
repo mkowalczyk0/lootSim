@@ -18,6 +18,7 @@ import {
 } from "./bot";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, type Hero } from "../src/game/dungeon";
+import type { Pickup } from "../src/game/entities";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
 import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
@@ -55,7 +56,7 @@ import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
 import { CLASSES, CLASS_IDS, treePointsFor, type ClassId } from "../src/data/classes";
 import { CLASS_BY_ID, UNIVERSAL_TREE, buildProgressionTree } from "../src/progression/index";
-import { WEAPON_FAMILIES, WEAPONS } from "../src/data/weapons";
+import { WEAPON_FAMILIES, WEAPONS, type WeaponFamily } from "../src/data/weapons";
 import { BOSSES } from "../src/data/bosses";
 import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
 import {
@@ -79,8 +80,8 @@ import { BIOMES, type BiomeStyle } from "../src/data/biomes";
 import { ELEMENT_COLORS } from "../src/data/elements";
 import { decodePng } from "./png";
 import { existsSync, readFileSync } from "node:fs";
-import { RARITIES, rarityIndex } from "../src/data/rarity";
-import { rollItem } from "../src/game/item";
+import { RARITIES, rarityIndex, type Rarity } from "../src/data/rarity";
+import { rollItem, type Item } from "../src/game/item";
 import { ITEM_TYPES, MOD_COUNTS } from "../src/data/items";
 import { MAX_TROPHY_CASES, trophyCaseCost } from "../src/data/trophies";
 import { STAT_KEYS } from "../src/data/mods";
@@ -3644,10 +3645,28 @@ console.log("\n=== multiplayer ===");
   check("XP is shared, not split",
     host.heroes[0]!.loot.xp > 0 && host.heroes[0]!.loot.xp === host.heroes[1]!.loot.xp,
     `${host.heroes[0]!.loot.xp} vs ${host.heroes[1]!.loot.xp}`);
-  check("loot belongs to whoever picked it up",
-    host.heroes[0]!.loot.coins !== host.heroes[1]!.loot.coins
-    || host.heroes[0]!.loot.items.length !== host.heroes[1]!.loot.items.length,
-    `${host.heroes[0]!.loot.coins} vs ${host.heroes[1]!.loot.coins} coins`);
+  // Loot is the twin of the XP check above now, not its opposite. This check used to assert
+  // that the two heroes' loot *diverged* — "loot belongs to whoever picked it up" — and it
+  // went red the moment the owner's ruling landed, which is the check doing its job on a
+  // rule that was deliberately overturned rather than a regression. Inverted, it is the
+  // strongest statement of the new rule anywhere in the gate, because it rides a floor the
+  // party genuinely played rather than a hand-placed pickup: whatever the two of them walked
+  // over, in whatever order, they both end holding.
+  const [h0, h1] = [host.heroes[0]!, host.heroes[1]!];
+  check("loot is shared, not split — both heroes end the floor holding the same items",
+    h0.loot.items.length > 0 && h0.loot.items.length === h1.loot.items.length,
+    `${h0.loot.items.length} vs ${h1.loot.items.length} items`);
+  // Coins are compared through each hero's own `coinFindMult` rather than as raw totals:
+  // one pile pays both, but each of them through their own Avarice nodes, so equal totals
+  // would be the wrong invariant (and would only hold while the two builds happen to have
+  // spent the same). Dividing the multiplier back out recovers the pile they shared, to
+  // within the per-pickup rounding.
+  const rawCoins = (h: Hero) => h.loot.coins / Math.max(0.0001, h.player.coinFindMult);
+  const coinGap = Math.abs(rawCoins(h0) - rawCoins(h1)) / Math.max(1, rawCoins(h0));
+  check("...and one coin pile paid them both, each through their own find multiplier",
+    h0.loot.coins > 0 && h1.loot.coins > 0 && coinGap < 0.03,
+    `${h0.loot.coins} @x${h0.player.coinFindMult.toFixed(2)} vs `
+      + `${h1.loot.coins} @x${h1.player.coinFindMult.toFixed(2)} — ${(coinGap * 100).toFixed(1)}% apart`);
 
   // 3. A client rebuilds the same floor from the seed alone, then adopts a snapshot.
   const clientState = geared(14, 8802, 16, "magician");
@@ -3701,104 +3720,158 @@ console.log("\n=== multiplayer ===");
     check("and goes away again with it", client.completionPortal === null);
   }
 
-  // 3b. Loot ownership. Every drop belongs to exactly one hero and only its owner may
-  // collect it (owner ruling). Before this, `updatePickups` claimed every drop for
-  // `nearestHero`, so a party member could walk off with an item rolled at someone
-  // else's level — the drop tables have always assigned per hero and the collection loop
-  // threw that away.
+  // 3b. Loot sharing. A drop is **shared, not owned** (owner ruling, 2026-09-10): one
+  // physical object on the floor, anybody may walk onto it, and collecting it credits every
+  // hero still in the run with their own copy. This block replaces the ownership checks that
+  // stood here for one afternoon — inverted rather than deleted, because the thing worth
+  // holding onto was their framing: the hero who does NOT get the kill credit is the one
+  // standing on the drop, so a rule that paid only the killer (or only an owner) is visible
+  // rather than merely absent.
   //
-  // The check is built so it goes RED on that old behaviour rather than merely passing
-  // on the new one: the *thief* stands directly on the drop and the *owner* is parked
-  // across the floor, so `nearestHero` would pick the thief and collect. Two heroes on
-  // the same tile would prove nothing — it would pass under both rules.
+  // The level gap is the other half of the instrument. Both heroes used to be level 14,
+  // which would make the docket §23 "each at their own level" property below unfalsifiable:
+  // identical levels produce identical copies under every rule, correct or broken. So this
+  // party is a level 20 and a level 50, and the gap is asserted before anything reads it.
   {
-    const ownState = geared(14, 8804, 16, "swordsman");
-    const own = new Dungeon(ownState, delveConfig(4, 0, 2), {
-      seed: 771, role: "host", heroes: setups,
+    const lowState = geared(20, 8806, 14, "swordsman");
+    const highState = geared(50, 8807, 20, "magician");
+    const shareSetups = [
+      {
+        netId: "", name: "Low", player: lowState.player,
+        appearance: lowState.appearance, potions: 5, local: true,
+      },
+      {
+        netId: "p2", name: "High", player: highState.player,
+        appearance: highState.appearance, potions: 5, local: false,
+      },
+    ];
+    const sh = new Dungeon(lowState, delveConfig(4, 0, 2), {
+      seed: 771, role: "host", heroes: shareSetups,
     });
-    const thief = own.heroes[0]!;
-    const holder = own.heroes[1]!;
-    own.enemies.length = 0;
-    own.pickups.length = 0;
+    sh.enemies.length = 0;
+    sh.pickups.length = 0;
+    const low = sh.heroes[0]!;
+    const high = sh.heroes[1]!;
 
-    // Park them genuinely apart: the thief on the portal (walkable, so nothing shoves the
-    // drop), the owner in the far corner, well outside any magnet reach.
-    const spot = { x: own.portal.x, y: own.portal.y };
-    thief.avatar.x = spot.x;
-    thief.avatar.y = spot.y;
-    holder.avatar.x = spot.x > own.width / 2 ? 20 : own.width - 20;
-    holder.avatar.y = spot.y > own.height / 2 ? 20 : own.height - 20;
-    const gap = Math.hypot(holder.avatar.x - spot.x, holder.avatar.y - spot.y);
-
-    const drop = (kind: "coin" | "item", owner: number) => {
-      own.pickups.push({
-        kind, x: spot.x, y: spot.y, px: spot.x, py: spot.y, radius: 6,
-        value: kind === "coin" ? 100 : 0,
-        item: kind === "item"
-          ? rollItem({ rarity: "rare", type: "ring", ilvl: 10, rng: new Rng(5) })
-          : null,
-        keyTier: null, rarity: kind === "item" ? "rare" : null, element: null, defId: null,
-        owner, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
-      });
+    const priv = sh as unknown as {
+      updatePickups(dt: number): void;
+      dropPickup(x: number, y: number, opts: {
+        kind: Pickup["kind"]; value?: number; rarity?: Rarity;
+        forge?: (ilvl: number, powerIlvl: number) => Item;
+      }): void;
+      rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[]):
+        (ilvl: number, powerIlvl: number) => Item;
     };
     const runPickups = (seconds: number) => {
       const steps = Math.round(seconds / DT);
-      for (let i = 0; i < steps; i++) {
-        (own as unknown as { updatePickups(dt: number): void }).updatePickups(DT);
-      }
+      for (let i = 0; i < steps; i++) priv.updatePickups(DT);
     };
 
-    // The instrument first: unless the thief really is the hero `nearestHero` would have
-    // handed this to, the check can pass without the rule doing any work at all.
-    drop("item", holder.index);
-    check("the ownership check is pointed at a real theft — the non-owner is the nearest hero",
-      own.nearestHero(spot.x, spot.y) === thief && gap > 78 * 3,
-      `thief on the drop, owner ${gap.toFixed(0)}u away`);
+    check("the sharing checks are pointed at a party that can tell the copies apart",
+      low.player.level === 20 && high.player.level === 50,
+      `levels ${low.player.level} and ${high.player.level}`);
 
-    const thiefItemsBefore = thief.loot.items.length;
-    const holderItemsBefore = holder.loot.items.length;
-    runPickups(1);
-    check("a party member cannot pick up a drop that isn't theirs",
-      own.pickups.length === 1 && thief.loot.items.length === thiefItemsBefore,
-      `${thief.loot.items.length - thiefItemsBefore} item(s) stolen`);
-    // Read the pickup defensively rather than with `!`. If the drop above was stolen this
-    // array is empty, and a check that *throws* on a violation aborts the whole smoke run
-    // and hides every check after it — which is exactly what happened the first time this
-    // was falsified. A violated property must go red, not crash.
-    const held = own.pickups[0];
-    const moved = held ? Math.hypot(held.x - spot.x, held.y - spot.y) : Infinity;
-    check("...and a non-owner's magnetism can't drag it either",
-      held !== undefined && held.magnet === false && moved < 1,
-      held ? `moved ${moved.toFixed(1)}u` : "the drop was already collected");
+    // --- the copies themselves, straight off the real drop path ---------------------
+    // `dropPickup` is the enforcement point (there is no single-item slot to fill), so this
+    // goes through it rather than hand-building a pickup the way the ownership block did.
+    priv.dropPickup(200, 200, {
+      kind: "item", rarity: "rare", forge: priv.rollDrop("rare", ["sword"]),
+    });
+    const shared = sh.pickups[0];
+    check("one kill drops one physical object, not one per player",
+      sh.pickups.length === 1, `${sh.pickups.length} pickup(s)`);
+    const copies = shared ? [...shared.copies] : [];
+    check("...carrying one copy per hero on the roster",
+      copies.length === sh.heroes.length, `${copies.length} copies for ${sh.heroes.length} heroes`);
+    const a = copies[0];
+    const b = copies[1];
+    if (a && b) {
+      // "We both get that item": the same item, not a roll each. Everything that says what
+      // the thing *is* has to match, or the loot banner lies to one of them.
+      check("both heroes get the same item — name, rarity, type and affixes all match",
+        a.name === b.name && a.rarity === b.rarity && a.type === b.type && a.family === b.family
+          && a.mods.map((m) => m.id).join() === b.mods.map((m) => m.id).join()
+          && (a.grant ?? "") === (b.grant ?? "") && (a.trigger?.id ?? "") === (b.trigger?.id ?? ""),
+        `${a.name} [${a.mods.map((m) => m.id).join(",")}] vs ${b.name} [${b.mods.map((m) => m.id).join(",")}]`);
+      // ...and docket §23 survives the sharing: each copy is levelled for the hero who gets
+      // it, so the level 50's find is not a paperweight in the level 20's stash.
+      check("...each rolled at the hero's own level, so both can wear their copy",
+        a.ilvl === 20 && b.ilvl === 50
+          && requiredLevel(a) <= low.player.level && requiredLevel(b) <= high.player.level,
+        `ilvl ${a.ilvl} (needs ${requiredLevel(a)}) and ilvl ${b.ilvl} (needs ${requiredLevel(b)})`);
+      // The identity check above must not be passing because the level was ignored: if the
+      // two copies were byte-identical, "same item" would be true and §23 would be dead.
+      // Magnitudes have to actually differ, in the direction of the higher level.
+      const statSum = (it: Item) => Object.values(it.stats).reduce((n: number, v) => n + (v as number), 0);
+      check("...and the higher level's copy really is the bigger numbers, not a clone",
+        statSum(b) > statSum(a), `${statSum(a)} vs ${statSum(b)} total base stats`);
+    } else {
+      check("both heroes get the same item — name, rarity, type and affixes all match",
+        false, "the drop carried no copies");
+    }
 
-    // The owner walks over their own drop and it behaves exactly as loot always has.
-    holder.avatar.x = spot.x;
-    holder.avatar.y = spot.y;
-    runPickups(1);
-    check("the hero it belongs to collects it normally",
-      own.pickups.length === 0 && holder.loot.items.length === holderItemsBefore + 1);
-    check("and it went to the owner, not to whoever was standing there",
-      thief.loot.items.length === thiefItemsBefore);
+    // --- collection pays everybody -------------------------------------------------
+    // Park them genuinely apart and put the hero who did NOT roll the drop on top of it.
+    // Under any rule that pays the killer or an owner, `low` collects and `high` gets
+    // nothing; the point of the gap is that `nearestHero` can only ever pick `low`.
+    const spot = { x: sh.portal.x, y: sh.portal.y };
+    sh.pickups.length = 0;
+    low.avatar.x = spot.x;
+    low.avatar.y = spot.y;
+    high.avatar.x = spot.x > sh.width / 2 ? 20 : sh.width - 20;
+    high.avatar.y = spot.y > sh.height / 2 ? 20 : sh.height - 20;
+    const gap = Math.hypot(high.avatar.x - spot.x, high.avatar.y - spot.y);
+    check("the sharing check is pointed at a real split — the far hero cannot be the collector",
+      sh.nearestHero(spot.x, spot.y) === low && gap > 78 * 3,
+      `collector on the drop, the other hero ${gap.toFixed(0)}u away`);
 
-    // The owner ruling extends the rule to currency: coins are owned too.
-    holder.avatar.x = spot.x > own.width / 2 ? 20 : own.width - 20;
-    holder.avatar.y = spot.y > own.height / 2 ? 20 : own.height - 20;
-    const coinsBefore = thief.loot.coins;
-    drop("coin", holder.index);
-    runPickups(1);
-    check("currency is owned too — a teammate's coins are not free money",
-      own.pickups.length === 1 && thief.loot.coins === coinsBefore,
-      `${thief.loot.coins - coinsBefore} coins stolen`);
+    priv.dropPickup(spot.x, spot.y, {
+      kind: "item", rarity: "rare", forge: priv.rollDrop("rare", ["sword"]),
+    });
+    const lowItemsBefore = low.loot.items.length;
+    const highItemsBefore = high.loot.items.length;
+    const wanted = sh.pickups[0] ? [...sh.pickups[0]!.copies] : [];
+    runPickups(1.5);
+    check("any party member can pick up any drop",
+      sh.pickups.length === 0, `${sh.pickups.length} left on the floor`);
+    check("...and collecting it credits BOTH heroes, not just the one who walked onto it",
+      low.loot.items.length === lowItemsBefore + 1 && high.loot.items.length === highItemsBefore + 1,
+      `collector +${low.loot.items.length - lowItemsBefore}, the hero across the floor `
+        + `+${high.loot.items.length - highItemsBefore}`);
+    check("...each banking their own copy rather than sharing one object",
+      low.loot.items.at(-1) === wanted[0] && high.loot.items.at(-1) === wanted[1]
+        && wanted[0] !== wanted[1] && wanted[0]?.id !== wanted[1]?.id,
+      `ids ${wanted[0]?.id} and ${wanted[1]?.id}`);
+    // Each hero's own browser is handed its own copy (`net/party.ts` drains these), so a
+    // remote player's item is not sampled out of a snapshot.
+    check("...and each copy is queued for the browser that owns that hero",
+      low.itemsPending.at(-1) === wanted[0] && high.itemsPending.at(-1) === wanted[1]);
 
-    // A disconnect must never strand loot on the floor for the rest of the run.
-    holder.departed = true;
-    runPickups(1);
-    check("a departed owner releases their claim rather than wedging the drop",
-      own.pickups.length === 0 && thief.loot.coins > coinsBefore);
+    // --- currency too --------------------------------------------------------------
+    // The ruling is not about items specifically — "we can both collectively farm the same
+    // stuff" — so a coin pile pays each hero in full rather than being split between them.
+    const lowCoins = low.loot.coins;
+    const highCoins = high.loot.coins;
+    priv.dropPickup(spot.x, spot.y, { kind: "coin", value: 100 });
+    runPickups(1.5);
+    check("currency pays everybody too, in full rather than split",
+      low.loot.coins > lowCoins && high.loot.coins > highCoins
+        && low.loot.coins - lowCoins >= 100 && high.loot.coins - highCoins >= 100,
+      `+${low.loot.coins - lowCoins} and +${high.loot.coins - highCoins} coins from a 100 pile`);
+
+    // --- a departed player is out of the run ---------------------------------------
+    high.departed = true;
+    const lowCoins2 = low.loot.coins;
+    const highCoins2 = high.loot.coins;
+    priv.dropPickup(spot.x, spot.y, { kind: "coin", value: 50 });
+    runPickups(1.5);
+    check("a departed player is credited nothing and cannot wedge the drop",
+      sh.pickups.length === 0 && low.loot.coins > lowCoins2 && high.loot.coins === highCoins2,
+      `collector +${low.loot.coins - lowCoins2}, departed +${high.loot.coins - highCoins2}`);
   }
 
-  // 3c. Solo is unchanged, and structurally so rather than by special case: a one-hero
-  // party has exactly one owner, so the hero owns every drop and collects it as always.
+  // 3c. Solo is unchanged, and structurally so rather than by special case: a one-hero party
+  // is credited once, from the same loop, with one copy forged at that hero's own level.
   {
     const soloState = geared(14, 8805, 16, "swordsman");
     const soloRun = new Dungeon(soloState, delveConfig(4), { seed: 772, role: "solo" });
@@ -3807,33 +3880,57 @@ console.log("\n=== multiplayer ===");
     const me = soloRun.localHero;
     me.avatar.x = soloRun.portal.x;
     me.avatar.y = soloRun.portal.y;
-    soloRun.pickups.push({
-      kind: "coin", x: soloRun.portal.x, y: soloRun.portal.y,
-      px: soloRun.portal.x, py: soloRun.portal.y, radius: 6,
-      value: 50, item: null, keyTier: null, rarity: null, element: null, defId: null,
-      owner: me.index, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
-    });
+    const soloPriv = soloRun as unknown as {
+      updatePickups(dt: number): void;
+      dropPickup(x: number, y: number, opts: {
+        kind: Pickup["kind"]; value?: number; rarity?: Rarity;
+        forge?: (ilvl: number, powerIlvl: number) => Item;
+      }): void;
+      rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[]):
+        (ilvl: number, powerIlvl: number) => Item;
+    };
+    soloPriv.dropPickup(soloRun.portal.x, soloRun.portal.y, { kind: "coin", value: 50 });
     const before = me.loot.coins;
-    for (let i = 0; i < Math.round(1 / DT); i++) {
-      (soloRun as unknown as { updatePickups(dt: number): void }).updatePickups(DT);
-    }
+    for (let i = 0; i < Math.round(1.5 / DT); i++) soloPriv.updatePickups(DT);
     check("solo picks its own loot up exactly as before",
       soloRun.pickups.length === 0 && me.loot.coins > before,
       `+${me.loot.coins - before} coins`);
+    soloPriv.dropPickup(soloRun.portal.x, soloRun.portal.y, {
+      kind: "item", rarity: "rare", forge: soloPriv.rollDrop("rare", ["sword"]),
+    });
+    const soloCopies = soloRun.pickups[0]?.copies.length ?? 0;
+    const soloItems = me.loot.items.length;
+    for (let i = 0; i < Math.round(1.5 / DT); i++) soloPriv.updatePickups(DT);
+    check("and a solo drop is one copy for one hero, at that hero's own level",
+      soloCopies === 1 && me.loot.items.length === soloItems + 1
+        && me.loot.items.at(-1)!.ilvl === me.player.level,
+      `${soloCopies} copy, ilvl ${me.loot.items.at(-1)?.ilvl} at level ${me.player.level}`);
   }
 
-  // The wire carries the owner, because a drop you cannot collect and a drop you simply
-  // haven't reached must not look identical on a client.
+  // The wire carries the drop and nothing about who it is for, because it is for everybody.
+  // Two clients sitting in different party slots have to decode the identical pickup: if a
+  // per-player claim ever came back onto this tuple, the two would diverge here.
   {
     host.pickups.length = 0;
-    host.pickups.push({
-      kind: "coin", x: 100, y: 100, px: 100, py: 100, radius: 6, value: 7,
-      item: null, keyTier: null, rarity: null, element: null, defId: null,
-      owner: 1, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
+    (host as unknown as {
+      dropPickup(x: number, y: number, opts: { kind: Pickup["kind"]; value?: number }): void;
+    }).dropPickup(100, 100, { kind: "coin", value: 7 });
+    const wire = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    // `client` is the party's slot 1 (`clientSetups` marks the second hero local). Read the
+    // same bytes again on a client sitting in slot 0 — the only difference between the two
+    // is which hero they drive, which is exactly what a per-player claim would key on.
+    applySnapshot(client, wire);
+    const show = (d: Dungeon) =>
+      d.pickups.map((p) => `${p.kind}@${Math.round(p.x)},${Math.round(p.y)}:${p.value}`).join("|");
+    const slot1 = show(client);
+    const slot0Setups = setups.map((setup, i) => ({ ...setup, local: i === 0 }));
+    const other = new Dungeon(geared(14, 8808, 16, "swordsman"), configFromWire(configToWire(config)), {
+      seed: 4242, role: "client", heroes: slot0Setups,
     });
-    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
-    check("a drop's owner crosses the wire",
-      client.pickups[0]?.owner === 1, `owner ${client.pickups[0]?.owner}`);
+    applySnapshot(other, JSON.parse(JSON.stringify(wire)));
+    const slot0 = show(other);
+    check("a shared drop crosses the wire identically for every slot",
+      slot0.length > 0 && slot0 === slot1, `${slot0 || "nothing"} vs ${slot1 || "nothing"}`);
   }
   console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
     + ` with ${busiest.monsters} monsters on screen`

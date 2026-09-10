@@ -45,6 +45,8 @@ import type { Action, AvatarInput } from "../src/core/input";
 import { REACTIVE_EVENTS } from "../src/game/abilities";
 import { Dungeon, type Hero } from "../src/game/dungeon";
 import type { Enemy } from "../src/game/entities";
+import { pickupItem } from "../src/game/entities";
+import type { Item } from "../src/game/item";
 import { forgeNamedItem, itemMods, itemScore, reforgeAffixes, rollItem } from "../src/game/item";
 import { GameState, playerFromJSON, playerToJSON, sellPrice } from "../src/game/state";
 import { ABILITY_BY_ID, ALL_CLASSES, mutationMatches } from "../src/progression/index";
@@ -482,7 +484,10 @@ section("9. live: the drop sites really read the table");
     });
     return priv;
   };
-  const namedOnFloor = (d: Dungeon) => d.pickups.filter((p) => p.kind === "item" && p.item?.named).map((p) => p.item!.named!);
+  const namedOnFloor = (d: Dungeon) => d.pickups
+    .map((p) => (p.kind === "item" ? pickupItem(p) : null))
+    .filter((it): it is Item => !!it?.named)
+    .map((it) => it.named!);
 
   // A boss kill asks the boss table with the encounter's own id.
   const bossState = new GameState(21);
@@ -501,8 +506,11 @@ section("9. live: the drop sites really read the table");
       wanted.length > 0 && wanted.every((id) => dropped.includes(id)), dropped.join(", ") || "nothing named");
     check("...and books it in the records for the local hero",
       wanted.every((id) => (bossState.stats.namedFound[id] ?? 0) >= 1));
+    // Every hero's copy, not just the identity one: a shared drop forges one per hero at
+    // that hero's own level, and the definition's floor has to hold for all of them.
     check("...at an item level no lower than the definition's floor",
-      bossFloor.pickups.filter((p) => p.item?.named).every((p) => p.item!.ilvl >= (NAMED_BY_ID[p.item!.named!]?.minIlvl ?? 1)));
+      bossFloor.pickups.flatMap((p) => [...p.copies]).filter((it) => it.named)
+        .every((it) => it.ilvl >= (NAMED_BY_ID[it.named!]?.minIlvl ?? 1)));
   }
 
   // A wave monster asks the world table at the floor's depth.

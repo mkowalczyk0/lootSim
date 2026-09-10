@@ -267,11 +267,13 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
       // build, so an index is the whole payload. Which registry is read is decided by the
       // pickup's kind, the same way the `defId` slot itself is.
       p.defId ? (p.kind === "augment" ? AUGMENTS : RELICS).findIndex((d) => d.id === p.defId) : -1,
-      // Who this drop belongs to. The host is the only side that resolves a pickup, so the
-      // client never needs this to decide anything — it needs it to *draw* the difference,
-      // because a drop you cannot collect and a drop you simply haven't reached must not
-      // look the same. An older host omits the field and it reads as -1 below.
-      p.owner,
+      // Nothing here says who the drop is for, because a drop is for everybody (owner
+      // ruling, 2026-09-10): one object on the floor, collectable by anyone, and collecting
+      // it pays the whole party. So every client decodes the identical pickup and draws it
+      // the identical way, and a per-player slot on this tuple would be a claim the
+      // simulation no longer makes. A hero's own copy of the item reaches them as a `got`
+      // message instead (`net/party.ts`) — an unspoken drop is not a thing to lose to a
+      // dropped frame, and it was never sampled out of a snapshot.
     ]),
     tg: d.telegraphs.map((t) => [
       SHAPES.indexOf(t.shape), Math.round(t.x), Math.round(t.y), r2(t.angle),
@@ -629,7 +631,7 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
   }
 
   d.pickups.length = 0;
-  for (const [kindIndex, x, y, value, rarityIndex, elementIndex, defIndex, owner] of s.k) {
+  for (const [kindIndex, x, y, value, rarityIndex, elementIndex, defIndex] of s.k) {
     const kind = PICKUP_KINDS[kindIndex!] ?? "coin";
     // Which registry the `defId` index is read out of is decided by the pickup's kind, on
     // both sides of the wire. Encoding against one registry and decoding against another
@@ -638,14 +640,14 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
     d.pickups.push({
       kind,
       x: x!, y: y!, px: x!, py: y!, radius: 6,
-      value: value!, item: null, keyTier: null,
+      value: value!, keyTier: null,
       rarity: rarityIndex! >= 0 ? RARITIES[rarityIndex!] ?? null : null,
       element: elementIndex! >= 0 ? ELEMENTS[elementIndex!] ?? null : null,
       defId: registry && defIndex !== undefined && defIndex >= 0 ? registry[defIndex]?.id ?? null : null,
-      // -1 from a host too old to send the field: unowned, which on the client means only
-      // that it draws undimmed. It cannot make a drop collectable — collection is the
-      // host's, and the host is the side that knows.
-      owner: owner ?? -1,
+      // No copies on a client: the host forges them and hands each hero theirs directly.
+      // A client draws an item pickup from its `rarity` and `kind`, which is all the floor
+      // ever showed of one.
+      copies: [],
       vx: 0, vy: 0, life: 1, magnet: false, embedTimer: 0,
     });
   }
