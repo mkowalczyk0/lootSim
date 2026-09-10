@@ -1,15 +1,20 @@
 /**
- * Renders every grid in `render/pixels.ts`, plus every pipeline prop and floor tileset,
- * to a PNG contact sheet.
- *
- * There are no binary art assets in this project — the art is string grids — which is
- * lovely right up until you want to *look* at it, at which point the only viewer is the
- * game itself. This writes a sheet you can open: every composed character, monster,
- * boss, weapon, icon, prop and cosmetic, in the real palettes, from the same pure module
- * the renderer bakes from. Run it after touching a grid and actually look at the result.
+ * Renders the art the game draws *today* to a PNG contact sheet: every procedural grid in
+ * `render/pixels.ts` that's still a live fallback, plus every pipeline prop, icon and
+ * floor tileset, in the real palettes, from the same pure modules the renderer bakes
+ * from and the same PNGs `resolveSprite`/`itemSprite` actually load. Run it after
+ * touching a grid or committing a PNG and actually look at the result.
  *
  *   npm run art            # writes art-sheet.png
  *   npm run art -- out.png
+ *
+ * The bar is "what the game draws today," not a museum of everything ever authored — a
+ * row whose real PNG has landed and superseded it is decoded and blitted for real instead
+ * (or, for the five equipment icons, dropped in favour of the rarity-washed row below,
+ * which already shows the same PNG). The composed-hero preview and the standalone
+ * cosmetic-art strip are gated behind `SHOW_PARKED_COSMETICS` (off by default, 2026-09) —
+ * see that constant's comment for why; flip it back to `true` for the one line it takes to
+ * see them again.
  *
  * Props and tilesets (both pipeline PNGs, not procedural grids) were a gap here until
  * the Citadel art pass had to hand-compose a one-off sheet just to see its own work —
@@ -29,10 +34,8 @@ import { deflateSync } from "node:zlib";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
   BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
-  ICON_ARMOR, ICON_CAPSULE, ICON_COIN, ICON_GEM, ICON_GLOVES, ICON_KEY, ICON_NECKLACE,
-  ICON_POTION, ICON_RING, ICON_SHIELD, MOB_BRUTE, MOB_CASTER, MOB_IMP, MOB_RANGER,
-  MOB_CRAWLER, PALETTES, PROP_BONES, PROP_CHEST, PROP_CRYSTAL, PROP_MUSHROOM, PROP_ROCK,
-  PROP_TORCH, WEAPON_ART, bodyPalette, cosmeticPalette, hairPalette,
+  MOB_BRUTE, MOB_CASTER, MOB_IMP, MOB_RANGER, MOB_CRAWLER, PALETTES,
+  WEAPON_ART, bodyPalette, cosmeticPalette, hairPalette,
   rarityWeaponPalette, weaponPalette, type Grid, type Palette,
 } from "../src/render/pixels";
 import {
@@ -62,6 +65,19 @@ const W = 1180;
 const H = 4800;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
+
+/**
+ * 2026-09: the owner is parking cosmetics entirely until the 21 per-class hero sprites
+ * are done ("get rid of the style stuff for now... remove all the old stuff from the art
+ * sheet") — the composed-hero preview and the standalone cosmetic-art strip below are the
+ * string-grid system that's least likely to survive the hero rework, and they were
+ * crowding out the boss, prop and tileset art actually being iterated on. This is a sheet
+ * decision only: nothing here touches `data/cosmetics.ts`, `render/pixels.ts` or the
+ * composition stack, cosmetics still render in the live game exactly as before (the smoke
+ * test still walks every grid for drawability), and flipping this one flag is the whole
+ * way back once the hero art lands.
+ */
+const SHOW_PARKED_COSMETICS = false;
 
 const buf = Buffer.alloc(W * H * 3);
 for (let i = 0; i < W * H; i++) {
@@ -133,12 +149,14 @@ const LOOKS: readonly Appearance[] = [
 ];
 
 let y = 16;
-LOOKS.forEach((a, i) => {
-  const x = 16 + i * (CHAR_W * SCALE + 10);
-  frame(x - 3, y - 3, CHAR_W * SCALE + 6, CHAR_H * SCALE + 6);
-  character(a, x, y, SCALE);
-});
-y += CHAR_H * SCALE + 26;
+if (SHOW_PARKED_COSMETICS) {
+  LOOKS.forEach((a, i) => {
+    const x = 16 + i * (CHAR_W * SCALE + 10);
+    frame(x - 3, y - 3, CHAR_W * SCALE + 6, CHAR_H * SCALE + 6);
+    character(a, x, y, SCALE);
+  });
+  y += CHAR_H * SCALE + 26;
+}
 
 /**
  * Blits a decoded real PNG (not a procedural grid) with proper alpha compositing, since
@@ -214,33 +232,40 @@ const legendary = rarityWeaponPalette("legendary");
 strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(legendary)] as const), false, 14);
 strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(starforged)] as const), false, 14);
 
-strip([
-  [ICON_COIN, PALETTES.coin], [ICON_KEY, PALETTES.key], [ICON_POTION, PALETTES.potion],
-  [ICON_GEM, PALETTES.gem], [ICON_CAPSULE, PALETTES.capsule], [ICON_ARMOR, PALETTES.armor],
-  [ICON_SHIELD, PALETTES.shield], [ICON_RING, PALETTES.ring], [ICON_GLOVES, PALETTES.gloves],
-  [ICON_NECKLACE, PALETTES.necklace], [PROP_CHEST, PALETTES.chest], [PROP_TORCH, PALETTES.torch],
-  [PROP_BONES, PALETTES.bones], [PROP_MUSHROOM, PALETTES.mushroom],
-  [PROP_CRYSTAL, PALETTES.crystal], [PROP_ROCK, PALETTES.rock],
-], false, 12);
+// 2026-09: this used to be one strip of the procedural coin/key/potion/gem/capsule,
+// armor/shield/ring/gloves/necklace and chest/torch/bones/mushroom/crystal/rock grids —
+// every one of them superseded by a committed pipeline PNG (`SPRITE_OVERRIDES` in
+// `render/atlas/manifest.ts` points every one of those ids at a real, loaded art file, so
+// `resolveSprite` never falls back to this procedural bake in normal play). The five
+// equipment icons and the six dungeon-dressing props already get a real row below (the
+// wash strip right after this comment, and the pipeline-props strip further down); the
+// currency/consumable icons get their own real row here so nothing drops off the sheet.
+{
+  const CURRENCY_PNGS = ["coin", "key", "potion", "gem", "capsule"];
+  stripPng(
+    CURRENCY_PNGS.map((n) => decodePng(readFileSync(`src/render/atlas/icons/icon.${n}.png`))),
+    3, true, 10,
+  );
+}
 
-strip(
-  Object.values(COSMETICS_BY_ID)
-    .filter((c) => c.art)
-    .map((c) => [COSMETIC_ART[c.art!]!.grid, cosmeticPalette(c)] as const),
-  false, 10,
-);
+if (SHOW_PARKED_COSMETICS) {
+  strip(
+    Object.values(COSMETICS_BY_ID)
+      .filter((c) => c.art)
+      .map((c) => [COSMETIC_ART[c.art!]!.grid, cosmeticPalette(c)] as const),
+    false, 10,
+  );
+}
 
 // --- real pipeline icons, washed by every rarity (item-art prep pass) -----
 //
-// Everything above this line is the procedural render/pixels.ts grids — what the game
-// drew before the Aseprite/PixelLab migration, and for several of these ids (the five
-// equipment icons below) not what it draws today. `npm run itemart` proves the *wash
-// constant* can't fork again (RARITY_WASH, one number, one call site); it can't show you
-// the wash, because it never touches a canvas. This is the "look at it" counterpart —
-// one row per equipment icon, its real committed PNG decoded (not re-derived) and washed
-// toward all eight rarities with the exact `tintedCanvas` math (`pngdecode.ts#washPng`),
-// so a fork back to two different constants (the bug this file's own §11 note describes)
-// would be visible here as two different-looking rows rather than just a passing number.
+// `npm run itemart` proves the *wash constant* can't fork again (RARITY_WASH, one number,
+// one call site); it can't show you the wash, because it never touches a canvas. This is
+// the "look at it" counterpart — one row per equipment icon, its real committed PNG
+// decoded (not re-derived) and washed toward all eight rarities with the exact
+// `tintedCanvas` math (`pngdecode.ts#washPng`), so a fork back to two different constants
+// (the bug this file's own §11 note describes) would be visible here as two
+// different-looking rows rather than just a passing number.
 {
   const ICON_PNGS: Record<string, string> = {
     armor: "icons/icon.armor.png", shield: "icons/icon.shield.png", ring: "icons/icon.ring.png",
