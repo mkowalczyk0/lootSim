@@ -134,26 +134,36 @@ living law. The Tyrant's relic is `Spark of the Tyrant`, which the worldbuilding
 outright; the rest are written to the roster's existing rule — an object the encounter
 itself left behind, named out of the cosmology it belongs to.
 
-## Solo, in v1
+## Co-op, since 2026-09-10 — turned on ahead of the scaling answer
 
-§15's eventual ask is 4-20 players. This ships as one player, the same call `data/daily.ts`
-made for the Vigil and `data/legends.ts` for the Proving, and for the same reason: the
-party half of the game is host-authoritative and every new mode that crosses the wire is a
-new way for two saves to disagree.
+§15's eventual ask is 4-20 players. Raids shipped solo in v1, the same call
+`data/daily.ts` made for the Vigil and `data/legends.ts` for the Proving, with the seam
+deliberately left **open rather than merely unclosed**: `RunConfigWire` already carried
+`raidId`/`raidTier` and `configFromWire` already rebuilt a raid through `raidConfig`, so
+what stopped one was exactly one branch in `main.ts#handleHubInteraction` — the design
+record's own words were "one place to delete."
 
-The seam is **open rather than merely unclosed**. `RunConfigWire` carries
-`raidId`/`raidTier` and `configFromWire` rebuilds a raid through `raidConfig`, so a raid
-that ever does cross the wire is built by its own builder instead of collapsing into a
-raid-shaped run with no raid in it. What stops one today is one branch in
-`main.ts#handleHubInteraction` — one place to delete.
+**That branch is deleted.** The owner turned raids on for parties by explicit decision,
+in order to iterate on the scaling live rather than from a measurement — "fuck the
+scaling discussion we had beforehand... I want to iterate in co-op, and we'll do it from
+there, and I'll let you know how the scaling is." A raid picked at the War Table now sets
+the party's plan and turns the Raid Portal into everyone's ready spot, the same shape
+every other portal-picking station already had; nothing about a solo raid changed.
 
-**A co-op attempt was built and measured, and then not shipped.** `RAID_HEALTH` is the
-one-player fight; `partyScale` was assumed to be the multiplier a party pass would tune,
-but measuring a real co-op fight (`tools/bot.ts`'s `playFloorParty`) found it doesn't
-transfer to a single body at all — see `docs/raid-party-scaling.md` for the numbers and
-why. The wiring (the branch above, plus the War Table and Raid Portal joining the party's
-ready-spot flow) was built alongside a first attempt at a fix and reverted with it; it
-survives, unmerged, on `investigate/raid-party-scaling` for whoever picks this back up.
+**This did not answer the scaling question — it deliberately set it aside.** A co-op
+attempt was built and measured before this, and the measurement was not flattering:
+`partyScale` (tuned for a crowd) doesn't transfer to a single raid-boss body at all — see
+`docs/raid-party-scaling.md`, whose finding **still stands, unrefuted**. No tuning number
+changed to enable co-op: not `partyScale`, not `raidThreatRate`, not the raid tier curve,
+nothing in `data/raids.ts` or `data/modes.ts`. Expect a party raid to play too easy or too
+hard; that is the point of turning it on this way, not a bug. The fix that was tried and
+not shipped survives, unmerged, on `investigate/raid-party-scaling`, unchanged by this.
+
+**Completion credit needed no new code.** Each hero banks a raid clear on their own
+machine against their own `GameState` (`Dungeon.bankLoot` → `recordDepth`'s raid branch,
+which reads only the calling client's own state), exactly like every other co-op mode —
+so a party clear was already safe against duplication or desync by construction, with
+nothing raid-specific to add.
 
 **Loot is per-hero and physical**, which is already true of every other mode; a raid's
 single-source exclusives have never been rolled for four people at once.

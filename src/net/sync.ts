@@ -85,10 +85,11 @@ export function configToWire(config: RunConfig): RunConfigWire {
  */
 export function configFromWire(wire: RunConfigWire): RunConfig {
   const planet = wire.planetId ? PLANETS_BY_ID[wire.planetId] : undefined;
-  // Raids are solo in v1, so nothing sends one — but a raid-shaped wire rebuilt through
-  // `riftConfig` would be a raid floor with no raid on it (no arena, no encounter, the
-  // depth-bucketed boss instead), and "nobody sends it" is not a reason to leave that
-  // reachable. Its own builder, like every other mode with a spec.
+  // A raid-shaped wire rebuilt through `riftConfig` would be a raid floor with no raid
+  // on it (no arena, no encounter, the depth-bucketed boss instead) — its own builder,
+  // like every other mode with a spec. This mattered even back when raids were solo and
+  // nothing sent one: "nobody sends it" was never a reason to leave that reachable, and
+  // now a party's host genuinely does.
   const raid = wire.raidId ? RAID_BY_ID[wire.raidId] : undefined;
   const base: RunConfig = raid
     ? raidConfig(raid, wire.raidTier ?? 1, wire.challengerTier)
