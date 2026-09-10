@@ -207,7 +207,30 @@ export const ATLAS: Record<string, AtlasSprite> = {
                               // drift frames are dropped. `seconds` is unread for a
                               // progress-keyed tag (see anim.ts#frameAtProgress).
                               cast: { from: 5, to: 9, seconds: 0.09, loop: false } } } },
-  "boss.corrupted-saint":     { id: "boss.corrupted-saint",     w: 76, h: 92, worldScale: 1.09, feet: 0.03 },
+  // Animated, IDLE ONLY, and the missing `cast` is blocked on a ruling rather than on art.
+  // `w`/`h`/`worldScale`/`feet` are all UNCHANGED — the idle needs no headroom, so this row
+  // gained an `anim` table and nothing else. Second-richest sprite in the borrow graph:
+  // 6 encounters, 5 of them Provings (`npm run animcoverage`).
+  //
+  // **The Saint has TWO hot accents and `npm run chroma` assumes one.** Gold halo (hue 40)
+  // and violet eyes (hue 277). Measured across a shipped idle and a generated wind-up,
+  // neither ever vanishes — gold holds 63.9-74.9 and violet 62.0-80.8 in all 14 frames,
+  // both far above the hero's 35.3 — but they trade rank for "loudest 2+px colour", and the
+  // gate reads that swap as the accent having been REPLACED (hue gap ~125 against a 45
+  // tolerance). The gate's INTENT is satisfied; its implementation cannot express a
+  // two-accent sprite. That is a gate-semantics decision, deliberately not made here to
+  // unblock this art — see docs/animation.md "a sprite with two accents".
+  //
+  // The idle ships because gold happens to dominate all five of its frames. The wind-up is
+  // generated, good, and parked in art/anim/raw/saint-windup-blocked/ — violet dominates 6
+  // of its 9 frames, so the combined strip fails. Do not re-roll it hoping for luck: the
+  // swap is a property of the sprite, not the seed.
+  //
+  // One prompt lesson from the first idle attempt, which DID fail this way: asking the halo
+  // to "pulse gently" dimmed it below the eyes on 3 of 5 frames. On a two-accent sprite,
+  // never prompt the dominant accent to pulse or fade — one generation, wasted.
+  "boss.corrupted-saint":     { id: "boss.corrupted-saint",     w: 76, h: 92, worldScale: 1.09, feet: 0.03,
+    anim: { cols: 5, tags: { idle: { from: 0, to: 4, seconds: 0.26, loop: true } } } },
   "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 87, worldScale: 1.54, feet: 0.03 },
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
   "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },

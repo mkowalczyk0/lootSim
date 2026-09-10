@@ -961,6 +961,54 @@ tool prints "every X is Y", "only N of these", "all of them except", derive it f
 data on every run instead of writing it down. Whoever hits the third instance of this: it
 is the third, not the first.
 
+### A sprite with two accents, and a gate that assumes one
+
+`boss.corrupted-saint` (2026-09-10) ships an **idle only**, and the missing wind-up is
+blocked on a ruling rather than on art. It is the second-richest sprite in the borrow
+graph — 6 encounters, 5 of them Provings — and its idle alone moved coverage from 10/35
+to **16/35**.
+
+The Saint has **two** hot accents: a gold halo (hue 40) and violet eyes (hue 277). Both
+are deliberate, both are shipped, and both sit far above the hero's 35.3 bar. `npm run
+chroma` checks that each frame's *loudest 2+px colour* stays within 45 degrees of the
+strip's accent, which is exactly right for a one-accent sprite and cannot express this one.
+
+Measured across the shipped idle and a generated wind-up, **neither accent ever vanishes**:
+
+    gold    63.9 - 74.9 chroma, present in all 14 frames
+    violet  62.0 - 80.8 chroma, present in all 14 frames
+
+They only **trade rank**. Gold is loudest in the five idle frames; violet is loudest in six
+of the nine wind-up frames, because the spell energy grows. The gate sees the swap as the
+accent being REPLACED — a ~125 degree hue jump against a 45 degree tolerance — and fails.
+
+**The gate's intent is satisfied and its implementation cannot say so.** That is a
+gate-semantics decision, and it is deliberately NOT made here, because the session that
+wants it changed is the session whose art it is blocking. This document already records
+what that looks like when it goes wrong: a correct check overruled by prose, where the
+argument sounded strictly stronger and was not. The measurement above is offered as
+evidence; the ruling belongs to the owner.
+
+If it is ever taken up, the shape is probably that a sprite may declare more than one
+accent and each frame must keep *some* declared accent above the bar — but note that
+weakens the check, and the thing it currently catches (an accent replaced by a dull robe
+colour) is real.
+
+The wind-up itself is good art and is parked in `art/anim/raw/saint-windup-blocked/`.
+**Do not re-roll it hoping for a luckier seed**: the swap is a property of the sprite's
+palette, not of the generation.
+
+#### Never prompt the dominant accent to pulse
+
+The first Saint idle failed this way too, and that one was self-inflicted: the prompt asked
+for *"the golden halo pulsing gently"*, and the pulse dimmed gold below the violet on three
+of five frames. Re-rolled with *"the halo stays steady, bright and undimmed throughout"*,
+gold led every frame and the gate passed.
+
+One generation, and the rule is cheap to remember: **on a sprite with more than one bright
+feature, never ask the dominant one to pulse, dim or fade.** The animation does not need it
+and the gate cannot tell that kind of dimming from an accent dying.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without
