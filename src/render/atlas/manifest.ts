@@ -801,6 +801,10 @@ export const ATLAS_WEAPON_SKINS: Record<string, AtlasWeaponSkin> = {
     id: "weapon.skin.abyssal-scythe", w: 73, h: 38, worldScale: 0.44,
     gripX: 5, gripY: 16, family: "scythe",
   },
+  skinSeamlessSword: {
+    id: "weapon.skin.seamless-sword", w: 72, h: 13, worldScale: 0.3929,
+    gripX: 9, gripY: 6, family: "sword",
+  },
 };
 
 // --- cosmetic layers (§15/§17.3, the "v2 redraw" gap) ---------------------

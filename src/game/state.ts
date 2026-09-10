@@ -12,6 +12,7 @@ import {
   DUPE_REFUND, defaultAppearance, normalizeAppearance, normalizeOwned,
   type Appearance, type CapsuleTier, type Cosmetic, type CosmeticSlot,
 } from "../data/cosmetics";
+import type { WeaponFamily } from "../data/weapons";
 import {
   CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, reforgeCoinCost,
   type CraftCategory,
@@ -435,13 +436,33 @@ export class GameState {
   }
 
   /**
+   * The weapon skins you own that can actually be worn on `family` — the ones drawn as a
+   * weapon of it, plus the seven original palettes, which belong to no family. Offering
+   * a scythe skin to someone holding a sword would be offering them nothing.
+   */
+  ownedWeaponSkins(family: WeaponFamily): Cosmetic[] {
+    return this.ownedInSlot("weapon").filter((c) => c.family === null || c.family === family);
+  }
+
+  /**
    * Wears a cosmetic, or takes the slot off with null. Refuses anything unowned so a
    * stale save can never dress you in something you never pulled.
+   *
+   * The weapon slot needs a `family`, because it holds one choice per family rather than
+   * one choice — see `Appearance.weapons`.
    */
-  wear(slot: CosmeticSlot, id: string | null): boolean {
+  wear(slot: CosmeticSlot, id: string | null, family?: WeaponFamily): boolean {
     if (id !== null) {
       const c = COSMETICS_BY_ID[id];
       if (!c || c.slot !== slot || !this.owns(id)) return false;
+      // A skin drawn as some other family's weapon would lie about reach if it drew here,
+      // so it cannot be equipped here either.
+      if (slot === "weapon" && c.family !== null && c.family !== family) return false;
+    }
+    if (slot === "weapon") {
+      if (!family) return false;
+      this.appearance = { ...this.appearance, weapons: { ...this.appearance.weapons, [family]: id } };
+      return true;
     }
     this.appearance = { ...this.appearance, [slot]: id };
     return true;
