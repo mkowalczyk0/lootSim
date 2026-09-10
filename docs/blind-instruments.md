@@ -468,6 +468,40 @@ thing that was seen and built past anyway.
 > When a post-mortem is entirely about what couldn't be seen, check whether something *was* seen
 > and skipped. That half doesn't surface on its own.
 
+## A fourteenth instance, a new species: an instrument that returns nothing rather than a wrong number
+
+Attributing a crash between two branches, a session wrote a probe that runs 60 campaign
+seeds and prints one line per seed — `seed N: ok` or `seed N: CRASH <message>` — and
+launched it as `npx tsx tools/reckless-probe.ts 2>&1 | tail -25`, then watched the output
+file. It stayed empty. Eight minutes were spent waiting, on the reasoning that 60 seeds
+of dives is genuinely slow — true, and irrelevant, because the process had already died.
+`ps aux | awk '$3 > 15'` (item 11's own remedy) found no node process at all, not even
+one above 1.5%.
+
+`tail -25` cannot emit a line until its stdin closes, because it has to know which lines
+are the last 25. The pipeline swallowed every per-seed line the probe was writing **and**
+the error that killed it — the progress output and the failure went into the same hole.
+The probe was built to report on completion and then used to monitor liveness, two
+different jobs that only the first one was designed for.
+
+Every entry above this one is a check that ran and returned a plausible-but-wrong number.
+This one returns no number at all, and the silence read as patience rather than as
+absence — arguably worse, because a wrong number at least invites a sanity check, while
+silence invites waiting. An empty output file is indistinguishable between "still
+running" and "died instantly," and that ambiguity was resolved by assumption rather than
+by measurement — the same gap item 7's `kill`/exit-signal entry names for process
+lifecycles, one layer up: a *buffering shell construct* silently changing what you're
+able to observe, the same family as item 12's `PIPESTATUS`-under-zsh (there it was *what*
+exit code got read; here it's *when* output becomes visible at all).
+
+**How to apply:** never put a buffering filter (`tail`, `head`, `sort`, anything that
+must see EOF or a full sort key before it can emit) between a long-running job and the
+file you intend to watch live. Redirect raw (`cmd > log 2>&1 &`) and filter at *read*
+time (`tail -25 log`, rerun as needed) — that costs nothing and keeps progress and
+failure on the same visible path. And per item 11: audit liveness by process table
+(`ps aux | awk '$3 > 15'`), not by expecting output — the process table answers in one
+command what watching a file cannot answer at all.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
