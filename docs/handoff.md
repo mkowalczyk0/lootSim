@@ -1,3 +1,82 @@
+# Handoff — 2026-09-09 (late evening addendum)
+
+**Master is green and clean at `0d5493d`.** Everything below the addendum was written
+mid-run and is superseded where the two disagree. Read this section first.
+
+## Five owner decisions gate everything. Nothing else is worth starting.
+
+1. **The hero — candidate E**, last row of the v7 sheet, nothing committed. Unblocks all 21
+   class heroes. Its one problem is that its art-pixel height (105) is outside the legal
+   portrait band. **Do not solve that by loosening `MAX_SPREAD`, retiring the procedural
+   composer, or padding to 155** (11.9% against a 12% limit — this run has been bitten twice
+   by margins that thin). The band *widens* as the hero grows, so target **78–87** by
+   re-rolling `pro` against a smaller **boss** as style reference. A monster is not an
+   acceptable style reference; that would let a portrait constraint pick the hero's visual
+   family.
+2. **Do the boss wind-ups read at speed?** Gates the remaining seventeen encounters, which is
+   a real budget. **If the tell reads quiet, try the cheap hypothesis before the canvas
+   decision** — see the falsifiable prediction below.
+3. **The Minotaur's eyes**: 3+ px per eye, same hue, same position. Measured, not guessed —
+   1px/eye holds the accent in 0 of 8 generated frames, 2px/eye in 4 of 8. Its wind-up
+   *shape* is already fine (40% from rest, lands to 0.1%); the accent is the only blocker.
+   The script is committed and applies cleanly; the shipped sprite is untouched.
+4. **The Tower's monsters** (`docs/art-manifest.md` §4) — Heaven has floors now and Hell's
+   monsters are standing on them. Palette-swap the existing eleven, or bespoke celestial
+   silhouettes. Untouched, deliberately.
+5. **The unreachable deep Reliquary sectors** — the largest blast radius of the five.
+
+## A falsifiable prediction, worth testing before the canvas question
+
+If the owner says the wind-up tell reads too quiet, the expensive answer is changing the
+canvas — which moves `worldScale` and every boss's drawn size, and is ruled out without the
+owner. **Try this first: it costs two generations, changes no manifest row and moves no
+footprint, so a rejected attempt costs nothing else.**
+
+The Ferryman is the only one of the three whose target pose was *harvested from an old
+rejection*, before the turn lever was worked out. The Queen and Tyrant were commissioned with
+the quarter-turn prompt. **So if exactly one of the three reads weak, expect it to be the
+Ferryman, and the fix is to re-harvest it the way the other two were done.** If instead the
+owner says the Ferryman reads fine and one of the others does not, this hypothesis is wrong
+and the canvas question is genuinely back on the table.
+
+## What the deep-Reliquary finding actually blocks
+
+`tools/reachability.ts` + `docs/reliquary-reachability.md`. Sector 7 (baseDepth 34) could not
+be cleared by a bot at its own depth, at +20/+66/+116 levels over it, or by four classes at
+level 100 — 0/5 or 0/3 every time. Control (sector 1 at level 30) cleared 5/5, so the harness
+is sound. First occasional clears appear around **level 300, ~9× its own depth**: a steep
+curve, not a hard cap, which is what makes it a tuning question rather than a relocation one.
+
+**The ladder is real and never exercised** — nobody gets far enough to be gated by it.
+
+Three things shipped today sit behind those sectors and are therefore currently unreachable:
+the three new sector tilesets (Ossuary, Spire, Orchard), and both new recipes (The Unbound
+Ward from the Spire, order 8; Rootbound Plate from the Hollow Orchard, order 9). None of that
+work was wrong — the collision only became visible when both landed the same day.
+
+## Method notes that cost real generations to learn
+
+- **`docs/animation.md` is the pick-up-and-go document and it is now correct** — its opening
+  and its step 1 were both actively wrong until they were rewritten, and step 1's stale advice
+  ("start near 50, the generator dims accents by 39%") was the exact move the four-boss
+  measurement retired.
+- **Accents are about REDUNDANCY, not brightness.** The Minotaur is not the dimmest and is the
+  only failure, because a 1px accent has nothing to fall back on when the generator splits it
+  into two near-identical shades that each fall under the 2px measurement floor.
+- **On a full canvas, amplitude means a TURN.** Coiling in place: 17% / 21% from rest, under
+  the 25% bar. "Pivots a quarter turn to present one shoulder": 32% / 40% on the same bosses.
+- **The loop generator is a reliable POSE generator** when prompted for amplitude rather than
+  wind-up shape — and the rejection does not have to already exist, it can be commissioned.
+- **Pinning usually but not always lands** (one seed finished 3.5% away having reached 1% two
+  frames earlier), and the penultimate-frame retreat reproduced on four of five runs. Both are
+  why `windup-check.py` in pinned mode is not optional.
+- **You CAN run the game in a browser here** — playwright, cached Chromium, your own
+  worktree's dev server on a throwaway port, throwaway account through the normal login. Never
+  port 5173. A full day was lost to assuming otherwise, and every defect the owner reported
+  that day was one a single frame would have shown.
+
+---
+
 # Handoff — 2026-09-09 (evening)
 
 Written at the end of a multi-session run: PM `lootsim-21`, with `lootsim-26`, `lootsim-56`,
