@@ -384,7 +384,7 @@ question, not a backlog item:
 *shape* means redrawing the hero base without baked-in hair — bundle this with the
 separate hero-rework track (see `lootsim-art-direction-and-cosmetics` memory), not here.
 
-### 7.1 Weapon skins — the engineering change landed; the seven old ones are inert
+### 7.1 Weapon skins — the seven old ones draw again (a stopgap, not a reversal)
 
 This section used to say the 7 weapon skins (`skinBone`…`skinStar`) "need an engineering
 change first (`WeaponPalette` has 4 colour regions vs. the cosmetic system's 3-marker
@@ -400,22 +400,39 @@ header records the one briefing trick that has worked twice now (give the contra
 qualities to different *parts* of the object rather than averaging them over the whole).
 `npm run weaponskins` is the gate.
 
-**A finding for the owner, not a decision taken here.** All fourteen families have had a
+**The defect, and the PM ruling that closed it (Sept 2026).** All fourteen families had a
 committed pipeline PNG since `59d94d7`/`30f5cec`, and `resolveWeaponDraw` prefers that
-authored art over the procedural bake. The seven original palette skins can only paint the
-*bake*. So they currently draw **nothing at all** — you can buy Frostbound, equip it, and
-your weapon looks exactly as it did. That is deliberate as far as it goes (`829d2a9` made
-an undrawn skin inert rather than destructive, which was strictly better than the bug it
-replaced), but it leaves seven purchasable cosmetics with no visible effect.
+authored art over the procedural bake. The seven original palette skins could only paint
+the *bake*, so they drew **nothing at all** — buy Frostbound, equip it, your weapon looks
+exactly as it did. That was deliberate as far as it went (`829d2a9` made an undrawn skin
+inert rather than destructive, which was strictly better than the bug it replaced), but it
+left seven already-sold cosmetics doing nothing, and gems are on a path to becoming a
+real-money currency — a currency was being spent for nothing, live, while this sat as an
+open question.
 
-They are **left in place**, wearable on every family exactly as before — cosmetics are
-permanent here and removing seven of them is not a call to make on the way past. The three
-options, cheapest first, are: author art for the ones worth keeping (7 × 14 = 98 sprites at
-full coverage, so realistically a chosen subset); let a palette skin *tint* the authored
-weapon the way the rarity wash does (cheap, covers everything, and is the colour-transform
-model the owner already turned down once for *new* skins — which is a different question
-from what to do with seven already sold); or retire them from the capsules with a gem
-refund and leave existing wardrobes untouched. Ask before doing any of them.
+The PM ruled out two of the three options this section used to price: retirement is off
+the table permanently (cosmetics are a permanent pillar, never proposed as scope to cut),
+and waiting behind full per-family authoring isn't acceptable either — people are buying
+dead skins today. The ruling: **`resolveWeaponDraw` now tints the authored weapon toward
+each legacy skin's own palette as a rung between the per-family skin lookup and the plain
+rarity-tinted weapon** (`legacySkinTintedWeapon` in `render/sprites.ts` — a duotone remap
+along the palette's `shade`→`edge` line by source luminance, not a flat single-colour wash,
+so it uses two of the skin's four colours rather than one). All seven draw again, on every
+family, immediately. The wardrobe preview (`cosmeticPreview`) uses the same transform over
+the authored sword art instead of the old procedural-bake preview, for the same reason.
+
+**Read the next paragraph before treating the transform as the destination.** It is not:
+authoring one weapon at a time is still open (twelve families left), and when a specific
+skin gets its own authored art for a family, `ATLAS_WEAPON_SKINS` already resolves it ahead
+of this transform — same fallback-ladder shape as monster sets, tilesets and item art (see
+`resolveWeaponDraw`'s resolution order). Nothing here reopens the owner's standing call that
+*new* skins are authored weapons, not palettes (the paragraph above, "a skin is *its own
+weapon*"); this ruling is scoped to the seven that were already sold before that call was
+made, so a currency purchase they represent isn't invisible while the roster is authored
+out from under them one family at a time. `grip`/`jewel` from `WeaponPalette` have no
+legible region to target on arbitrary authored art and stay unused by the transform — only
+`edge`/`shade` are read. Queuing the twelve remaining authored replacements is future work,
+not done here.
 
 ---
 
