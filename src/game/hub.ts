@@ -48,7 +48,7 @@ const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   warTable: "raid", raidPortal: "raid",
   altar: "memory", memoryPortal: "memory",
   training: "training",
-  forge: null, quartermaster: null, comms: null,
+  forge: null, quartermaster: null, comms: null, trophyHall: null,
 };
 
 /** The one line of lore a station's prompt carries, or null for the non-portal stations. */
@@ -96,7 +96,7 @@ export const STATION_LABEL: Record<HubStationKind, string> = {
   warTable: "The War Table", raidPortal: "Raid Portal",
   altar: "The Altar", memoryPortal: "Memory Portal",
   tower: "The Tower", vigil: "The Vigil", convergence: "The Convergence",
-  training: "Training Dummy",
+  training: "Training Dummy", trophyHall: "The Trophy Hall",
 };
 
 export const STATION_RADIUS: Record<HubStationKind, number> = {
@@ -106,7 +106,7 @@ export const STATION_RADIUS: Record<HubStationKind, number> = {
   warTable: 20, raidPortal: 22,
   altar: 20, memoryPortal: 22,
   tower: 22, vigil: 22, convergence: 22,
-  training: 18,
+  training: 18, trophyHall: 20,
 };
 
 /** A station, placed on its anchor tile. */
@@ -119,7 +119,7 @@ function station(kind: HubStationKind): HubStation {
  *  `Hub.stations`, which is the one place that decides what is open right now. */
 const ALWAYS_OPEN: readonly HubStationKind[] = [
   "dive", "abyss", "hoard", "starmap", "forge", "quartermaster", "comms", "warTable",
-  "training",
+  "training", "trophyHall",
 ];
 
 /** How far past a portal's own radius still counts as standing in it for the party

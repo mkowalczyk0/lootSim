@@ -188,6 +188,8 @@
 //
 //   32 — `Appearance.weapons`, a per-family weapon-skin map replacing the single
 //        `Appearance.weapon` slot (the authored weapon-skin stream).
+//   33 — the Trophy Hall (docs/docket.md §3, docs/trophy-hall.md) —
+//        `trophyCasesUnlocked` and `trophyItems` on `GameState`.
 //
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.

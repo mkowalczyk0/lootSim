@@ -100,12 +100,17 @@ look like convenience and function as power: extra stash tabs, extra loadouts, e
 attempts, faster travel. Each is an owner decision, not something to wave through because
 it is not a hat.
 
-Candidate sinks, best first, none of them built:
+Candidate sinks, best first:
 
-- **A trophy hall in the Citadel.** Display cases bought with gems, filled with items you
-  actually found. It is pure vanity, it uses the loot the game already produces, it gives
-  the long tail of `BASE_RARITY_WEIGHTS` somewhere to be *seen*, and it pairs directly with
-  the records in item 4 — your unspoken drop is worth more when someone can walk past it.
+- ~~A trophy hall in the Citadel.~~ **Landed** — `docs/trophy-hall.md`,
+  `feat/trophy-hall`. Display cases bought with gems (escalating cost), each holding a
+  `structuredClone` snapshot of a stash item — never the item itself, never read by the
+  simulation, `tools/smoke.ts` asserts a fully-cased sheet is byte-identical to an
+  uncased one. Second room off the Citadel hall, the second use of the seam the
+  training-dummy room proved out. **Not finished**: the room has no art and nothing
+  renders in the world yet (the management screen is real; the "walk past and see it"
+  payoff is a follow-up `render/hub.ts` change). Coordination with item 4's leaderboards
+  on `itemScore` (the score this screen already reads) is still open — route it.
 - **The fourteen authored weapon skins** (in progress) and further skin sets.
 - **Emotes, pings and a marker wheel for co-op** — social, useless in solo, zero power.
 - **Titles earned from the leaderboards in item 4**, purchased frames/borders for them.

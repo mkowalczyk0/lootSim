@@ -56,6 +56,9 @@ const STATION_COLORS: Record<HubStationKind, string> = {
   // Deliberately unassuming: every other colour on this deck means something about the
   // war. The dummy isn't part of it, and its ring shouldn't read as if it were.
   training: "#94a3b8",
+  // Gem-pink, matching the gem counter in the HUD — vanity's own colour on this deck,
+  // the way the raid pair borrow the war's.
+  trophyHall: "#f0abfc",
 };
 
 /** The kinds you step *into* — a turning summoning ring is drawn over the deck for these.
