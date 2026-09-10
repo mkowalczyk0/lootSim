@@ -176,13 +176,13 @@ committed boss art is not that. Cost is about one generation per short animation
 sizes. Pass `no_background: true` — the default follows the input, but passing `false`
 flattens a transparent sprite onto **white**.
 
-## Wind-ups: what does not work, and what to do instead
+## Wind-ups: free-form does not work, a pinned ending does
 
 **`animate_image` free-form cannot produce a cast wind-up, and this is measured rather than
 felt.** Three raid bosses were generated with prompts that named the requirement explicitly
 ("the final frame is the pose fully drawn back at maximum wind-up, about to release — do not
-show the strike itself", plus feet-planted / no-wander wording). `art/anim/windup-check.py`
-measures each frame's silhouette difference from frame 0:
+show the strike itself", plus feet-planted / no-wander wording).
+`art/anim/windup-check.py` measures each frame's silhouette difference from frame 0:
 
     ferryman   8 21 31 39 41 43 40 39     peak at frame 6, falls back
     queen      1  1  2  6  7 10 17  9     barely moves at all, then halves
@@ -190,23 +190,120 @@ measures each frame's silhouette difference from frame 0:
 
 Every one **peaks in the middle and returns toward the start** — the signature of a loop,
 which is what the tool is built for. The Queen additionally hallucinated a sword that is not
-on the base sprite, appearing around frame 4 and gone again by frame 8.
+on the base sprite. Because a wind-up is keyed to progress, the **last** frame is what the
+player sees at the instant of the hit, so a sequence that falls back shows a near-resting
+pose at exactly the moment it exists to cue. **Do not re-run the open-ended call.**
 
-The consequence is specific and worse than "no animation": a wind-up is keyed to progress,
-so the **last** frame is what the player sees at the instant of the hit. A sequence that
-peaks mid-way and falls back shows a near-resting pose at exactly the moment it exists to
-cue. It would make the fight *less* readable, which is the opposite of why §15's telegraph
-rules want this animation at all.
+**`last_frame_base64` fixes it, and it does more than interpolate.** Measured on the
+Ferryman: pinning the ending made the run converge on the pinned pose and land on it —
 
-**The fix is `last_frame_base64` / `last_frame_url`** — pin the ending, and the generator
-interpolates between two poses instead of animating open-endedly. That needs a target pose
-authored or generated per boss, which is a real extra step; re-rolling the open-ended call is
-not a fix, and no prompt wording moved it across three attempts. Run
-`art/anim/windup-check.py` on any candidate before stripping it: it rejects a sequence that
-does not build monotonically and end at its extreme.
+    distance from the pinned pose:  43 41 36 30 26 19 2 11 **0%**
 
-Idles are unaffected — a loop-shaped motion is exactly what an idle wants, which is why
-`boss.ferryman`'s shipped fine.
+— and the final frame came back **byte-identical to the target, all 8025 pixels**. So the
+generator does not approximate the ending, it reproduces it. Three consequences, and the
+third is the one that matters most:
+
+1. The pinned regime has a statistic the open-ended one does not — the target is known, so
+   "did it get there" can be asked directly instead of inferred from distance-from-rest.
+   `windup-check.py` takes an optional target and asserts exactly that.
+
+   > **The open-ended rule is deliberately conservative and WILL false-reject a good pinned
+   > run — do not "fix" it.** Its test is `argmax(distance from rest) == last frame`, with no
+   > tolerance, which is the only thing available when there is no target to measure against.
+   > On the shipped Ferryman wind-up it reports UNUSABLE, because an intermediate frame sits
+   > one point further from rest than the final one — while the final frame *is* the target,
+   > to 0.0%. Passing the target is what tells the tool it may ask the stronger question. A
+   > check that is too strict on a path we no longer use is the safe direction to be wrong in.
+2. **The frame the player reads at the instant of the hit is fully under our control**,
+   because it is a file we supply rather than something the generator invents.
+3. **With a pinned ending there are TWO source sprites, and step 1 of the method below
+   applies to both.** It was written when there was only ever one.
+
+### The target pose is usually already in the repo
+
+The target does not have to be authored or paid for. **A free-form generation rejected for
+its *shape* can still contain a perfectly good single pose** — the shipped Ferryman wind-up
+is pinned to `art/anim/raw/ferryman-cast/f6.png`, the peak frame of one of the three
+rejections above. It is in-style, the right size, on the right canvas, and free.
+
+`create_character_state` is the paid alternative — all four raid bosses exist as PixelLab
+characters (112x112, 8 directions), so a posed variant can be generated properly. It costs
+**20-40 generations** and returns the character on its own canvas, which then has to be
+re-fitted to the sprite's; reach for it only when no rejected frame will do.
+
+### A wind-up may not extend the silhouette
+
+The boss sprites already fill their canvas edge to edge — measured, `boss.ferryman`'s alpha
+bounding box is the full 75x107. So a pose that reaches beyond the envelope (a pole raised
+overhead, arms flung wide) has nowhere to go.
+
+It cannot be bought by enlarging the frame either, and this is the §1.4e staff hazard from
+the other side: `worldScale` is `targetWorldHeight / h`, so adding headroom for a raised pole
+grows `h`, shrinks `worldScale` to keep the world height fixed, and the *character* draws
+smaller inside the taller frame — for the whole fight, idle included, not just the cast.
+
+> Worth recording that this was checked rather than assumed: the first guess was that adding
+> cast frames to an existing strip would grow the union trim and shrink the boss. That is
+> **false** for the art as it stands, precisely because the canvas is already full. The
+> constraint is real; the mechanism is the opposite of the one suspected.
+
+So a wind-up re-arranges within the existing silhouette — a turn, a coil, a grip — rather
+than extending it. That caps how loud a wind-up can be, and it is a constraint on the pose,
+not a failure of the generation.
+
+### The generator SPLITS a small accent, which is why the Minotaur cannot be animated
+
+`docs/animation.md` has long recorded that the generator *dims* accents (39%, measured).
+The Ferryman's wind-up failed `npm run chroma` a different and more interesting way:
+
+    shipped idle frame:   2 px #7dd3fc              -> loudest 2+px colour #7dd3fc @ 49.8
+    generated target:     1 px #7dd3fc + 1 px #8cd4e7 -> loudest 2+px colour #866c3f @ 27.8
+
+The eye is still there and still looks right. But the gate measures the loudest colour
+covering **2+ pixels** — deliberately, so a lone pixel reads as dithering rather than as a
+design decision — and the generator had split the two-pixel eye into two adjacent shades.
+Neither covers two pixels, so the accent is gone by the only measure that can tell an accent
+from noise, and the loudest survivor is a dull olive *below the hero's own skin*.
+
+**The root cause is that a two-pixel accent has no redundancy: one shade of drift destroys
+it.** That is the real reason `boss.labyrinth-minotaur` has defeated every attempt at any
+starting brightness, and it makes the fix already recorded for it — *enlarge the accent on
+the source, more pixels rather than merely brighter* — right for a reason that had not been
+identified. It is still a change to shipped art and still wants the owner.
+
+`art/anim/target-accent.py` paints the **target pose's** accent to the shipped treatment
+before generating. It was expected to rescue only the byte-exact final frame. **It rescued
+every frame**, and that was measured as a controlled comparison — same seed, same prompt,
+same first frame, the target's two eye pixels the only thing changed:
+
+    unlit target:  49.8 49.8 42.7 42.7 49.8 35.7 49.8 35.7 **27.8**
+    lit target:    49.8 49.8 49.8 49.8 49.8 49.8 49.8 49.8 **49.8**
+
+So the drift in the first run was not the generator dimming an accent it was given — it was
+the interpolation being dragged toward a target that had no accent to reach. **Pinning a lit
+target stabilises the accent across the whole sequence.** Two lit endpoints, and the eye
+survives between them.
+
+That removes the 0.4-margin problem for the Ferryman entirely, without touching shipped art.
+It does **not** rescue a sprite whose accent is too small on the *source* — the Minotaur has
+no lit target to pin to and its two-pixel eye is the thing that fails — so the enlargement
+fix above is still the answer there.
+
+### The penultimate frame backs off, systematically
+
+Two disjoint seeds of the same pinned call, distance from the target:
+
+    seed A   43 41 36 30 26 19  2 11  0
+    seed B   43 43 38 31 23 12  4  9  0
+
+Both reach the pose, **retreat at the second-to-last frame**, then snap to it. Same index,
+two independent samples — systematic, not seed noise. In a progress-keyed wind-up that reads
+as the boss committing, relaxing, and then snapping: a false tell inside the animation whose
+entire job is to be a true one. `strip.py` takes `:drop=<i>` so the treatment lives in the
+pipeline rather than in whoever remembers to do it.
+
+Idles are unaffected by all of this — a loop-shaped motion is exactly what an idle wants,
+which is why `boss.ferryman`'s shipped fine.
 
 ## Picking this up: the method, in order
 
@@ -246,13 +343,17 @@ intermittent.
 transparent sprite onto **white**. `animate_character`/`animate_object` are not options here:
 they need an id of something PixelLab generated, and the committed boss art is not that.
 
-**4. Run `art/anim/windup-check.py` on any cast candidate BEFORE stripping it.** It rejects
-a sequence that does not build monotonically and end at its extreme — see the section above
-for why that shape is the whole requirement, and why three prompted attempts all failed it.
-Idles do not need this; loop-shaped motion is what an idle wants.
+**4. Run `art/anim/windup-check.py` on any cast candidate BEFORE stripping it.** It exits
+non-zero on a sequence that does not build monotonically and end at its extreme. Pass the
+target as a second argument for a pinned run and it asserts the stronger property instead —
+that the approach to the target is monotonic and the last frame lands on it exactly. Idles
+do not need this; loop-shaped motion is what an idle wants.
 
-**5. Assemble with `art/anim/strip.py`,** which trims the frames as a set and prints the
-`ATLAS` row including the `worldScale` that keeps the world footprint fixed.
+**5. Assemble with `art/anim/strip.py`,** passing **every tag in one invocation**
+(`idle=<dir> cast=<dir>`), because the tags share one strip and therefore one trim — trimming
+per tag is invisible until the boss starts casting, and then the body jumps. `:drop=<i>`
+removes the penultimate-frame retreat described above. It prints the `ATLAS` row including
+the `worldScale` that keeps the world footprint fixed.
 
 **6. `npm test`.** The gate checks the strip is `w * cols` wide, the tags name frames that
 exist, the frame rects tile the strip, and — for an animated monster or boss — that the hot
@@ -348,14 +449,18 @@ any of it. Plan frames against legibility and generation cost, not bytes.
 
 ## Known open ends
 
-- **The top open item is the wind-up pipeline, and it needs a step nobody has built.** No
-  boss has a `cast` animation. The fix for the failure documented above is
-  `last_frame_base64` — pin the ending so the generator interpolates between two poses —
-  which requires a **target pose authored or generated per boss**. That is a real piece of
-  work and a different pipeline from the one here; re-rolling the open-ended call is not a
-  fix and no prompt wording moved it across three attempts. `windup-check.py` and the three
-  rejected generations are in the repo so the next attempt starts from a measurement rather
-  than from an argument.
+- **The wind-up pipeline works and `boss.ferryman` is the first boss with a `cast`.** It
+  cost three generations, not the "different pipeline" this section used to predict: the
+  target pose came out of one of the three rejected generations, which is the lesson worth
+  carrying — **rejected art is a resource, not only a record.** Check a rejection's peak
+  frame before paying 20-40 generations for `create_character_state`.
+- **The other three raid bosses have idles and no wind-up**, which is safe rather than
+  half-finished (see the fallback note below). Each needs: a target pose (try the rejected
+  `queen-cast` / `minotaur-cast` peaks first), `target-accent.py` on it, one pinned
+  generation, `:drop=` for the penultimate retreat, and the gate.
+- **`boss.labyrinth-minotaur` is still blocked, and now for a understood reason** rather than
+  an observed one — its two-pixel accent has no redundancy against the generator's splitting.
+  Enlarging that accent is the fix; see the section above.
 - **The Minotaur has no idle** — see the section above. Enlarging its eyes on the source
   sprite (more pixels, not just brighter) is the cheapest thing to try next, but it is a
   change to shipped art and wants the owner's eye rather than a session's judgement.

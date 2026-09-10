@@ -2,7 +2,9 @@
 """
 Raw PixelLab animation frames -> the committed strip PNG the ATLAS row describes.
 
-    python3 art/anim/strip.py boss.ferryman idle art/anim/raw/ferryman-idle/*.png
+    python3 art/anim/strip.py boss.ferryman idle=art/anim/raw/ferryman-idle
+    python3 art/anim/strip.py boss.ferryman idle=.../ferryman-idle \
+                              cast=.../ferryman-windup:drop=7
 
 Writes `src/render/atlas/<dir>/<id>.png` as a horizontal strip and prints the `anim`
 table to paste into `render/atlas/manifest.ts`.
@@ -14,24 +16,55 @@ batch: **a treatment that lives in a script survives a re-roll; one applied by h
 the first time anybody regenerates one animation.** Re-rolling a single tag should re-apply
 the same treatment and re-derive the same manifest row rather than needing either retyped.
 
+## Several tags share ONE strip, and that is what makes the trim load-bearing
+
+`AtlasAnim` has one `cols` and each tag names a `from`/`to` range inside it, so a boss with
+an idle AND a cast is one PNG, not two. That is why every tag must be passed in a single
+invocation: **the bounding box is taken across every frame of every tag at once.**
+
+Trimming per frame would re-centre each pose and the sprite would jitter against its own
+feet anchor. Trimming per *tag* is the same bug one level up and is worse, because it is
+invisible until the boss starts casting: the idle and the cast would sit on different crops
+and the body would jump the instant a wind-up began. Assembling one tag at a time into the
+same file cannot express this, which is why the old single-tag CLI is gone rather than kept
+alongside.
+
+**Tag order is the frame order, and the first tag owns frame 0.** `render/sprites.ts`
+depends on frame 0 being the sprite that shipped before the animation existed, so pass
+`idle` first.
+
 ## The two things this enforces, because the gate downstream will fail otherwise
 
 1. **Every frame is the same size, and that size is the row's `w`/`h`.** `npm run anim`
-   checks the strip PNG is exactly `w * cols` wide and `h` tall. The frames come back from
-   the generator on a shared canvas, so this trims them as a SET — one bounding box across
-   every frame, never per-frame — because trimming each one independently would centre each
-   pose differently and the sprite would jitter against its own feet anchor.
+   checks the strip PNG is exactly `w * cols` wide and `h` tall.
 2. **The world footprint does not move.** `worldScale` is recomputed as
    `targetWorldHeight / h` against the height the sprite already had, so animating a boss
    never changes how big it is in the arena — telegraph radii, arena sizing and camera
-   framing are all set against that number.
+   framing are all set against that number. This script reads the current row and prints
+   the preserved value rather than leaving the arithmetic to whoever pastes it.
+
+## The trim reads ALPHA, not `Image.getbbox()`
+
+`getbbox()` calls a pixel non-empty if ANY channel is non-zero, so one fully transparent
+pixel carrying a stale RGB value makes the box the whole canvas and the trim silently
+becomes a no-op — `w`/`h` then come out as the generator's canvas rather than the sprite.
+Measured on the frames committed today it happens to make no difference (their transparent
+pixels are all zero), so this is a latent hazard rather than a live bug; it is written this
+way so a future generation that returns dirty transparency fails to trim *loudly* instead
+of quietly resizing a boss.
 """
 
-import sys, os
+import re
+import sys
+from pathlib import Path
+
 from PIL import Image
 
-# Where each id's PNG lives, mirroring render/atlas/index.ts's glob.
+MANIFEST = Path("src/render/atlas/manifest.ts")
+
+
 def dir_for(sprite_id: str) -> str:
+    """Where each id's PNG lives, mirroring render/atlas/index.ts's glob."""
     if sprite_id.startswith("boss."):    return "bosses"
     if sprite_id.startswith("hero."):    return "characters"
     if sprite_id.startswith("prop."):    return "props"
@@ -39,11 +72,16 @@ def dir_for(sprite_id: str) -> str:
     return "icons"
 
 
+def alpha_box(im: Image.Image):
+    """The sprite's own extent — see the note above on why `getbbox()` is the wrong call."""
+    return im.getchannel("A").point(lambda v: 255 if v > 128 else 0).getbbox()
+
+
 def union_box(frames):
-    """One bounding box across every frame — see note 1 above."""
+    """One bounding box across every frame of every tag."""
     box = None
     for im in frames:
-        b = im.getbbox()
+        b = alpha_box(im)
         if b is None:
             continue
         box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]),
@@ -53,34 +91,115 @@ def union_box(frames):
     return box
 
 
-def main():
-    if len(sys.argv) < 4:
+def frame_order(p: Path):
+    """Sort `f2` before `f10`.
+
+    Plain filename order is wrong the moment a generation has more than ten frames, and
+    `animate_image` accepts up to 16 — `sorted()` would run f0, f1, f10, f11, ... f2 and
+    scramble the animation with nothing to see in the output but a strip in the wrong
+    order. Sort on the trailing integer when there is one.
+    """
+    m = re.search(r"(\d+)$", p.stem)
+    return (0, int(m.group(1))) if m else (1, p.stem)
+
+
+def load_tag(spec: str):
+    """`tag=dir` or `tag=dir:drop=i,j` -> (tag, [frames]), in frame order.
+
+    `drop=` removes generated frames by their index in the directory, and it exists for one
+    measured reason. With a pinned ending, `animate_image` reliably backs off toward rest in
+    the PENULTIMATE frame before landing on the target: two disjoint seeds on the Ferryman
+    gave distance-from-target 43 41 36 30 26 19 **2 11 0** and 43 43 38 31 23 12 **4 9 0**,
+    the same retreat at the same index. That is systematic rather than seed noise, and in a
+    progress-keyed wind-up it reads as the boss committing, relaxing, then snapping — a
+    false tell in the animation whose whole job is to be a true one. Dropping that frame is
+    a treatment, so it lives here rather than in whoever-remembers-to-do-it.
+    """
+    if "=" not in spec:
+        raise SystemExit(f"expected tag=dir, got {spec!r}\n{__doc__}")
+    tag, _, where = spec.partition("=")
+    drop = set()
+    if ":drop=" in where:
+        where, _, raw = where.partition(":drop=")
+        drop = {int(x) for x in raw.split(",") if x != ""}
+    d = Path(where)
+    if not d.is_dir():
+        raise SystemExit(f"{where} is not a directory")
+    paths = sorted((p for p in d.iterdir() if p.suffix == ".png"), key=frame_order)
+    if not paths:
+        raise SystemExit(f"{where} holds no .png frames")
+    if any(i >= len(paths) for i in drop):
+        raise SystemExit(f"{where}: drop={sorted(drop)} names a frame past the "
+                         f"{len(paths)} that exist.")
+    paths = [p for i, p in enumerate(paths) if i not in drop]
+    if not paths:
+        raise SystemExit(f"{where}: every frame was dropped")
+    return tag, [Image.open(p).convert("RGBA") for p in paths]
+
+
+def current_world_height(sprite_id: str):
+    """`worldScale * h` off the committed row, so the footprint can be preserved."""
+    if not MANIFEST.exists():
+        return None
+    src = MANIFEST.read_text()
+    row = re.search(rf'"{re.escape(sprite_id)}":\s*\{{(.*?)\}},?\s*(?:\n|$)', src, re.S)
+    if not row:
+        return None
+    body = row.group(1)
+    h = re.search(r"\bh:\s*([0-9.]+)", body)
+    ws = re.search(r"\bworldScale:\s*([0-9.]+)", body)
+    if not (h and ws):
+        return None
+    return float(h.group(1)) * float(ws.group(1))
+
+
+def main() -> None:
+    if len(sys.argv) < 3:
         raise SystemExit(__doc__)
-    sprite_id, tag, paths = sys.argv[1], sys.argv[2], sys.argv[3:]
-    frames = [Image.open(p).convert("RGBA") for p in sorted(paths)]
-    sizes = {im.size for im in frames}
+    sprite_id, specs = sys.argv[1], sys.argv[2:]
+
+    tags = [load_tag(s) for s in specs]
+    names = [t for t, _ in tags]
+    if len(set(names)) != len(names):
+        raise SystemExit(f"duplicate tag in {names}")
+
+    every = [im for _, frames in tags for im in frames]
+    sizes = {im.size for im in every}
     if len(sizes) != 1:
         raise SystemExit(f"frames differ in size: {sizes} — the generator's canvas moved.")
 
-    box = union_box(frames)
-    frames = [im.crop(box) for im in frames]
-    w, h = frames[0].size
-    cols = len(frames)
+    box = union_box(every)
+    every = [im.crop(box) for im in every]
+    w, h = every[0].size
+    cols = len(every)
 
     strip = Image.new("RGBA", (w * cols, h), (0, 0, 0, 0))
-    for i, im in enumerate(frames):
+    for i, im in enumerate(every):
         strip.paste(im, (i * w, 0))
 
-    out = f"src/render/atlas/{dir_for(sprite_id)}/{sprite_id}.png"
+    out = Path(f"src/render/atlas/{dir_for(sprite_id)}/{sprite_id}.png")
     strip.save(out, format="PNG", optimize=True, compress_level=9)
-
-    # Preserve the world height the sprite already had, if it is already in the manifest.
     print(f"wrote {out} — {w*cols}x{h}, {cols} frames of {w}x{h}")
+
+    ranges, at = [], 0
+    for name, frames in tags:
+        ranges.append((name, at, at + len(frames) - 1))
+        at += len(frames)
+
     print(f"\n  // paste into ATLAS[\"{sprite_id}\"]:")
     print(f"  w: {w}, h: {h},   // one FRAME; the strip is w*cols = {w*cols}")
-    print(f"  anim: {{ cols: {cols}, tags: {{ {tag}: "
-          f"{{ from: 0, to: {cols-1}, seconds: 0.12, loop: true }} }} }},")
-    print(f"\n  worldScale must become targetWorldHeight / {h} to keep the footprint.")
+    body = ", ".join(
+        f"{name}: {{ from: {a}, to: {b}, seconds: 0.12, "
+        f"loop: {'true' if name == 'idle' else 'false'} }}"
+        for name, a, b in ranges)
+    print(f"  anim: {{ cols: {cols}, tags: {{ {body} }} }},")
+
+    target = current_world_height(sprite_id)
+    if target is None:
+        print(f"\n  worldScale must become targetWorldHeight / {h} to keep the footprint.")
+    else:
+        print(f"\n  worldScale: {target / h:.4f},   // {target:.1f} world height / {h} — "
+              "unchanged footprint")
 
 
 if __name__ == "__main__":
