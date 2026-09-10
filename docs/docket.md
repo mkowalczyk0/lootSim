@@ -723,3 +723,47 @@ standing rule against pre-emptively rebalancing classes nobody has complained ab
 right and is still in §9's original entry — what made this different is that the owner's
 complaint was explicitly about the mechanic rather than about one ability's tuning, and the
 question was put to them rather than answered on their behalf.
+
+## 21. A chest pays out 11 items on a 10-pull when a named item drops
+
+> "whenever you open chests and you get a named item, it returns eleven items versus ten. So
+> let's take a look at that and make sure every chest output, including all this new stuff,
+> is always outputting ten items. This is on the batch 10 pulls, but I'm assuming it's the
+> same bug on single pulls."
+
+**The owner's assumption is right, and this is not a slip — it is a documented decision they
+are overturning.** `GameState.openAugmented` (`src/game/state.ts`, the one chest-opening path;
+`openChests` is literally this function with an empty loadout) pushes the ordinary roll and
+*then* pushes any named drop alongside it:
+
+```ts
+found.push(item);
+// Named items (UAT §28) ride alongside the ordinary pull rather than replacing it, so
+// a chest never pays out *less* for having a table.
+for (const def of rollNamedDrops({ kind: "chest", tier }, this.rng)) found.push(this.forgeNamed(def, ilvl));
+```
+
+So a single pull returns 2 and a ten-pull returns 11. Deliberate, commented, and wrong by the
+owner's ruling: **a chest returns exactly the number of items it promised.** A named item
+takes the *slot* of an ordinary roll rather than arriving on top of one — which costs the
+player nothing real, since a named item outvalues the ordinary roll it displaces.
+
+**Change the comment in the same commit as the code.** It currently states the opposite
+behaviour as intentional, and a stale justification is the exact failure this repo has been
+bitten by before: a stale fact misleads, and a stale "this is deliberate" stops the next
+person from fixing it.
+
+Three things to get right:
+
+- **The property is count-in equals count-out, and it should become a check**, not a fix
+  verified by inspection. Assert it across every `ChestTier`, single and bulk, with the named
+  roll rigged to always hit — the `npm run previews` idiom of forcing the dice is the
+  precedent. "Including all this new stuff" is the owner asking for exactly this: a property
+  that covers chest sources nobody has thought of yet, including augmented pulls and any
+  chest row carrying `classElement` / `classAdaptive`.
+- **Only chests promise a count.** `Dungeon.dropFromTables` rides named drops alongside
+  monster and boss drops, and that is correct there — a kill advertises no fixed number.
+  Don't "fix" it. `GameState.craftNamed` returns one item by construction and is also fine.
+- **Check whether the §20 drop preview quotes a count** that this changes. The preview must
+  keep saying what the roll actually does; if it advertises "10 items" it is about to become
+  true rather than false, but confirm rather than assume.
