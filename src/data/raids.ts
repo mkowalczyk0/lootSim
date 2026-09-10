@@ -213,12 +213,25 @@ const THE_NINTH_LABYRINTH: BiomeStyle = {
 
 /**
  * The lowest floor of Heaven, held by something Heaven threw out of it. Palette is
- * `docs/art-style-guide.md` §6's bone-gold band, hard-edged rather than warm.
+ * `docs/art-style-guide.md` §6's bone-gold band, hard-edged rather than warm — `wall`/
+ * `wallSide`/`accent` already matched Mid Tower's (`tiles.tower-mid`) exactly, byte for
+ * byte, which is how this arena was authored to look before it had a sheet of its own.
+ *
+ * `tint`/`floorAlt` did not get the same treatment and sat at the old bright bone-gold
+ * value (`#a89f7e`, L158.5) that `tint` is only allowed to hold *before* a tileset exists
+ * (art-style-guide §17.7: "before a tileset exists, tint IS the floor" — the flat
+ * `bakeFloor` fill). The moment a sheet lands, `tint` stops being a colour and becomes the
+ * 30% wash the graded floor is blended toward, and a bright one "collapses the very
+ * separation both gates measure." Brought down to Mid Tower's own dark ground tone to
+ * match the wall it was already sharing — this is the fix that section's own Tower
+ * passage describes, not a new call: "when you paint a floor for a biome whose tint was
+ * authored bright, the tint comes down with it."
  */
 const THE_FIRST_HEAVENS: BiomeStyle = {
   name: "The First Heavens",
-  tint: "#a89f7e", floorAlt: "#b4ab88", wall: "#f4ecc9", wallSide: "#8a7d54",
+  tint: "#2f2b1f", floorAlt: "#39352a", wall: "#f4ecc9", wallSide: "#8a7d54",
   accent: "#fde047",
+  tileset: "tiles.first-heavens",
   props: ["pillar", "torch", "statue"],
   layouts: ["open", "ring"],
   traps: ["regard", "turret", "flame"],

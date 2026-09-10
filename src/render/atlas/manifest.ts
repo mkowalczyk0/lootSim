@@ -651,6 +651,15 @@ export const TILESETS: Record<string, AtlasTileset> = {
   "tiles.tower-lower": { id: "tiles.tower-lower", w: 64, h: 64, tile: 16 }, // Lower Tower — warm gilded cathedral, dark warm slabs
   "tiles.tower-mid":   { id: "tiles.tower-mid",   w: 64, h: 64, tile: 16 }, // Seamless Halls — bleached repeating blocks, jointless cold ground
   "tiles.tower-upper": { id: "tiles.tower-upper", w: 64, h: 64, tile: 16 }, // Blinding Heights — near-white glare over unlit black
+
+  // The Tyrant of the First Heavens' arena (data/raids.ts) — landed with this row, the
+  // PNG and the biome's own tint fix in one commit, on purpose (docs/reachable-band.md's
+  // sibling investigation: `tools/raid-arena-contrast.ts` found this arena had no sheet
+  // at all, a gap that was documented but never a placeholder row like the Tower's three
+  // were before their PNGs existed). Dark bronze-black floor under a bright bone-gold
+  // wall — the wall/wallSide/accent were already authored to match Mid Tower's exactly;
+  // this sheet and the tint fix complete that match rather than inventing a new palette.
+  "tiles.first-heavens": { id: "tiles.first-heavens", w: 64, h: 64, tile: 16 }, // The First Heavens — dark bronze-black floor, bright bone-gold masonry
 };
 
 export const SCENES: Record<string, AtlasScene> = {
