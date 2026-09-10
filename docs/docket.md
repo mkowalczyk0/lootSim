@@ -204,7 +204,50 @@ precedent for the simulation resolving its own stalls rather than asking the pla
 **higher** priority than items 3-6 above: both are direct reports of something wrong in
 front of them, which outranks anything queued from a planning conversation.*
 
-## 7. Bosses have no attack animation — FERRYMAN LANDED, two bosses to go
+## 7. Bosses have no attack animation — FERRYMAN LANDED, and the queue has been reordered
+
+**2026-09-10, later: the §17 diagnosis reordered this item and the raids are no longer
+first.** `npm run animcoverage` counted the whole set rather than the three sprites this
+entry had been thinking about, and the shape nobody had measured is this:
+
+> **3 of 35 encounters resolve to an animated sprite. The other 32 draw a single static
+> frame, wind-up and release alike. All three animated ones are raids, reached only from
+> the War Table.** Every boss on the Delve, the Tower and all 21 Provings is static.
+
+So a player climbing either ladder the game is actually built around has never seen a boss
+animation at all, which is almost certainly what the owner's item-17 report is: they said
+*some* animations were missing, which is what fighting a raid boss and then a Delve boss
+looks like.
+
+**The order is now the Delve's own ladder, not the raid roster.** `bossFor` is
+`floor(depth / 5) - 1`, capped, and boss floors are every fifth depth, so a player working
+the reachable band (13–19, `docs/reachable-band.md`) fights `BOSSES[0]` — the Warden of the
+First Seal — on **every single delve run**, then `BOSSES[1]` at depth 10 and `BOSSES[2]` at
+15. That is the queue: Warden, then `BOSSES[1]`, then `BOSSES[2]`.
+
+The Nameless was considered and rejected as the next target despite covering depth 25+ *and*
+every Proving that borrows it: both sit past the reachable band, and CLAUDE.md's own
+class-completion section records that at level 60 most sampled classes cannot beat depth 30
+in either flavour. Animating the endgame while the entry ladder is static is the same
+mistake one rung further down. **The Tyrant and the War Queen go to the back of the queue**
+— they are the second and third encounters of the three that already work.
+
+Cost note, so nobody mistakes the reorder for a free swap: the raid bosses already had
+approved rises and casts, so a blow was an increment. The Warden has **nothing** — no cast,
+no strike, one static frame. It is a materially bigger job and was chosen anyway on reach.
+A staged delivery (the wind-up shipped on its own, the blow second) is pre-approved.
+
+**A release's length must be checked against the depth table, not against
+`BOSS_ACTION_GAP`.** `cast` beats `strike` by design, so a release only plays if the
+post-cast gap outlasts it — and that gap is not a constant, because `aggression` falls
+1.0 → 0.4 with depth while the manifest justifies strike lengths against 1.85s, which is the
+depth-1 value. Fourth instance of CLAUDE.md's "a constant that was correct for one rung".
+Measured coverage on the floors each raid actually runs on is 74–100%, so only a recovery
+tail is trimmed today — but anything over ~0.5s needs the table. It is in `docs/animation.md`.
+
+### The original entry follows.
+
+## 7 (original). Bosses have no attack animation
 
 **2026-09-10: `boss.ferryman` now has a real blow** — rise, the pole swings over the top,
 impact, recover, rest. 25 frames, no canvas change (`w`/`h`/`worldScale`/`feet` all
