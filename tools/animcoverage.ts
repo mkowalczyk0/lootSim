@@ -36,6 +36,7 @@
  * read green after someone retimed a strip.
  */
 
+import { readFileSync } from "node:fs";
 import { ATLAS, SPRITE_OVERRIDES, type AtlasSprite } from "../src/render/atlas/manifest";
 import { BOSSES, BOSS_ABILITIES, BOSS_ACTION_GAP, type BossSpec } from "../src/data/bosses";
 import { RAIDS, raidBossSpec, raidConfig, raidThreatRate } from "../src/data/raids";
@@ -44,6 +45,7 @@ import { towerBossSpec } from "../src/data/tower";
 import { LEGENDS, legendBossSpec } from "../src/data/legends";
 import type { ClassId } from "../src/data/classes";
 import { delveConfig } from "../src/data/modes";
+import { decodePng } from "./png";
 
 let problems = 0;
 const fail = (m: string) => { problems++; console.log(`  FAIL  ${m}`); };
@@ -166,6 +168,10 @@ function fastestHaste(s: BossSpec): number {
 
 const animated = rows.filter(([, m]) => tagsOf(m).includes("strike"));
 let cutoffs = 0;
+// Which sprites take at least one cut, on the floor(s) their OWN encounters actually
+// reach — read by §5's cause classification below, so a boss that never gets cut isn't
+// mislabelled cause 2 just because it happens to carry a `strike` tag.
+const cutSprites = new Set<string>();
 
 for (const [atlasId, meta] of animated) {
   const strike = tagSeconds(meta, "strike");
@@ -195,7 +201,7 @@ for (const [atlasId, meta] of animated) {
         * (raid ? raidThreatRate(r.players) : 1);
       const pct = Math.round((Math.min(gap, strike) / strike) * 100);
       const verdict = gap >= strike ? "plays in full" : `CUT at ${pct}%`;
-      if (gap < strike) cutoffs++;
+      if (gap < strike) { cutoffs++; cutSprites.add(atlasId); }
       console.log(
         `      ${r.label.padEnd(8)} depth ${String(cfg.depth).padStart(2)}  ` +
         `${r.players}p  haste ${haste.toFixed(2)}  aggression ${prof.aggression.toFixed(2)}  ` +
@@ -231,6 +237,61 @@ console.log(`\n  The shortest authored cast is ${shortest.toFixed(2)}s and teleg
 console.log(`  so MIN_CAST (${MIN_CAST}s) is the binding constraint. A wind-up always plays in full:`);
 console.log("  it is progress-keyed, so the window's length changes the RATE, never the coverage.");
 console.log("  No bug here — this section exists so that claim is measured rather than asserted.\n");
+
+console.log("=== 5. cause classification: every encounter, one cause each ===\n");
+
+// docket §17: "some boss animations are not coming through" has three unrelated causes.
+// This section answers, for every encounter the game can spawn, which one it has (or
+// "fine"). Built from the SAME specs list §2 already validated resolves to committed art
+// — never a second, narrower "which bosses could plausibly be broken" filter (CLAUDE.md's
+// standing lesson on classifiers that silently under-cover their input).
+//
+//   cause 1  — art is committed beyond the declared tag(s), and nobody wired it up.
+//              A REAL bug, fixable with a manifest row, no new art. Detected structurally
+//              below (a static row's committed PNG wider than its declared single frame)
+//              rather than asserted, so it can't silently stop being checked.
+//   cause 2  — the tag is declared and DOES reach the player, but `cast` interrupting it
+//              on a hasted floor trims the tail. Only ever the strike (the wind-up is
+//              progress-keyed and always plays in full — §4). Cosmetic, not a no-show.
+//   cause 3  — the tag was simply never authored. The backlog, not a bug.
+//   fine     — declared, and never observed cut on any floor this encounter actually runs.
+
+type Cause = "cause 1 (unwired art)" | "cause 2 (tail-trim, cosmetic)" | "cause 3 (never authored)" | "fine";
+
+/** cause 1: does the committed PNG carry more than the single frame the manifest declares? */
+function unwiredArt(meta: AtlasSprite): boolean {
+  if (meta.anim) return false; // already has a tag table; not this cause.
+  let png;
+  try { png = decodePng(readFileSync(`src/render/atlas/bosses/${meta.id}.png`)); }
+  catch { return false; } // no committed file is §2's problem, not §5's.
+  return png.width !== meta.w || png.height !== meta.h;
+}
+
+let cause1 = 0, cause2 = 0, cause3 = 0, fine = 0;
+const idWidth = Math.max(...specs.map((sp) => sp.id.length)) + 1;
+console.log(`  ${"encounter".padEnd(idWidth)} ladder    sprite                      tags declared     cause`);
+for (const sp of specs) {
+  const atlasId = SPRITE_OVERRIDES[sp.sprite] ?? sp.sprite;
+  const meta = ATLAS[atlasId];
+  if (!meta) continue; // already a FAIL in §2; don't double-count it here.
+  const tags = tagsOf(meta);
+  const tagStr = (tags.length ? tags.join("+") : "none").padEnd(16);
+  let cause: Cause;
+  if (!tags.includes("strike")) {
+    cause = unwiredArt(meta) ? "cause 1 (unwired art)" : "cause 3 (never authored)";
+  } else {
+    cause = cutSprites.has(atlasId) ? "cause 2 (tail-trim, cosmetic)" : "fine";
+  }
+  if (cause.startsWith("cause 1")) cause1++;
+  else if (cause.startsWith("cause 2")) cause2++;
+  else if (cause.startsWith("cause 3")) cause3++;
+  else fine++;
+  console.log(`  ${sp.id.padEnd(idWidth)} ${ladderOf(sp).padEnd(9)} ${atlasId.padEnd(26)} ${tagStr} ${cause}`);
+}
+console.log(`\n  walked ${specs.length} encounters: ${fine} fine, ${cause1} cause-1 (unwired art), ` +
+  `${cause2} cause-2 (tail-trim), ${cause3} cause-3 (never authored)`);
+if (cause1 > 0) fail(`${cause1} encounter(s) hit cause 1 — art is committed and unwired; see the rows above`);
+else ok("no cause-1 (unwired art) instances — every gap is either the known tail-trim or genuinely unauthored");
 
 console.log(problems === 0
   ? "boss animation coverage: no structural problems (see the table for the backlog)"
