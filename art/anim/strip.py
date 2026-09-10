@@ -37,11 +37,16 @@ depends on frame 0 being the sprite that shipped before the animation existed, s
 
 1. **Every frame is the same size, and that size is the row's `w`/`h`.** `npm run anim`
    checks the strip PNG is exactly `w * cols` wide and `h` tall.
-2. **The world footprint does not move.** `worldScale` is recomputed as
-   `targetWorldHeight / h` against the height the sprite already had, so animating a boss
-   never changes how big it is in the arena — telegraph radii, arena sizing and camera
-   framing are all set against that number. This script reads the current row and prints
-   the preserved value rather than leaving the arithmetic to whoever pastes it.
+2. **The drawn character does not move.** `worldScale` is world units per PIXEL, so the
+   invariant is that it stays put and `feet` — a FRACTION of `h` — is re-derived whenever
+   the frame height changes. This script reads the current row and prints both, with the
+   reasoning inline, rather than leaving the arithmetic to whoever pastes it.
+
+   > This used to say `worldScale` is recomputed as `targetWorldHeight / h`, and that rule
+   > is only correct while the character fills the canvas. On a padded canvas it is wrong
+   > in the direction that looks like success: it silently shrinks the character (18% on
+   > `boss.war-queen`) while every gate stays green. `boss.war-queen` is the first sprite
+   > with transparent headroom, and it is why the rule changed.
 
 ## The trim reads ALPHA, not `Image.getbbox()`
 
