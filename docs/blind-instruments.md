@@ -137,6 +137,15 @@ protects anything. If a session can lose its own hour-old rule by the next `git
 worktree add`, "read the docs first" was never going to be the fix; the fix has to be a
 question asked at the moment of use, not knowledge held in general.
 
+**The positive case, so this document isn't pure warning.** The same merge's gate-check
+answered its own catching question affirmatively instead of assuming it: the branch
+tip's acceptance chain ran 31 `npm run` steps and had neither `chests` nor `execute` in
+it; the merge-result gate ran 33 and had both. That is "if the defect were true right
+now, would this number be different" checked rather than trusted — a `package.json`
+conflict resolution that merely parses is not the same claim as one whose additions were
+demonstrably exercised by the gate that certified it, and here the two sides' new steps
+were shown present and running rather than assumed present because the JSON was valid.
+
 ## The question that catches the seventh
 
 Every fix that worked today, across at least three independent sessions, was some form
