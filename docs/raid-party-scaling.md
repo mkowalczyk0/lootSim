@@ -1,7 +1,16 @@
 # Raid party scaling — a measurement, and why the obvious fix doesn't work
 
-Status: **measured, not shipped**. Raids remain solo-only (`docs/raids.md`); nothing in
-this document is live in the game. `tools/bot.ts`'s `playFloorParty` — the instrument that
+**2026-09-10 update: co-op raids are live.** The owner turned them on by explicit decision
+that day, to iterate on the scaling live in actual play rather than from this document —
+"fuck the scaling discussion we had beforehand... I want to iterate in co-op, and we'll do
+it from there, and I'll let you know how the scaling is." That decision did not answer the
+question below; it set it aside on purpose. **The measurement stands unrefuted**:
+`partyScale` still doesn't transfer to a single raid-boss body, nothing in `data/raids.ts`
+or `data/modes.ts` changed to enable this, and the fix this document describes and measured
+is still unshipped, still on `investigate/raid-party-scaling`. Expect raids to play too easy
+or too hard in a party — that is expected, not a regression, until the owner reports back.
+
+Status: **measured, not shipped**. `tools/bot.ts`'s `playFloorParty` — the instrument that
 produced every number below — is on `master`. The code that attempted a fix is not; it
 lives, unmerged, on `investigate/raid-party-scaling`, kept there for whoever picks this up
 next. This document is the deliverable in its place: CLAUDE.md used to say party balance

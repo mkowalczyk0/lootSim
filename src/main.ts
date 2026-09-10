@@ -136,10 +136,18 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
       enterHub();
     },
     (raid, tier) => {
-      // The War Table doesn't dive either (UAT §15) — it opens a portal on the deck. No
-      // party branch here: raids are solo in v1, and `handleHubInteraction` is where that
-      // is enforced, so there is one place to delete when co-op raids land.
+      // The War Table doesn't dive either (UAT §15) — it opens a portal on the deck. In a
+      // room, the host picking a raid makes the Raid Portal the party's ready spot, the
+      // same as the Delve, a rift or a sector (UAT §1 D1) — the one branch `docs/raids.md`
+      // named as what stops co-op raids is gone; see `handleHubInteraction`'s raidPortal
+      // case for the other half. `players` is left at its default here: `party.setPlan`
+      // overwrites it with the real room size the moment the floor actually starts, the
+      // same as every other portal-picking station.
       hub.setRaid(raid.id, tier);
+      if (party.inRoom && party.isHost) {
+        party.setPlan(raidConfig(raid, tier, state.challengerTier), "raidPortal");
+        flash(`${raid.name} T${tier} it is — everyone into the Raid Portal.`);
+      }
       enterHub();
     },
     (memoryId) => {
@@ -325,17 +333,18 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
         : "The host picks the portal. Wait for them to choose one.");
       return;
     }
-    // Raids are solo in v1 (UAT §15) — the same call the Vigil and the Proving made, and
-    // for the same reason: a mode whose credit can be duplicated or desynced across four
-    // saves is a bug waiting for a party to find it. One place to delete.
-    if (party.inRoom && (station.kind === "warTable" || station.kind === "raidPortal")) {
-      flash("Raids are solo for now. Leave the room to take one on.");
-      return;
-    }
     // Memories are solo in v1, the same call the Vigil and the Proving made: a Memory
     // lives in one account's Vault, so "whose Memory was spent" has no good answer yet.
     if (party.inRoom && (station.kind === "altar" || station.kind === "memoryPortal")) {
       flash("The Altar is closed while a room is open. Memories are yours alone, for now.");
+      return;
+    }
+    if (party.inRoom && station.kind === "raidPortal") {
+      // Same shape as the sector portal below: in a room this is the party's ready spot,
+      // set by the War Table callback, never a solo launch through this switch.
+      flash(party.plan?.config.raid
+        ? `This is the party's portal — everyone stand in it to begin.`
+        : "Pick a raid at the War Table first.");
       return;
     }
     if (party.inRoom && station.kind === "expedition") {

@@ -24,7 +24,7 @@ import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
 import {
   DECK_COLS, DECK_ROWS, DECK_SPAWN, DECK_WALLS, deckIsRock, deckProblems,
 } from "../src/game/deck";
-import { RAIDS } from "../src/data/raids";
+import { RAIDS, raidBossId, raidConfig } from "../src/data/raids";
 import { circleHitsWall, FlowField, generateLevel, isWalkable, resolveCircle, TILE } from "../src/game/level";
 import { itemScore, requiredLevel } from "../src/game/item";
 import { Player, xpForLevel } from "../src/game/player";
@@ -3838,6 +3838,109 @@ console.log("\n=== multiplayer ===");
   console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
     + ` with ${busiest.monsters} monsters on screen`
     + ` — ${((busiest.bytes * 20) / 1024).toFixed(0)}kB/s per player at ${20} snapshots a second`);
+
+  // 3d. Co-op raids. The one branch in `handleHubInteraction` that stopped a party
+  // raid is gone (docs/raids.md), by owner decision — not because the co-op scaling
+  // question (docs/raid-party-scaling.md) got answered. That is exactly why this
+  // section kills the boss by decree instead of fighting it with bots: whether a party
+  // can actually beat a raid at a given gearing is the open question the owner is going
+  // to iterate on live, and a check that depends on the answer would be smuggling in an
+  // opinion about a tuning number this task was explicitly told not to touch. What this
+  // section verifies is the wiring — the whole party is on the floor, the wire carries
+  // which raid and which tier so a client rebuilds the identical encounter, and a clear
+  // credits each hero's own account exactly once.
+  {
+    const spec = RAIDS.find((r) => r.id === "the-ferryman")!;
+    const tier = 1;
+    const raidHostState = geared(30, 8811, 16, "swordsman");
+    const raidMateState = geared(30, 8812, 16, "magician");
+    const raidCfg = raidConfig(spec, tier, 0, 2);
+    const raidSetups = [
+      {
+        netId: "", name: "Host", player: raidHostState.player,
+        appearance: raidHostState.appearance, potions: 5, local: true,
+      },
+      {
+        netId: "p2", name: "Cousin", player: raidMateState.player,
+        appearance: raidMateState.appearance, potions: 5, local: false,
+      },
+    ];
+    const raidHost = new Dungeon(raidHostState, raidCfg, { seed: 5151, role: "host", heroes: raidSetups });
+    check("a raid launched from a party holds the whole party",
+      raidHost.heroes.length === 2 && raidHost.isParty);
+    check("a raid floor is flagged a boss floor, exactly like a solo one",
+      raidHost.profile.isBoss === true);
+
+    // The client is a second, independent Dungeon built the way `configFromWire` says a
+    // client should, from a wire round trip rather than the host's own RunConfig object.
+    const raidClientState = geared(30, 8812, 16, "magician");
+    const raidClientSetups = raidSetups.map((s, i) => ({ ...s, local: i === 1 }));
+    const raidClient = new Dungeon(raidClientState, configFromWire(configToWire(raidCfg)), {
+      seed: 5151, role: "client", heroes: raidClientSetups,
+    });
+    check("the wire round-trips which raid and which tier",
+      raidClient.config.raid?.spec.id === spec.id && raidClient.config.raid?.tier === tier,
+      `${raidClient.config.raid?.spec.id} T${raidClient.config.raid?.tier}`);
+    check("...and the real room size, not the plan-time default `raidConfig` was called with",
+      raidClient.config.players === 2, `players: ${raidClient.config.players}`);
+    check("a client rebuilds the identical raid arena from the seed",
+      raidClient.level.width === raidHost.level.width
+      && raidClient.level.walls.length === raidHost.level.walls.length
+      && raidClient.portal.x === raidHost.portal.x && raidClient.portal.y === raidHost.portal.y,
+      `${raidClient.level.walls.length} vs ${raidHost.level.walls.length} walls`);
+
+    // Let the host's wave director actually spawn the encounter (a boss floor's one
+    // wave is the boss), then decide the fight is over rather than playing it out.
+    const idle = new FakeInput();
+    let spawnT = 0;
+    while (!raidHost.boss && spawnT < 15) {
+      idle.beginTick();
+      raidHost.update(DT, idle as unknown as AvatarInput);
+      spawnT += DT;
+    }
+    check("the raid floor spawns the raid's own encounter",
+      raidHost.boss?.boss?.spec.id === raidBossId(spec.id), raidHost.boss?.boss?.spec.id ?? "none");
+    const boss = raidHost.boss;
+    if (boss) {
+      (raidHost as unknown as { killEnemy(e: unknown, by: Hero): void })
+        .killEnemy(boss, raidHost.heroes[0]!);
+      idle.beginTick();
+      raidHost.update(DT, idle as unknown as AvatarInput);
+    }
+    check("killing the boss clears the floor, the same as any other quota",
+      raidHost.phase === "cleared", raidHost.phase);
+
+    applySnapshot(raidClient, JSON.parse(JSON.stringify(encodeSnapshot(raidHost))));
+    check("the clear crosses the wire to the client",
+      raidClient.phase === "cleared", raidClient.phase);
+
+    // Completion credit — the actual risk in taking raids co-op: each hero banks on
+    // their own machine against their own save (`Dungeon.bankLoot` reads only its own
+    // `localHero` and its own `GameState`), so nothing raid-specific runs on the clear
+    // that could double-write one account or skip the other.
+    // Each side's own `GameState` is the account that would sit on that player's own
+    // machine — `raidMateState` is only the host's local copy of the mate's character
+    // used to seed the shared hero setup, the same object a co-op host keeps for
+    // rendering a friend it never writes progress to. `raidClientState` is the one
+    // `raidClient.bankLoot()` actually writes, so it's the one to read back.
+    const hostBefore = raidHostState.raidProgress[spec.id] ?? 1;
+    const mateBefore = raidClientState.raidProgress[spec.id] ?? 1;
+    raidHost.bankLoot();
+    raidClient.bankLoot();
+    check("the host's own account advances its raid ladder",
+      raidHostState.raidProgress[spec.id] === hostBefore + 1,
+      `${hostBefore} -> ${raidHostState.raidProgress[spec.id]}`);
+    check("the party member's own account advances too, independently",
+      raidClientState.raidProgress[spec.id] === mateBefore + 1,
+      `${mateBefore} -> ${raidClientState.raidProgress[spec.id]}`);
+    // Re-banking must not be a second clear. Nothing in a real run calls `bankLoot`
+    // twice on one floor, but the desync this task worried about is exactly a clear
+    // being counted more than once for the same hero.
+    raidHost.bankLoot();
+    check("banking again doesn't advance the ladder a second time",
+      raidHostState.raidProgress[spec.id] === hostBefore + 1,
+      `still ${raidHostState.raidProgress[spec.id]}`);
+  }
 
   // 4. Going down is not dying: an ally standing over you brings you back.
   const rescueState = geared(14, 8803, 16, "lancer");
