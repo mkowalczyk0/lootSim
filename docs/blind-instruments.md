@@ -353,6 +353,50 @@ This is arguably the most expensive instance in the file to date, because it did
 cost a wrong number: it cost a wrong premise. "The machine is idle" was stated to two
 sessions as an observed fact for over two hours while a core sat pinned the whole time.
 
+## A twelfth instance: a sentinel that satisfies its own remedy while saying nothing
+
+Item 9's fix for a wrapper's exit code was a printed sentinel the wrapper's own success
+cannot fake — look for `GATE_EXIT=` rather than trusting a reported code. Tonight a gate
+wrapped as `npm test 2>&1 | tail -60; echo "GATE_EXIT=${PIPESTATUS[0]}"` defeated that
+remedy while technically complying with it: the line printed. It read `GATE_EXIT=` — the
+marker, present, carrying no value.
+
+Two compounding faults, both in one line. `PIPESTATUS` is bash; the shell running it was
+zsh, which spells the same thing `pipestatus`, lowercase. `${PIPESTATUS[0]}` under zsh is
+not an error and not an unbound-variable failure (an array subscript on an unset array
+doesn't trip `set -u`) — it silently expands to the empty string. And even spelled
+correctly, a pipeline's exit status is its *last* command's: `npm test | tail` reports
+`tail`'s exit code, not `npm test`'s, which always succeeds. Either fault alone would have
+been survivable; together they produced a marker that means nothing while looking exactly
+like the marker item 9 tells a reader to check for.
+
+**This is a different species from item 9, not a restatement of it, and the difference is
+what it defeats.** Item 9 is a supervisor reporting a state it never observed — the
+wrapper's own exit code answering the wrong question. This is one layer lower: a shell
+builtin silently returning a different process's status than the one named, wrapped in a
+portability failure that fails open rather than erroring. It matters specifically because
+it defeats the *fix*, not just the original problem: a reader who correctly applies "check
+for the sentinel line" and finds `GATE_EXIT=` present would call this gate proven, and be
+wrong.
+
+**The generalisation: a sentinel has to be checked for its content, not its presence.**
+`grep -q GATE_EXIT` is satisfied by `GATE_EXIT=`; only `GATE_EXIT=0` means anything. An
+empty interpolation is close to the worst failure mode available to a marker-based remedy,
+because the failure *produces* the marker.
+
+**How to apply:** don't take a gate result through a pipe — `cmd > log 2>&1; echo "EXIT=$?"`
+has no pipeline and no array subscript, and the number is the command's own. If a pipe is
+unavoidable, `set -o pipefail` first, in the shell that will actually run the command
+(bash and zsh do not share `PIPESTATUS`/`pipestatus` syntax). And treat a bare `EXIT=`
+with nothing after the `=` as a failed measurement, not a passed run.
+
+**Found by re-reading a command, not by anything going red.** Nothing in the repo caught
+this, and the harness's own "exit code 0" was telling the truth about the pipeline it was
+actually handed. This document's own catching question — *would this instrument's number
+be different if the defect were true?* — doesn't apply here, because nothing measured this
+at all; a person looking is the only reason this entry exists, which is evidence for
+needing that habit, not evidence that any instrument already in place would have caught it.
+
 ## A different failure, and this document has no slot for it: seen and skipped, not unseen
 
 Every entry above is an instrument — human-built or otherwise — that could not see the thing it
