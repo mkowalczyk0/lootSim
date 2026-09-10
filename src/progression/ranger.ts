@@ -264,12 +264,21 @@ export const RANGER_THE_LAST_HUNT: Ability = {
   cooldown: 0,
   isUltimate: true,
   targeting: "self",
+  // "In sight" is a real bound, not the whole floor — this is what the "enemies" selector
+  // reads to stop at (see `selectActorIds` in combat/runtime.ts). Without it the volley
+  // reached every hostile on the floor, which is what the owner reported as "wipes the
+  // entire map." 350 covers a full room and its doorways at the largest authored room
+  // size without reaching into the next one over.
+  shape: { radius: 350 },
   effects: [
     { kind: "status", status: "quarry", chance: 1, to: "enemies" },
     { kind: "move", style: "blink", distance: 60, iframes: 0.3 },
     { kind: "status", status: "stealth", chance: 1, to: "self" },
     { kind: "delay", seconds: 0.3, effects: [
-      { kind: "damage", damage: { base: 3.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.4 }, to: "enemies" },
+      // Halved from 0.4: a boss is the one target in the game with enough health for
+      // "40% of missing health" to be a huge number on its own, which is what let one
+      // cast (or two, as the resource recharges from crits) delete a raid boss.
+      { kind: "damage", damage: { base: 3.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.2 }, to: "enemies" },
     ] },
   ],
   mutationHooks: [{ id: "the_last_hunt.packet", kind: "damagePacket", note: "Winter's Quarry freezes the quarry before the volley." }],
