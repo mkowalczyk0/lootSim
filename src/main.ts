@@ -21,6 +21,8 @@ import { GameState } from "./game/state";
 import { parseSaved } from "./core/save";
 import { AccountClient, type AccountInfo } from "./net/account";
 import { RemoteSaveStore } from "./net/savestore";
+import { RecordsClient, RecordsSubmitter } from "./net/recordsClient";
+import { computeRecords } from "./net/records";
 import { showLogin } from "./ui/login";
 import { WorldRenderer } from "./render/draw";
 import { Fx, type TracerStyle } from "./render/fx";
@@ -81,7 +83,14 @@ async function boot(): Promise<void> {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") void store.flush(true);
   });
-  start(state, who);
+  // The leaderboards (`docs/leaderboards.md`): a completely separate submission path from
+  // the save above, on its own endpoint and its own version — see `GameState.recordsHook`'s
+  // own doc comment for why. `recordsClient` is also handed to `TownUI` for the
+  // Leaderboards screen's reads.
+  const recordsClient = new RecordsClient();
+  const recordsSubmitter = new RecordsSubmitter(recordsClient);
+  GameState.recordsHook = () => recordsSubmitter.write(computeRecords(state));
+  start(state, who, recordsClient);
 }
 
 boot().catch((err: unknown) => {
@@ -89,7 +98,7 @@ boot().catch((err: unknown) => {
   flash(err instanceof Error ? err.message : String(err), "#f87171");
 });
 
-function start(state: GameState, who: AccountInfo): void {
+function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient): void {
   console.info(`playing as ${who.username}`);
   const input = new Input(state.settings);
   const fx = new Fx();
@@ -143,6 +152,7 @@ function start(state: GameState, who: AccountInfo): void {
     // Settings → Log out: the server clears the cookie, then the page comes back up at
     // the login screen with nothing of this account left in memory.
     () => { void account.logout().finally(() => window.location.reload()); },
+    recordsClient,
   );
 
   /**

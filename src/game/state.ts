@@ -1274,10 +1274,21 @@ export class GameState {
    * remembers the last blob.
    */
   static saveStore: SaveStore = new MemorySaveStore();
+  /**
+   * The leaderboards' submission trigger (`docs/leaderboards.md`) — fires on the exact
+   * same "something meaningful changed" signal `save()` already does, since a new record
+   * can only follow a meaningful action. It is a *trigger* only: what actually gets sent
+   * is `computeRecords(this)` in `src/net/records.ts`, a small, independently-versioned
+   * payload built fresh from the live `GameState` fields, over its own endpoint — never
+   * the save blob itself. `main.ts` installs this once logged in; every test and tool
+   * leaves it null, same as `saveStore` defaults to a no-op.
+   */
+  static recordsHook: (() => void) | null = null;
 
   save(): void {
     if (this.wiped) return;
     GameState.saveStore.write(serializeSave(this.toJSON()));
+    GameState.recordsHook?.();
   }
 
   /**
@@ -1502,6 +1513,9 @@ export function playerToJSON(p: Player) {
     towerChallengerBadges: p.towerChallengerBadges,
     planetChallengerBadges: p.planetChallengerBadges,
     raidChallengerBadges: p.raidChallengerBadges,
+    // The leaderboards' "highest recorded max damage" board (`docs/leaderboards.md`)
+    // reads this straight off the character sheet, same as every other record there.
+    lifetimeMaxHit: p.lifetimeMaxHit,
   };
 }
 
@@ -1583,6 +1597,9 @@ function applyPlayerJSON(
   p.towerChallengerBadges = normalizeDepthBadges(raw.towerChallengerBadges);
   p.planetChallengerBadges = { ...(raw.planetChallengerBadges as Record<string, number> | undefined) };
   p.raidChallengerBadges = { ...(raw.raidChallengerBadges as Record<string, number> | undefined) };
+  // A save from before this field has never landed a recorded hit — true, same reasoning
+  // as `challengerBadges` above.
+  p.lifetimeMaxHit = Number(raw.lifetimeMaxHit ?? 0);
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {

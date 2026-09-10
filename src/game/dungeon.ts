@@ -2827,7 +2827,18 @@ export class Dungeon implements CombatHost, RuleHost {
     // falls back to the nearest hero for kill-credit purposes below, but crediting that
     // guess to somebody's own DPS would be exactly the kind of approximation this
     // overlay exists to avoid.
-    if (opts.source) opts.source.combatStats.recordDamageDealt(dealt, this.elapsed);
+    if (opts.source) {
+      opts.source.combatStats.recordDamageDealt(dealt, this.elapsed);
+      // The leaderboards' lifetime record (`docs/leaderboards.md`) — unlike `largestHit`
+      // above, this never resets between dives. `.local` only, same rule `enemiesKilled`
+      // follows a few lines below in `killEnemy`: only the host runs this function, and a
+      // remote hero's `Player` here is an ephemeral rebuild from the wire, not that
+      // player's own persistent character sheet on their own machine — writing to it
+      // would silently vanish, or worse, get banked to the wrong account entirely.
+      if (opts.source.local && dealt > opts.source.player.lifetimeMaxHit) {
+        opts.source.player.lifetimeMaxHit = dealt;
+      }
+    }
 
     const knock = (opts.knock ?? (opts.crit ? 190 : 120)) * e.knockResist;
     e.knockX += Math.cos(knockAngle) * knock;

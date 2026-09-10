@@ -16,6 +16,15 @@
  *
  * Deliberately small (owner's call): no email, no 2FA, no password reset, no rate
  * limiting, no session expiry management. Passwords are hashed regardless.
+ *
+ * The `records` table (below) is the global leaderboards (`docs/leaderboards.md`) and is
+ * the one deliberate exception to "the server never looks inside a save" — except it
+ * isn't an exception at all: it never touches the `saves` table or the blob in it. A
+ * record is a short list of plain scalars (`{ classId, board, tier, value, meta? }`) the
+ * client computes from its own already-loaded save and posts to its own endpoint,
+ * versioned on its own (`RECORDS_VERSION` below, independent of `SAVE_VERSION`). This
+ * file validates shape — known class ids, known board ids, numbers in sane ranges — the
+ * same kind of check `register` already does on a username, not a save parser.
  */
 
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
@@ -34,6 +43,34 @@ const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 } as const;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 const PASSWORD_MIN = 6;
 const PASSWORD_MAX = 72;
+
+// --- leaderboards (`docs/leaderboards.md`) -----------------------------------------
+// Mirrors `src/net/records.ts` / `src/data/classes.ts` / `src/data/raids.ts`. A small,
+// stated duplication rather than an import from `src/` — the same call `ShopRarity`
+// already made — so this file's only dependency stays `node:*`. A new board or a new
+// class needs one line here and one line there; `tools/leaderboards.ts` asserts the two
+// class lists agree.
+export const RECORDS_VERSION = 1;
+const MAX_RECORD_TIER = 20; // src/data/challenger.ts's MAX_CHALLENGER_TIER
+const MAX_RECORD_ENTRIES = 200;
+const MAX_META_BYTES = 300;
+const MAX_RECORD_VALUE = 1e12;
+export const KNOWN_CLASS_IDS = [
+  "lancer", "berserker", "swordsman", "magician", "shaman",
+  "ranger", "juggernaut", "duelist", "warlock", "monk",
+  "necromancer", "corsair", "trickster", "reaper", "stormcaller",
+  "paladin", "bard", "alchemist", "engineer", "assassin", "warden",
+] as const;
+const FIXED_BOARDS = new Set([
+  "delve", "tower", "abyss", "hoard", "vigil", "convergence", "memory", "item.score", "damage.max",
+]);
+const RAID_IDS = new Set([
+  "tyrant-of-the-first-heavens", "minotaur-of-the-ninth-labyrinth", "the-ferryman", "queen-of-the-seventh-circle",
+]);
+function isKnownBoard(board: string): boolean {
+  if (FIXED_BOARDS.has(board)) return true;
+  return board.startsWith("raid.") && RAID_IDS.has(board.slice("raid.".length));
+}
 
 /** Where the database lives unless `LOOTSIM_DB` says otherwise: `data/` next to the repo. */
 export function defaultDbPath(root: string = process.cwd()): string {
@@ -83,6 +120,16 @@ export function openAccounts(opts: AccountsOptions): Accounts {
       updated_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS records (
+      account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      class_id   TEXT NOT NULL,
+      board      TEXT NOT NULL,
+      tier       INTEGER NOT NULL,
+      value      REAL NOT NULL,
+      meta       TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, class_id, board)
+    );
   `);
   const secret = sessionSecret(db);
   // A well-formed hash of nothing in particular, so a login attempt against a name that
@@ -99,6 +146,27 @@ export function openAccounts(opts: AccountsOptions): Accounts {
     ON CONFLICT(account_id) DO UPDATE SET blob = excluded.blob, version = excluded.version, updated_at = excluded.updated_at
   `);
   const deleteSave = db.prepare("DELETE FROM saves WHERE account_id = ?");
+  const findRecord = db.prepare("SELECT value FROM records WHERE account_id = ? AND class_id = ? AND board = ?");
+  const upsertRecord = db.prepare(`
+    INSERT INTO records (account_id, class_id, board, tier, value, meta, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, class_id, board) DO UPDATE SET
+      tier = excluded.tier, value = excluded.value, meta = excluded.meta, updated_at = excluded.updated_at
+  `);
+  const selectBoard = db.prepare(`
+    SELECT r.class_id, r.tier, r.value, r.meta, r.updated_at, a.username FROM records r
+    JOIN accounts a ON a.id = r.account_id
+    WHERE r.board = ? ORDER BY r.value DESC, r.updated_at ASC LIMIT ?
+  `);
+  const selectBoardByClass = db.prepare(`
+    SELECT r.class_id, r.tier, r.value, r.meta, r.updated_at, a.username FROM records r
+    JOIN accounts a ON a.id = r.account_id
+    WHERE r.board = ? AND r.class_id = ? ORDER BY r.value DESC, r.updated_at ASC LIMIT ?
+  `);
+  const selectRecent = db.prepare(`
+    SELECT r.board, r.class_id, r.tier, r.value, r.meta, r.updated_at, a.username FROM records r
+    JOIN accounts a ON a.id = r.account_id
+    ORDER BY r.updated_at DESC LIMIT ?
+  `);
 
   // --- sessions ------------------------------------------------------------
 
@@ -140,6 +208,31 @@ export function openAccounts(opts: AccountsOptions): Accounts {
     const route = path.slice(API_PREFIX.length);
     const method = req.method ?? "GET";
     try {
+      // Leaderboard reads carry the board id in the path (`leaderboard/<board>`), which a
+      // plain `switch (route)` below can't match — handled first, same session/method
+      // rules as every other route.
+      if (route.startsWith("leaderboard/")) {
+        if (method !== "GET") return methodNotAllowed(res, "GET");
+        if (!sessionAccount(req)) return notLoggedIn(res);
+        const board = decodeURIComponent(route.slice("leaderboard/".length));
+        if (!isKnownBoard(board)) return json(res, 404, { error: "not_found", message: "No such board." });
+        const q = new URL(req.url ?? "/", "http://internal").searchParams;
+        const classId = q.get("class");
+        if (classId && !(KNOWN_CLASS_IDS as readonly string[]).includes(classId)) {
+          return json(res, 400, { error: "bad_class", message: "Unknown class." });
+        }
+        const limit = clampLimit(q.get("limit"), 25, 100);
+        const rows = classId ? selectBoardByClass.all(board, classId, limit) : selectBoard.all(board, limit);
+        return json(res, 200, (rows as unknown as RecordRow[]).map(rowToLeaderboardJson));
+      }
+      if (route === "leaderboard-recent") {
+        if (method !== "GET") return methodNotAllowed(res, "GET");
+        if (!sessionAccount(req)) return notLoggedIn(res);
+        const q = new URL(req.url ?? "/", "http://internal").searchParams;
+        const limit = clampLimit(q.get("limit"), 20, 50);
+        const rows = selectRecent.all(limit) as unknown as (RecordRow & { board: string })[];
+        return json(res, 200, rows.map((r) => ({ board: r.board, ...rowToLeaderboardJson(r) })));
+      }
       switch (route) {
         case "me": {
           if (method !== "GET") return methodNotAllowed(res, "GET");
@@ -228,6 +321,30 @@ export function openAccounts(opts: AccountsOptions): Accounts {
           }
           return methodNotAllowed(res, "GET, PUT, DELETE");
         }
+        case "records": {
+          if (method !== "POST") return methodNotAllowed(res, "POST");
+          const account = sessionAccount(req);
+          if (!account) return notLoggedIn(res);
+          const body = await readJson(req, res);
+          if (body === undefined) return true;
+          if (body.v !== RECORDS_VERSION) {
+            return json(res, 400, { error: "bad_version", message: "This client speaks a records format the server doesn't." });
+          }
+          const entries = body.entries;
+          if (!Array.isArray(entries) || entries.length > MAX_RECORD_ENTRIES) {
+            return json(res, 400, { error: "bad_request", message: "That request wasn't shaped right." });
+          }
+          const now_ = now();
+          for (const raw of entries as unknown[]) {
+            const e = validateEntry(raw);
+            if (!e) return json(res, 400, { error: "bad_entry", message: "One of those records wasn't shaped right." });
+            const existing = findRecord.get(account.id, e.classId, e.board) as { value: number } | undefined;
+            if (!existing || e.value > existing.value) {
+              upsertRecord.run(account.id, e.classId, e.board, e.tier, e.value, e.meta, now_);
+            }
+          }
+          return empty(res, 204);
+        }
         default:
           return json(res, 404, { error: "not_found", message: "No such door." });
       }
@@ -307,6 +424,55 @@ function saveVersionOf(text: string): number | null {
   } catch {
     return null;
   }
+}
+
+// --- leaderboards helpers ---------------------------------------------------------
+
+interface RecordRow { class_id: string; tier: number; value: number; meta: string; updated_at: number; username: string }
+
+function rowToLeaderboardJson(r: RecordRow): {
+  username: string; classId: string; tier: number; value: number; meta: unknown; updatedAt: number;
+} {
+  let meta: unknown = {};
+  try { meta = JSON.parse(r.meta); } catch { /* stored value is always ours; belt and braces */ }
+  return { username: r.username, classId: r.class_id, tier: r.tier, value: r.value, meta, updatedAt: r.updated_at };
+}
+
+/** `Number(null)` is `0`, not `NaN` — a bare `Number(raw)` would silently turn "no limit
+ *  given" into `LIMIT 1` rather than the fallback. Caught by `npm run leaderboards`. */
+function clampLimit(raw: string | null, fallback: number, max: number): number {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(max, Math.floor(n)));
+}
+
+interface ValidEntry { classId: string; board: string; tier: number; value: number; meta: string }
+
+/** Everything this server is willing to store about one submitted record: a known class,
+ *  a known board, a tier in range, a finite non-negative value under the sanity cap, and
+ *  a small `meta` object (display-only — never read back to decide anything). Anything
+ *  else about the entry — how the value was computed, what save it came from — is not
+ *  this function's business, and never will be; that's the seam `docs/leaderboards.md`
+ *  and the file header above are about. */
+function validateEntry(raw: unknown): ValidEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const e = raw as Record<string, unknown>;
+  const classId = typeof e.classId === "string" ? e.classId : "";
+  if (!(KNOWN_CLASS_IDS as readonly string[]).includes(classId)) return null;
+  const board = typeof e.board === "string" ? e.board : "";
+  if (!isKnownBoard(board)) return null;
+  const tier = e.tier;
+  if (typeof tier !== "number" || !Number.isInteger(tier) || tier < 0 || tier > MAX_RECORD_TIER) return null;
+  const value = e.value;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > MAX_RECORD_VALUE) return null;
+  let metaText = "{}";
+  if (e.meta !== undefined) {
+    if (typeof e.meta !== "object" || e.meta === null || Array.isArray(e.meta)) return null;
+    metaText = JSON.stringify(e.meta);
+    if (Buffer.byteLength(metaText, "utf8") > MAX_META_BYTES) return null;
+  }
+  return { classId, board, tier, value, meta: metaText };
 }
 
 /** The whole body as text, or undefined after answering 413 itself. */

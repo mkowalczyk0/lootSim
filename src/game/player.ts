@@ -240,6 +240,14 @@ export class Player {
    *  above — one floor, and that floor is the boss, so there's no depth range to hide the
    *  cheap end of. */
   raidChallengerBadges: Record<string, number> = {};
+  /**
+   * The single largest hit this class has ever landed on anything, lifetime — the "highest
+   * recorded max damage" record (`docs/leaderboards.md`). Written directly from
+   * `Dungeon.damageEnemy` alongside `CombatStats.largestHit`, which this mirrors except for
+   * being a persistent, never-reset running maximum instead of a per-dive one. Grows only;
+   * a death or a bail-out never rolls it back, because the hit still landed.
+   */
+  lifetimeMaxHit = 0;
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
   /** Legacy mana pool, kept for the HUD and potions. A class's real casting resource is
