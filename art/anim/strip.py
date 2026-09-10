@@ -91,6 +91,31 @@ def union_box(frames):
     return box
 
 
+def pad_to_tallest(frames, height=None):
+    """Bottom-anchor frames of differing height, padding the short ones at the TOP.
+
+    A pose that reaches — a raised arm, a flared wing — needs canvas above the character
+    that the resting frames do not have, so a tag generated on a taller canvas arrives
+    taller than the idle it shares a strip with. The old code refused the whole run.
+
+    Padding at the top is the only correct anchor, and the reason is `drawSprite`:
+    `drawImage(canvas, -w/2, -h + h*feet, w, h)` puts the canvas BOTTOM at a fixed
+    offset below the entity's position, so the bottom edge is the ground and every
+    frame must keep the same number of pixels between the character's feet and it.
+    Pad at the bottom instead and the boss hovers; pad both and it does both by half.
+    """
+    tall = height or max(im.height for im in frames)
+    out = []
+    for im in frames:
+        if im.height == tall:
+            out.append(im)
+            continue
+        canvas = Image.new("RGBA", (im.width, tall), (0, 0, 0, 0))
+        canvas.paste(im, (0, tall - im.height))
+        out.append(canvas)
+    return out
+
+
 def frame_order(p: Path):
     """Sort `f2` before `f10`.
 
@@ -137,8 +162,8 @@ def load_tag(spec: str):
     return tag, [Image.open(p).convert("RGBA") for p in paths]
 
 
-def current_world_height(sprite_id: str):
-    """`worldScale * h` off the committed row, so the footprint can be preserved."""
+def current_row(sprite_id: str):
+    """`(h, worldScale, feet)` off the committed row, so the draw can be preserved."""
     if not MANIFEST.exists():
         return None
     src = MANIFEST.read_text()
@@ -148,9 +173,11 @@ def current_world_height(sprite_id: str):
     body = row.group(1)
     h = re.search(r"\bh:\s*([0-9.]+)", body)
     ws = re.search(r"\bworldScale:\s*([0-9.]+)", body)
+    ft = re.search(r"\bfeet:\s*([0-9.]+)", body)
     if not (h and ws):
         return None
-    return float(h.group(1)) * float(ws.group(1))
+    return (float(h.group(1)), float(ws.group(1)),
+            float(ft.group(1)) if ft else 0.0)
 
 
 def main() -> None:
@@ -164,9 +191,14 @@ def main() -> None:
         raise SystemExit(f"duplicate tag in {names}")
 
     every = [im for _, frames in tags for im in frames]
-    sizes = {im.size for im in every}
-    if len(sizes) != 1:
-        raise SystemExit(f"frames differ in size: {sizes} — the generator's canvas moved.")
+    widths = {im.width for im in every}
+    if len(widths) != 1:
+        raise SystemExit(f"frames differ in WIDTH: {sorted(widths)} — the generator's "
+                         "canvas moved sideways, and there is no anchor that fixes that.")
+    every = pad_to_tallest(every)
+    tags = [(name, pad_to_tallest(frames, max(im.height for im in every)))
+            for name, frames in tags]
+    every = [im for _, frames in tags for im in frames]
 
     box = union_box(every)
     every = [im.crop(box) for im in every]
@@ -194,12 +226,29 @@ def main() -> None:
         for name, a, b in ranges)
     print(f"  anim: {{ cols: {cols}, tags: {{ {body} }} }},")
 
-    target = current_world_height(sprite_id)
-    if target is None:
-        print(f"\n  worldScale must become targetWorldHeight / {h} to keep the footprint.")
+    row = current_row(sprite_id)
+    if row is None:
+        print(f"\n  worldScale is world units per PIXEL — carry the existing one over "
+              f"unchanged, and set feet to (ground offset in px) / {h}.")
     else:
-        print(f"\n  worldScale: {target / h:.4f},   // {target:.1f} world height / {h} — "
-              "unchanged footprint")
+        h_old, ws_old, feet_old = row
+        print(f"\n  worldScale: {ws_old},   // UNCHANGED — see below")
+        if h != h_old:
+            feet_new = feet_old * h_old / h
+            # 6dp, not 4: at these heights 4dp moves the ground line by ~0.004
+            # world units, which is small but is not zero and is free to avoid.
+            print(f"  feet: {feet_new:.6f},   // was {feet_old} of {h_old}px; "
+                  f"{feet_old * h_old:.2f}px of ground offset, now over {h}px")
+            print(f"\n  // The frame grew {h_old} -> {h}px and BOTH of those lines are\n"
+                  f"  // load-bearing. `worldScale` is world units per pixel, so leaving it\n"
+                  f"  // alone is what keeps the character the same size; the old\n"
+                  f"  // `targetWorldHeight / h` rule assumed the character filled the\n"
+                  f"  // canvas, and on a padded one it would shrink it by "
+                  f"{(1 - h_old / h) * 100:.0f}%.\n"
+                  f"  // `feet` is a FRACTION of h, so it has to be re-derived or the\n"
+                  f"  // character sinks {feet_old * (h - h_old):.2f}px into the floor.")
+        else:
+            print(f"  feet: {feet_old},   // unchanged — the frame height did not move")
 
 
 if __name__ == "__main__":

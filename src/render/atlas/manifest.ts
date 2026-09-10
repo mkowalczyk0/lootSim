@@ -233,10 +233,21 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // telegraph, and a strike is consequence rather than warning, so it free-runs. 6 x 0.08 =
   // 0.48s, comfortably inside `BOSS_ACTION_GAP` (1.85s) at ordinary aggression and happily
   // cut short by the next wind-up when it isn't — cast beats strike, always.
-  "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 108, worldScale: 1.0185, feet: 0.03,
-    anim: { cols: 19, tags: { idle:   { from: 0,  to: 4,  seconds: 0.24, loop: true },
+  // `h` is 131 against a 108px character, and `worldScale` did NOT move with it. That
+  // pairing looks exactly like the bug that once drew three raid bosses at a third of
+  // their size, so before "fixing" it read this: the extra 23px are TRANSPARENT
+  // headroom the release swings into, not character. `worldScale` is world units per
+  // PIXEL, so holding it fixed is what keeps her the same size — measured, the drawn
+  // character is unchanged to six decimal places (top -105.679560, bottom 2.281440,
+  // 107.961000 x 97.776000 world units, before and after). `feet` is a FRACTION of `h`,
+  // so it HAD to move: 3.24px of ground offset over 131px instead of 108px. Left at
+  // 0.03 she sinks 0.69px into the floor. `art/anim/strip.py` derives both and prints
+  // them; do not paste its old `targetWorldHeight / h` value, which assumes the
+  // character fills the canvas and here would shrink her by 18%.
+  "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 131, worldScale: 1.0185, feet: 0.024733,
+    anim: { cols: 25, tags: { idle:   { from: 0,  to: 4,  seconds: 0.24, loop: true },
                               cast:   { from: 5,  to: 12, seconds: 0.09, loop: false },
-                              strike: { from: 13, to: 18, seconds: 0.08, loop: false } } } },
+                              strike: { from: 13, to: 24, seconds: 0.05, loop: false } } } },
   // NOT animated, deliberately — see docs/animation.md "A sprite whose accent is too small
   // to survive generation". Its violet eyes are two pixels; two attempts, the second
   // starting from a much brighter accent, both came back with the eyes dimmed below the
