@@ -53,7 +53,7 @@ or a reskin with no visual identity.
 | 4 | **Named items and relics/artifacts (non-raid)** — fully authored, nothing to do | Already complete; listed for completeness only | §5 |
 | 5 | **Affix glyphs** — 16 affixes render as Unicode text characters, not the 8×8 pixel icons the style guide specifies | Real but low-severity: it works today, just isn't bespoke pixel art | §6 |
 | 6 | **Cosmetics** — 16 of 40 wardrobe items still procedural-grid-only | Powerless vanity content; lowest gameplay stakes | §7 |
-| 7 | **Environments** — Tower's 3 tilesets unpainted, Avarice Rift has no distinct visual identity | Floors are playable and correctly coloured without these; purely a "doesn't look distinct yet" gap | §8 |
+| 7 | **Environments** — the Tower's 3 tilesets are **done**; the Avarice Rift still has no distinct visual identity | Floors are playable and correctly coloured without these; purely a "doesn't look distinct yet" gap | §8 |
 
 Everything not listed above (hero, all 5 floor bosses, all 5 core monster silhouettes,
 all 14 weapons, 10 equipment/currency icons, 17 props, 12 Delve+Reliquary tilesets, the
@@ -384,16 +384,39 @@ separate hero-rework track (see `lootsim-art-direction-and-cosmetics` memory), n
 
 Source: `src/data/tower.ts`, `src/render/atlas/manifest.ts` (`TILESETS`), `src/data/modes.ts`.
 
-- **The Tower's 3 tilesets are named but not painted**: `tiles.tower-lower`,
-  `tiles.tower-mid`, `tiles.tower-upper` are referenced in `TOWER_BIOMES`
-  (`data/tower.ts`) but deliberately absent from `TILESETS` in the manifest — painting
-  one and adding it there is the entire task; the floor already falls back correctly
-  (flat `bakeFloor` in the right palette) so this is purely a "make it look as good as
-  the Delve already does" pass, not a bug fix. Follow the style guide §17.7 recipe
-  exactly (PixelLab `create_topdown_tileset`, `high top-down`, bake via `npm run
-  tileset`) using §6's three band palettes (bone-gold → bleaching white → near-white
-  blinding). Painting `tiles.tower-lower` also fixes the First Heavens raid arena (§2.4)
-  for free, since both want the same Heaven-base palette.
+- **The Tower's 3 tilesets are painted — DONE** (branch `art/tower-tilesets`).
+  `tiles.tower-lower`, `tiles.tower-mid` and `tiles.tower-upper` are committed and wired
+  into `TILESETS`. **The wall is Heaven's lit surface, not the floor** — the reasoning is
+  in the style guide §17.7 and the `data/tower.ts` header, and it is the opposite of the
+  "Heaven = white and gold ground" instinct: holy-infused monsters measure L94-108, so a
+  floor clears §17.7's 28-luminance bar either under L66 or over L136, and the upper
+  window is 14 points wide under the L150 ceiling against the lower one's 66. A bespoke
+  celestial roster (§4 below, still open) can only be *brighter* than the borrowed Hell
+  sprites, which narrows the bright window further and never the dark one — so the dark
+  floor is the direction that survives §4 whichever way it goes.
+
+  | Band | graded floor | graded wall | floor↔wall | wall chroma |
+  |---|---|---|---|---|
+  | The Lower Tower | L39 | L120 | 80 | 18 (gold) |
+  | The Seamless Halls | L33 | L143 | 110 | 4 (ivory) |
+  | The Blinding Heights | L29 | L143 | 114 | 1 (cold white) |
+
+  All four axes move one way as you climb: the ground darkens, the glare brightens, the
+  gap widens, the warmth drains. The top two bands' walls are the same luminance because
+  §17.7's L150 ceiling is right above them — up there the bands separate by hue and by
+  floor, not by wall brightness. **The three band tints moved as part of this** (`#8a7d54`
+  / `#a89f7e` / `#cfc9b0` → `#42310f` / `#2f2b1f` / `#232630`): a `tint` authored as the
+  flat-bake fill becomes a 30% wash once a sheet exists, and at L200 the old Blinding
+  Heights tint alone graded a pure black floor to L60 — inside the collision band before
+  any art existed. §6's bone-gold and near-white stayed on `wall` / `wallSide` / `accent`.
+
+  Painting `tiles.tower-lower` also gives the First Heavens raid arena (§2.4) a floor,
+  since both want the same Heaven-base palette.
+
+  **What this does not fix, and it will be the first thing anyone notices:** the Tower's
+  monsters are still §4's re-labelled Hell sprites. A properly celestial floor with Hell's
+  monsters standing on it is a *known* intermediate state, ordered this way deliberately
+  because the owner has seen the untextured floors and §4 is still theirs to answer.
 - **The Avarice Rift has no tileset override** (`hoard` in `modes.ts` sets no
   `tileset`, unlike the Abyssal Rift's `tiles.abyss`), so it currently just shows
   whatever ordinary Delve biome its effective depth would anyway — it doesn't yet read

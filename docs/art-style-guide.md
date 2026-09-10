@@ -315,6 +315,13 @@ higher you go — the warmth drains out and the geometry gets more perfect and m
 | **Mid Tower** | `#f4ecc9` bleaching toward white, gold hard-edged | Repeating geometry, seamless floors, no shadow to hide in |
 | **Upper Heaven** | near-white, `#fde047` as a blinding hazard not a highlight | Symmetry so total it's disorienting; enemies that punish deviation from a "correct" position |
 
+The three bands are painted (`tiles.tower-*`, §17.7). **The palettes above belong to the
+*wall*** — Heaven's light comes off the architecture, so the masonry is the lit surface and
+the ground is the dark thing you cross; the per-band `tint` in `data/tower.ts` is a ground
+tone, not the palette headline, and it is dark for the reasons §17.7 gives. Measured, the
+climb moves every axis one way: floor L39 → L33 → L29, wall L120 → L143 → L143, the gap
+between them 80 → 110 → 114, and the wall's warmth draining out at chroma 18 → 4 → 1.
+
 - **Celestial hierarchy as enemy tiers** (composites, per §10): Powers (war-angels),
   Thrones (living law — area denial), Dominions (commanders — summoners), Virtues, and
   above them things the player can't properly perceive (drawn as *negative space* /
@@ -945,6 +952,56 @@ hand-arted 16px stone.
   "darken the floor" is only how one family of biomes gets there. Check which terrain is
   already the light one on the committed sheet before picking a direction to push in.
   Full write-up: `docs/ashen-wastes-infusion-fix.md`.
+  **The Tower's answer is the wall, and it was decided by arithmetic rather than taste.**
+  Heaven's instinct is a gold-and-bone-white *floor*; that is the wrong one. Holy is the
+  Tower's element, so its monsters are washed holy-gold by infusion and measure L94-108 —
+  which means the floor clears the gate below by either dropping under L66 or climbing
+  over L136, and the upper window is fourteen points wide under this section's own L150
+  ceiling while the lower one is sixty-six. The tie-breaker is that a bespoke celestial
+  roster (`docs/art-manifest.md` §4, still open) would be *brighter* than the borrowed Hell
+  sprites the Tower draws today, so a bright floor's window can only narrow and a dark
+  floor's cannot. Pick the direction that survives a decision you don't get to make. The
+  fiction agrees, which is how you know it isn't a rationalisation: Heaven's light is
+  emitted by the architecture and pointed at you (§6, "light is a weapon"), so the perfect
+  repeating masonry glares and the ground is the dark thing you are a deviation crossing.
+
+- **A biome's `tint` stops being a colour and becomes a contrast problem the moment its
+  sheet lands.** Before a tileset exists, `tint` *is* the floor — the flat `bakeFloor`
+  fill — so it gets authored at whatever value the palette section quotes. Afterwards it
+  is a 30% wash over the graded sheet, and a bright wash collapses the very separation
+  both gates measure. The Tower shipped its bands at `#8a7d54` / `#a89f7e` / `#cfc9b0`
+  (L125 / L159 / L200) for exactly this reason, and at L200 the tint alone graded a
+  **pure black** floor to L60 — already inside the infusion collision band, before any art
+  existed at all. Every one of the seventeen tints committed before it sits at L14-48.
+  So: when you paint a floor for a biome whose tint was authored bright, the tint comes
+  down with it, and the palette's bright tones move to `wall` / `wallSide` / `accent`
+  where the light actually is.
+
+- **Chroma survives the grade at about a quarter, so "warm" has to be loud in the raw
+  sheet or it isn't there at all.** The grade desaturates by half and then blends 30%
+  toward a low-chroma tint, which halves it again. Measured on committed sheets: the
+  Gilded Ossuary's wall is raw chroma 42 and grades to 9; the Tower's Lower band is raw 47
+  and grades to 11. A first pass that asked for "bright warm gilded stone" as an adjective
+  came back raw chroma **7**, graded 3 — indistinguishable from concrete, and it made
+  Heaven look like the Citadel. If a realm's identity is a colour, measure the raw tile's
+  chroma before believing the prompt delivered it.
+
+- **Name the substance, not the value — it beats describing darkness, which beats naming
+  a hue.** This is the value-vs-hue lesson one rung further down. PixelLab's bias toward a
+  light floor is strong enough to shrug off adjectives: "very dark near-black cold stone,
+  unlit, no light, extremely dark, matte" returned a raw floor of **L52**. The identical
+  request with the floor named as a *material that is black* — "polished black obsidian,
+  black volcanic glass" — returned **L25**, same style settings, same wall, one reroll
+  apart. Reach for basalt, obsidian, pitch, chalk, bone, gold: a substance has a value
+  baked into it that an adjective has to argue for.
+
+- **Saturation and variegation are the same budget under the ±14 spread gate — pick one.**
+  Asking for gold *veined through* something ("thick polished gold fused into pale
+  bone-white masonry") puts two values in one tile: it delivered the colour (raw chroma
+  22) and failed the busy-tile gate outright at **±23**. Asking for the same gold as a
+  single tone ("one uniform gilded tone throughout, no white, no veins") delivered *more*
+  colour (raw chroma 47) at **±7**. A tile is 16 pixels across; it can be a colour or it
+  can be a mixture, and only the first one survives game zoom.
 - **Every sheet goes through the floor grade** (`render/grade.ts`, applied by
   `gradedTileset` in `render/tilemap.ts` before stamping): each pixel is flattened toward
   its terrain's mean colour (55%), desaturated by half, blended 30% toward the biome's

@@ -23,13 +23,31 @@
  * biome a floor is made of and the layer of the war it sits in change on the same step,
  * the same property the descent already had. `tools/world.ts` pins it.
  *
- * **The tilesets are named but not yet painted.** `tiles.tower-*` are the ids the art pass
- * will fill; until a PNG is committed for one, `atlasTileset` returns null and the floor
- * falls back to the flat `bakeFloor` fill in the palette below, exactly as the Abyssal
- * Rift did before its sheet landed. They are deliberately **not** in `TILESETS`: the smoke
- * test reads a committed sheet for every id in that record, and claiming art that doesn't
- * exist would be a lie the gate would rightly fail. So the Tower is playable and correctly
- * coloured, and it is unpainted. Say so out loud rather than letting somebody find it.
+ * **The tilesets are painted, and the wall is the lit surface.** `tiles.tower-*` are
+ * committed and in `TILESETS`. Which of floor and wall carries the light is a per-biome
+ * decision (art guide §17.7) and Heaven's is *the wall*: Heaven's light is emitted by the
+ * architecture and aimed at you — §6's "light is a weapon", `#fde047` "as a blinding
+ * hazard not a highlight" — so the perfect repeating masonry is what glares and the ground
+ * is the dark thing you are a deviation moving across. The measurement agrees with the
+ * fiction: a holy-infused monster reads L94-108, so a floor clears it by §17.7's 28
+ * luminance either below L66 or above L136, and the upper window is 14 points wide under
+ * the same section's L150 ceiling while the lower one is 66. A bespoke celestial roster
+ * (`docs/art-manifest.md` §4, still the owner's call) would be *brighter* than the
+ * borrowed Hell one and would narrow the upper window further — never the lower. So the
+ * dark floor is the choice that survives a decision this file doesn't get to make.
+ *
+ * **The tints came down to make that possible, and that is a finding rather than a
+ * repaint.** They were `#8a7d54` / `#a89f7e` / `#cfc9b0` — §6's band palettes read
+ * literally, which was right when `tint` was the whole floor (the flat `bakeFloor` fill,
+ * with no sheet behind it). Once a sheet exists `tint` stops being the floor and becomes a
+ * 30% wash over it (`render/grade.ts`), and a bright wash collapses the separation both
+ * §17.7 gates measure: at L200, the Blinding Heights tint alone graded a *pure black*
+ * floor to L60, already inside the collision band, before any art existed. Every one of
+ * the seventeen committed tints sits at L14-48 for exactly this reason. So the ground
+ * tones joined that family and §6's bone-gold and near-white stayed on `wall` /
+ * `wallSide` / `accent`, which is where the light actually is. The bands still progress —
+ * warm, then cooling, then cold — and the progression that reads is the *gap*: graded
+ * floor-to-wall widens with every band, so the climb gets harsher rather than prettier.
  *
  * Pure data. Nothing here imports from the simulation.
  */
@@ -62,8 +80,10 @@ const LOWER_TOWER: BiomeStyle = {
   tileset: "tiles.tower-lower",
   monsterSet: "tower",
   // Art guide §6: bone-gold `#d8cfa8` base, `#8a7d54` shadow, `#f4ecc9` highlight,
-  // `#fde047` divine light. The floor is the shadow tone so the walls read as lit.
-  tint: "#8a7d54", floorAlt: "#95875c", wall: "#d8cfa8", wallSide: "#6b6142",
+  // `#fde047` divine light. The floor is the shadow tone so the walls read as lit —
+  // and now that a sheet exists, the shadow is a real shadow — see the header on why
+  // the three ground tones came down when the sheets landed.
+  tint: "#42310f", floorAlt: "#4e3b18", wall: "#d8cfa8", wallSide: "#6b6142",
   accent: "#fde047",
   props: ["torch", "rock"],
   layouts: ["open", "pillars", "chambers"],
@@ -83,8 +103,9 @@ const MID_TOWER: BiomeStyle = {
   name: "The Seamless Halls",
   tileset: "tiles.tower-mid",
   monsterSet: "tower",
-  // §6: bleaching toward white, gold hard-edged.
-  tint: "#a89f7e", floorAlt: "#b4ab88", wall: "#f4ecc9", wallSide: "#8a7d54",
+  // §6: bleaching toward white, gold hard-edged — on the wall, which is the lit surface.
+  // The ground cools as the warmth drains out of the climb.
+  tint: "#2f2b1f", floorAlt: "#39352a", wall: "#f4ecc9", wallSide: "#8a7d54",
   accent: "#fde047",
   props: ["torch", "crystal"],
   layouts: ["pillars", "ring", "chambers", "gauntlet"],
@@ -104,8 +125,9 @@ const UPPER_HEAVEN: BiomeStyle = {
   name: "The Blinding Heights",
   tileset: "tiles.tower-upper",
   monsterSet: "tower",
-  // §6: near-white, `#fde047` as a blinding hazard rather than a highlight.
-  tint: "#cfc9b0", floorAlt: "#d9d3ba", wall: "#f8f4e4", wallSide: "#a8a288",
+  // §6: near-white, `#fde047` as a blinding hazard rather than a highlight. Coldest
+  // ground of the three, against the brightest wall — the widest gap in the game.
+  tint: "#232630", floorAlt: "#2c303c", wall: "#f8f4e4", wallSide: "#a8a288",
   accent: "#fde047",
   props: ["crystal", "torch"],
   layouts: ["ring", "pillars", "gauntlet", "open"],

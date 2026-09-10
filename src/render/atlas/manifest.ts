@@ -534,6 +534,18 @@ export const TILESETS: Record<string, AtlasTileset> = {
   // §17.7's "author to the Citadel palette" recipe, at the same DECK_TINT (`#3d3a47`)
   // the painted scene and the flat bake both use, so all three rungs read as one hall.
   "tiles.citadel": { id: "tiles.citadel", w: 64, h: 64, tile: 16 },
+
+  // The Tower (§6) — the ascent toward Heaven. **The wall is the lit surface here**, which
+  // is a per-biome call §17.7 says to make deliberately: Heaven's light comes off the
+  // architecture and is pointed at you, so the perfect repeating masonry glares and the
+  // ground stays the dark thing you are a deviation moving across. It is also the only
+  // direction that survives §4 of `docs/art-manifest.md` — a bespoke celestial roster
+  // would be *brighter* than the borrowed Hell one it draws today, which narrows a bright
+  // floor's window and never a dark one's. The bands escalate on the floor rather than the
+  // wall: the glare barely moves, the ground goes out from under you.
+  "tiles.tower-lower": { id: "tiles.tower-lower", w: 64, h: 64, tile: 16 }, // Lower Tower — warm gilded cathedral, dark warm slabs
+  "tiles.tower-mid":   { id: "tiles.tower-mid",   w: 64, h: 64, tile: 16 }, // Seamless Halls — bleached repeating blocks, jointless cold ground
+  "tiles.tower-upper": { id: "tiles.tower-upper", w: 64, h: 64, tile: 16 }, // Blinding Heights — near-white glare over unlit black
 };
 
 export const SCENES: Record<string, AtlasScene> = {
