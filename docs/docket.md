@@ -569,6 +569,14 @@ injection passes *because* the extraction made that direction impossible.
 Recall keeps `data-index` deliberately: its rows are rarity tiers, where click-to-fire is
 the intent. The brief below is kept for context.
 
+**Follow-on, same day: `forget` got the two-press gate too.** It was flagged as a design
+call rather than folded into the fix, and the ruling was yes. The reasoning is that this
+item exists because a stray click destroyed something, so leaving one button that consumes
+a Memory on a single unconfirmed press answers the report halfway — and now that the strip
+is one control, it cost a field and a helper. `TownUI.disarm()` clears `forgetArmed` and
+`salvageArmed` together, so a navigation site cannot drop one gate and forget the other.
+Red is a colour, not a confirmation.
+
 Found while fixing §15, and unlike §9 this one **is** actionable: it is the same defect the
 owner already reported, in two screens they have not happened to click yet.
 

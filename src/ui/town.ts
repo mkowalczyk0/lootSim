@@ -426,6 +426,25 @@ export class TownUI {
    * affix, disarms it — same "you have to mean it right now" rule as `resetArmed`.
    */
   private salvageArmed: string | null = null;
+  /**
+   * The same gate for the Altar's `forget`, which destroys a Memory outright and returns
+   * Ash — the one op on that bench with nothing to undo it. Holds the armed Memory's id;
+   * a second confirm on the same id runs it.
+   *
+   * Docket §18 exists because a stray click destroyed something, so shipping the
+   * select/execute split while leaving one button that consumes a Memory on a single
+   * unconfirmed press answers the report halfway. **Red is a colour, not a confirmation.**
+   */
+  private forgetArmed: string | null = null;
+  /**
+   * Both arms at once. Salvaging what you're wearing and forgetting a Memory are the same
+   * rule — "you have to mean it right now" — so every navigation site drops both rather
+   * than each one remembering which gates happen to exist today.
+   */
+  private disarm(): void {
+    this.salvageArmed = null;
+    this.forgetArmed = null;
+  }
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
   /**
@@ -503,7 +522,7 @@ export class TownUI {
         this.tab = tabEl.dataset.tab as Tab;
         this.cursor = 0;
         this.resetArmed = false;
-        this.salvageArmed = null;
+        this.disarm();
         this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
@@ -560,12 +579,14 @@ export class TownUI {
       if (altarModeEl) {
         this.altarMode = altarModeEl.dataset.altarMode as AltarMode;
         this.cursor = 0;
+        this.disarm();
         this.render();
         return;
       }
       const altarOpEl = target.closest<HTMLElement>("[data-altar-op]");
       if (altarOpEl) {
         this.altarOp = altarOpEl.dataset.altarOp as MemoryOp;
+        this.disarm();
         this.render();
         return;
       }
@@ -573,7 +594,7 @@ export class TownUI {
       if (forgeModeEl) {
         this.forgeMode = forgeModeEl.dataset.forgeMode as ForgeMode;
         this.cursor = 0;
-        this.salvageArmed = null;
+        this.disarm();
         this.workbenchFocus = false;
         this.render();
         return;
@@ -581,7 +602,7 @@ export class TownUI {
       const opEl = target.closest<HTMLElement>("[data-forge-op]");
       if (opEl) {
         this.forgeOp = opEl.dataset.forgeOp as ForgeOp;
-        this.salvageArmed = null;
+        this.disarm();
         this.render();
         return;
       }
@@ -595,6 +616,8 @@ export class TownUI {
       const altarItemEl = target.closest<HTMLElement>("[data-altar-item]");
       if (altarItemEl) {
         this.cursor = Number(altarItemEl.dataset.altarItem);
+        // A different card cannot inherit the last one's armed forget.
+        this.disarm();
         this.render();
         return;
       }
@@ -608,7 +631,7 @@ export class TownUI {
       if (forgeItemEl) {
         this.cursor = Number(forgeItemEl.dataset.forgeItem);
         // A different card cannot inherit the last one's armed salvage.
-        this.salvageArmed = null;
+        this.disarm();
         this.workbenchFocus = false;
         this.render();
         return;
@@ -757,7 +780,7 @@ export class TownUI {
     }
     this.cursor = 0;
     this.resetArmed = false;
-    this.salvageArmed = null;
+    this.disarm();
     this.workbenchFocus = false;
     this.stashSelected.clear();
     this.massSalvageArmed = false;
@@ -834,7 +857,7 @@ export class TownUI {
       this.forgeMode = FORGE_MODES[(FORGE_MODES.indexOf(this.forgeMode) + step + FORGE_MODES.length) % FORGE_MODES.length]!;
       this.cursor = 0;
       this.resetArmed = false;
-      this.salvageArmed = null;
+      this.disarm();
       this.workbenchFocus = false;
       dirty = true;
     }
@@ -842,6 +865,7 @@ export class TownUI {
       const step = input.wasPressed("tabNext") ? 1 : -1;
       this.altarMode = ALTAR_MODES[(ALTAR_MODES.indexOf(this.altarMode) + step + ALTAR_MODES.length) % ALTAR_MODES.length]!;
       this.cursor = 0;
+      this.disarm();
       dirty = true;
     }
     if (input.wasPressed("tabNext")) {
@@ -850,7 +874,7 @@ export class TownUI {
         this.tab = CYCLE_TABS[(i + 1) % CYCLE_TABS.length]!;
         this.cursor = 0;
         this.resetArmed = false;
-        this.salvageArmed = null;
+        this.disarm();
         this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
@@ -863,7 +887,7 @@ export class TownUI {
         this.tab = CYCLE_TABS[(i - 1 + CYCLE_TABS.length) % CYCLE_TABS.length]!;
         this.cursor = 0;
         this.resetArmed = false;
-        this.salvageArmed = null;
+        this.disarm();
         this.workbenchFocus = false;
         this.stashSelected.clear();
         this.massSalvageArmed = false;
@@ -888,7 +912,7 @@ export class TownUI {
           : this.tab === "Skills" ? this.navSkills(dx, dy)
           : reforgeGrid ? this.navReforge(dx, dy)
           : this.navHero(dx, dy);
-        if (moved) { this.resetArmed = false; this.salvageArmed = null; dirty = true; }
+        if (moved) { this.resetArmed = false; this.disarm(); dirty = true; }
       };
       if (input.wasPressedOrRepeated("up")) walk(0, -1);
       if (input.wasPressedOrRepeated("down")) walk(0, 1);
@@ -918,6 +942,7 @@ export class TownUI {
           this.cursor = (this.cursor + 1) % count;
         }
         this.resetArmed = false;
+        this.disarm();
         dirty = true;
       }
       if (input.wasPressedOrRepeated("up") && count > 0) {
@@ -929,6 +954,7 @@ export class TownUI {
           this.cursor = (this.cursor - 1 + count) % count;
         }
         this.resetArmed = false;
+        this.disarm();
         dirty = true;
       }
       if (input.wasPressed("left")) dirty = this.adjust(-1) || dirty;
@@ -1307,7 +1333,7 @@ export class TownUI {
     const next = groups[col]!.ops[row]!;
     if (next === this.forgeOp) return false;
     this.forgeOp = next;
-    this.salvageArmed = null;
+    this.disarm();
     return true;
   }
 
@@ -1641,6 +1667,18 @@ export class TownUI {
           break;
         }
         if (this.altarMode === "workbench") {
+          // Forgetting destroys the Memory outright, so the first press only arms it and
+          // a second on the same one runs it — the gate salvaging what you're wearing
+          // already has. Docket §18 was raised because a stray click destroyed something;
+          // a single unconfirmed press on a red button answers that halfway.
+          if (this.altarOp === "forget" && this.forgetArmed !== memory.id) {
+            this.forgetArmed = memory.id;
+            this.notify(
+              `That destroys the ${rarityLabel(memory.rarity)} Memory of ${memory.placeId}. `
+              + "Confirm again to forget it.", "#ef4444");
+            break;
+          }
+          this.forgetArmed = null;
           const before = memory.rarity;
           const next = this.state.applyMemoryOp(memory.id, this.altarOp);
           if (!next) {
@@ -2121,13 +2159,14 @@ export class TownUI {
     if (this.tab === "Altar" && this.altarMode === "workbench") {
       const i = MEMORY_OPS.indexOf(this.altarOp);
       this.altarOp = MEMORY_OPS[(i + 1) % MEMORY_OPS.length]!;
+      this.disarm();
       this.render();
       return;
     }
     if (this.tab === "Craft" && this.forgeMode === "reforge") {
       const i = FORGE_OPS.indexOf(this.forgeOp);
       this.forgeOp = FORGE_OPS[(i + 1) % FORGE_OPS.length]!;
-      this.salvageArmed = null;
+      this.disarm();
       this.render();
       return;
     }
@@ -3217,7 +3256,8 @@ export class TownUI {
    * The Vault and the workbench ask different questions of the same Memory, so the button
    * says which: in the Vault it opens a portal (a plan, spending nothing until you walk
    * into it), on the workbench it runs the selected op — and `forget`, which destroys the
-   * Memory for Ash, is the one that turns the button red.
+   * Memory for Ash, is the one that turns the button red *and* takes two presses, the
+   * same gate salvaging what you're wearing has. Red is a colour, not a confirmation.
    */
   private renderAltarActions(memory: MemoryInstance): string {
     if (this.altarMode !== "workbench") {
@@ -3230,8 +3270,11 @@ export class TownUI {
       });
     }
     const info = MEMORY_OP_INFO[this.altarOp];
+    const armed = this.forgetArmed === memory.id;
+    const arming = this.altarOp === "forget" && !armed;
     return this.renderActionBar({
-      label: info.label,
+      label: this.altarOp !== "forget" ? info.label
+        : arming ? `${info.label} it — it does not come back?` : `${info.label} it anyway`,
       target: `<span style="color:${RARITY_COLORS[memory.rarity]}">${rarityLabel(memory.rarity)} Memory of ${
         escapeHtml(memory.placeId)}</span>`,
       // One copy of the refusal rules, on `GameState` beside the op that enforces them.

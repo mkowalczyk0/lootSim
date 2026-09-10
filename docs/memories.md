@@ -468,6 +468,18 @@ the Forge. Executing is the action strip below the list: `TownUI.renderActionBar
 control the Forge uses, not a copy of it. The Recall screen deliberately keeps `data-index`
 — its rows are rarity tiers, and there click-to-fire is the whole intent.
 
+**`Forget` takes two presses**, the same gate salvaging what you're wearing already had.
+Everything else on the bench rolls; `forget` destroys the Memory and hands back Ash, and
+nothing undoes it. The first confirm arms it (`TownUI.forgetArmed`, holding the Memory's
+id) and says what it would destroy; a second confirm on the same Memory runs it. Any
+navigation drops the arm — changing screen, op or selection, walking the list, or leaving
+the tab — through `TownUI.disarm()`, which clears this and `salvageArmed` together so a
+site doesn't have to remember which gates exist. **Red is a colour, not a confirmation**:
+docket §18 was raised because a stray click destroyed something, and shipping the
+select/execute split while leaving one button that consumes a Memory on a single
+unconfirmed press answers that report halfway. This is a design call the owner made, not
+part of the original §18 fix.
+
 `GameState.memoryOpBlocker` says why an op can't run, and the strip greys itself out from
 it. It was **extracted rather than reimplemented in the UI**: `applyMemoryOp` consults it as
 its first act, so the button and the op refuse for identical reasons by construction.
