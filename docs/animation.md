@@ -59,7 +59,9 @@ default 256-entry palette fails for that reason (its unused entries are zeros); 
 image with the palette trimmed to the colours actually used goes through. Padding after
 `IEND` does not help. The script does the conversion, asserts pixel-exactness, and refuses
 rather than silently sending altered art. It is still occasionally rejected — retry, it is
-intermittent.
+intermittent (the same payload that failed once went through unchanged on a retry).
+**Do not hand-roll a smaller encoding to dodge that** — "Step 2 is not advice" below is
+what it cost: 26% of the sprite silently deleted, past an assertion written to catch it.
 
 **3. Generate with `animate_image`, `no_background: true`.** Passing `false` flattens a
 transparent sprite onto **white**. `animate_character`/`animate_object` are not options here:
@@ -100,8 +102,12 @@ do not need this; loop-shaped motion is what an idle wants.
 (`idle=<dir> cast=<dir>`), because the tags share one strip and therefore one trim — trimming
 per tag is invisible until the boss starts casting, and then the body jumps. `:drop=<i>`
 removes the penultimate-frame retreat — expect it, it reproduced on four of five
-pinned runs (see "The penultimate frame backs off, systematically"). It prints the `ATLAS` row including
-the `worldScale` that keeps the world footprint fixed.
+pinned runs (see "The penultimate frame backs off, systematically"). It prints the `ATLAS` row, and when the frame
+height moves it prints `worldScale` **unchanged** plus a re-derived `feet`, with the
+reasoning inline — the two traps in "Headroom is cheap" now live in the script rather
+than in whoever remembers this document. It also bottom-anchors frames of differing
+height, padding the short ones at the top, so a tag generated on a taller canvas can
+share a strip with an idle that was not.
 
 **6. `npm test`.** The gate checks the strip is `w * cols` wide, the tags name frames that
 exist, the frame rects tile the strip, and — for an animated monster or boss — that the hot
@@ -351,6 +357,112 @@ Two things you MUST do, and the second is a live trap:
 
 So "the blow needs to reach" costs a re-export, a manifest `h` and a re-derived `feet`. It is
 not the expensive change it was first described as.
+
+### The padded release: what the headroom actually bought
+
+`boss.war-queen` is the first sprite with a padded canvas — `h` 108 -> 131 against a
+108px character — and the first with a release that goes somewhere instead of walking
+back down the wind-up. Read this before padding a second boss, because most of it is
+about what did NOT work.
+
+**Name the thing honestly: the shipped tag is a rise-and-open, not a blow.** She uncoils
+upward, throws her arms out, the plume comes up, and she settles square. For a boss whose
+whole kit is `crescendo`/`volley`/`starLance`/`meteor` — things that arrive from the sky
+rather than things she swings — a commanding gesture is the right release. It is still not
+the punch the word "strike" implies, and nobody should read the tag name as a promise.
+
+**The canvas was never the limit.** Padding works: the generator does reach into
+transparent headroom, up to 17 of 24px. What it spends the room on is set entirely by the
+prompt, and the two outcomes are very different:
+
+    prompt                                          pad used   result
+    "torso leaning back, arms outward"                 11px    ON-MODEL, but the room went
+                                                               to the PLUME standing up
+    "both fists above the helmet, elbows straight"     17px    real overhead arms, and
+                                                               OFF-MODEL: forearms read as
+                                                               detached tubes, plume shrunk
+                                                               to a nub, lion face flattened
+
+So the limit is the sprite's detail budget, not the frame. A big limb extension on a
+98x108 sprite this detailed comes back as tubes. **A real blow for this boss needs a
+hand-authored pose**, and that is an art task rather than a generation.
+
+**A pinned segment can overshoot BOTH its endpoints, and this document said it could
+not.** The claim above — "interpolation between two endpoints can only produce poses
+BETWEEN them" — is true of the *pose* and false of a *feature's scale*. The impact->rest
+segment is pinned at both ends, lands on rest to 2 silhouette pixels, and descends
+monotonically; and its middle frames grow the plume far taller than either endpoint,
+right to the top of the canvas. That overshoot, not the pose, is why the trim came out at
+`h` 131 instead of the ~116 the raised arms actually needed. Budget padding for what the
+generator will do between your keyframes, not just for the keyframes.
+
+Worth recording on its own: that segment had **no penultimate-frame retreat** — the first
+pinned run in this repo that lands clean, against four of five before it. Distance to the
+pinned ending ran 33.4 30.1 25.0 16.6 10.1 7.6 0.0. So the retreat is common, not
+inevitable, and `:drop=` should be applied after measuring rather than by reflex.
+
+### Step 2 is not advice: what going around `pixellab-upload.py` costs
+
+**Four generations were spent animating a sprite with a quarter of its pixels missing,
+and the assertion that was supposed to prevent exactly that passed.**
+
+The upload payload for a padded frame is ~5,050 base64 chars and one call had been
+rejected as truncated, so the encoding was hand-rolled smaller: quantize to 64 colours,
+mark the transparent corner's palette index as the transparency index. It was checked —
+every opaque pixel's RGB compared equal to the original, and the check passed.
+
+It was blind. The sprite's outline, its black wings and its cape are near-black, they
+quantized onto the *same palette index* as the transparent corner, and **1,490 of 5,732
+opaque pixels — 26% — silently became transparent.** The assertion compared the colour of
+pixels that were still opaque and never asked whether a pixel had *stopped* being one.
+
+> **An assertion about pixel colour is not an assertion about pixel presence.** That is
+> the transferable half, and it belongs with the saturating pixel count and the
+> straightness metric in this document's collection of instruments that ran, passed, and
+> measured the wrong quantity. Whenever a check compares two images, ask what it does when
+> a pixel is *absent* from one of them, because that is usually the failure being checked
+> for and it is usually the case the comparison skips.
+
+`art/pixellab-upload.py` gets this right and is now verified in both directions — 0 opaque
+pixels lost, 0 transparent pixels gained, 0 recoloured. Use it. The truncation it warns
+about is intermittent: the same size that failed once went through on a retry.
+
+**The free canary that would have caught it in one line.** `animate_image` returns index 0
+as your input **byte-identical** — confirmed on three separate clean runs. So after any
+run, `assert frames[0] == input`. On the damaged runs frame 0 came back with 8,696 pixels
+and 1,328 silhouette pixels different, which is what a corrupted upload looks like from
+the outside. That signal was initially misread here as "the generator re-renders its
+input"; it does not, and a one-line check turns the whole failure mode into an immediate,
+loud error instead of four wasted generations and a wrong conclusion about the tool.
+
+### The 1-generation pose route, and why it still does not work here
+
+This document names `create_character_state` as the paid alternative for a posed variant,
+at 20-40 generations. There is a **1-generation** route it does not mention, and the
+reason to write it down is that it is cheap enough to try and fails for a reason worth
+knowing.
+
+All four raid bosses exist as PixelLab characters (8dir, 112x112), and
+`animate_character(template_animation_id=..., directions=["south"])` costs **1 generation
+per direction**. The templates include real keyframed strikes — `cross-punch`,
+`surprise-uppercut`, `throw-object`, `fireball` — which is exactly the "third authored
+pose" a blow needs, and keyframes are not interpolation so they contain the extension past
+the apex by construction.
+
+The committed sprite really is that character: `boss.war-queen`'s idle is the south
+rotation cropped to its content box (7,2,105,110) = 98x108, differing only by 47
+silhouette pixels of finish pass.
+
+**And the template output is still unusable, because it is a whole-character re-render.**
+`throw-object` came back 83-90px wide against the idle's 98, with different wings, a
+different cape and shifting feet — and its own frame 0 already differs from the rotation
+it started from, which is the tell. Splicing one of those frames into the committed strip
+would pop. Two generations, and the answer is no.
+
+`pro` mode (20-40/direction) is not the fix either, and this is arithmetic rather than
+taste: its stated advantage is *cross-direction reference*, and a single-direction job has
+no completed sides to reference, so the mechanism that would make it better is inactive.
+It would be another re-render at twenty times the price.
 
 ## The manifest tables
 
@@ -628,12 +740,23 @@ its *shape* can still contain a perfectly good single pose** — the shipped Fer
 is pinned to `art/anim/raw/ferryman-cast/f6.png`, the peak frame of one of the three
 rejections above. It is in-style, the right size, on the right canvas, and free.
 
+There is also a **1-generation** template route, and a reason it does not work here —
+see "The 1-generation pose route, and why it still does not work here".
+
 `create_character_state` is the paid alternative — all four raid bosses exist as PixelLab
 characters (112x112, 8 directions), so a posed variant can be generated properly. It costs
 **20-40 generations** and returns the character on its own canvas, which then has to be
 re-fitted to the sprite's; reach for it only when no rejected frame will do.
 
 ### A wind-up may not extend the silhouette
+
+> **BOUNDED 2026-09-10, not repealed.** All of this holds for a canvas the character
+> fills, which is every sprite here except `boss.war-queen`. Pad the canvas and the
+> generator *will* use the room — 17 of 24px, measured. What it will not do is put a
+> convincing limb there: see "The padded release: what the headroom actually bought".
+> The paragraph below about `worldScale` shrinking the character is also wrong as
+> written, and "Headroom is cheap" corrects it — you keep `worldScale` and re-derive
+> `feet`.
 
 The boss sprites already fill their canvas edge to edge — measured, `boss.ferryman`'s alpha
 bounding box is the full 75x107. So a pose that reaches beyond the envelope (a pole raised
