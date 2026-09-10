@@ -2877,15 +2877,54 @@ console.log("\n=== hero portraits (§12 — one size, either composer) ===");
     heroAt.dy + opaqueBottom(heroPng) === heroAt.h - 1,
     `hero ends at y${heroAt.dy + opaqueBottom(heroPng)} of ${heroAt.h - 1}`);
 
-  // 2. Nothing the stage holds is clipped by it. The stage's headroom is not slack — a
-  //    migrated witch hat uses almost all of it — so an oversized new layer would be
-  //    silently cropped rather than fail.
+  // 2. Nothing the stage holds is clipped by it.
+  //
+  //    **This one is nearly vacuous and is kept only for its vertical half.** `heroStage`
+  //    derives the stage's WIDTH from the widest cosmetic (`w = max(hero + margins,
+  //    widest layer)`), so no layer can ever be too wide for it — the bound grows to fit
+  //    whatever it is handed. Injecting 400px-wide wings onto a 16px hero passes this
+  //    check. Its height half is real, because the stage's height comes from the layers'
+  //    `dy` offsets rather than their `h`. That asymmetry is why check 2b below exists,
+  //    and it is worth stating plainly: **a bound derived from the thing it bounds is not
+  //    a bound.**
   const clipped = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
     const at = cosmeticStageXY(c, heroMeta.w, heroMeta.h);
     return at.dx < 0 || at.dy < 0 || at.dx + c.w > heroAt.w || at.dy + c.h > heroAt.h;
   });
   check("every migrated cosmetic fits inside the hero stage", clipped.length === 0,
     clipped.map(([k]) => k).join(", "));
+
+  // 2b. Every layer is proportionate **to the hero**, which is the comparison check 2
+  //     only looks like it makes. The hero is the fixed thing here; the stage is not.
+  //
+  //     This is the check that was missing when hero A (16x41) replaced the v4 hero
+  //     (39x57) and the whole wardrobe stayed authored for the old body — the witch hat
+  //     ended up 2.44x the hero's width and the angel wings 4.31x, and `npm test` stayed
+  //     green the entire time.
+  //
+  //     The two limits are different on purpose, because the pieces hang off different
+  //     landmarks: a head-anchored layer (hat, ears, glasses) sits on a head that is
+  //     narrower than the shoulders, so it may only just overhang the silhouette; a
+  //     feet-anchored one (cape, wings) is *meant* to spread past it. Both numbers are
+  //     the ratios the v4 wardrobe held against its own hero, which is the last time
+  //     these read correctly — not limits invented here.
+  //     One more guard, because a filter over an empty table passes: this check must have
+  //     actually looked at something. `ATLAS_COSMETICS` is a half-migrated table that
+  //     grows as the wardrobe lands, so "every layer is in scale" would go quietly true
+  //     if the table were ever emptied or renamed out from under it — the zero-iteration
+  //     shape that has now bitten this repo more than once.
+  check("the scale check has layers to check", Object.keys(ATLAS_COSMETICS).length > 0,
+    `${Object.keys(ATLAS_COSMETICS).length} migrated layers`);
+  const HEAD_LAYER_MAX_W = 1.25, BACK_LAYER_MAX_W = 2.0;
+  const outOfScale = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
+    const limit = c.anchor === "head" ? HEAD_LAYER_MAX_W : BACK_LAYER_MAX_W;
+    return c.w > heroMeta.w * limit || c.h > heroMeta.h;
+  });
+  check("every migrated cosmetic is in scale with the hero it hangs on",
+    outOfScale.length === 0,
+    outOfScale.map(([k, c]) => `${k} ${(c.w / heroMeta.w).toFixed(2)}x wide`).join(", ") ||
+      Object.entries(ATLAS_COSMETICS)
+        .map(([k, c]) => `${k} ${(c.w / heroMeta.w).toFixed(2)}x`).join(", "));
   const wrongSize = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
     const png = decodePng(readFileSync(`src/render/atlas/cosmetics/${c.id}.png`));
     return png.width !== c.w || png.height !== c.h;

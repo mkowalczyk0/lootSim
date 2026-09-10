@@ -18,22 +18,40 @@
  * `.raw.png` / `.trim.png` files next to this script are those superseded generations,
  * kept as history; they are **not** what ships any more.
  *
+ * ## Author against the HERO, never against a stage
+ *
+ * Every piece used to be drawn in absolute coordinates on a fixed 79x81 stage, with the
+ * v4 hero's head hardcoded at rows 24+ and x31-47. When hero A (16x41) replaced v4
+ * (39x57) the numbers stayed, and the whole wardrobe silently stayed sized for a body
+ * that no longer existed — the witch hat ended up **2.44x the hero's width**, the angel
+ * wings **4.31x**, and `npm test` stayed green throughout (see the stage-fit note in
+ * `tools/smoke.ts`).
+ *
+ * So the geometry below is **measured off `hero.legend-base.png` at run time** — head
+ * top, skull span, eye row, shoulder span, body length — and every piece is expressed in
+ * those terms. Change the hero and re-run this script: the wardrobe follows him. Nothing
+ * here may hardcode a stage dimension, because the stage is derived from these layers
+ * and a number that flows both ways is how the last body-swap went unnoticed.
+ *
+ * The emitted `dx`/`dy` are **anchored, not absolute**: `dx` is an offset from the
+ * hero's centre and `dy` is measured from the head top (`anchor: "head"`) or from the
+ * ground under his feet (`anchor: "feet"`), matching `cosmeticStageXY` in the manifest.
+ *
  * ## The three rules this pass had to learn the hard way
  *
- * 1. **Author in stage space.** Every piece is drawn onto the full
- *    `HERO_STAGE_W`x`HERO_STAGE_H` canvas where it belongs on the hero and only then
- *    trimmed, so the trim offset *is* `dx`/`dy`. Placement stops being a guess.
- * 2. **Measure the head.** The hero's eye band is his rows 9-11 => stage y 34. Estimating
- *    it put the first pass's glasses and visor on his forehead.
+ * 1. **Author relative to a measured landmark**, never to a canvas coordinate.
+ * 2. **Measure the head.** The eye row is found by scanning the PNG, not estimated —
+ *    estimating it put an earlier pass's glasses and visor on his forehead.
  * 3. **Read `data/cosmetics.ts` before drawing.** A piece can only show structure in
  *    colours its own `Cosmetic.colors` actually distinguish — see `backAngel` (three
  *    near-whites, so its feathers are separated in ink) and `earsCat` (near-black
  *    `colors[0]`, invisible against his hair, so the pink carries the shape).
  *
  * Rerun `npm test` after any edit: the hero-portrait block in `tools/smoke.ts` checks the
- * sizes, the stage fit and that nothing is clipped.
+ * sizes, that every layer is proportionate to the hero, and that nothing is clipped.
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { decodePng } from "../../tools/png";
 import { deflateSync } from "node:zlib";
 
 type Key = "." | "O" | "1" | "2" | "3";
@@ -41,18 +59,31 @@ type Key = "." | "O" | "1" | "2" | "3";
 class Grid {
   readonly cells: Key[];
   constructor(readonly w: number, readonly h: number) { this.cells = new Array(w * h).fill("."); }
-  get(x: number, y: number): Key { return x < 0 || y < 0 || x >= this.w || y >= this.h ? "." : this.cells[y * this.w + x]!; }
-  set(x: number, y: number, k: Key) { if (x >= 0 && y >= 0 && x < this.w && y < this.h) this.cells[y * this.w + x] = k; }
+  get(x: number, y: number): Key {
+    const px = Math.round(x), py = Math.round(y);
+    return px < 0 || py < 0 || px >= this.w || py >= this.h ? "." : this.cells[py * this.w + px]!;
+  }
+  /**
+   * Snaps to the pixel lattice. Builders express geometry in fractions of a measured
+   * landmark, so vertices are routinely non-integer; without this the loops below step
+   * 46.4, 47.4, ... and every write lands on a non-integer array index, which JavaScript
+   * accepts silently and which draws nothing at all.
+   */
+  set(x: number, y: number, k: Key) {
+    const px = Math.round(x), py = Math.round(y);
+    if (px >= 0 && py >= 0 && px < this.w && py < this.h) this.cells[py * this.w + px] = k;
+  }
   /** Set only if the cell isn't ink — interior detail never overwrites an outline. */
   detail(x: number, y: number, k: Key) { if (this.get(x, y) !== "O" && this.get(x, y) !== ".") this.set(x, y, k); }
 
   rect(x0: number, y0: number, x1: number, y1: number, k: Key) {
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) this.set(x, y, k);
+    for (let y = Math.round(y0); y <= Math.round(y1); y++)
+      for (let x = Math.round(x0); x <= Math.round(x1); x++) this.set(x, y, k);
   }
   /** Filled triangle through three points. */
   tri(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, k: Key) {
-    const minx = Math.min(ax, bx, cx), maxx = Math.max(ax, bx, cx);
-    const miny = Math.min(ay, by, cy), maxy = Math.max(ay, by, cy);
+    const minx = Math.floor(Math.min(ax, bx, cx)), maxx = Math.ceil(Math.max(ax, bx, cx));
+    const miny = Math.floor(Math.min(ay, by, cy)), maxy = Math.ceil(Math.max(ay, by, cy));
     const s = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
       (px - rx) * (qy - ry) - (qx - rx) * (py - ry);
     for (let y = miny; y <= maxy; y++) for (let x = minx; x <= maxx; x++) {
@@ -63,7 +94,8 @@ class Grid {
   }
   /** Filled ellipse with centre (cx,cy) and radii (rx,ry). */
   ell(cx: number, cy: number, rx: number, ry: number, k: Key) {
-    for (let y = Math.ceil(cy - ry); y <= cy + ry; y++) for (let x = Math.ceil(cx - rx); x <= cx + rx; x++) {
+    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
       const dx = (x - cx) / rx, dy = (y - cy) / ry;
       if (dx * dx + dy * dy <= 1.0) this.set(x, y, k);
     }
@@ -114,32 +146,113 @@ function toRgba(g: Grid): Uint8Array {
   return out;
 }
 
-const W = 79, H = 81, CX = 39, HEAD_TOP = 24, HEAD_L = 31, HEAD_R = 47;
+/**
+ * The hero, measured. Every landmark below is read off the shipped PNG rather than
+ * written down, so a hero swap moves the whole wardrobe instead of stranding it.
+ */
+function measureHero() {
+  const png = decodePng(readFileSync("src/render/atlas/characters/hero.legend-base.png"));
+  const d = new Uint8Array(png.data);
+  const opaque = (x: number, y: number) => d[(y * png.width + x) * 4 + 3]! > 8;
+  const lum = (x: number, y: number) => {
+    const i = (y * png.width + x) * 4;
+    return 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+  };
+  const bounds = (y: number) => {
+    let l = -1, r = -1;
+    for (let x = 0; x < png.width; x++) if (opaque(x, y)) { if (l < 0) l = x; r = x; }
+    return { l, r, w: l < 0 ? 0 : r - l + 1 };
+  };
+  const rows = Array.from({ length: png.height }, (_, y) => bounds(y));
+
+  // The neck is the narrowest row in the top third — the head sits above it.
+  const upper = rows.slice(0, Math.floor(png.height / 3) + 2);
+  let neckY = 0, neckW = Infinity;
+  upper.forEach((r, y) => { if (y > 2 && r.w > 0 && r.w <= neckW) { neckW = r.w; neckY = y; } });
+
+  // The eye row: within the head, the row whose skin band is most interrupted by dark
+  // pixels. Scanning beats estimating — see rule 2.
+  let eyeY = 0, best = -1;
+  for (let y = 3; y < neckY; y++) {
+    const { l, r } = rows[y]!;
+    if (l < 0) continue;
+    let dark = 0, lit = 0;
+    for (let x = l + 1; x < r; x++) (lum(x, y) < 60 ? dark++ : lit++);
+    const score = lit > 0 ? dark * lit : 0;
+    if (score > best) { best = score; eyeY = y; }
+  }
+
+  const widestRow = Math.max(...rows.map((r) => r.w));
+  const shoulderY = rows.findIndex((r, y) => y > neckY && r.w === widestRow);
+  const headW = Math.max(...rows.slice(0, neckY + 1).map((r) => r.w));
+  const skull = rows[Math.max(0, Math.floor(neckY / 2))]!;
+  return {
+    w: png.width, h: png.height,
+    neckY, eyeY, shoulderY, headW, widestRow,
+    skullL: skull.l, skullR: skull.r,
+    eyeL: rows[eyeY]!.l, eyeR: rows[eyeY]!.r,
+  };
+}
+
+const HERO = measureHero();
+
+/**
+ * The work canvas. Generous margin on every side; the hero is centred horizontally and
+ * placed far enough down that a tall hat has room. Nothing is trimmed against these
+ * numbers — they exist only so a piece can be drawn, and the trim decides the real size.
+ */
+const W = 96, H = 128;
+/** Hero placement on the work canvas. */
+const HX = Math.round(W / 2 - HERO.w / 2), HY = 44;
+/** Landmarks, in work-canvas coordinates. */
+const CX = HX + HERO.w / 2;                    // hero centre
+const HEAD_TOP = HY;                           // top of the head
+const SKULL_L = HX + HERO.skullL, SKULL_R = HX + HERO.skullR;
+const EYE_Y = HY + HERO.eyeY;                  // the eye row
+const SHOULDER_L = HX, SHOULDER_R = HX + HERO.w - 1;
+const FEET = HY + HERO.h;                      // one row past his feet — the ground
+const BODY_LEN = HERO.h - HERO.neckY;          // neck to feet
+/** Half-widths the pieces are scaled against. */
+const HEAD_HW = HERO.headW / 2;                // hats/ears/glasses read against the head
+const BODY_HW = HERO.widestRow / 2;            // capes/wings read against the silhouette
 
 const build: Record<string, () => Grid> = {
-  // Gold crown: five points on a banded rim, one red stone. Rim overlaps the top of the
-  // head by four rows so it sits *on* him rather than floating above.
+  // Gold crown: five points on a banded rim, one red stone. The rim overlaps the top of
+  // the head so it sits *on* him rather than floating above. Scaled to the head.
   "cosmetic.hat-crown": () => {
     const g = new Grid(W, H);
-    const pts: Array<[number, number]> = [[31, 17], [35, 15], [39, 12], [43, 15], [47, 17]];
-    for (const [x, tip] of pts) g.tri(x, tip, x - 4, 24, x + 4, 24, "1");
-    g.rect(29, 21, 49, 27, "1");
+    const rimW = Math.round(HEAD_HW * 0.92);       // sits on the skull, not past it
+    const rimTop = HEAD_TOP + 1, rimBot = HEAD_TOP + 4;
+    const rise = Math.round(HEAD_HW * 0.85);       // how far the centre point rises
+    const pts: Array<[number, number]> = [
+      [CX - rimW, rimTop - Math.round(rise * 0.45)],
+      [CX - rimW * 0.5, rimTop - Math.round(rise * 0.72)],
+      [CX, rimTop - rise],
+      [CX + rimW * 0.5, rimTop - Math.round(rise * 0.72)],
+      [CX + rimW, rimTop - Math.round(rise * 0.45)],
+    ];
+    for (const [x, tip] of pts) g.tri(x, tip, x - 2.2, rimTop + 1, x + 2.2, rimTop + 1, "1");
+    g.rect(CX - rimW - 1, rimTop, CX + rimW + 1, rimBot, "1");
     g.outline();
-    g.rect(30, 25, 48, 26, "2");           // banded shadow under the rim
-    for (const [x] of pts) g.detail(x, 20, "2");
-    g.ell(CX, 23, 2.2, 2.2, "3");          // the stone
+    g.rect(CX - rimW, rimBot - 1, CX + rimW, rimBot - 1, "2");   // banded shadow
+    g.ell(CX, rimTop + 2, 1.2, 1.2, "3");                        // the stone
     return g;
   },
 
-  // Pointed witch hat: floppy brim resting on the head, cone leaning back-left, gold band.
+  // Pointed witch hat: a floppy brim resting on the head and a cone leaning back-left.
+  // The brim reads against the SILHOUETTE, not the head — a witch brim is meant to
+  // overhang the shoulders, and scaling it off the head made it a flying saucer.
   "cosmetic.hat-witch": () => {
     const g = new Grid(W, H);
-    g.tri(30, 25, 48, 25, 26, 2, "1");     // the cone, tip leaning left
-    g.ell(CX, 25, 19, 4.2, "1");           // the brim
+    const brimHW = Math.round(BODY_HW * 1.05);
+    const brimY = HEAD_TOP + 2;
+    const tip = HEAD_TOP - Math.round(HERO.h * 0.33);
+    g.tri(CX - brimHW * 0.55, brimY, CX + brimHW * 0.55, brimY, CX - brimHW * 0.5, tip, "1");
+    g.ell(CX, brimY, brimHW, Math.max(1.6, brimHW * 0.22), "1");
     g.outline();
-    g.rect(31, 19, 47, 22, "3");           // the band
-    g.ell(CX, 26, 17, 2.4, "2");           // brim underside shadow
-    for (let y = 4; y < 19; y++) g.detail(Math.round(30 - (19 - y) * 0.28) + 3, y, "2");
+    const bandY = HEAD_TOP - 1;
+    g.rect(CX - brimHW * 0.5, bandY - 1, CX + brimHW * 0.42, bandY, "3");   // the band
+    g.ell(CX, brimY + 1, brimHW - 1.5, 1.1, "2");                           // underside
     return g;
   },
 
@@ -150,71 +263,89 @@ const build: Record<string, () => Grid> = {
   // and the dark is only a rim inside the ink outline.
   "cosmetic.ears-cat": () => {
     const g = new Grid(W, H);
-    g.tri(31, 30, 40, 30, 34, 18, "1");
-    g.tri(47, 30, 38, 30, 44, 18, "1");
+    const rise = Math.round(HEAD_HW * 0.95);
+    const base = HEAD_TOP + 3;
+    const ear = (dir: number) => {
+      const outer = CX + dir * HEAD_HW, inner = CX + dir * HEAD_HW * 0.22;
+      g.tri(outer, base, inner, base, CX + dir * HEAD_HW * 0.68, base - rise, "1");
+    };
+    ear(-1); ear(1);
     g.outline();
-    g.tri(32, 29, 39, 29, 34, 19, "2");
-    g.tri(46, 29, 39, 29, 44, 19, "2");
+    for (const dir of [-1, 1]) {
+      const outer = CX + dir * (HEAD_HW - 1), inner = CX + dir * HEAD_HW * 0.45;
+      g.tri(outer, base - 1, inner, base - 1, CX + dir * HEAD_HW * 0.68, base - rise + 1, "2");
+    }
     return g;
   },
 
   // Small horns — small is the point (the item is literally "Small Horns"): thick at the
-  // base and rooted several rows into the hair so they read as growing out of the skull,
+  // base and rooted a few rows into the hair so they read as growing out of the skull,
   // tapering as they curve up and out.
   "cosmetic.ears-horn": () => {
     const g = new Grid(W, H);
-    const horn = (sx: number, dir: number) => {
-      const pts: Array<[number, number, number]> = [
-        [sx, 33, 4], [sx, 30, 3.6], [sx + dir * 1, 28, 3],
-        [sx + dir * 2.5, 26, 2.3], [sx + dir * 4, 24.5, 1.5],
+    const base = HEAD_TOP + 4, rise = Math.round(HEAD_HW * 0.8);
+    const horn = (dir: number) => {
+      const sx = CX + dir * HEAD_HW * 0.55;
+      const steps: Array<[number, number, number]> = [
+        [sx, base, 1.9], [sx + dir * 0.4, base - rise * 0.35, 1.6],
+        [sx + dir * 1.1, base - rise * 0.65, 1.2], [sx + dir * 2.0, base - rise, 0.8],
       ];
-      for (const [x, y, r] of pts) g.ell(x, y, r, r, "1");
+      for (const [x, y, r] of steps) g.ell(x, y, r, r, "1");
     };
-    horn(34, -1); horn(44, 1);
+    horn(-1); horn(1);
     g.outline();
-    g.ell(34, 31, 2.2, 2.2, "2"); g.ell(44, 31, 2.2, 2.2, "2");
-    g.ell(30, 24.5, 0.9, 0.9, "3"); g.ell(48, 24.5, 0.9, 0.9, "3");
+    for (const dir of [-1, 1]) {
+      g.ell(CX + dir * HEAD_HW * 0.55, base - 1, 1, 1, "2");
+      g.ell(CX + dir * (HEAD_HW * 0.55 + 2.0), base - rise, 0.6, 0.6, "3");
+    }
     return g;
   },
 
-  // Round spectacles centred on the eye band (hero rows 9-11 => stage y 34). The frame is
-  // colors[1] and wants to be two cells thick or it vanishes against a dark head.
+  // Round spectacles centred on the measured eye row. The frame is colors[1] and wants
+  // to be two cells thick or it vanishes against a dark head.
   "cosmetic.face-glasses": () => {
     const g = new Grid(W, H);
-    g.ell(35, 34, 4.4, 3.8, "2"); g.ell(43, 34, 4.4, 3.8, "2");
-    g.rect(38, 34, 40, 34, "2");
-    g.rect(29, 33, 31, 34, "2"); g.rect(47, 33, 49, 34, "2");
+    // Sit the lenses on his actual eyes rather than on a guessed separation.
+    const sep = Math.max(2, Math.round(HERO.headW * 0.19));
+    const lx = CX - sep, rx = CX + sep, r = Math.max(1.4, sep * 0.9);
+    g.ell(lx, EYE_Y, r, r * 0.85, "2"); g.ell(rx, EYE_Y, r, r * 0.85, "2");
+    g.rect(lx + 1, EYE_Y, rx - 1, EYE_Y, "2");                    // the bridge
+    g.rect(CX - HEAD_HW, EYE_Y - 1, lx - 1, EYE_Y - 1, "2");      // arms
+    g.rect(rx + 1, EYE_Y - 1, CX + HEAD_HW, EYE_Y - 1, "2");
     g.outline();
-    g.ell(35, 34, 2, 1.6, "1"); g.ell(43, 34, 2, 1.6, "1");
-    g.detail(34, 33, "3"); g.detail(42, 33, "3");
+    g.ell(lx, EYE_Y, r - 1.1, r * 0.85 - 0.9, "1");
+    g.ell(rx, EYE_Y, r - 1.1, r * 0.85 - 0.9, "1");
+    g.detail(lx - 1, EYE_Y - 1, "3"); g.detail(rx - 1, EYE_Y - 1, "3");
     return g;
   },
 
-  // A visor band across the eye row: dark shell, one lit strip, one hard glint.
+  // A visor band across the measured eye row: dark shell, one lit strip, one hard glint.
   "cosmetic.face-visor": () => {
     const g = new Grid(W, H);
-    g.ell(CX, 34, 10, 3.4, "1");
-    g.rect(30, 32, 48, 35, "1");
+    const hw = Math.round(HEAD_HW * 0.95);
+    g.ell(CX, EYE_Y, hw, 1.6, "1");
+    g.rect(CX - hw + 1, EYE_Y - 1, CX + hw - 1, EYE_Y + 1, "1");
     g.outline();
-    g.rect(31, 33, 47, 34, "1");
-    g.rect(31, 35, 47, 35, "2");
-    g.line(33, 33, 37, 33, "3");
+    g.rect(CX - hw + 2, EYE_Y, CX + hw - 2, EYE_Y, "1");
+    g.rect(CX - hw + 2, EYE_Y + 1, CX + hw - 2, EYE_Y + 1, "2");
+    g.line(CX - hw + 2, EYE_Y - 1, CX - hw + 4, EYE_Y - 1, "3");
     return g;
   },
 
   // Cape: it hangs *behind* the hero, so every row of it has to be wider than he is or
-  // it simply is not there — he runs x22..56 at the shoulders and x20..58 at the hips.
-  // A collar at the neck, then a steady flare past both. Vertical folds in colors[1] stop
-  // it reading as one flat sheet.
+  // it simply is not there. A collar at the neck, then a steady flare past his widest
+  // row. Vertical folds in colors[1] stop it reading as one flat sheet.
   "cosmetic.back-cape": () => {
     const g = new Grid(W, H);
-    g.tri(26, 37, 52, 37, 10, 75, "1");
-    g.tri(52, 37, 68, 75, 10, 75, "1");
-    g.rect(26, 37, 52, 42, "1");
-    g.ell(CX, 38, 12, 3, "1");            // the collar
+    const top = HY + HERO.neckY;                    // hangs from the neck
+    const hem = FEET - Math.round(BODY_LEN * 0.10); // stops just above the ground
+    const shoulderHW = BODY_HW + 1.5, hemHW = BODY_HW * 1.55;
+    g.tri(CX - shoulderHW, top, CX + shoulderHW, top, CX - hemHW, hem, "1");
+    g.tri(CX + shoulderHW, top, CX + hemHW, hem, CX - hemHW, hem, "1");
+    g.ell(CX, top + 1, shoulderHW * 0.75, 1.6, "1");   // the collar
     g.outline();
-    for (const [x0, x1] of [[-15, -23], [-7, -11], [7, 11], [15, 23]] as const)
-      g.line(CX + x0, 46, CX + x1, 73, "2");
+    for (const f of [-0.62, -0.24, 0.24, 0.62])
+      g.line(CX + f * shoulderHW, top + 4, CX + f * hemHW * 1.12, hem - 1, "2");
     return g;
   },
 
@@ -224,18 +355,24 @@ const build: Record<string, () => Grid> = {
   // #ffffff), so any structure drawn in a marker colour would be invisible.
   "cosmetic.back-wings-angel": () => {
     const g = new Grid(W, H);
+    const top = HY + HERO.neckY + 1;               // rise from the shoulders, not below them
+    const span = BODY_HW * 1.32, drop = Math.round(BODY_LEN * 0.8);
     const wing = (dir: number) => {
-      const bx = CX + dir * 4;
-      g.tri(bx, 38, bx + dir * 30, 30, bx + dir * 13, 70, "1");
-      g.ell(bx + dir * 14, 44, 14, 11, "1");
+      const bx = CX + dir * BODY_HW * 0.45;
+      g.tri(bx, top, bx + dir * span, top - Math.round(drop * 0.28), bx + dir * span * 0.55, top + drop, "1");
+      g.ell(bx + dir * span * 0.5, top + drop * 0.3, span * 0.52, drop * 0.42, "1");
     };
     wing(-1); wing(1);
-    g.rect(32, 36, 46, 56, ".");           // keep the hero's own back clear
+    // Keep the hero's own spine clear so the wings read as being behind him — but only
+    // the centre of it. Clearing his full shoulder span (v4 cleared ~38% of its hero's
+    // width) cut both sweeps back to slivers.
+    g.rect(CX - BODY_HW * 0.38, top, CX + BODY_HW * 0.38, FEET, ".");
     g.outline();
     for (const dir of [-1, 1]) {
-      const bx = CX + dir * 4;
-      for (const [i, len] of [[0, 24], [1, 21], [2, 17], [3, 13]] as const)
-        g.line(bx + dir * 7, 40 + i * 6, bx + dir * len, 45 + i * 6, "O");
+      const bx = CX + dir * BODY_HW * 0.45;
+      for (const [i, len] of [[0, 0.95], [1, 0.8], [2, 0.6], [3, 0.4]] as const)
+        g.line(bx + dir * BODY_HW * 0.5, top + 2 + i * Math.round(drop * 0.2),
+               bx + dir * span * len, top + 5 + i * Math.round(drop * 0.2), "O");
     }
     return g;
   },
@@ -260,11 +397,40 @@ function png(w: number, h: number, rgba: Uint8Array): Buffer {
   return Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
+/**
+ * Which landmark each piece hangs from, matching `AtlasCosmetic.anchor`. A hat, ears and
+ * glasses follow the **head**; a cape and wings reach the ground, so they follow the
+ * **feet**. `Record<...>` on the build keys, so a new piece cannot be added without
+ * saying where it hangs.
+ */
+const ANCHOR: Record<keyof typeof build, "head" | "feet"> = {
+  "cosmetic.hat-crown": "head",
+  "cosmetic.hat-witch": "head",
+  "cosmetic.ears-cat": "head",
+  "cosmetic.ears-horn": "head",
+  "cosmetic.face-glasses": "head",
+  "cosmetic.face-visor": "head",
+  "cosmetic.back-cape": "feet",
+  "cosmetic.back-wings-angel": "feet",
+};
+
 const OUT = process.argv[2]!;
 const rows: string[] = [];
+console.log(
+  `hero ${HERO.w}x${HERO.h} — head ${HERO.headW} wide over rows 0-${HERO.neckY}, ` +
+  `eye row ${HERO.eyeY}, shoulders ${HERO.widestRow} wide from row ${HERO.shoulderY}, ` +
+  `body length ${BODY_LEN}\n`);
 for (const [id, make] of Object.entries(build)) {
   const { grid, dx, dy } = make().trimmed();
   writeFileSync(`${OUT}/${id}.png`, png(grid.w, grid.h, toRgba(grid)));
-  rows.push(`${id}: w ${grid.w}, h ${grid.h}, dx ${dx}, dy ${dy}`);
+  const anchor = ANCHOR[id]!;
+  // Anchored, not absolute — see the header. `dx` is measured from the hero's centre and
+  // `dy` from the head top or from the ground, exactly as `cosmeticStageXY` reads them.
+  const adx = dx - Math.round(W / 2 - grid.w / 2);
+  const ady = anchor === "head" ? dy - HY : dy - FEET;
+  rows.push(
+    `  ${id.replace("cosmetic.", "").padEnd(17)} w: ${String(grid.w).padStart(2)}, ` +
+    `h: ${String(grid.h).padStart(2)}, dx: ${adx}, dy: ${ady}, anchor: "${anchor}"` +
+    `   (${(grid.w / HERO.w).toFixed(2)}x hero width)`);
 }
 console.log(rows.join("\n"));

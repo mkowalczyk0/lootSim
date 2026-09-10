@@ -869,19 +869,19 @@ export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
   //
   // Every `dx` is 0 because every layer is centred on the hero. That is worth seeing: the
   // horizontal half of this was never carrying information, only a stage width.
-  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 0, dy: -22, anchor: "head" },
+  hatWitch: { id: "cosmetic.hat-witch", w: 17, h: 19, dx: 0, dy: -14, anchor: "head" },
   // Shared by hatCrown (legendary) and hatUnspoken (divine, same grid in pixels.ts too).
-  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 0, dy: -12, anchor: "head" },
-  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 0, dy: -6, anchor: "head" },
-  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 0, dy: -1, anchor: "head" },
-  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 0, dy: 7, anchor: "head" },
-  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 0, dy: 7, anchor: "head" },
+  hatCrown: { id: "cosmetic.hat-crown", w: 17, h: 10, dx: 0, dy: -5, anchor: "head" },
+  earsCat: { id: "cosmetic.ears-cat", w: 15, h: 7, dx: 0, dy: -3, anchor: "head" },
+  earsHorn: { id: "cosmetic.ears-horn", w: 13, h: 8, dx: 0, dy: -2, anchor: "head" },
+  faceGlasses: { id: "cosmetic.face-glasses", w: 15, h: 5, dx: 0, dy: 7, anchor: "head" },
+  faceVisor: { id: "cosmetic.face-visor", w: 15, h: 3, dx: 0, dy: 8, anchor: "head" },
   // Back items hang off the body and reach the ground, so they are anchored to the stage
   // floor: the hem stays on the ground for any hero. **This is the least-wrong of the two
   // anchors, not a fix** — a cape is authored at one body's LENGTH (41px for a 57px hero),
   // so on a materially shorter hero it will still read wrong however it is anchored, and
   // that wants the cosmetic rework the owner has parked rather than a number nudged here.
-  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 0, dy: -46, anchor: "feet" },
+  cape: { id: "cosmetic.back-cape", w: 25, h: 26, dx: 0, dy: -28, anchor: "feet" },
   // `Cosmetic.art` id for backAngel.
-  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 0, dy: -51, anchor: "feet" },
+  wingsAngel: { id: "cosmetic.back-wings-angel", w: 29, h: 26, dx: 0, dy: -32, anchor: "feet" },
 };

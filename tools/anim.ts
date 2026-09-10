@@ -273,22 +273,44 @@ console.log("\nheroes — a class's own sprite, then the base, then the bake\n")
     v4.w === 79 && v4.h === 81 && v4.dx === 20 && v4.dy === 24,
     `${v4.w}x${v4.h} at ${v4.dx},${v4.dy} — want 79x81 at 20,24`);
 
-  // The rewrite from absolute stage rows to anchor-relative ones must move NOTHING for the
-  // hero that is actually shipped. Asserted as a comparison against the numbers that were
-  // in the file before, rather than trusted — the pairs below are the shipped values.
-  const SHIPPED: Record<string, [number, number]> = {
-    hatWitch: [20, 2], hatCrown: [27, 12], earsCat: [31, 18], earsHorn: [29, 23],
-    faceGlasses: [29, 31], faceVisor: [29, 31], cape: [10, 35], wingsAngel: [5, 30],
-  };
-  let moved = "";
+  // What the anchors are FOR: a layer's offset from the landmark it hangs on must not
+  // depend on how tall the hero is. This replaces a pin that replayed the v4-era absolute
+  // positions against a 39x57 hero to prove the absolute->anchored rewrite was neutral.
+  // That pin has outlived its subject twice over — the v4 hero is gone, and the layers
+  // themselves have since been re-authored for the 16x41 hero — so it was asserting that
+  // today's art lands where a dead body's art used to. This asserts the mechanism instead,
+  // which is the part that can still regress.
+  let drifted = "";
   for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
-    const want = SHIPPED[k];
-    if (!want) { moved ||= `${k} has no shipped pair to compare against`; continue; }
-    const got = cosmeticStageXY(c, 39, 57);
-    if (got.dx !== want[0] || got.dy !== want[1]) moved ||= `${k}: ${got.dx},${got.dy} != ${want[0]},${want[1]}`;
+    for (const h of [24, 41, 57, 87]) {
+      const stage = heroStage(16, h);
+      const got = cosmeticStageXY(c, 16, h);
+      // head: measured down from the top of the head. feet: measured up from the ground.
+      const offset = c.anchor === "head" ? got.dy - stage.dy : got.dy - stage.h;
+      if (offset !== c.dy) { drifted ||= `${k} at hero height ${h}: offset ${offset} != ${c.dy}`; break; }
+    }
   }
-  check("anchoring reproduces every shipped cosmetic position exactly for the 39x57 hero",
-    moved === "", moved);
+  check("a layer's offset from its anchor is the same at every hero height",
+    drifted === "", drifted);
+
+  // And the anchors point at the right landmarks on the hero actually shipped: a hat sits
+  // on the head rather than in the air above it, and a cape reaches the ground.
+  let misplaced = "";
+  for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
+    const got = cosmeticStageXY(c, heroMeta.w, heroMeta.h);
+    const headBottom = at.dy + Math.round(heroMeta.h * 0.35);   // generous head band
+    if (c.anchor === "head" && got.dy + c.h < at.dy)
+      misplaced ||= `${k} floats entirely above the head`;
+    if (c.anchor === "head" && got.dy > headBottom)
+      misplaced ||= `${k} hangs below the head band`;
+    if (c.anchor === "feet" && got.dy + c.h < at.dy + Math.round(heroMeta.h * 0.5))
+      misplaced ||= `${k} never reaches the lower half of the body`;
+  }
+  check("every layer lands on the landmark it claims to hang from", misplaced === "", misplaced);
+  // Both loops above are filters over `ATLAS_COSMETICS`, so both would pass an empty
+  // table. Say out loud how many layers they actually walked.
+  check("the anchor checks had layers to walk", Object.keys(ATLAS_COSMETICS).length > 0,
+    `${Object.keys(ATLAS_COSMETICS).length} migrated layers`);
 
   // And it degrades rather than breaking for a hero of a different height: head-anchored
   // layers follow the head, feet-anchored ones do not move, and nothing lands off-canvas
