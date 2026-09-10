@@ -49,7 +49,7 @@ import {
   weeklySeed, weeklyUnlocked, type WeeklyModifierId,
 } from "../src/data/weekly";
 import { PLANETS, nextFloorConfig, planetConfig, planetUnlocked } from "../src/data/planets";
-import { towerConfig } from "../src/data/tower";
+import { TOWER_BIOMES, towerConfig } from "../src/data/tower";
 import { CombatStats } from "../src/game/combatStats";
 import { DELVE_BOTTOM, LEGENDS, legendName } from "../src/data/legends";
 import { MINION_CAP_PER_OWNER } from "../src/data/minions";
@@ -78,7 +78,7 @@ import {
 import { BIOMES, type BiomeStyle } from "../src/data/biomes";
 import { ELEMENT_COLORS } from "../src/data/elements";
 import { decodePng } from "./png";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
 import { MOD_COUNTS } from "../src/data/items";
@@ -2971,9 +2971,21 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
   const MIN_DELTA = 28;   // floor vs. wall mean luminance, after the grade
   const MAX_MEAN = 150;   // nothing brighter than the deck's flagstone
   const MAX_SPREAD = 14;  // internal texture, after the grade
+  /**
+   * Every biome that can put a floor on screen — and the Tower is in it.
+   *
+   * This list used to be `BIOMES` + the Reliquary sectors, which meant both gates below
+   * were structurally blind to `TOWER_BIOMES`: the contrast check fell through to its
+   * "no owner found" branch and graded Heaven's sheets under all six *Delve* tints (a
+   * combination that never happens in the game), and the infusion check skipped the
+   * Tower outright because it only walked the same two lists. A gate that runs and
+   * cannot see the thing under test returns a plausible number instead of an error —
+   * the blind-instrument failure in CLAUDE.md — so the Tower's sheets are wired into
+   * both here, in the one list, rather than either gate growing its own third source.
+   */
+  const ALL_BIOMES: BiomeStyle[] = [...BIOMES, ...PLANETS.map((p) => p.biome), ...TOWER_BIOMES];
   const tintsFor = (id: string): string[] => {
-    const tints = BIOMES.filter((b) => b.tileset === id).map((b) => b.tint);
-    for (const p of PLANETS) if (p.biome.tileset === id) tints.push(p.biome.tint);
+    const tints = ALL_BIOMES.filter((b) => b.tileset === id).map((b) => b.tint);
     // The Abyss overrides the biome tileset but keeps the depth biome's tint —
     // so it has to hold up under every Delve tint.
     if (tints.length === 0) tints.push(...BIOMES.map((b) => b.tint));
@@ -3081,7 +3093,7 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
 
   let worstMonsterDelta = Infinity;
   const collisions = new Map<string, string[]>(); // sector name -> detail lines
-  const ownerBiomes: BiomeStyle[] = [...BIOMES, ...PLANETS.map((p) => p.biome)];
+  const ownerBiomes: BiomeStyle[] = ALL_BIOMES;
   for (const id of Object.keys(TILESETS)) {
     const owners = ownerBiomes.filter((b) => b.tileset === id && b.element && b.element !== "physical");
     if (owners.length === 0) continue;
@@ -3095,7 +3107,26 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
       const [er, eg, eb] = hexToRgb(ELEMENT_COLORS[biome.element]);
       const set = biome.monsterSet ? MONSTER_SETS[biome.monsterSet] : undefined;
       if (!set) continue;
-      for (const [role, spriteId] of Object.entries(set)) {
+      for (const role of Object.keys(set)) {
+        /**
+         * The sprite this archetype *actually draws here*, following `monsterSprite`'s
+         * own ladder (`render/sprites.ts`): the realm set's entry when its PNG is
+         * committed, otherwise the global `SPRITE_OVERRIDES` one.
+         *
+         * This used to stop on the first rung and `continue` past a missing file, which
+         * made the check silently vacuous for exactly the realm that needs it most — one
+         * that has *named* a roster it hasn't drawn. `MONSTER_SETS.tower` names five
+         * celestial ids with no PNGs behind them, so every role was skipped and the
+         * Tower's floors passed by measuring nothing. What stands on a Tower floor today
+         * is the Hell roster washed holy, and that is what the floor has to stay
+         * separable from — the fallback is not a detail of the gate, it is the picture.
+         */
+        const spriteId = (() => {
+          const named = set[role];
+          if (named && existsSync(`src/render/atlas/${named.startsWith("boss.") ? "bosses" : "monsters"}/${named}.png`)) return named;
+          return SPRITE_OVERRIDES[role];
+        })();
+        if (!spriteId) continue;
         const dirFor = spriteId.startsWith("boss.") ? "bosses" : "monsters";
         let mpng;
         try { mpng = decodePng(readFileSync(`src/render/atlas/${dirFor}/${spriteId}.png`)); } catch { continue; }

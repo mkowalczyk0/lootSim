@@ -44,12 +44,22 @@ import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
 import { RARITY_WASH } from "../src/render/itemart";
 import { ATLAS, TILESETS } from "../src/render/atlas/manifest";
 import { BIOMES } from "../src/data/biomes";
+import { TOWER_BIOMES } from "../src/data/tower";
 import { PLANETS } from "../src/data/planets";
 import { FLOOR_GRADE, gradeSheet } from "../src/render/grade";
 import { decodePng, washPng, type DecodedPng } from "./pngdecode";
 
 const W = 1180;
-const H = 4200;
+/**
+ * Tall enough for everything, with the check that says so.
+ *
+ * `set()` clips silently, so a sheet that outgrows this number does not error — it just
+ * stops drawing, and the newest rows (the ones somebody is looking at the sheet *for*)
+ * are the ones that vanish. Three Tower tilesets pushed the last two rows off the bottom
+ * exactly this way. Raised, and the cursor is asserted against it at the end rather than
+ * trusted.
+ */
+const H = 4800;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -320,10 +330,12 @@ strip(
   const DECK_TINT = "#3d3a47"; // src/render/hub.ts's own DECK_TINT — see comment above
   const tintFor = (id: string): string => {
     if (id === "tiles.citadel") return DECK_TINT;
-    const biome = BIOMES.find((b) => b.tileset === id);
-    if (biome) return biome.tint;
-    for (const p of PLANETS) if (p.biome.tileset === id) return p.biome.tint;
-    return BIOMES[0]!.tint;
+    // Every biome that owns a sheet, the Tower included — the contact sheet has to
+    // stamp a floor under the tint the game actually grades it with, or it is showing
+    // a room that never happens (the same blindness `tools/smoke.ts` had here).
+    const biome = [...BIOMES, ...PLANETS.map((p) => p.biome), ...TOWER_BIOMES]
+      .find((b) => b.tileset === id);
+    return biome ? biome.tint : BIOMES[0]!.tint;
   };
 
   /** The dual-grid stamp, ported from `paintTilemap` onto a flat RGBA buffer. Returns a
@@ -420,3 +432,8 @@ writeFileSync(out, Buffer.concat([
   chunk("IEND", Buffer.alloc(0)),
 ]));
 console.log(`wrote ${out} (${W}x${H})`);
+if (y > H) {
+  console.error(`\nart-sheet overflowed: content ran to y=${y}, canvas is ${H}. Raise H — everything past the edge was silently clipped.`);
+  process.exit(1);
+}
+console.log(`  content ends at y=${y}, ${H - y}px of headroom`);
