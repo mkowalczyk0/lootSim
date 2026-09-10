@@ -6,6 +6,30 @@
  * running the same build don't have to be the same character. That separation is what
  * lets the capsules be generous: nothing you pull out of one can make a floor easier.
  *
+ * ## And a cosmetic may never lie about a simulation quantity
+ *
+ * The rule above is about the character *sheet*, and `tools/smoke.ts` enforces it there —
+ * a fully-dressed character has a byte-identical sheet to an undressed one. It does not by
+ * itself forbid the more dangerous thing, which has no number in it at all:
+ *
+ * > **A cosmetic must never change what the player believes a simulation value is.**
+ *
+ * The live example, and the reason this is written down. A weapon skin looks like it could
+ * be one object worn over any weapon — it is only a picture, and the draw path does not
+ * check. But a weapon's `reach` (30 to 130) and `arc` (0.07pi to 2pi) belong to its
+ * **family**, `render/draw.ts` rotates the sprite along the swing that actually resolved,
+ * and each weapon's `worldScale` in the atlas manifest was tuned so the drawn weapon spans
+ * roughly the reach its hitbox has. So a whip-shaped skin worn over claws would draw ~45
+ * world units of weapon in front of a 34-unit hitbox, and a ring-shaped chakram thrust
+ * along a whip's 0.08pi line would not be a stylish whip, it would be a broken picture.
+ *
+ * That is worse than a cosmetic granting a stat, not better. A stat is at least legible in
+ * the compare panel; this is invisible, and it is wrong in the exact place the game asks
+ * for skill — reading distance and dashing. Hence **a weapon skin is authored per weapon
+ * family** (`ATLAS_WEAPON_SKINS` in `render/atlas/manifest.ts`), never worn across
+ * families. The next person to look at this will reach for family-agnostic skins because
+ * it looks like plumbing; it is not, it is this rule.
+ *
  * The economy is deliberately its own thing too. Cosmetics are bought with **gems**,
  * which drop in the dungeon and are spent nowhere else — coins buy power, gems buy
  * personality, and the two never convert into each other. Duplicates come back as gems
@@ -21,8 +45,9 @@ import { RARITIES, type Rarity } from "./rarity";
 
 /**
  * Where a cosmetic goes. Five of these are pixels layered onto the character; `aura` is
- * particles that follow you around, and `weapon` is a palette painted over whatever
- * weapon your hands happen to be holding.
+ * particles that follow you around, and `weapon` is a skin for one weapon **family** —
+ * see the "may never lie" rule in the file header for why it cannot be worn across
+ * families, and `WeaponPalette` below for what it used to be.
  */
 export const COSMETIC_SLOTS = ["hat", "ears", "face", "back", "aura", "weapon"] as const;
 export type CosmeticSlot = (typeof COSMETIC_SLOTS)[number];

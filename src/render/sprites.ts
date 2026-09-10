@@ -17,7 +17,8 @@ import { CHESTS, type ChestTier } from "../data/chests";
 import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
 import {
-  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
+  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, ATLAS_WEAPON_SKINS,
+  COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
   cosmeticStageXY, heroStage,
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
@@ -520,18 +521,21 @@ export function heroKey(appearance: Appearance): string {
 
 // --- weapons --------------------------------------------------------------
 
-const weaponCache = new Map<string, HTMLCanvasElement>();
+const weaponDrawCache = new Map<string, WeaponDraw>();
 
 /** The weapon in your hand, skinned by cosmetic if you have one and by rarity if not. */
-export function weaponSprite(
-  family: WeaponFamily,
-  skinId: string | null,
-  rarity: Rarity | null,
-): HTMLCanvasElement {
-  const key = `${family}|${skinId ?? "-"}|${rarity ?? "-"}`;
-  const hit = weaponCache.get(key);
-  if (hit) return hit;
+/** How a weapon wants to be drawn: the picture, its grip pixel and its world scale. */
+export interface WeaponDraw {
+  readonly canvas: HTMLCanvasElement;
+  readonly gripX: number;
+  readonly gripY: number;
+  /** null = the procedural bake, where the caller's own `WEAPON_SCALE` applies. */
+  readonly worldScale: number | null;
+}
 
+function resolveWeaponDraw(
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+): WeaponDraw {
   // Pipeline weapon: the authored PNG, tinted toward the rarity colour so a mythic axe
   // still glows before anyone reads the word.
   //
@@ -540,49 +544,82 @@ export function weaponSprite(
   // skinned mythic reads as *starforged* in the hand, not as mythic, because cosmetics are
   // pure vanity and vanity is never overruled by power. Rarity stays legible everywhere it
   // is actually read — the stash card, the compare panel, the loot banner and the paper
-  // doll all go through `itemSprite`, which is untouched by this. It looks like a bug from
-  // inside this function, so: it is not, and re-composing the two would reverse a decision
-  // the owner made with the trade-off in front of them.
+  // doll all go through `itemSprite`, which is untouched by this.
   //
-  // The fall-through below is the *unmigrated* case: a skin is still a palette over the
-  // procedural grid, which is why a skinned weapon currently draws far worse art than an
-  // unskinned one. That is a live defect with a design answer already chosen — a skin
-  // becomes its own authored weapon — and not something to paper over by tinting here.
+  // A skin draws only when it has authored art for the family actually being **held** (the
+  // "may never lie" rule in `data/cosmetics.ts`). When it has none, the ordinary authored
+  // weapon draws — not the procedural bake. That is what lets skins ship one weapon at a
+  // time, and it ends a live defect: a skin used to force the bake, so equipping a mythic
+  // cosmetic made your weapon look markedly *worse* than wearing none. An undrawn skin is
+  // now inert rather than destructive.
+  const skinArt = skinId ? ATLAS_WEAPON_SKINS[skinId] : undefined;
+  if (skinArt && skinArt.family === family) {
+    const png = atlasCanvas(skinArt.id);
+    if (png) return { canvas: png, gripX: skinArt.gripX, gripY: skinArt.gripY, worldScale: skinArt.worldScale };
+  }
+
   const aw = ATLAS_WEAPONS[family];
-  if (aw && !skinId) {
+  if (aw) {
     const png = atlasCanvas(aw.id);
     if (png) {
-      const made = rarity
+      const canvas = rarity
         ? tintedCanvas(png, `atlasWeapon:${family}`, RARITY_COLORS[rarity], ATLAS_WEAPON_WASH)
         : png;
-      weaponCache.set(key, made);
-      return made;
+      return { canvas, gripX: aw.gripX, gripY: aw.gripY, worldScale: aw.worldScale };
     }
   }
 
+  // The procedural bake, and the only rung where a skin is still a palette rather than art.
   const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
   const skin = skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
-  const made = bake(art.grid, weaponPalette(skin ?? rarityWeaponPalette(rarity)));
-  if (weaponCache.size > 128) weaponCache.clear();
-  weaponCache.set(key, made);
-  return made;
-}
-
-/** Where the grip sits inside a weapon sprite, so it can be rotated around the hand. */
-export function weaponGrip(family: WeaponFamily): { x: number; y: number } {
-  const aw = ATLAS_WEAPONS[family];
-  if (aw && atlasCanvas(aw.id)) return { x: aw.gripX, y: aw.gripY };
-  const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
-  return { x: art.ax, y: art.ay };
+  return {
+    canvas: bake(art.grid, weaponPalette(skin ?? rarityWeaponPalette(rarity))),
+    gripX: art.ax, gripY: art.ay, worldScale: null,
+  };
 }
 
 /**
- * World units per art pixel for a pipeline weapon, or null if `family` is still on the
+ * Everything about how a weapon is drawn, resolved **once**.
+ *
+ * The canvas, the grip it rotates around and its world scale all belong to the same rung
+ * of the ladder above, so they are returned together. They used to be three separate
+ * lookups keyed on `family` alone (`weaponSprite` / `weaponGrip` / `weaponWorldScale`),
+ * which meant only the first of them knew a skin was equipped — so the first authored skin
+ * would have been drawn with its own picture at the *family's* size, pivoting around the
+ * *family's* grip pixel. That is the same two-decision shape that drew three raid bosses at
+ * a third of their size (`b1e3f2e`); one decision is the fix, in both places.
+ */
+export function weaponDraw(
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+): WeaponDraw {
+  const key = `${family}|${skinId ?? "-"}|${rarity ?? "-"}`;
+  const hit = weaponDrawCache.get(key);
+  if (hit) return hit;
+  const made = resolveWeaponDraw(family, skinId, rarity);
+  if (weaponDrawCache.size > 128) weaponDrawCache.clear();
+  weaponDrawCache.set(key, made);
+  return made;
+}
+
+/** Just the picture, for the surfaces that only need one (icons, the paper doll). */
+export function weaponSprite(
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+): HTMLCanvasElement {
+  return weaponDraw(family, skinId, rarity).canvas;
+}
+
+/** Where the grip sits inside a weapon sprite, so it can be rotated around the hand. */
+export function weaponGrip(family: WeaponFamily, skinId: string | null = null): { x: number; y: number } {
+  const d = weaponDraw(family, skinId, null);
+  return { x: d.gripX, y: d.gripY };
+}
+
+/**
+ * World units per art pixel for a pipeline weapon, or null when it is still on the
  * procedural grid. `render/draw.ts` uses this in place of the global `WEAPON_SCALE`.
  */
-export function weaponWorldScale(family: WeaponFamily): number | null {
-  const aw = ATLAS_WEAPONS[family];
-  return aw && atlasCanvas(aw.id) ? aw.worldScale : null;
+export function weaponWorldScale(family: WeaponFamily, skinId: string | null = null): number | null {
+  return weaponDraw(family, skinId, null).worldScale;
 }
 
 /** The bloom colour around a weapon, if it has one. Null for ordinary metal. */

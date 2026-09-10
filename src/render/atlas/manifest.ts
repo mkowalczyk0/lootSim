@@ -669,6 +669,37 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
   fists:    { id: "weapon.fists",    w: 33,  h: 38, worldScale: 0.42, gripX: 8,  gripY: 25 },
 };
 
+/**
+ * **Authored weapon skins — one row per SKIN, not per family.**
+ *
+ * A skin is its own weapon (owner ruling, Sept 2026): Starforged is a distinct object you
+ * wield, not a gold coat of paint over the sword you happen to hold. So each skin names the
+ * one `WeaponFamily` it *is*, and carries its own geometry for the same reason every entry
+ * in `ATLAS_WEAPONS` does — a differently-shaped weapon sits in the hand differently, so
+ * the grip pixel and the world scale belong to the art, not to the family it substitutes
+ * for.
+ *
+ * Expect roughly twenty-eight rows across the two tables when this is finished, and that is
+ * not a duplicate: fourteen are the ordinary weapon families, fourteen are the skins, one
+ * per family. The count looks wrong until you know that.
+ *
+ * **Why per-family at all** is the "may never lie" rule in `data/cosmetics.ts` — reach and
+ * swing arc belong to the family and the sprite is drawn along the swing that resolved, so
+ * a skin worn across families would draw a weapon that disagrees with its own hitbox.
+ *
+ * Empty on purpose right now. `weaponSprite` already resolves through it, so a skin with no
+ * row here draws the ordinary authored weapon for the family being held — the
+ * `MONSTER_SETS` precedent, where a manifest row is a statement of intent and a loaded
+ * canvas is a fact. That is what lets this ship one weapon at a time.
+ */
+export interface AtlasWeaponSkin extends AtlasWeapon {
+  /** The one family this skin is a weapon of. It draws only when that family is held. */
+  readonly family: string;
+}
+
+/** Keyed by `Cosmetic.id` (e.g. `skinStar`), not by family. */
+export const ATLAS_WEAPON_SKINS: Record<string, AtlasWeaponSkin> = {};
+
 // --- cosmetic layers (§15/§17.3, the "v2 redraw" gap) ---------------------
 
 /**

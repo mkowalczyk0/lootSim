@@ -17,7 +17,7 @@ import { gradedTileset, paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, itemSprite, resolveSprite, silhouetteCanvas,
   spriteFrame, spriteFrameSilhouette, spriteFrameTinted,
-  tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale,
+  tintedCanvas, weaponDraw, weaponGlow,
   type SpriteName,
   augmentSprite,
   relicSprite,
@@ -621,12 +621,15 @@ export class WorldRenderer {
     const item = hero.player.equipment.weapon;
     const skinId = hero.appearance.weapon;
     const rarity = item?.rarity ?? null;
-    const canvas = weaponSprite(spec.id, skinId, rarity);
-    const grip = weaponGrip(spec.id);
+    // One decision, not three. The picture, the grip it pivots around and the world scale
+    // all come off the same rung, so an authored skin can never be drawn at the underlying
+    // family's size or pivoted around the family's grip pixel.
+    const { canvas, gripX, gripY, worldScale } = weaponDraw(spec.id, skinId, rarity);
+    const grip = { x: gripX, y: gripY };
     const glow = weaponGlow(skinId, rarity);
     // A pipeline weapon is authored much larger than a legacy grid; it carries its own
     // world scale so its reach still matches the family it replaced.
-    const wscale = weaponWorldScale(spec.id) ?? WEAPON_SCALE;
+    const wscale = worldScale ?? WEAPON_SCALE;
 
     const swinging = a.swingTimer > 0;
     const t = swinging ? clamp(1 - a.swingTimer / SWING_DRAW_TIME, 0, 1) : 0;

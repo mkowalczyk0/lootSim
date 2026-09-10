@@ -17,3 +17,9 @@ tower-contact-sheet.png
 # why this went unnoticed) until this rule was scoped down.
 /data/
 inworld-sheet.png
+
+# Throwaway measurement scripts. `_scratch-ab.mjs` (a Playwright A/B harness) got swept
+# into a commit by a `git add -A` that was meant to pick up three source files — a scratch
+# file is exactly what should never be committed, and the naming convention was already
+# there to be honoured.
+_scratch-*
