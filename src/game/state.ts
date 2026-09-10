@@ -1026,8 +1026,21 @@ export class GameState {
       // Named items (UAT §28) take this pull's slot rather than riding alongside it — a
       // chest returns exactly the number of items it promised (docket §21: a 10-pull was
       // paying out 11 whenever a named item hit). A named drop outvalues the roll it
-      // displaces, so the player loses nothing real; if more than one definition hits the
-      // same pull, only the first fills the slot; the rest are simply a miss this time.
+      // displaces, so the player loses nothing real.
+      //
+      // **Only the first hit fills the slot and any others are discarded — that is a
+      // deliberate v1 decision, not a fact about the data, and this is the fork to read
+      // before changing it.** `rollTable` rolls every matching source independently, so
+      // two definitions *can* hit one pull; today they cannot, because only one named item
+      // (`keeper's-ledger`, Legendary) sources from a chest at all. Capping here keeps the
+      // count promise unconditional rather than true-by-luck-of-the-table.
+      //
+      // The alternative, if a second chest-sourced named item is ever added and silently
+      // dropping the rarer of two simultaneous hits starts to matter: accumulate hits
+      // across the whole batch into a queue and fill slots from it first, bounded by
+      // `available`. That preserves the count and discards nothing until the queue
+      // genuinely overflows a single pull. It is real machinery for a case that does not
+      // exist yet, which is why it is written down here instead of built.
       const namedHits = rollNamedDrops({ kind: "chest", tier }, this.rng);
       if (namedHits.length > 0) {
         found.push(this.forgeNamed(namedHits[0]!, ilvl));
