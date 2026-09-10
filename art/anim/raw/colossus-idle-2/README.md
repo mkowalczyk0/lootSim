@@ -16,9 +16,19 @@ the absolute measure. **That is the region where `loop-check.py`'s limit is leas
 — the constant is calibrated by the shipped set below it (max 7.6%) and candidate 1 above it
 (14.2%), and 11.8% falls in the gap where there is no evidence either way.
 
-So this one was NOT rejected on the strength of the number, and nobody should later "fix" it
-by moving the constant. It was left unshipped because a boss going from static to a real
-wind-up is a clear gain, while shipping an idle past a check written an hour earlier, on
-thin evidence, is how a bar stops meaning anything. **It wants an eye, not another
-generation.** If the owner looks at it and likes it, ship it and widen the check's evidence
-in the same commit.
+So this one was NOT rejected on the strength of the number. It was put to an eye instead.
+
+## SHIPPED 2026-09-10, on an owner override
+
+The owner reviewed the batch and said the idle looks good, so this is the idle in the strip.
+
+**The limit was not widened to let it through.** `WRAP_LIMIT` stays at 10% where the
+measurement put it, and `loop-check.py` carries a named per-sprite entry in `OWNER_APPROVED`
+instead, which prints `ALLOWED BY OWNER OVERRIDE — approved by eye, NOT by measurement`. The
+distinction is the point: someone reading this in three months has to be able to tell "we
+measured this as fine" from "a person looked at it and said ship", and the next candidate
+that lands at 11.8% gets its own eye rather than inheriting this one's verdict. The override
+also re-measures — if this art is ever regenerated and the number moves, the approval stops
+covering it and the check goes red again.
+
+The 14.2% candidate next door still fails, as it should.
