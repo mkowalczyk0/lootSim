@@ -41,6 +41,10 @@ import {
 import { RUN_MODES, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS } from "../data/planets";
 import { RAIDS } from "../data/raids";
+import {
+  shopPeriod, shopRerollCost, shopStock, SHOP_TIERS, SHOP_TIER_IDS,
+  type ShopListing, type ShopTierId,
+} from "../data/shop";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MOD_KEYS, type ModKey } from "../data/mods";
@@ -126,6 +130,18 @@ function freshRaidProgress(): Record<string, number> {
   return Object.fromEntries(RAIDS.map((r) => [r.id, 1]));
 }
 
+/** One shop tier's per-account bookkeeping for whichever period `period` names —
+ *  `GameState.shopTierState` resets this the moment the live period has moved past it. */
+export interface ShopTierState {
+  readonly period: number;
+  readonly purchasedSlots: readonly number[];
+  readonly rerollCounts: readonly number[];
+}
+function freshShopState(): Record<ShopTierId, ShopTierState> {
+  const empty: ShopTierState = { period: -1, purchasedSlots: [], rerollCounts: [] };
+  return { daily: { ...empty }, weekly: { ...empty }, monthly: { ...empty } };
+}
+
 /** One capsule opening: what came out, and what it was worth if you already had it. */
 export interface CapsulePull {
   readonly cosmetic: Cosmetic;
@@ -195,6 +211,15 @@ export class GameState {
    *  The portal stays shut for the rest of that week — one closing a week is the design,
    *  same as the Vigil's one a day. */
   weekly: { clearedWeek: number } = { clearedWeek: 0 };
+  /**
+   * The Rotating Shop (`data/shop.ts`): per tier, the last period this bookkeeping is
+   * valid for, which slots this account has bought this period, and how many times each
+   * slot has been individually rerolled this period. Read through `shopTierState`, which
+   * wipes a tier's own bookkeeping the moment its period has moved on — the stock itself
+   * is never saved, only ever derived fresh from the period number, exactly like the
+   * Vigil's floor never is.
+   */
+  shop: Record<ShopTierId, ShopTierState> = freshShopState();
   /** One per element, spent at the forge. Dropped and mined on planets, nowhere else. */
   materials: MaterialBag = emptyMaterials();
   /**
@@ -361,6 +386,12 @@ export class GameState {
     return true;
   }
 
+  spendGems(n: number): boolean {
+    if (this.gems < n) return false;
+    this.gems -= n;
+    return true;
+  }
+
   /** Potions are the other thing coins are for. Capped, so you can't buy immortality. */
   buyPotion(count = 1): boolean {
     const room = POTION_CAP - this.potions;
@@ -450,6 +481,78 @@ export class GameState {
       }
     }
     return pulls;
+  }
+
+  /**
+   * A tier's live bookkeeping, wiped the instant its period has moved past what was
+   * saved — the slate wipes at every boundary (`docs/rotating-shop.md`), so last
+   * period's purchases and rerolls never bleed into a new one. Every other shop method
+   * reads through this rather than `this.shop[tier]` directly, so the wipe can never be
+   * forgotten at a second call site.
+   */
+  private shopTierState(tier: ShopTierId): ShopTierState {
+    const now = shopPeriod(tier);
+    const live = this.shop[tier];
+    if (live.period !== now) this.shop[tier] = { period: now, purchasedSlots: [], rerollCounts: [] };
+    return this.shop[tier];
+  }
+
+  /** What a tier is currently offering, for this account, right now. */
+  shopListings(tier: ShopTierId): ShopListing[] {
+    const s = this.shopTierState(tier);
+    return shopStock(tier, s.period, s.rerollCounts);
+  }
+
+  /** Which slots (by index) this account has already bought in a tier's current
+   *  period — what a "SOLD" badge on a shop card reads off. */
+  shopPurchasedSlots(tier: ShopTierId): readonly number[] {
+    return this.shopTierState(tier).purchasedSlots;
+  }
+
+  /** Whether this account has any purchases left in a tier's current period —
+   *  independent of how many times any slot in it has been rerolled. This is the
+   *  structural half of "gems buy choice, never quantity": nothing that spends gems
+   *  ever touches this number. */
+  shopPurchasesLeft(tier: ShopTierId): number {
+    const s = this.shopTierState(tier);
+    return Math.max(0, SHOP_TIERS[tier].purchaseCap - s.purchasedSlots.length);
+  }
+
+  /** Gems the *next* reroll of any slot in this tier's current period would cost. */
+  shopNextRerollCost(tier: ShopTierId): number {
+    const s = this.shopTierState(tier);
+    return shopRerollCost(tier, s.rerollCounts.reduce((a, b) => a + b, 0));
+  }
+
+  /** Rerolls one slot — changes what it offers, never how many purchases remain. */
+  rerollShopSlot(tier: ShopTierId, slot: number): boolean {
+    const s = this.shopTierState(tier);
+    const cost = this.shopNextRerollCost(tier);
+    if (!this.spendGems(cost)) return false;
+    const rerollCounts = s.rerollCounts.slice();
+    rerollCounts[slot] = (rerollCounts[slot] ?? 0) + 1;
+    this.shop[tier] = { ...s, rerollCounts };
+    return true;
+  }
+
+  /**
+   * Buys one slot's current listing. Checked and booked in one place: the purchase cap
+   * (`shopPurchasesLeft`) and "already bought this exact slot this period" both gate the
+   * spend *before* any coins move or any item is minted, so there is no path to the item
+   * without the cap having already allowed it.
+   */
+  buyShopSlot(tier: ShopTierId, slot: number): Item | null {
+    const s = this.shopTierState(tier);
+    if (s.purchasedSlots.includes(slot)) return null;
+    if (this.shopPurchasesLeft(tier) <= 0) return null;
+    const listings = shopStock(tier, s.period, s.rerollCounts);
+    const listing = listings[slot];
+    if (!listing) return null;
+    if (!this.spendCoins(listing.price)) return null;
+    this.shop[tier] = { ...s, purchasedSlots: [...s.purchasedSlots, slot] };
+    this.stats.raritiesFound[listing.item.rarity]++;
+    this.addToInventory([listing.item]);
+    return listing.item;
   }
 
   /**
@@ -1146,6 +1249,7 @@ export class GameState {
       raidProgress: this.raidProgress,
       daily: this.daily,
       weekly: this.weekly,
+      shop: this.shop,
       materials: this.materials,
       ash: this.ash,
       relics: this.relics,
@@ -1283,6 +1387,26 @@ export class GameState {
       // Version 21 added the weekly Convergence; an older save has simply never closed one.
       const weekly = d.weekly as { clearedWeek?: unknown } | undefined;
       state.weekly = { clearedWeek: Math.max(0, Math.floor(Number(weekly?.clearedWeek ?? 0)) || 0) };
+      // Version 30 added the Rotating Shop. An older save (or a malformed tier) falls
+      // back to `freshShopState`'s empty bookkeeping for that tier specifically — the
+      // stock itself is never saved, so this is only ever "how many purchases/rerolls
+      // has this account already spent this period", and getting that wrong in either
+      // direction is a real economy bug (too generous refunds a cap that already fired;
+      // too strict locks an account out of a period it never touched), so every field is
+      // validated rather than trusted.
+      const savedShop = d.shop as Partial<Record<ShopTierId, Partial<ShopTierState>>> | undefined;
+      const fresh = freshShopState();
+      state.shop = Object.fromEntries(SHOP_TIER_IDS.map((tier) => {
+        const raw = savedShop?.[tier];
+        const period = Math.floor(Number(raw?.period ?? -1));
+        const purchasedSlots = Array.isArray(raw?.purchasedSlots)
+          ? raw!.purchasedSlots.filter((n): n is number => Number.isInteger(n) && n >= 0)
+          : [];
+        const rerollCounts = Array.isArray(raw?.rerollCounts)
+          ? raw!.rerollCounts.map((n) => (Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0))
+          : [];
+        return [tier, Number.isFinite(period) ? { period, purchasedSlots, rerollCounts } : fresh[tier]];
+      })) as Record<ShopTierId, ShopTierState>;
       state.setChallengerTier(Number(d.challengerTier ?? 0));
       state.inventory = ((d.inventory as Item[]) ?? []).map(normalizeItem);
 

@@ -173,7 +173,11 @@
  * given save was written at. Unknown tier ids are dropped rather than thrown on, the
  * `normalizeAppearance` rule.
  */
-export const SAVE_VERSION = 29;
+// 30 (2026-09-10): the Rotating Shop's per-tier purchase/reroll bookkeeping
+// (`GameState.shop`). Claimed provisionally — confirm this number at merge time in case
+// a parallel branch also claimed 30 (the multi-session convention: PM assigns the real
+// number at merge, never two branches in parallel).
+export const SAVE_VERSION = 30;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to
