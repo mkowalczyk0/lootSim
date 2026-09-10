@@ -557,6 +557,57 @@ several steps removed from the actual line that broke. Comment the cast site say
 the way the fix here does, until (or unless) the declaration is derived rather than
 hand-written.
 
+## A sixteenth instance, a different species from every one above: an instrument that could see fine, aimed at the wrong object
+
+Every entry so far is an instrument that couldn't *see* the failure it was built to
+catch — an omniscient bot, a wrapper's exit code, `ps`'s blindness to a cwd, a
+self-consistent modeled link. Enabling co-op raids (`feat/coop-raids`, commit `36ba7da`),
+`tools/smoke.ts` added a check that each party member's own `raidProgress` advances
+exactly once, independently, on their own machine after a co-op raid clear — the precise
+fear ("credit duplicated or desynced across saves") that had kept raids solo up to then.
+That check's instrument had nothing wrong with it. It read a real, populated `GameState`
+and reported a real number. It was just reading the wrong one.
+
+A host+client smoke harness necessarily builds two `GameState` objects for the party's
+second hero: `raidMateState`, the host's own local copy of the party member's character,
+passed into the host's `Dungeon` only to seed the shared hero's initial
+`Player`/appearance and never written to again, and `raidClientState`, the object the
+*client*-side `Dungeon.bankLoot()` actually calls `recordDepth` on — the one standing in
+for the party member's own machine. Both are real. Both look exactly like "the party
+member's save." Only one is the save under test. The check asserted against
+`raidMateState` and read `1 -> 1`, a number that reads exactly like a genuine desync on
+the exact property being tested, rather than like a wiring mistake.
+
+**This is not "the check is blind" — the check could see perfectly. It was pointed at the
+wrong object, and the wrong object doesn't error.** Every prior entry's catching question
+— *if the defect were true right now, would this instrument's number be different?* —
+still applies, but it doesn't distinguish this failure from a real one: a stale
+`raidMateState` genuinely never advances, so injecting an actual duplication bug and
+re-running would *also* leave the number unchanged, for the wrong reason. The two
+failure modes ("no bug, wrong object" and "real bug, right object") are indistinguishable
+from the assertion's own output; only reading which object the code under test actually
+writes to (here, grepping `bankLoot`'s own `recordDepth` call) resolves it.
+
+**Why this one is worth its own species rather than filed under an existing entry:** it
+is a *credible false positive*, not an implausible one. Item 10's mistyped raid id
+(`raid-the-ferryman` vs `the-ferryman`) was also a wiring mistake dressed as passing
+evidence, but in the opposite direction — a bound with slack let a broken fixture read as
+correct. Here the check was strict (`1 -> 1`, no slack) and *failed* on a wiring mistake,
+in the one direction that costs the most: a maintainer seeing this red would have every
+reason to believe the exact bug the design had been afraid of for months had finally
+shown up, and either sunk real investigation into a bug that didn't exist or reverted a
+shipped, correct feature over it. Caught here only because the mistake was noticed and
+fixed in the same session, with the wrong-then-right diff kept in the commit message
+rather than squashed away.
+
+**How to apply:** in any host/client (or otherwise two-sided) test, before trusting an
+assertion that reads a "your side's state" object, name explicitly which concrete object
+the code path under test actually writes to, and confirm the assertion reads *that* one
+— not a same-shaped object built for a different purpose (seeding, mirroring, display).
+When a multi-sided harness necessarily holds more than one object that could plausibly be
+"the" state, the harness should say in a comment which one is live and which is inert, so
+the next person extending it doesn't have to re-derive it from the write path.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
