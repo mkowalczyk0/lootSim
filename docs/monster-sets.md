@@ -1,7 +1,8 @@
 # Monster sprite sets — which realm's monsters you are actually fighting
 
-**Status: the seam is built; the art is not.** `npm run monstersets` (`tools/monstersets.ts`,
-in `npm test`) holds it.
+**Status: the seam is built, and all three named sets are drawn.** `npm run monstersets`
+(`tools/monstersets.ts`, in `npm test`) holds it. The Tower's five (`art/monsters/finish-tower.ts`)
+shipped last — see §4.
 
 ## 1. This fixes a live defect, not a future one
 
@@ -36,7 +37,7 @@ canvas-owning half. Three sets are named today:
 | --- | --- | --- |
 | `reliquary` | the Ashen Reliquary's six sectors | **drawn** — the five committed PNGs |
 | `delve` | the six Delve biomes | **drawn** — the same five, deliberately |
-| `tower` | the three ascent bands | named, undrawn |
+| `tower` | the three ascent bands | **drawn** — five bespoke celestial sprites |
 
 ### The Delve did not need new art, and finding that out was the point
 
@@ -100,10 +101,29 @@ comparison to go red, then restores and requires it green again. Same method as
 `tools/abilityfx.ts`; the injection is foundational (an rng draw reorders every subsequent
 draw) rather than conditional.
 
-## 4. What is left
+## 4. What shipped, and what is still left
 
-- **The art.** 5 sprites for the Tower, 5 for the Delve. The engine collapses 11 archetypes
-  onto 5 silhouettes (`ENEMY_SPRITES`), which is what makes that number small.
+**The Tower's five landed** (`art/monsters/finish-tower.ts`, `tools/monstersets.ts` and
+`tools/anim.ts` both green against them): Power-at-Arms (grunt), Virtue Lancer (archer),
+Throne-Bearer (brute), Dominion Herald (caster), Halo Fragment (swarmer). Bespoke rather than
+a palette swap, for the reason below, and matched to the Reliquary roster's own world heights
+so a Tower brute doesn't tower over a Delve brute as an unintended balance signal.
+
+Two generation defects came up and were fixed in the same script rather than by hand, so a
+reroll doesn't lose the fix: Power-at-Arms and Throne-Bearer generated with a fully dark
+helm/mask — zero saturated pixels, the same "no accent at all" failure the raid bosses hit —
+and got one painted into the void eyes; Virtue Lancer and Dominion Herald generated with
+2-11x the shipped hot-pixel ceiling (scattered trim, a whole gold robe front) and got muted
+down to it. See the script's header for the measured before/after on all five.
+
+Once real celestial art existed, the floor/monster contrast gate (`tools/smoke.ts`, "a floor
+must not be its own sector's element") started actually measuring the Tower for the first
+time — before, `MONSTER_SETS.tower` named ids with no PNGs behind them, so every role fell
+back to the (undeclared-for-this-purpose) Hell roster and the gate measured nothing. It
+passes clean: the Tower's tints were already kept dark for exactly this reason (see
+`data/tower.ts`'s header), so a bright celestial roster reads with room to spare rather than
+narrowing the window the way a naive fix would have predicted.
+
 - **The Tower's five bosses** reuse borrowed templates and are deliberately out of scope: a
   boss is one floor in five, and the trash is what you look at for the other four.
 - **Why the Tower's must be bespoke rather than a palette swap of the Reliquary's:** the

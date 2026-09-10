@@ -143,6 +143,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // 24px × 0.72 ≈ 17.3, slightly bigger and far more legible.
   "reliquary.monster.rot-scuttler": { id: "reliquary.monster.rot-scuttler", w: 31, h: 24, worldScale: 0.72, feet: 0.06 },
 
+  // The Tower (§6) — celestial silhouettes: symmetry, repetition, geometry, matched to the
+  // Reliquary roster's own world heights rather than eyeballed (`art/monsters/finish-tower.ts`
+  // prints these). Powers/Throne-Bearer generated with zero hot accent (a helm/mask of dark
+  // hollow eyes, the exact Tyrant failure the style guide warns about) and got one painted
+  // into the void; Virtue Lancer and Dominion Herald generated with 2-11x the shipped hot-
+  // pixel ceiling (scattered trim, a whole gold robe front) and got muted down to it. See
+  // the script header for the measured before/after on all five.
+  "tower.monster.power":           { id: "tower.monster.power",           w: 27, h: 70, worldScale: 0.4286, feet: 0.05 },
+  "tower.monster.virtue-lancer":   { id: "tower.monster.virtue-lancer",   w: 25, h: 69, worldScale: 0.4348, feet: 0.05 },
+  "tower.monster.throne-bearer":   { id: "tower.monster.throne-bearer",   w: 46, h: 77, worldScale: 0.4156, feet: 0.05 },
+  "tower.monster.dominion-herald": { id: "tower.monster.dominion-herald", w: 29, h: 70, worldScale: 0.4286, feet: 0.05 },
+  "tower.monster.halo-fragment":   { id: "tower.monster.halo-fragment",   w: 28, h: 29, worldScale: 0.5862, feet: 0.05 },
+
   // --- bosses (§11) --- worldScale lands the art on the full old grid extent
   // (26 × spriteScale from data/bosses.ts): warden 100, choir 92, colossus 134,
   // herald 110, nameless 112. feet ≈ 0 — trimmed, standing on the bottom row.
@@ -520,11 +533,12 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
   },
 
   /**
-   * The Tower (§6) — **named, deliberately undrawn.** Heaven is Order, and Order lives in
-   * silhouette: symmetry, repetition, geometry, against Hell's asymmetry and appetite. A
-   * palette swap of the Reliquary's roster would be white demons, which is why these are
-   * their own sprites rather than a tint. Until the PNGs land, every id below resolves to
-   * nothing and the Tower draws today's art — no worse than before, and no pretending.
+   * The Tower (§6) — **drawn.** Heaven is Order, and Order lives in silhouette: symmetry,
+   * repetition, geometry, against Hell's asymmetry and appetite. A palette swap of the
+   * Reliquary's roster would be white demons, which is why these are their own sprites
+   * rather than a tint: a halo behind the helm, a wheel-within-wheel throne, a lance of
+   * light, a robed herald with arms folded in ritual symmetry, a broken shard of a halo
+   * ring. See `art/monsters/finish-tower.ts` for the generation and the hot-accent pass.
    */
   tower: {
     grunt: "tower.monster.power",

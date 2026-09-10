@@ -81,15 +81,32 @@ section("the fallback ladder");
     (ids.every((a) => ATLAS[a]) ? drawn : declared).push(id);
   }
   check("at least one set is actually drawn", drawn.length > 0, drawn.join(", "));
-  check("a set may be named before it is drawn", declared.length > 0,
-    declared.length > 0 ? `${declared.join(", ")} declared, undrawn` : "nothing is pending art");
+
+  // Every real set is drawn today (reliquary, delve and tower all shipped their five), so
+  // there is no live example left of a declared-but-undrawn set to demonstrate the fallback
+  // ladder on. Asserting `declared.length > 0` here would be asserting a fact about the
+  // repo's current art backlog rather than the resolver property this section exists to
+  // hold — and once that backlog emptied out, the loop below would iterate zero times and
+  // silently stop checking anything, the exact vacuous-check shape CLAUDE.md's
+  // sharp-vs-reckless note warns about. A synthetic set — ids guaranteed absent from
+  // `ATLAS` — proves the same property without depending on anything staying unpainted.
+  const synthetic: Record<string, string> = Object.fromEntries(
+    ["grunt", "archer", "brute", "caster", "swarmer"].map((k) => [k, `synthetic.undrawn.${k}`]),
+  );
+  check("a set may be named before it is drawn", Object.values(synthetic).every((a) => !ATLAS[a]),
+    "synthetic set's ids are absent from ATLAS, as a declared-but-undrawn set's must be");
 
   // The load-bearing half: a declared-but-undrawn set must name ids that are NOT in the
   // atlas, so the resolver falls through. An id that is half-present — listed in `ATLAS`
   // with no PNG behind it — is the one state that breaks rather than degrades, because
-  // `loadAtlas` rejects on a missing PNG for an `ATLAS` row.
-  for (const id of declared) {
-    const listed = Object.values(MONSTER_SETS[id]!).filter((a) => ATLAS[a]);
+  // `loadAtlas` rejects on a missing PNG for an `ATLAS` row. Runs over every real declared
+  // set (today, none) plus the synthetic one, so it never again goes quiet just because the
+  // backlog did.
+  for (const [id, set] of [
+    ...declared.map((id) => [id, MONSTER_SETS[id]!] as const),
+    ["synthetic", synthetic] as const,
+  ]) {
+    const listed = Object.values(set).filter((a) => ATLAS[a]);
     check(`the undrawn "${id}" set claims no atlas row it cannot fill`, listed.length === 0,
       listed.join(", "));
   }

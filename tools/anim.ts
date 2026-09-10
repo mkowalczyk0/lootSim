@@ -199,7 +199,17 @@ console.log("\nanimation — a scale and a canvas come from one decision\n");
   // The ladder itself: a realm's set wins over the game-wide default, and a set that is
   // named but undrawn falls through rather than blanking the monster.
   const drawn = (id: string) => !!ATLAS[id];
-  const towerGrunt = chooseSpriteArt("grunt", "tower", drawn);
+  // Every real set is drawn today (reliquary, delve and tower all shipped their five), so
+  // there is no live "named but undrawn" example left to call `chooseSpriteArt` against —
+  // asserting this against `MONSTER_SETS.tower` the way this check used to would now be
+  // asserting a fact about the art backlog, and the day the backlog empties out this
+  // silently stops testing the fallback branch at all. Simulate it instead: the real
+  // `drawn` predicate for everything, except one specific id (still a real, declared
+  // `tower` entry) pretended unloaded — the exact branch a genuinely undrawn set would
+  // hit, as a property of the resolver rather than an accident of what's still unpainted.
+  const towerGruntId = MONSTER_SETS.tower!.grunt!;
+  const pretendTowerUndrawn = (id: string) => id !== towerGruntId && drawn(id);
+  const towerGrunt = chooseSpriteArt("grunt", "tower", pretendTowerUndrawn);
   check("a named-but-undrawn set falls through to the game-wide default, not to nothing",
     towerGrunt.atlasId === SPRITE_OVERRIDES.grunt, `${towerGrunt.atlasId}`);
   // And a set entry that IS drawn is the one that resolves. Today every committed set
