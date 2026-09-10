@@ -932,6 +932,53 @@ assertion. Presence was never the thing at risk this time; **colour** was.
 > assertion about pixel **presence** is not an assertion about pixel **colour**. Check both,
 > and on a sprite with a small accent check the accent *by name*.
 
+#### Stage C: two more routes to the blow are closed, and what is left is measured
+
+Attempted 2026-09-10 against docket §19, artifacts and the full write-up in
+`art/anim/raw/warden-blow-attempts/authored/`. §19's premise was *"the generator interpolates
+and re-renders. It does not pose."* True, and **not the whole constraint** — neither does any
+transform of the pixels that already exist.
+
+**Route 2, rigid rotation of (arms + weapon) about the shoulder.** An overhead swing genuinely
+is a rotation of a closed arms-plus-weapon loop about the chest; the sword separates cleanly
+from the body by region; a nearest-neighbour rotation invents no colours. Every output is
+unusable — arms come out as horizontal tubes, the blade points sideways.
+
+> **A front-facing sprite's limbs are not rigid bodies.** Their pixels encode foreshortening,
+> shading and occlusion for the one position they were drawn in. An arm reaching *up* is not
+> an arm reaching *down* rotated — it is a different drawing. Affine transforms move pixels;
+> they cannot re-render what those pixels depict.
+
+That is the same wall the generator hits, reached from the opposite side.
+
+**Route 3, compositing the pose out of other frames.** Better premise — take the arms-down
+anatomy the artist already drew (the rest frame), move the sword to centre-front, compress
+into a crouch. Nothing rotated, nothing invented. At thumbnail size the results look like the
+Warden; at authoring zoom the left arm is missing, no hand meets the grip, and the crouch is a
+vertical shear that doubles the tassets. Then the veto agrees with the eye:
+
+    apex vs rest       1485
+    best composite      754     VETOED at 0.51x — nearer rest than the WIND-UP is
+
+Worse than the rejected seed-37 generation (1001-1044), and it is not bad luck in the offsets:
+
+> **A composite blow is biased toward rest by construction.** The only frame containing
+> arms-down, weapon-down anatomy IS the rest frame, so any pose assembled out of it inherits
+> rest's silhouette — and the veto measures distance from rest. Compositing can only ever
+> build the pose it is least allowed to build.
+
+**The size of what is left, measured against the Ferryman — the one existence proof:** its
+impact frame differs from the nearest of the 19 frames that existed before it by **43.1% of
+the body**. The best Warden composite reached 30.6%, and it was the wrong 30.6% — silhouette
+spent on moving a sword rather than on the lean, the lunge and the extended arms that a blow
+is actually made of. **A blow is roughly half the sprite drawn new.**
+
+Two things that would otherwise get re-litigated: a different release is **not** available for
+this boss (the war-queen got a rise-and-open because her kit arrives from the sky; the
+Warden's is cleave/slam/quake/windmill/ringOut, swings every one), and the impact effect does
+**not** belong in the sprite (`render/fx.ts` already draws impact stars — the sprite owes only
+the pose).
+
 #### Reach is not one-per-sprite: check the borrow graph before choosing a target
 
 Animating `boss.warden` moved coverage 3/35 -> **10/35**, because `legendBossSpec` borrows
