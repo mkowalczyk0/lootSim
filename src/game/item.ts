@@ -3,7 +3,7 @@ import { LOOT_ELEMENTS, type Element } from "../data/elements";
 import type { HeroClass } from "../data/classes";
 import {
   EQUIP_SLOTS, ITEM_NAMES, MOD_COUNTS, MOD_POOL, RESERVED_ELEMENTAL_MODS, TRIGGER_SHAPES, TYPE_STATS,
-  grantChance, isWeaponType, modAllowed, modValue, slotForType, triggerChance,
+  grantChance, isWeaponType, modAllowed, modPoolFor, modValue, slotForType, triggerChance,
   type EquipSlot, type ItemType, type ModRoll, type TriggerSpec,
 } from "../data/items";
 import {
@@ -293,7 +293,7 @@ export function rollMods(
   const want = rng.int(lo, hi);
   if (want <= 0) return [];
 
-  let pool = MOD_POOL.filter((m) => modAllowed(m, type, tier));
+  let pool: ModRoll[] = modPoolFor(type, tier);
   if (pool.length === 0) return [];
   if (favorElement) {
     // A craft's entire promise is that the essence you paid for actually shows up, so

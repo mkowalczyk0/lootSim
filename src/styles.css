@@ -1313,6 +1313,91 @@ html, body {
 .op-detail p:last-child { margin-bottom: 0; }
 .op-detail .cmp { margin-bottom: 8px; }
 
+/* --- the possibilities panel (docket §10) ------------------------------
+   What the selected op could actually give you. It sits between the reading strip and
+   the action bar, and it is the one part of the workbench allowed to scroll: a reforge
+   pool on a high-rarity weapon is twenty-odd affixes, and the alternative to a scroll box
+   is a bar that grows until it pushes the card grid off the screen — which is the exact
+   "I have to scroll to do anything" complaint the bar was built to answer. The scroll is
+   bounded and local; nothing you have to *press* is inside it. */
+.wb-pool { border-top: 1px solid var(--line); padding-top: 10px; }
+
+.wb-pool-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.wb-pool-note { font-size: 11px; color: var(--muted); }
+
+.wb-pool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 96px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* One reachable outcome: what it is, where its value would land, and — above common —
+   the rarity that let it into the pool. The gate is the useful half: an affix you can
+   see but cannot reach is the argument for ascending the item. */
+.wb-pool-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.wb-pool-name { color: var(--text); }
+.wb-pool-val { color: var(--muted); }
+.wb-pool-gate { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; }
+
+/* --- the action bar (docket §15) ---------------------------------------
+   The owner's third report in this family, so this is the settled shape: the one control
+   that spends something lives in its own fixed strip, at the bottom, outside the card
+   grid and outside the reading panel. It never scrolls and it never shares a region with
+   prose. Clicking a card selects it; this is what runs the op. */
+.wb-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  flex: none;
+}
+
+.wb-confirm {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 8px 20px;
+  min-width: 150px;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.wb-confirm:hover:not(:disabled) { filter: brightness(1.15); }
+.wb-confirm.danger { background: var(--danger); border-color: var(--danger); }
+.wb-confirm.dim, .wb-confirm:disabled {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+.wb-actions-target { display: flex; flex-direction: column; gap: 2px; font-size: 11px; min-width: 0; }
+.wb-actions-target .danger { font-size: 10px; }
+.wb-actions-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+
 .stash-none {
   grid-column: 1 / -1;
   text-align: center;

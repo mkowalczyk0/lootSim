@@ -128,6 +128,90 @@ worn item, the batch can't touch equipped gear by construction; a named item can
 marked (single-salvage already allows it) and the arm step calls that out by count so it
 isn't a surprise.
 
+### The possibilities panel (docket §10) — and why it holds no table
+
+> "New UI in the Forge under the workbench view to show 'possibilities' of the reforge. We
+> as players need to see what the available pool of affix's are if we recast etc."
+
+Standing in front of an op, the bench now shows what that op could actually give you:
+`forgePossibilities` in `game/forge.ts`, drawn by `TownUI.renderPossibilities` into a
+`.wb-pool` strip between the reading strip and the action bar.
+
+**The rule that governs it is UAT §20's, and it is the reason this is a function in
+`game/` rather than a list in the UI: the preview holds no table of its own.**
+`docs/drop-previews.md` says why — a preview that can drift out of sync with the real roll
+is worse than no preview. So every list here is read from the function the op *actually
+rolls through*:
+
+| Op | Draws from | Read by the panel from |
+| --- | --- | --- |
+| Reforge | the whole affix pool | `modPoolFor(type, tier)` |
+| Reforge, **named** | the definition's own ranges + `randomMods` extras | `def.mods` + `modPoolFor`, minus the keys the definition occupies |
+| Recast | the pool minus what it already carries | `recastPool(item, affix)` |
+| Augment | the pool minus what it already carries, bounded by `MOD_COUNTS` | `augmentPool(item)` |
+| Temper | one value inside one range | `affixRange(item, affix)` |
+| Inscribe / Rescribe | the granted-skill shortlist | `inscribePool(item)` |
+| Awaken | the trigger shapes × the loot elements | `TRIGGER_SHAPES` |
+| Ascend, the erasures, Salvage | nothing — the outcome is certain | — |
+
+Three of those functions were *extracted* rather than reimplemented, which is the whole
+mechanism: `modPoolFor` now backs `rollMods` as well as the panel, `augmentPool` was
+lifted out of `augment`, and `recastPool`/`inscribePool` were exported from the ops that
+already used them. **The panel and the roll call one function each. If the pool is wrong,
+the game is wrong in exactly the same way** — which is the condition §20 asks for, made
+structural instead of promised.
+
+**The ops are five different outcome spaces, not one.** A single "here are all the
+affixes" list would be a wrong answer for four of the five: Recast swaps one and can never
+return an affix the item already has, Augment adds one and stops at the rarity's ceiling,
+Temper cannot leave a range, and Ascend/Salvage/the erasures do not roll at all — they say
+"certain, not rolled" and show nothing, because an empty list under a pool's heading reads
+as a bug.
+
+**The rarity gate is shown, not merely obeyed.** Each outcome carries the `minTier` it
+unlocked at, so an affix the item cannot reach yet reads as an argument for ascending it
+rather than as one that mysteriously never turns up.
+
+`tools/forge.ts` §10 (in `npm test`) pins this as a property rather than by inspection:
+for every drawing op it compares the panel's set against what the real op rolls over a
+deterministic sweep, and the sets must be **equal**. Both directions are asserted because
+they fail differently — an outcome the roll produces and the panel omits is a player told
+something was impossible when it wasn't; an outcome the panel lists and the roll never
+produces is Ash spent chasing something that isn't there. Both were demonstrated red by
+injection before the section was trusted (dropping one pool entry trips the first, adding
+a fabricated one trips the second). Each case prints the size of the pool it walked,
+because a filter over a pool that has silently emptied passes.
+
+### The confirm button, and clicking an item no longer runs the op (docket §15)
+
+> "There a weird bug where you have to be careful not to click the item itself with a
+> mouse as it will just execute the action."
+
+It was not really a bug so much as a missing distinction: the Reforge grid's cards carried
+`data-index`, and this UI's generic row handler both moves the cursor **and** calls
+`primary()`. That is exactly right for a chest tier or a stash row and wrong for a card
+sitting in front of an Ash-spending, one-way operation.
+
+Selecting and executing are two acts now. A card carries `data-forge-item`, whose handler
+only ever selects (and disarms whatever the last card had armed). The one control that
+spends anything is a `.wb-actions` strip at the bottom of the workbench — **its own fixed
+region, outside the scrolling card grid and outside the reading panel**, which is the
+settled direction after three owner reports in this family. It calls `workbenchConfirm`,
+the same function the `confirm` key calls, so the mouse and keyboard paths cannot diverge.
+
+**Salvage's two-press gate now runs through that button rather than a path of its own**,
+which is what the docket asked for: on a worn item the button reads "Salvage — the one
+you're wearing?", and only a second press on the same item destroys it. Blocked ops
+disable the button and put the blocker beside it.
+
+### The better/worse arrows (docket §14)
+
+The Forge's card grid shows the Stash's green-up / red-down arrows, from
+`TownUI.upgradeMark` — the Stash's own comparison, extracted so there is exactly one
+scoring path. `itemScore` already knows about weapon affinity, so a second one here would
+quietly disagree with the arrows two screens over. A worn card keeps its `WORN` badge in
+that corner instead, and an item is never compared against itself.
+
 ## Multi-item recipes (§24 / §25)
 
 `NamedSource.craft` gained `items?: ItemRequirement[]` — `{ count, minRarity?, slot?,

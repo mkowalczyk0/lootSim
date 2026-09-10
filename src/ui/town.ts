@@ -17,7 +17,7 @@ import {
   ASH_NAME, CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, FORGE_OPS, FORGE_OP_INFO,
   CRAFT_ESSENCES, craftBulkCost, craftEssenceCost, requirementLabel, type CraftCategory, type ForgeOp,
 } from "../data/crafting";
-import { affixRange, salvageYield } from "../game/forge";
+import { affixRange, forgePossibilities, salvageYield } from "../game/forge";
 import { itemMeetsRequirement } from "../data/crafting";
 import { modShort } from "../game/item";
 import { biomeFor } from "../data/biomes";
@@ -258,7 +258,8 @@ function tabHelp(
         : `${sel} choose a Memory · ${e} open its portal back at the Citadel · ${altarToggle} switch screen`;
     case "Craft": return forgeMode === "reforge"
       ? `${sel} / ${adj} choose an item, then walk down onto the workbench for its operations · `
-        + `${semi} cycle the operation · ${q} cycle the affix · ${e} do it · ${forgeToggle} switch to named recipes`
+        + `${semi} cycle the operation · ${q} cycle the affix · ${e} or the confirm button runs it `
+        + `(clicking an item only picks it) · ${forgeToggle} switch to named recipes`
       : forgeMode === "named"
         ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
@@ -562,6 +563,26 @@ export class TownUI {
       if (opEl) {
         this.forgeOp = opEl.dataset.forgeOp as ForgeOp;
         this.salvageArmed = null;
+        this.render();
+        return;
+      }
+      // Docket §15: a Forge card selects and does nothing else. The generic `[data-index]`
+      // handler at the bottom of this delegate both selects *and* fires `primary()`,
+      // which is right for a chest tier or a stash item and catastrophic here — it spends
+      // Ash on a one-way operation on a stray click. Executing is `[data-forge-confirm]`
+      // below, and nothing else on this screen does it.
+      const forgeItemEl = target.closest<HTMLElement>("[data-forge-item]");
+      if (forgeItemEl) {
+        this.cursor = Number(forgeItemEl.dataset.forgeItem);
+        // A different card cannot inherit the last one's armed salvage.
+        this.salvageArmed = null;
+        this.workbenchFocus = false;
+        this.render();
+        return;
+      }
+      const forgeConfirmEl = target.closest<HTMLElement>("[data-forge-confirm]");
+      if (forgeConfirmEl) {
+        this.workbenchConfirm();
         this.render();
         return;
       }
@@ -3152,6 +3173,24 @@ export class TownUI {
   }
 
   /**
+   * The green-up / red-down arrow a card wears when it beats what's in its slot — the
+   * Stash's comparison, and the *only* one (docket §14). `itemScore` already knows about
+   * weapon affinity, so a second scoring path here would quietly disagree with the arrows
+   * two screens over; there is one function and both grids call it.
+   *
+   * An item that *is* the thing it would be compared against gets no arrow: the Forge
+   * grid lists worn gear alongside the stash, and "this item is exactly as good as
+   * itself" is not a fact worth drawing.
+   */
+  private upgradeMark(it: Item): string {
+    const worn = this.state.player.equipment[it.slot];
+    if (!worn || worn.id === it.id) return "";
+    const delta = itemScore(it, this.state.heroClass) - itemScore(worn, this.state.heroClass);
+    if (delta > 0) return '<span class="ic-mark up" title="beats what you have in that slot">▲</span>';
+    return delta < 0 ? '<span class="ic-mark down" title="worse than what you have in that slot">▼</span>' : "";
+  }
+
+  /**
    * Reforge: the other half of the Forge. Same card grid Stash uses, so a piece of gear
    * still reads the same way it does everywhere else — clicking (or confirming) a card
    * rerolls its affixes on the spot, at the cost already shown on it, exactly like
@@ -3174,10 +3213,19 @@ export class TownUI {
       // side panel prices from, so the grid and the panel can never disagree.
       const quote = this.state.forgeQuote(it.id, this.forgeOp, 0);
       const icon = pixelImageTag(itemArt(it), 64, 64, itemArtKey("item", it));
+      const worn = wornIds.has(it.id);
+      // `data-forge-item`, not `data-index`: the generic row handler both moves the
+      // cursor AND fires `primary()`, which on this screen spends Ash on a one-way
+      // operation. That is exactly the owner-reported bug in docket §15 — "you have to be
+      // careful not to click the item itself" — so a card on this grid gets its own
+      // attribute whose handler only ever selects. Executing lives in one place, the
+      // confirm button in `.wb-actions`.
       return `
-        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+        <div class="item-card ${i === this.cursor ? "on" : ""}" data-forge-item="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(quote?.blocker ?? "")}">
-          ${wornIds.has(it.id) ? `<span class="ic-mark worn" title="equipped — the current character has this on">WORN</span>` : ""}
+          ${worn
+            ? `<span class="ic-mark worn" title="equipped — the current character has this on">WORN</span>`
+            : this.upgradeMark(it)}
           ${quote?.blocker ? `<span class="ic-lock">✕</span>` : ""}
           <div class="ic-art">${icon}</div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
@@ -3304,12 +3352,96 @@ export class TownUI {
           ${cost}
           ${quote?.blocker ? `<p class="danger">${escapeHtml(quote.blocker)}</p>`
             : salvagingWorn && armed
-              ? `<p class="danger">${k(s, "confirm")} again, or click the card again, to permanently salvage the item you're wearing.</p>`
+              ? `<p class="danger">Confirm again to permanently salvage the item you're wearing.</p>`
               : salvagingWorn
-                ? `<p class="muted">${k(s, "confirm")}, or click the card, to ask — salvaging what you're wearing needs a second confirm.</p>`
-                : `<p class="muted">${k(s, "confirm")}, or click the card, to ${escapeHtml(info.label.toLowerCase())}. ${
-                    ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the same ones everything else costs.</p>`}
+                ? `<p class="muted">Salvaging what you're wearing needs a second confirm.</p>`
+                : `<p class="muted">${ASH_NAME} comes from one place: salvaging. Coins and Iron Scrap are the
+                    same ones everything else costs.</p>`}
         </div>
+        ${this.renderPossibilities(item)}
+        ${this.renderWorkbenchActions(item, quote)}
+      </div>`;
+  }
+
+  /**
+   * The possibilities panel (docket §10): standing in front of an op, what could it
+   * actually give you?
+   *
+   * **Every list here comes from `forgePossibilities`, and that function reads the roll
+   * sites themselves** — `modPoolFor`, `recastPool`, `augmentPool`, `inscribePool`,
+   * `TRIGGER_SHAPES`, `affixRange`. This method knows how to *draw* a pool and nothing
+   * whatsoever about what is in one. That is the §20 rule (`docs/drop-previews.md`)
+   * applied to the bench: a preview that can drift out of sync with the roll is worse
+   * than no preview, so there is no table on this side of the wall to drift.
+   *
+   * The rarity gate is shown rather than merely obeyed — a pool affix carries the
+   * `minTier` it unlocked at, so "+1 projectile, epic" reads as a reason to ascend the
+   * item instead of as an affix that mysteriously never appears.
+   */
+  private renderPossibilities(item: Item): string {
+    const poss = forgePossibilities(item, this.forgeOp, this.forgeAffix);
+    const chips = poss.outcomes.map((o) => {
+      const range = o.range
+        ? `<span class="wb-pool-val">${o.range[0] === o.range[1]
+            ? fmtMod(o.key ?? "attack", o.range[0])
+            : `${fmtMod(o.key ?? "attack", o.range[0])}–${fmtMod(o.key ?? "attack", o.range[1])}`}${
+            o.key ? ` ${escapeHtml(shortLabel(o.key))}` : ""}</span>`
+        : "";
+      // Above common, say which rarity let it in. A pool the item cannot reach yet is
+      // the most useful thing on this panel: it is the argument for ascending.
+      const gate = o.minTier > 0
+        ? `<span class="wb-pool-gate" style="color:${RARITY_COLORS[RARITIES[o.minTier] ?? "common"]}">${
+            escapeHtml(RARITIES[o.minTier] ?? "")}</span>`
+        : "";
+      return `<span class="wb-pool-item"><span class="wb-pool-name">${escapeHtml(o.label)}</span>${range}${gate}</span>`;
+    }).join("");
+    return `<div class="wb-pool">
+        <div class="wb-pool-head">
+          <span class="op-detail-label">${escapeHtml(poss.heading)}</span>
+          <span class="wb-pool-note">${escapeHtml(poss.note)}</span>
+        </div>
+        ${chips ? `<div class="wb-pool-list">${chips}</div>` : ""}
+      </div>`;
+  }
+
+  /**
+   * The action area (docket §15). One button, its own fixed strip at the bottom of the
+   * workbench, outside both the scrolling card grid and the reading panel — the third
+   * report in this family, and the direction behind it is settled: a control that spends
+   * something lives somewhere the player goes on purpose.
+   *
+   * Selecting and executing are two acts now. A card click only ever selects; this is
+   * the only thing on the screen that spends Ash, and it is the same function the
+   * confirm key calls, so the two paths can't diverge.
+   */
+  private renderWorkbenchActions(item: Item, quote: ReturnType<GameState["forgeQuote"]>): string {
+    const s = this.state.settings;
+    const info = FORGE_OP_INFO[this.forgeOp];
+    const worn = this.wornItemIds().has(item.id);
+    const armed = this.salvageArmed === item.id;
+    const blocked = !!quote?.blocker;
+    // Salvaging what you're wearing keeps its two-press gate — it just runs through this
+    // button now instead of a private path of its own, which is what the docket asked
+    // for. The first press arms, the second destroys.
+    const arming = this.forgeOp === "salvage" && worn && !armed;
+    const label = blocked
+      ? info.label
+      : arming
+        ? `${info.label} — the one you're wearing?`
+        : armed
+          ? `${info.label} it anyway`
+          : info.label;
+    const danger = this.forgeOp === "salvage" || armed;
+    return `<div class="wb-actions">
+        <button class="wb-confirm ${danger ? "danger" : ""} ${blocked ? "dim" : ""}" data-forge-confirm="1"
+                ${blocked ? "disabled" : ""} title="${escapeHtml(quote?.blocker ?? info.blurb)}">
+          ${escapeHtml(label)}
+        </button>
+        <span class="wb-actions-target">
+          <span style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</span>
+          ${blocked ? `<span class="danger">${escapeHtml(quote!.blocker!)}</span>` : ""}
+        </span>
+        <span class="wb-actions-hint">${k(s, "confirm")}</span>
       </div>`;
   }
 
@@ -3329,7 +3461,7 @@ export class TownUI {
       // accidental confirm can't destroy the thing on your back.
       if (this.wornItemIds().has(item.id) && this.salvageArmed !== item.id) {
         this.salvageArmed = item.id;
-        this.notify(`${item.name} is equipped. Press confirm again to salvage it anyway.`, "#ef4444");
+        this.notify(`${item.name} is equipped. Confirm again to salvage it anyway.`, "#ef4444");
         return;
       }
       this.salvageArmed = null;
@@ -3952,13 +4084,8 @@ export class TownUI {
         <aside class="side"><p class="muted">Kill things. Open chests.</p></aside>`;
     }
 
-    const cls = this.state.heroClass;
     const cards = items.slice(0, 300).map((it, i) => {
-      const worn = this.state.player.equipment[it.slot];
-      const delta = worn ? itemScore(it, cls) - itemScore(worn, cls) : itemScore(it, cls);
-      const mark = worn && delta > 0
-        ? '<span class="ic-mark up">▲</span>'
-        : worn && delta < 0 ? '<span class="ic-mark down">▼</span>' : "";
+      const mark = this.upgradeMark(it);
       const dots = [
         it.named ? '<span class="dot" style="background:#fbbf24" title="named item"></span>' : "",
         it.grant ? '<span class="dot" style="background:#7dd3fc" title="grants a skill"></span>' : "",

@@ -405,7 +405,15 @@ direct reports of something wrong in front of them**, so by the ordering this fi
 establishes they outrank items 3-6 and item 9. Items 16 and 17 are outright bugs — a screen
 printing its own markup and art that does not appear — and lead the group.*
 
-## 10. The Forge workbench needs to show the *pool* — what a Recast could give you
+## 10. The Forge workbench needs to show the *pool* — LANDED
+
+**Shipped 2026-09-10**, design record `docs/forge.md` ("The possibilities panel"), gate
+`tools/forge.ts` §10 (in `npm run forge`, in `npm test`). `forgePossibilities` in
+`game/forge.ts` answers it per op, and holds no table of its own: `modPoolFor`,
+`recastPool`, `augmentPool`, `inscribePool`, `TRIGGER_SHAPES` and `affixRange` are the
+same functions the ops roll through — three of them extracted for exactly that reason.
+The gate asserts the panel's set and the roll's set are **equal**, both directions,
+and both directions were shown red by injection. The brief below is kept for context.
 
 > "New UI in the Forge under the workbench view to show 'possibilities' of the reforge. We
 > as players need to see what the available pool of affix's are if we recast etc."
@@ -473,7 +481,11 @@ definition — "sell all junk" already has one, so use the same one rather than 
 second notion of junk. Equipped items must not be swept up by a bulk action even though
 salvaging a worn item is legal when chosen deliberately.
 
-## 14. The Forge needs the green-up / red-down arrows the Stash has
+## 14. The Forge needs the green-up / red-down arrows the Stash has — LANDED
+
+**Shipped 2026-09-10.** `TownUI.upgradeMark` is the Stash's own comparison, extracted so
+both grids call one function; there is still exactly one scoring path (`itemScore`, which
+already knows about weapon affinity). A worn card keeps its `WORN` badge in that corner.
 
 > "In the Forge UI we need to add the 'better/worse' visual to all the items green up red
 > down arrows."
@@ -483,7 +495,14 @@ The Stash's upgrade arrows already know how to compare an item against what is w
 player picking something to Reforge cannot see whether it is an upgrade. Reuse the Stash's
 comparison — do not write a second scoring path.
 
-## 15. The Forge needs a confirm button, and clicking an item must not fire the op
+## 15. The Forge needs a confirm button — LANDED
+
+**Shipped 2026-09-10**, design record `docs/forge.md` ("The confirm button"). The cards
+carried `data-index`, and this UI's generic row handler both selects and calls
+`primary()`; they carry `data-forge-item` now, which only selects. Executing is one
+control in a `.wb-actions` strip of its own — outside the scrolling grid and the reading
+panel — calling the same `workbenchConfirm` the confirm key calls. Salvage's two-press
+gate runs through that button rather than a private path.
 
 > "In the forge UI we need to also add a 'confirm button' to execute the action. There a
 > weird bug where you have to be careful not to click the item itself with a mouse as it

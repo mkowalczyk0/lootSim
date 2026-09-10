@@ -385,6 +385,20 @@ export function modAllowed(mod: ModRoll, type: ItemType, tier: number): boolean 
   return mod.where === group;
 }
 
+/**
+ * Every affix that could roll on this slot at this rarity tier — one filter, shared by
+ * every site that draws an affix and by the workbench's possibilities panel (docket §10).
+ *
+ * Extracted rather than reimplemented: the §20 rule is that a preview holds no table of
+ * its own, and the only way to make that structural instead of promised is for the panel
+ * and the roll to call the *same* function. `rollMods`, `augmentPool` and `recastPool`
+ * all start here; if this filter is ever wrong, the panel is wrong in exactly the same
+ * way the game is, which is the condition `docs/drop-previews.md` asks for.
+ */
+export function modPoolFor(type: ItemType, tier: number): ModRoll[] {
+  return MOD_POOL.filter((m) => modAllowed(m, type, tier));
+}
+
 /** Resolved value of a mod on an item of this rarity and item level. */
 export function modValue(mod: ModRoll, rarity: Rarity, levelScale: number, variance: number): number {
   const tier = rarityIndex(rarity);
