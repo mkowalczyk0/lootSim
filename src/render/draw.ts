@@ -12,7 +12,7 @@ import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
 import { ATLAS } from "./atlas/manifest";
-import { castFrame, frameAt, frameAtProgress } from "./anim";
+import { StrikeLatch, castFrame, frameAt, frameAtProgress } from "./anim";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
   heroKey, heroSprite, itemSprite, resolveSprite, silhouetteCanvas,
@@ -131,6 +131,15 @@ export class WorldRenderer {
   /** True when this floor's walls are baked into `floorCanvas` by a tileset — the
    *  per-frame `drawWalls` pass is then skipped, since there's nothing left for it. */
   private floorTiled = false;
+  /**
+   * Which cast each boss last landed and when — the only way to draw a release, since the
+   * simulation clears `boss.ability` the instant the ability resolves. Render state, not
+   * simulation state: no field is added to anything in `game/`. Keyed on the `Enemy` object
+   * in a WeakMap, so it cannot survive the floor that made it and needs no reset hook here.
+   * See `render/anim.ts`'s `StrikeLatch` for why the id and `e.boss` are both wrong keys.
+   */
+  private readonly strikes = new StrikeLatch();
+
   /** Aura motes are emitted from the render loop, so they need their own clock. */
   private auraClock = 0;
   private lastElapsed = 0;
@@ -791,9 +800,18 @@ export class WorldRenderer {
     // asked for frame 3 of a strip it isn't using.
     const animMeta = art.meta;
     const cast = castFrame(e.boss, e.health > 0);
+    // Runs every frame whether or not this is a boss and whether or not it is casting: the
+    // latch is the observer of the cast-ended edge as well as the reader of it, so skipping
+    // the call while casting would mean never seeing the moment the ability lands.
+    const strike = e.boss ? this.strikes.read(e, animMeta, e.boss, e.health > 0, time) : null;
+    // Cast beats strike beats idle. A boss hasted enough to begin its next wind-up before
+    // the release has played out abandons the release — the wind-up is the telegraph, and
+    // the readable thing is never blocked by the decorative one.
     const frame = cast
       ? frameAtProgress(animMeta, cast.tag, cast.progress).index
-      : frameAt(animMeta, "idle", time + e.id * 0.37).index;
+      : strike
+        ? frameAt(animMeta, strike.tag, strike.elapsed).index
+        : frameAt(animMeta, "idle", time + e.id * 0.37).index;
 
     // A boss winding something up glows in its own element — the same colour as the
     // shape it is about to paint on the floor, so the two read as one warning.

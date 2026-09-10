@@ -239,3 +239,115 @@ export function castFrame(boss: CastReadout | null | undefined, alive: boolean):
   const remaining = Math.min(boss.castTimer, boss.castTotal);
   return { tag: [boss.ability, CAST_TAG], progress: 1 - remaining / boss.castTotal };
 }
+
+// --- the strike: what happens after the hit lands ---------------------------
+
+/**
+ * The generic release every boss can share, sitting between an ability and `idle` exactly
+ * as {@link CAST_TAG} does. The chain is `[ability, "strike", "idle"]` for the same reason
+ * the cast chain exists: one strike per boss covers every ability it has, and a specific
+ * ability can be given its own release later without anything being rewired.
+ */
+export const STRIKE_TAG = "strike";
+
+/** What to draw for a boss that has just landed something: which tags, and how far in. */
+export interface StrikeFrame {
+  readonly tag: readonly string[];
+  /** Wall-clock seconds since the cast resolved. Feed it to {@link frameAt}. */
+  readonly elapsed: number;
+}
+
+/**
+ * How long a boss's release runs, or 0 if it has none.
+ *
+ * The fallback ladder deliberately stops one rung short here. `resolveTag` falls through to
+ * `idle`, which is right for a wind-up — a boss with no cast art should draw *something*
+ * readable — but wrong for a strike: a boss with no release must keep drawing idle exactly
+ * as it did before any of this existed, not play its own breathing as a flourish. Today
+ * that is every boss in the game, which is what makes adding this a superset rather than a
+ * change to shipped art.
+ */
+function strikeSeconds(meta: AtlasSprite | undefined, tag: readonly string[]): number {
+  const t = resolveTag(meta, tag);
+  if (!t || !meta?.anim) return 0;
+  if (t === meta.anim.tags[FALLBACK_TAG]) return 0;
+  return span(t) * t.seconds;
+}
+
+/**
+ * Remembers, per boss, which cast it last saw and when that cast ended — so the release can
+ * be drawn after the simulation has already forgotten what landed.
+ *
+ * ## Why this has to be a latch at all
+ *
+ * `resolveAbility` (`game/boss.ts`) sets `b.ability = null` as its first statement, so at
+ * the instant you want to start drawing a strike the state naming the ability is already
+ * gone, and `b.cooldowns[id]` was set at cast *start* so it is not an elapsed-since-impact
+ * either. That leaves remembering the transition, and remembering it **here** — the seam
+ * rule at the top of this file forbids a new field on an `Enemy`, not memory inside the
+ * clock. A client watching snapshots sees the same `ability` non-null → null edge the host
+ * does (`net/sync.ts` already carries `ab`/`c`/`ct`), so this works in co-op with no new
+ * wire field, which is the same property the wind-up has.
+ *
+ * ## Do not reach for `actionTimer` instead
+ *
+ * It looks like exactly the number wanted — `boss.ts` sets it when an ability resolves and
+ * counts it down — and it is a trap twice over. It has two writers, one of them a retry gap
+ * that has nothing to do with anything landing, so "it is counting" does not mean "something
+ * just hit". And `net/sync.ts` rebuilds client boss state with `actionTimer: 0` hardcoded,
+ * so anything reading it animates perfectly on the host and does nothing whatsoever on a
+ * client. See docs/animation.md, "actionTimer is not post-cast state".
+ *
+ * ## Keyed on the Enemy object, never on its id, never on its `boss`
+ *
+ * `nextEnemyId` restarts at 1 on every floor and a descend builds a new `Dungeon`, so an
+ * id-keyed map hands the next floor's boss the last one's release. And a client REBUILDS
+ * `e.boss` from scratch every snapshot, so keying on that loses the latch twenty times a
+ * second on a client while working flawlessly on the host. The `Enemy` itself is stable on
+ * both ends (`net/sync.ts` reuses it via `byId`), and a `WeakMap` on it needs no reset hook
+ * and cannot leak across floors by construction — the same object-keying `Dungeon.netLerp`
+ * already uses.
+ */
+export class StrikeLatch {
+  private readonly state = new WeakMap<object, { ability: string; endedAt: number | null }>();
+
+  /**
+   * Call once per boss per frame, casting or not — it is the observer as well as the reader.
+   * Returns the release to draw, or null when there is nothing (which is most of the time).
+   *
+   * **Priority is cast > strike > idle, always.** While a wind-up is running this returns
+   * null outright and re-arms, so a boss hasted enough to start its next cast before the
+   * release has finished abandons the release mid-flourish. Never the reverse, never a
+   * delay, never a queue: the wind-up is the telegraph and the readable thing must never be
+   * blocked by the decorative one.
+   */
+  read(
+    key: object, meta: AtlasSprite | undefined,
+    boss: CastReadout | null | undefined, alive: boolean, now: number,
+  ): StrikeFrame | null {
+    // Gone from the fight means the release is cancelled, for the same reason `castFrame`
+    // refuses to hold a corpse in a cast pose: killing a boss through its wind-up is a real
+    // and rewarded play, and the ability it was winding up never happened.
+    if (!alive || !boss) { this.state.delete(key); return null; }
+
+    const casting = !!boss.ability && boss.castTotal > 0 && boss.castTimer > 0;
+    const prev = this.state.get(key);
+    if (casting) {
+      if (!prev || prev.ability !== boss.ability || prev.endedAt !== null) {
+        this.state.set(key, { ability: boss.ability!, endedAt: null });
+      }
+      return null;
+    }
+    // The edge: it was winding something up last frame and now it is not, and it is alive —
+    // so that ability resolved, and this instant is the impact.
+    if (prev && prev.endedAt === null) prev.endedAt = now;
+    if (!prev || prev.endedAt === null) return null;
+
+    const tag = [prev.ability, STRIKE_TAG];
+    const seconds = strikeSeconds(meta, tag);
+    if (seconds <= 0) return null;
+    const elapsed = now - prev.endedAt;
+    if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed >= seconds) return null;
+    return { tag, elapsed };
+  }
+}

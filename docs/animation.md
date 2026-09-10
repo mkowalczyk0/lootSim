@@ -215,6 +215,75 @@ cancelled**. Without it, a corpse would freeze mid-wind-up in a pose for a hit t
 coming. Killing a boss through its wind-up is a real and rewarded play, so this case
 actually happens.
 
+## The strike: the release, and why it needs a memory
+
+A wind-up used to end with the sprite snapping straight back to idle. The boss coiled, the
+shape resolved, and nothing followed — no release, no follow-through, no moment where the
+body did the thing it had spent a second and a half promising. That is what the owner meant
+by "halfway" (see below), and the answer is a `strike` tag.
+
+**The wind-up and the strike have different jobs, so they have different clocks.** A wind-up
+is progress-keyed because it *is* the telegraph: its length carries information the player
+has to read, `DepthProfile.telegraph` squeezes it as you descend, and the pose landing
+exactly when the shape fills is the whole promise. A strike carries no information at all —
+the hit has already landed, the decision is already made, the player has already dashed or
+not. It is consequence, not warning. **So it must not track a clock**, and it runs for the
+fixed `seconds` on its own tag like any other free-running animation. That it *also* cannot
+get a clock on a client is a convenience, not the argument; the reason is that a strike is
+not a telegraph.
+
+**Priority is cast > strike > idle, always.** A boss hasted enough to begin its next wind-up
+before the release has finished abandons the release mid-flourish. Never the reverse, never
+a delay, never a queue: the readable thing must never be blocked by the decorative thing.
+Getting this backwards is the one mistake here that could actually hurt a fight.
+
+The tag chain is `[ability, "strike", "idle"]`, mirroring the cast chain for the same
+reason — one release per boss covers every ability it has, and a per-ability release starts
+resolving the day someone draws one.
+
+The fallback ladder deliberately stops one rung short of `idle` for a strike, and that is
+what makes this a superset rather than a change to shipped art: `resolveTag` falls through
+to `idle`, which is right for a wind-up but wrong for a release, because a boss with no
+strike art would otherwise play its own breathing as a flourish after every cast. Today
+that is every boss in the game. `npm run anim` asserts it directly.
+
+### `actionTimer` is not post-cast state
+
+**If you go looking for "when did this boss's ability land", `actionTimer` is what you will
+find, and it is wrong twice over.** It is written at `boss.ts:375` when an ability resolves
+and counted down, which is exactly the shape wanted — but:
+
+- **It has two writers.** `boss.ts:177` also sets it (to 0.35) as a retry gap when an
+  ability cannot be used. "It is counting" does not mean "something just landed"; its
+  meaning is supplied by whichever writer touched it last.
+- **It is not on the wire.** `net/sync.ts` rebuilds client boss state with `actionTimer: 0`
+  hardcoded. Anything reading it animates perfectly on the host and does nothing whatsoever
+  on a client — a failure that is invisible in every test anyone would run solo.
+
+The state that *is* shared is `ability`, `castTimer` and `castTotal`, which the snapshot
+already carries. So a client sees the same `ability` non-null → null edge the host does, and
+remembering that edge is all a release needs. `StrikeLatch` in `render/anim.ts` does exactly
+that, and adds no field to anything in `game/` — the seam rule forbids a field on an
+`Enemy`, not memory inside the clock.
+
+### Key the latch on the Enemy, never on its id and never on its `boss`
+
+Both wrong keys fail the same way: perfectly on the host, silently on a client or a second
+floor.
+
+- **Not the id.** `nextEnemyId` restarts at 1 on every floor and a descend builds a new
+  `Dungeon`, so an id-keyed map hands the next floor's boss the last one's release. A reset
+  hook would paper over it, and a reset hook is precisely the line that gets forgotten.
+- **Not `e.boss`.** A client rebuilds that object from scratch on every snapshot, so the
+  latch would evaporate twenty times a second on a client.
+- **The `Enemy` itself is stable on both ends** — `net/sync.ts` reuses it via `byId` — and a
+  `WeakMap` keyed on it cannot leak across floors by construction and needs no reset hook at
+  all. `Dungeon.netLerp` is the existing precedent for object-keying this kind of state.
+
+A release is also cancelled by death, for the reason `castFrame` already refuses to hold a
+corpse in a cast pose: killing a boss through its wind-up is a real and rewarded play, and
+the ability it was winding up never happened.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without

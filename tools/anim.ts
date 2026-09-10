@@ -37,7 +37,7 @@ import { CLASS_IDS } from "../src/data/classes";
 import { chooseHeroArt, chooseSpriteArt } from "../src/render/spriteart";
 import {
   CAST_TAG, FALLBACK_TAG, STATIC_FRAME, castFrame, frameAt, frameAtProgress, frameRect,
-  fitsManifest, resolveTag, stripWidth,
+  fitsManifest, resolveTag, stripWidth, STRIKE_TAG, StrikeLatch,
 } from "../src/render/anim";
 
 let failures = 0;
@@ -561,6 +561,110 @@ const ROWS: readonly (AtlasSprite | undefined)[] = [STATIC_ROW, ANIM_ROW, BROKEN
       const f = castFrame({ ability: id, castTimer: 0.5, castTotal: 1 }, true)!;
       return resolveTag(idleOnly, f.tag) === idleOnly.anim!.tags.idle;
     }));
+}
+
+
+// --- the strike latch: drawing the release after the sim has forgotten ---------------
+//
+// The wind-up is a reading of live simulation state; the strike cannot be, because
+// `resolveAbility` clears `boss.ability` the instant the ability lands. So `render/` keeps
+// its own memory of the cast-ended edge. These check the rules that memory has to follow —
+// especially the first one, which is the only one that touches art already shipped.
+{
+  console.log("\nanimation — the strike latch\n");
+
+  /** A boss that HAS a release: six frames of it at 0.1s, so 0.6s long. */
+  const WITH_STRIKE: AtlasSprite = {
+    ...ANIM_ROW,
+    anim: {
+      cols: 18,
+      tags: {
+        ...ANIM_ROW.anim!.tags,
+        [STRIKE_TAG]: { from: 12, to: 17, seconds: 0.1, loop: false },
+      },
+    },
+  };
+  const casting = (id: string) => ({ ability: id, castTimer: 0.5, castTotal: 1 });
+  const idleState = { ability: null, castTimer: 0, castTotal: 0 };
+
+  // THE ONE THAT MATTERS FOR SHIPPED ART. Every boss in the game today has no `strike` tag,
+  // and `resolveTag` falls through to `idle` — so a naive reader would play a boss's own
+  // breathing as a flourish after every cast. It must return nothing instead, which is what
+  // makes adding the strike a superset rather than a change to art nobody asked to change.
+  {
+    const l = new StrikeLatch(), e = {};
+    l.read(e, ANIM_ROW, casting("volley"), true, 0);
+    check("a boss with NO strike art plays nothing after a cast — shipped bosses are untouched",
+      l.read(e, ANIM_ROW, idleState, true, 1) === null);
+  }
+
+  // Priority: cast > strike > idle. While the wind-up runs, the latch yields.
+  {
+    const l = new StrikeLatch(), e = {};
+    check("nothing plays while the wind-up is still running — the telegraph owns the sprite",
+      l.read(e, WITH_STRIKE, casting("volley"), true, 0) === null);
+  }
+
+  // The edge itself, and that it names the ability that just landed.
+  {
+    const l = new StrikeLatch(), e = {};
+    l.read(e, WITH_STRIKE, casting("slam"), true, 0);
+    const f = l.read(e, WITH_STRIKE, idleState, true, 1);
+    check("a cast that ends on a live boss starts the release", !!f);
+    check("the release names the ability that landed, then the generic tag",
+      !!f && f.tag[0] === "slam" && f.tag[1] === STRIKE_TAG,
+      f ? f.tag.join(",") : "null");
+    check("the release starts at its first frame",
+      !!f && frameAt(WITH_STRIKE, f.tag, f.elapsed).index === 12);
+  }
+
+  // A boss killed through its wind-up: the ability never resolved, so there is nothing to
+  // follow through on. Same rule `castFrame` already follows for the same reason.
+  {
+    const l = new StrikeLatch(), e = {};
+    l.read(e, WITH_STRIKE, casting("slam"), true, 0);
+    check("a boss killed MID-CAST plays no release — the ability never happened",
+      l.read(e, WITH_STRIKE, idleState, false, 1) === null);
+  }
+
+  // It ends. A latch that never expired would pin a boss in its follow-through forever.
+  {
+    const l = new StrikeLatch(), e = {};
+    l.read(e, WITH_STRIKE, casting("slam"), true, 0);
+    l.read(e, WITH_STRIKE, idleState, true, 1);
+    check("the release is still playing part-way through", !!l.read(e, WITH_STRIKE, idleState, true, 1.3));
+    check("the release ends after its own length and idle takes back over",
+      l.read(e, WITH_STRIKE, idleState, true, 1.6) === null);
+  }
+
+  // The interruption rule, in the direction that matters: a boss hasted enough to start its
+  // next wind-up mid-flourish abandons the flourish. Never a queue, never a delay.
+  {
+    const l = new StrikeLatch(), e = {};
+    l.read(e, WITH_STRIKE, casting("slam"), true, 0);
+    l.read(e, WITH_STRIKE, idleState, true, 1);
+    check("a new wind-up interrupts the release outright",
+      l.read(e, WITH_STRIKE, casting("volley"), true, 1.2) === null);
+    const after = l.read(e, WITH_STRIKE, idleState, true, 1.4);
+    check("and the release that follows belongs to the NEW ability, not the abandoned one",
+      !!after && after.tag[0] === "volley", after ? after.tag[0]! : "null");
+  }
+
+  // Two bosses on one floor must not share a latch — and the WeakMap keys on the entity
+  // object precisely so a second floor's boss cannot inherit this one's either.
+  {
+    const l = new StrikeLatch(), a = {}, b = {};
+    l.read(a, WITH_STRIKE, casting("slam"), true, 0);
+    l.read(b, WITH_STRIKE, idleState, true, 0);
+    check("one boss's release is not another's", l.read(b, WITH_STRIKE, idleState, true, 1) === null);
+    check("while its own still plays", !!l.read(a, WITH_STRIKE, idleState, true, 1));
+  }
+
+  // A boss that never cast at all — the ordinary case for every non-boss monster on screen.
+  {
+    const l = new StrikeLatch();
+    check("an entity that has never cast plays no release", l.read({}, WITH_STRIKE, null, true, 5) === null);
+  }
 }
 
 console.log(failures === 0 ? "\nanimation: all checks passed\n" : `\nanimation: ${failures} FAILED\n`);
