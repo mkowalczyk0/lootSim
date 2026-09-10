@@ -293,6 +293,37 @@ own exit) that the wrapper's *own* success cannot fake by simply reaching the ne
 The absence of that marker is the finding, not a shell-level exit code that only ever proves
 the shell kept running.
 
+## A tenth instance, a different species: a fixture that never built the state, hidden by a bound with room for it
+
+`tools/smoke.ts`'s Standards check banked `raidChallengerBadges["raid-the-ferryman"]` to prove a
+character flying a raid-earned mark keeps a byte-identical sheet. The real raid id is
+`the-ferryman`; `standardsFor`'s `RAIDS.find` never matched, so the fixture built a character
+who had earned five marks while believing it had built one who'd earned six. The raid-mark
+render path — the whole reason that line existed — had zero evidence behind it, in a commit
+already marked approved.
+
+Nothing here is an instrument that couldn't see a failure — every entry above this one is. This
+is a fixture that never constructed the state it claimed to construct. Read alone, this would
+have been fatal: `marks.length` came back 5, and the check next to it read `marks.length >= 5`.
+Five passing a five-mark floor and five passing a six-mark reality print identically. The bound
+had slack for exactly the amount the typo cost, which is not a coincidence worth admiring — a
+threshold with any slack in it will always have *some* amount of missing coverage it cannot
+distinguish from the real thing, and here the missing amount happened to fit.
+
+**Two failures, and either alone was harmless.** A fixture bug behind an exact-count check goes
+red immediately — the whole reason a fixture-construction defect is usually cheap to catch. A
+loose bound on a correctly-built fixture never encounters the gap in the first place. It took
+both at once — the wrong id and the room for it — to reach a green run that had exercised four
+of the five families it named, with a floor generous enough not to notice the fifth was ever
+missing. Every prior entry in this document is one blind instrument; this one is two
+sighted-looking pieces that were only blind together.
+
+The fix is the same shape this document already argues for twice over: the wrong id corrected,
+the `>=` tightened to `=== 6` — a bound the fixture cannot silently undershoot without the check
+itself saying so — and the mark ids printed alongside the count, so a future gap in this same
+family is visible in the output rather than requiring someone to re-derive which five marks a
+six-mark fixture actually produced.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
