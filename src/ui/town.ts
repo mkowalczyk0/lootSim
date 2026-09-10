@@ -2,6 +2,7 @@ import { combatHints, Input, skillKeys, townHints } from "../core/input";
 import { clamp, formatNumber } from "../core/math";
 import { challengerMultiplier, challengerName, MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHEST_CATEGORIES, CHESTS, CHEST_TIERS, chestName } from "../data/chests";
+import { msUntilShopReset, SHOP_TIERS, SHOP_TIER_IDS, type ShopTierId } from "../data/shop";
 import {
   AUGMENT_AXES, AUGMENT_BY_ID, augmentAxisLabel, augmentsOnAxis, emptyLoadout,
   loadoutProblems, loadoutSummary, withAugment, type AugmentAxis, type AugmentLoadout,
@@ -118,7 +119,7 @@ const AUGMENT_SLOTS: readonly (AugmentAxis | null)[] = [null, ...AUGMENT_AXES];
 const AUGMENT_CATEGORY = CHEST_CATEGORIES.length;
 
 const CYCLE_TABS = [
-  "Chests", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
+  "Chests", "Shop", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
   "Records", "Settings",
 ] as const;
 const STATION_TABS = [
@@ -263,6 +264,7 @@ function tabHelp(
     case "Chests": return augmentView
       ? `${sel} pick a slot · ${adj} change what's in it · ${e} open · ${q} buy a key · ${semi} clear`
       : `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
+    case "Shop": return `${sel} pick a slot · ${adj} switch tier · ${e} buy · ${q} reroll this slot`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
       + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk`);
@@ -303,6 +305,8 @@ export class TownUI {
    * chests", and because a loadout without a chest under it is not a thing you can open.
    */
   private chestCategory = 0;
+  /** Which `SHOP_TIER_IDS` entry the Shop screen is showing — left/right cycles it. */
+  private shopTier: ShopTierId = "daily";
   /**
    * The augment loadout being assembled. **Reset to a Basic chest every time the view is
    * entered**, which is a rule and not a default (§5.2): augments never require an
@@ -422,6 +426,19 @@ export class TownUI {
         // Through the same setter the keyboard uses, so entering the Augment view resets
         // the loadout by either path rather than only one of them.
         this.setChestCategory(Number(catEl.dataset.category));
+        this.render();
+        return;
+      }
+      const shopTierEl = target.closest<HTMLElement>("[data-shop-tier]");
+      if (shopTierEl) {
+        this.shopTier = shopTierEl.dataset.shopTier as ShopTierId;
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const shopActionEl = target.closest<HTMLElement>("[data-shop-action]");
+      if (shopActionEl) {
+        if (shopActionEl.dataset.shopAction === "buy") this.primary(); else this.secondary();
         this.render();
         return;
       }
@@ -808,6 +825,7 @@ export class TownUI {
       case "Chests": return this.augmentView
         ? AUGMENT_SLOTS.length
         : CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
+      case "Shop": return SHOP_TIERS[this.shopTier].slots;
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length + RELIC_SLOTS;
       case "Skills": return SKILL_SLOTS;
@@ -880,6 +898,12 @@ export class TownUI {
       if (this.augmentView) return this.cycleAugmentSlot(this.cursor, dir);
       const tiers = CHEST_CATEGORIES[this.chestCategory]!.tiers;
       this.cursor = (this.cursor + dir + tiers.length) % tiers.length;
+      return true;
+    }
+    if (this.tab === "Shop") {
+      const i = SHOP_TIER_IDS.indexOf(this.shopTier);
+      this.shopTier = SHOP_TIER_IDS[(i + dir + SHOP_TIER_IDS.length) % SHOP_TIER_IDS.length]!;
+      this.cursor = 0;
       return true;
     }
     if (this.tab === "Path") {
@@ -1426,6 +1450,27 @@ export class TownUI {
         );
         break;
       }
+      case "Shop": {
+        const listings = this.state.shopListings(this.shopTier);
+        const listing = listings[this.cursor];
+        if (!listing) break;
+        if (this.state.shopPurchasesLeft(this.shopTier) <= 0) {
+          this.notify(`No purchases left in ${SHOP_TIERS[this.shopTier].name} this period.`, "#ef4444");
+          break;
+        }
+        if (this.state.coins < listing.price) {
+          this.notify(`Need ${formatNumber(listing.price)} coins.`, "#ef4444");
+          break;
+        }
+        const bought = this.state.buyShopSlot(this.shopTier, this.cursor);
+        if (bought) {
+          this.notify(`${rarityLabel(bought.rarity)}: ${bought.name}`, RARITY_COLORS[bought.rarity]);
+          this.state.save();
+        } else {
+          this.notify("Already bought that slot this period.", "#ef4444");
+        }
+        break;
+      }
       case "Stash": {
         const item = this.filteredStash()[this.cursor];
         if (!item) break;
@@ -1657,6 +1702,16 @@ export class TownUI {
           this.notify(`Bought ${count} ${chestName(tier)} key${count > 1 ? "s" : ""}`, CHESTS[tier].color);
         } else {
           this.notify(`Need ${formatNumber(cost)} coins`, "#ef4444");
+        }
+        break;
+      }
+      case "Shop": {
+        const cost = this.state.shopNextRerollCost(this.shopTier);
+        if (this.state.rerollShopSlot(this.shopTier, this.cursor)) {
+          this.notify(`Rerolled for ${formatNumber(cost)} gems`, "#c084fc");
+          this.state.save();
+        } else {
+          this.notify(`Need ${formatNumber(cost)} gems to reroll`, "#ef4444");
         }
         break;
       }
@@ -1937,6 +1992,7 @@ export class TownUI {
       case "Altar": return this.renderAltar();
       case "Craft": return this.renderCraft();
       case "Chests": return this.renderChests();
+      case "Shop": return this.renderShop();
       case "Stash": return this.renderStash();
       case "Hero": return this.renderHero();
       case "Skills": return this.renderSkills();
@@ -3519,6 +3575,96 @@ export class TownUI {
     return labels.map((label, i) => `
       <div class="chest-cat ${i === this.chestCategory ? "on" : ""}" data-category="${i}">${escapeHtml(label)}</div>
     `).join("");
+  }
+
+  /**
+   * The Rotating Shop (`docs/rotating-shop.md`, docket item 2). Same three-part layout
+   * the Forge's workbench uses, for the same reason (`docs/actions-vs-reading-panels`):
+   * a grid of listings, a strictly read-only `<aside>` for the selected item's stats
+   * (`renderCompare`, the exact panel every other item-inspecting screen uses — this
+   * never gets its own copy), and every action — Buy, Reroll — in its own fixed bar
+   * below both, never inside the scrolling sidebar. The bar states each button's cost
+   * inline and needs no hover popup: there are only two actions here, not the Forge's
+   * eleven, so a static line under the buttons is already the whole description.
+   */
+  private renderShop(): string {
+    const spec = SHOP_TIERS[this.shopTier];
+    const listings = this.state.shopListings(this.shopTier);
+    const bought = new Set(this.state.shopPurchasedSlots(this.shopTier));
+    const purchasesLeft = this.state.shopPurchasesLeft(this.shopTier);
+    const resetMs = msUntilShopReset(this.shopTier);
+    const resetH = Math.floor(resetMs / 3_600_000);
+    const resetLabel = resetH >= 48 ? `${Math.floor(resetH / 24)}d` : resetH >= 1 ? `${resetH}h` : "<1h";
+
+    const tabs = SHOP_TIER_IDS.map((id) => `
+      <span class="chip ${id === this.shopTier ? "on" : ""}" data-shop-tier="${id}">${escapeHtml(SHOP_TIERS[id].name)}</span>
+    `).join("");
+
+    const cards = listings.map((listing, i) => {
+      const sold = bought.has(i);
+      const icon = pixelImageFit(itemArt(listing.item), 64, 64, itemArtKey("item", listing.item));
+      const afford = this.state.coins >= listing.price;
+      return `
+        <div class="item-card ${i === this.cursor ? "on" : ""} ${sold ? "dim" : ""}" data-index="${i}"
+             style="--r:${RARITY_COLORS[listing.item.rarity]}">
+          ${sold ? `<span class="ic-mark worn" title="already bought this period">SOLD</span>` : ""}
+          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <span class="ic-name" style="color:${RARITY_COLORS[listing.item.rarity]}">${escapeHtml(listing.item.name)}</span>
+          <span class="ic-slot ${afford ? "" : "warn"}">${formatNumber(listing.price)}c</span>
+        </div>`;
+    }).join("");
+
+    const sel = listings[this.cursor];
+    const buyCost = sel?.price ?? 0;
+    const rerollCost = this.state.shopNextRerollCost(this.shopTier);
+    const selSold = sel ? bought.has(this.cursor) : false;
+
+    return `<div class="forge-pane">
+        <div class="chest-cats">${tabs}
+          <span class="muted" style="margin-left:auto">resets in ${resetLabel} · ${purchasesLeft}/${spec.purchaseCap} purchases left this ${spec.id === "daily" ? "day" : spec.id === "weekly" ? "week" : "month"}</span>
+        </div>
+        <p class="muted">${escapeHtml(spec.blurb)}</p>
+        <div class="stash-grid">${cards}</div>
+      </div>
+      <aside class="side">
+        ${sel ? this.renderCompare(sel.item) : `<p class="muted">Pick a listing.</p>`}
+      </aside>
+      <div class="workbench-bar">
+        <div class="workbench-bar-head">
+          <h3>${escapeHtml(spec.name)} <span class="muted">${formatNumber(this.state.coins)}c · ${formatNumber(this.state.gems)} gems</span></h3>
+        </div>
+        <div class="op-cols">
+          <div class="op-col">
+            <span class="op-col-label">Buy</span>
+            <div class="op-col-btns">
+              <span class="chip op-btn ${selSold || purchasesLeft <= 0 || !sel ? "dim" : ""}" data-shop-action="buy">
+                <span class="op-btn-label">Buy this slot</span>
+                <span class="op-btn-cost">${sel ? formatNumber(buyCost) + "c" : "—"}</span>
+              </span>
+            </div>
+          </div>
+          <div class="op-col">
+            <span class="op-col-label">Reroll</span>
+            <div class="op-col-btns">
+              <span class="chip op-btn ${!sel ? "dim" : ""}" data-shop-action="reroll">
+                <span class="op-btn-label">Reroll this slot</span>
+                <span class="op-btn-cost">${formatNumber(rerollCost)} gems</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="op-detail">
+          <p class="op-detail-blurb">${
+            selSold
+              ? "Already bought this slot this period — rerolling it still changes what it offers, but buying it again won't."
+              : purchasesLeft <= 0
+                ? `No purchases left in ${escapeHtml(spec.name)} this period. Rerolling still works — it just won't be for you until the reset.`
+                : `${k(this.state.settings, "confirm")}, or click Buy, to buy this listing outright. ${
+                    k(this.state.settings, "cancel")}, or click Reroll, to spend gems changing what this one slot offers — `
+                  + `it never changes how many purchases you have left.`
+          }</p>
+        </div>
+      </div>`;
   }
 
   private renderChests(): string {
