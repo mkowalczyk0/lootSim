@@ -98,7 +98,7 @@ import {
 } from "../game/state";
 import { augmentArt, chestIcon, cosmeticPreview, heroSprite, itemArt, itemArtKey, relicArt, relicArtKey, weaponSprite } from "../render/sprites";
 import { ChestRoll } from "./chestroll";
-import { pixelImage, pixelImageBody, pixelImageFit } from "./pixelimage";
+import { pixelImage, pixelImageBody, pixelImageTag } from "./pixelimage";
 import { HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX } from "./portrait";
 
 /**
@@ -2192,7 +2192,7 @@ export class TownUI {
       const items = this.filteredStash();
       const rows = items.map((it, i) => {
         const on = i === this.cursor ? "on" : "";
-        const icon = pixelImageFit(itemArt(it), 48, 48, itemArtKey("item", it));
+        const icon = pixelImageTag(itemArt(it), 48, 48, itemArtKey("item", it));
         return `
           <div class="row ${on}" data-index="${i}">
             <div class="row-main">${icon}
@@ -2215,7 +2215,7 @@ export class TownUI {
       const body = locked
         ? `<span class="name muted">Locked</span><div class="row-side">${trophyCaseCost(i)} gems</div>`
         : item
-          ? `${pixelImageFit(itemArt(item), 48, 48, itemArtKey("item", item))}
+          ? `${pixelImageTag(itemArt(item), 48, 48, itemArtKey("item", item))}
              <span class="name" style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</span>
              <div class="row-side">${rarityLabel(item.rarity)} · ${k(this.state.settings, "confirm")} to clear</div>`
           : `<span class="name muted">Empty</span><div class="row-side">${k(this.state.settings, "confirm")} to place something</div>`;
@@ -3173,13 +3173,13 @@ export class TownUI {
       // The lock badge answers "could the *current* op run on this one?" — same quote the
       // side panel prices from, so the grid and the panel can never disagree.
       const quote = this.state.forgeQuote(it.id, this.forgeOp, 0);
-      const icon = pixelImageFit(itemArt(it), 64, 64, itemArtKey("item", it));
+      const icon = pixelImageTag(itemArt(it), 64, 64, itemArtKey("item", it));
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[it.rarity]}" title="${escapeHtml(quote?.blocker ?? "")}">
           ${wornIds.has(it.id) ? `<span class="ic-mark worn" title="equipped — the current character has this on">WORN</span>` : ""}
           ${quote?.blocker ? `<span class="ic-lock">✕</span>` : ""}
-          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <div class="ic-art">${icon}</div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
           <span class="ic-slot">${it.slot}</span>
         </div>`;
@@ -3740,7 +3740,7 @@ export class TownUI {
       : augmentsOnAxis(axis).filter((d) => this.state.augmentCount(d.id) > 0).map((d) => `
           <div class="aug-card ${this.loadout[axis] === d.id ? "sel" : ""}" data-augment="${escapeHtml(d.id)}"
                style="--r:${RARITY_COLORS[d.grade]}">
-            <img src="${pixelImageFit(augmentArt(d), 44, 44, `augment.${d.id}`)}" alt="">
+            ${pixelImageTag(augmentArt(d), 44, 44, `augment.${d.id}`)}
             <span class="aug-card-name">${escapeHtml(d.name)}</span>
             <span class="badge">×${this.state.augmentCount(d.id)}</span>
           </div>`).join("")
@@ -3811,13 +3811,13 @@ export class TownUI {
 
     const cards = listings.map((listing, i) => {
       const sold = bought.has(i);
-      const icon = pixelImageFit(itemArt(listing.item), 64, 64, itemArtKey("item", listing.item));
+      const icon = pixelImageTag(itemArt(listing.item), 64, 64, itemArtKey("item", listing.item));
       const afford = this.state.coins >= listing.price;
       return `
         <div class="item-card ${i === this.cursor ? "on" : ""} ${sold ? "dim" : ""}" data-index="${i}"
              style="--r:${RARITY_COLORS[listing.item.rarity]}">
           ${sold ? `<span class="ic-mark worn" title="already bought this period">SOLD</span>` : ""}
-          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <div class="ic-art">${icon}</div>
           <span class="ic-name" style="color:${RARITY_COLORS[listing.item.rarity]}">${escapeHtml(listing.item.name)}</span>
           <span class="ic-slot ${afford ? "" : "warn"}">${formatNumber(listing.price)}c</span>
         </div>`;
@@ -3885,10 +3885,10 @@ export class TownUI {
 
     const cards = cat.tiers.map((tier, i) => {
       const info = CHESTS[tier];
-      const icon = pixelImageFit(chestIcon(tier), 72, 72, tier);
+      const icon = pixelImageTag(chestIcon(tier), 72, 72, tier);
       return `
         <div class="chest-card row ${i === this.cursor ? "on" : ""}" data-index="${i}" style="--chest-color:${info.color}">
-          <div class="chest-card-art"><img src="${icon}" alt=""></div>
+          <div class="chest-card-art">${icon}</div>
           <span class="chest-card-name">${escapeHtml(chestName(tier))}</span>
           <span class="badge">${this.state.keys[tier]} keys</span>
           <span class="chest-card-price">${formatNumber(info.price * n)} for ${n}</span>
@@ -3965,7 +3965,7 @@ export class TownUI {
         it.trigger ? '<span class="dot" style="background:#ff1493" title="triggered effect"></span>' : "",
       ].join("");
       const locked = !this.state.player.canEquip(it);
-      const icon = pixelImageFit(itemArt(it), 64, 64, itemArtKey("item", it));
+      const icon = pixelImageTag(itemArt(it), 64, 64, itemArtKey("item", it));
       const named = it.named ? NAMED_BY_ID[it.named] : undefined;
       const tip = `${it.name} — ${rarityLabel(it.rarity)} ${it.type} · ilvl ${it.ilvl}\n`
         + (named ? `${named.flavor}\n` : "")
@@ -3978,7 +3978,7 @@ export class TownUI {
           ${locked ? `<span class="ic-lock">lv ${requiredLevel(it)}</span>` : ""}
           <span class="ic-select ${marked ? "on" : ""}" data-select="${it.id}"
                 title="mark for a batch salvage">${marked ? "☑" : "☐"}</span>
-          <div class="ic-art"><img src="${icon}" alt=""></div>
+          <div class="ic-art">${icon}</div>
           <span class="ic-name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
           <span class="ic-slot">${it.slot}</span>
           ${dots ? `<div class="ic-dots">${dots}</div>` : ""}
@@ -4050,13 +4050,13 @@ export class TownUI {
          ${escapeHtml(this.state.heroClass.name)} is only ${this.state.player.level}.</p>`
       : "";
 
-    const icon = pixelImageFit(itemArt(item), 96, 96, itemArtKey("item", item));
+    const icon = pixelImageTag(itemArt(item), 96, 96, itemArtKey("item", item));
     const cmpHead = worn
       ? `<tr class="cmp-head"><td></td><td>this</td><td>vs equipped</td></tr>`
       : `<tr class="cmp-head"><td></td><td>this</td><td>gain</td></tr>`;
     return `
       <div class="cmp-hero" style="--r:${RARITY_COLORS[item.rarity]}">
-        <div class="cmp-art"><img src="${icon}" alt=""></div>
+        <div class="cmp-art">${icon}</div>
         <div>
           <h3 style="color:${RARITY_COLORS[item.rarity]};margin:0">${escapeHtml(item.name)}</h3>
           <p class="muted" style="margin:2px 0 0">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}
@@ -4097,7 +4097,7 @@ export class TownUI {
     const rows = MOD_KEYS.filter((key) => (mods[key] ?? 0) !== 0)
       .map((key) => `<tr><td>${escapeHtml(shortLabel(key))}</td><td>${fmtMod(key, mods[key] ?? 0)}</td></tr>`)
       .join("");
-    const icon = pixelImageFit(itemArt(item), 96, 96, itemArtKey("item", item));
+    const icon = pixelImageTag(itemArt(item), 96, 96, itemArtKey("item", item));
     const weapon = item.family ? WEAPONS[item.family] : null;
     const affine = item.family ? this.state.heroClass.affinity.includes(item.family) : false;
     const weaponLine = this.renderNamedLore(item) + (weapon
@@ -4118,7 +4118,7 @@ export class TownUI {
       : "";
     return `
       <div class="cmp-hero" style="--r:${RARITY_COLORS[item.rarity]}">
-        <div class="cmp-art"><img src="${icon}" alt=""></div>
+        <div class="cmp-art">${icon}</div>
         <div>
           <h3 style="color:${RARITY_COLORS[item.rarity]};margin:0">${escapeHtml(item.name)}</h3>
           <p class="muted" style="margin:2px 0 0">${rarityLabel(item.rarity)} ${item.type} · ilvl ${item.ilvl}</p>
@@ -4138,7 +4138,7 @@ export class TownUI {
     const it = p.equipment[slot];
     const affine = it?.family ? cls.affinity.includes(it.family) : false;
     const art = it
-      ? `<img src="${pixelImageFit(itemArt(it), 72, 72, itemArtKey("item", it))}" alt="">`
+      ? pixelImageTag(itemArt(it), 72, 72, itemArtKey("item", it))
       : `<span class="ds-empty">${SLOT_GLYPH[slot]}</span>`;
     const tip = it ? `${it.name} — ${rarityLabel(it.rarity)}\n${statLine(it)}` : `${slot} — empty`;
     return `
@@ -4185,7 +4185,7 @@ export class TownUI {
     const def = id ? RELIC_BY_ID[id] : undefined;
     const color = def ? RELIC_TIER_INFO[def.tier].color : "var(--line)";
     const art = def
-      ? `<img src="${pixelImageFit(relicArt(def), 72, 72, relicArtKey(def))}" alt="">`
+      ? pixelImageTag(relicArt(def), 72, 72, relicArtKey(def))
       : `<span class="ds-empty">✦</span>`;
     const tip = def ? `${def.name} — ${RELIC_TIER_INFO[def.tier].label}\n${def.description}` : "relic slot — empty";
     return `
@@ -4207,7 +4207,7 @@ export class TownUI {
     const info = RELIC_TIER_INFO[def.tier];
     return `
       <div class="cmp-hero" style="--r:${info.color}">
-        <div class="cmp-art"><img src="${pixelImageFit(relicArt(def), 96, 96, relicArtKey(def))}" alt=""></div>
+        <div class="cmp-art">${pixelImageTag(relicArt(def), 96, 96, relicArtKey(def))}</div>
         <div>
           <h3 style="color:${info.color};margin:0">${escapeHtml(def.name)}</h3>
           <p class="muted" style="margin:2px 0 0">${info.label}</p>
@@ -4646,14 +4646,14 @@ export class TownUI {
       const playing = this.state.classChosen && this.state.activeClassId === id;
       const untouched = pc.level === 1 && pc.xp === 0 && pc.allocated.length === 0
         && (Object.values(pc.equipment) as (Item | null)[]).every((it) => it === null);
-      const icon = pixelImageFit(weaponSprite(cls.affinity[0]!, null, null), 64, 64, `path-${id}`);
+      const icon = pixelImageTag(weaponSprite(cls.affinity[0]!, null, null), 64, 64, `path-${id}`);
       // The gold border (UAT §13): this class beat its own Proving at the bottom of the
       // Delve, so its Legend is Complete. Read straight off the character sheet.
       const complete = pc.legendComplete;
       return `
         <div class="class-card row ${i === this.cursor ? "on" : ""} ${complete ? "complete" : ""}" data-index="${i}"
           style="--class-color:${cls.color}">
-          <div class="class-card-art"><img src="${icon}" alt=""></div>
+          <div class="class-card-art">${icon}</div>
           <span class="class-card-name" style="color:${complete ? "var(--gold)" : cls.color}">${escapeHtml(cls.name)}</span>
           <span class="badge">${untouched ? "new" : `lv ${pc.level}`}</span>
           ${complete ? '<span class="badge gold">complete</span>' : ""}
@@ -4962,9 +4962,9 @@ export class TownUI {
     const held = this.state.player.equipment.weapon;
     const hero = heroSprite(a, this.state.activeClassId);
     const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, STYLE_PORTRAIT_BODY_PX);
-    const weapon = pixelImageFit(
+    const weapon = pixelImageTag(
       weaponSprite(this.state.player.weapon.id, wornWeaponSkin(a, this.skinFamily),
-        held?.rarity ?? null, held?.named ?? null), 72);
+        held?.rarity ?? null, held?.named ?? null), 72, Infinity, undefined, "your weapon");
     const selected = STYLE_ROWS[this.cursor];
     const info = selected ? this.styleRowInfo(selected) : null;
     const owned = this.state.cosmetics.length;
@@ -4973,7 +4973,7 @@ export class TownUI {
       <aside class="side">
         <h3>You</h3>
         <div class="portrait hero"><img src="${portrait}" alt="your character"></div>
-        <div class="portrait weapon"><img src="${weapon}" alt="your weapon"></div>
+        <div class="portrait weapon">${weapon}</div>
         ${info ? `<p><b style="color:${info.color}">${escapeHtml(info.value)}</b></p>
           <p class="muted">${escapeHtml(info.blurb)}</p>` : ""}
         <p>

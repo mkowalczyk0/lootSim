@@ -48,6 +48,24 @@ export function pixelImageFit(
 }
 
 /**
+ * Like {@link pixelImageFit}, but returns the whole `<img>` tag instead of a bare data
+ * URL. `pixelImageFit`'s return type is `string`, indistinguishable at the call site
+ * from any other string — which is exactly how `renderTrophy` (src/ui/town.ts) shipped
+ * a raw `data:image/png;base64,...` where an item picture belonged: nothing caught the
+ * missing `<img>` wrapper, because there was no missing step the type system could see.
+ * Every call site that renders a `pixelImageFit` result straight into a template should
+ * call this instead, so there's no wrap-it-yourself step left to forget. The few sites
+ * that genuinely want the bare URL — assigning an `<img>` element's `.src` property
+ * directly, or stashing it in a data structure a different renderer wraps later — keep
+ * calling `pixelImageFit`.
+ */
+export function pixelImageTag(
+  src: HTMLCanvasElement, targetWidth: number, targetHeight = Infinity, key?: string, alt = "",
+): string {
+  return `<img src="${pixelImageFit(src, targetWidth, targetHeight, key)}" alt="${alt}">`;
+}
+
+/**
  * Like {@link pixelImageFit} but sizes against the *subject* rather than the canvas — see
  * `./portrait` for why a hero has to be sized by its body and not by its canvas, and why
  * the boxes in `styles.css` pin a height instead of hugging the image.
