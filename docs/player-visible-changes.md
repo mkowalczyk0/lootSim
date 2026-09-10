@@ -100,6 +100,22 @@ different when you play."
 - **The shop stops at mythic.** Divine and unspoken are not rare in the shop, they are
   absent from it. The top of the ladder stays something you find.
 
+## Leaderboards
+
+- **There are leaderboards.** Fourteen of them, in the Quartermaster: furthest depth and
+  furthest height, the Abyssal Rift, every raid, the Memories, the Vigil and the
+  Convergence, plus the odd ones you asked for — strongest item currently in the game, and
+  highest single hit ever recorded.
+- **You can filter every board by class.**
+- **A record says how hard it actually was.** A depth on a board carries the Challenger
+  tier it was banked at, so clearing depth 20 with the dial off and clearing depth 20 on
+  Death March are not the same line. A Tower height never shows up on a depth board.
+- **The depth boards are going to look clustered, and that is the honest result.** Almost
+  everyone will sit inside a narrow range, because that is where the game currently stops
+  people. It was left uncompressed on purpose rather than stretched to look more
+  interesting — see the note below.
+- **There is a "recent records" ticker** so you can see what other people just did.
+
 ## Nothing you can see, but worth knowing
 
 - A weapon skin will never be able to make your weapon look longer or shorter than it
@@ -113,3 +129,13 @@ different when you play."
   workload and both ends' drawing were measured under a real fight in real browsers and
   came back clean. What is left needs two actual machines on an actual internet
   connection, which is something only you and the person who reported it can produce.
+- Your leaderboard records are sent as their own small message, not by handing the server
+  your save file. The server has never been able to read a save and still can't. That is
+  worth keeping — it is the reason adding the shop and adding the leaderboards each cost
+  the server nothing at all.
+- **The depth boards will show everyone bunched together, and there is a real question
+  underneath that.** An attentive character currently clears somewhere around depth 13-19
+  and then stops, so a "furthest depth" board is going to show most of the playerbase
+  inside a six-depth window. Nothing was done to hide that, because deciding whether that
+  band is where the game should stop people is your call, not something to quietly paper
+  over on a chart. `docs/reachable-band.md` has the measurements and three priced options.
