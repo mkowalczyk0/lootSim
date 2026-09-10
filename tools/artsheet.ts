@@ -46,7 +46,8 @@ import { RELICS } from "../src/data/relics";
 import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
 import { ATLAS_WEAPON_WASH, RARITY_WASH } from "../src/render/itemart";
 import {
-  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
+  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, ATLAS_WEAPON_SKINS,
+  COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
   SPRITE_OVERRIDES, TILESETS, cosmeticStageXY, heroStage,
 } from "../src/render/atlas/manifest";
 import { BIOMES } from "../src/data/biomes";
@@ -315,6 +316,19 @@ if (SHOW_LEGACY_MOBS) {
 // exactly what a player with a skin equipped sees, and it belongs on the sheet.
 const starforged = COSMETICS_BY_ID.skinStar!.weapon!;
 strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(starforged)] as const), false, 14);
+
+// Authored weapon skins (`ATLAS_WEAPON_SKINS`) — each one is its own weapon of a declared
+// family rather than a recolour, so it gets its own row next to the families above. Empty
+// until the first is drawn; wrapped like every other growing set.
+{
+  const skinIds = Object.values(ATLAS_WEAPON_SKINS).map((k) => k.id);
+  if (skinIds.length > 0) {
+    stripPng(
+      skinIds.map((id) => decodePng(readFileSync(`src/render/atlas/weapons/${id}.png`))),
+      3, false, 14,
+    );
+  }
+}
 
 // --- cosmetics: the migrated layers, composed on the hero as the game composes them ---
 //

@@ -624,7 +624,7 @@ export class WorldRenderer {
     // One decision, not three. The picture, the grip it pivots around and the world scale
     // all come off the same rung, so an authored skin can never be drawn at the underlying
     // family's size or pivoted around the family's grip pixel.
-    const { canvas, gripX, gripY, worldScale } = weaponDraw(spec.id, skinId, rarity);
+    const { canvas, gripX, gripY, worldScale } = weaponDraw(spec.id, skinId, rarity, item?.named ?? null);
     const grip = { x: gripX, y: gripY };
     const glow = weaponGlow(skinId, rarity);
     // A pipeline weapon is authored much larger than a legacy grid; it carries its own

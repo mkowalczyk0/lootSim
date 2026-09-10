@@ -4597,7 +4597,7 @@ export class TownUI {
     const hero = heroSprite(a, this.state.activeClassId);
     const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, STYLE_PORTRAIT_BODY_PX);
     const weapon = pixelImageFit(
-      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 72);
+      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null, held?.named ?? null), 72);
     const selected = STYLE_ROWS[this.cursor];
     const info = selected ? this.styleRowInfo(selected) : null;
     const owned = this.state.cosmetics.length;

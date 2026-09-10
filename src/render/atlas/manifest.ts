@@ -691,14 +691,37 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
  * row here draws the ordinary authored weapon for the family being held — the
  * `MONSTER_SETS` precedent, where a manifest row is a statement of intent and a loaded
  * canvas is a fact. That is what lets this ship one weapon at a time.
+ *
+ * **Named weapons want this table, not a second one.** `docs/art-manifest.md` §5 carries an
+ * open item: a named weapon renders its icon correctly but *swings as an ordinary
+ * rarity-tinted family weapon* — Threshold Brand looks right in your stash and wrong in
+ * your hand. The fix it describes ("a weapon-skin sprite per named weapon") is exactly the
+ * row below: an authored weapon of a declared family, with its own grip and world scale.
+ * Whoever picks that up should add a second **source** feeding this resolution, not a
+ * parallel table — this codebase has already paid twice for one job done in two places
+ * (`RARITY_WASH` forking, and the item art that `itemSprite` now funnels).
+ *
+ * The one genuinely open question there is **precedence**, and it is an owner call rather
+ * than a technical one: if you wield a named weapon *and* have a skin for that family, which
+ * do you see? The rarity ruling says vanity is never overruled by power, which argues for
+ * the skin; a named item's identity is deliberately not for sale (it accepts only Reforge,
+ * Temper and Salvage), which argues for the named weapon. Do not guess it here.
  */
 export interface AtlasWeaponSkin extends AtlasWeapon {
   /** The one family this skin is a weapon of. It draws only when that family is held. */
   readonly family: string;
 }
 
-/** Keyed by `Cosmetic.id` (e.g. `skinStar`), not by family. */
-export const ATLAS_WEAPON_SKINS: Record<string, AtlasWeaponSkin> = {};
+/** Keyed by `Cosmetic.id` (e.g. `skinAbyssalScythe`), not by family. */
+export const ATLAS_WEAPON_SKINS: Record<string, AtlasWeaponSkin> = {
+  // `worldScale` is DERIVED, never chosen — `art/weaponskins/author.ts` computes it as
+  // (family.w * family.worldScale) / trimmedWidth so the skin spans exactly the world
+  // length its family's own art spans. Do not hand-edit it; re-run the tool.
+  skinAbyssalScythe: {
+    id: "weapon.skin.abyssal-scythe", w: 73, h: 38, worldScale: 0.44,
+    gripX: 5, gripY: 16, family: "scythe",
+  },
+};
 
 // --- cosmetic layers (§15/§17.3, the "v2 redraw" gap) ---------------------
 

@@ -200,6 +200,13 @@ export const COSMETICS: readonly Cosmetic[] = [
   skin("skinAbyss", "Abyssal", "legendary",
     { edge: "#a78bfa", shade: "#5b21b6", grip: "#1e1b4b", jewel: "#c4b5fd", glow: "#8b5cf6" },
     "Drinks the torchlight. Gives nothing back."),
+  // The first skin authored as its own weapon rather than a palette over yours (owner
+  // ruling, Sept 2026). Its `WeaponPalette` is vestigial — nothing paints this any more,
+  // the art is drawn — but the type still carries one and these are the colours it was
+  // drawn from, so they stay as the record of where it came from.
+  skin("skinAbyssalScythe", "Abyssal Scythe", "legendary",
+    { edge: "#a78bfa", shade: "#5b21b6", grip: "#1e1b4b", jewel: "#c4b5fd", glow: "#8b5cf6" },
+    "The edge is still leaving. It has been leaving for a while now."),
   skin("skinStar", "Starforged", "mythic",
     { edge: "#fef3c7", shade: "#fbbf24", grip: "#78350f", jewel: "#ffffff", glow: "#fde68a" },
     "Reportedly fell. Nobody saw it land."),

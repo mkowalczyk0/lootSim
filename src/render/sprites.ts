@@ -534,7 +534,7 @@ export interface WeaponDraw {
 }
 
 function resolveWeaponDraw(
-  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null, namedId: string | null,
 ): WeaponDraw {
   // Pipeline weapon: the authored PNG, tinted toward the rarity colour so a mythic axe
   // still glows before anyone reads the word.
@@ -546,13 +546,29 @@ function resolveWeaponDraw(
   // is actually read — the stash card, the compare panel, the loot banner and the paper
   // doll all go through `itemSprite`, which is untouched by this.
   //
+  // **Two owner rulings sit here and they look contradictory until you say why they are
+  // not.** A skin beats the rarity wash, and a named weapon beats the skin. The order is
+  // decoration < vanity < identity: a rarity wash is a *colour*, so the thing the player
+  // chose to look at wins; a named weapon is an *object*, and this game already refuses to
+  // let the workbench sell a named item's identity (Reforge, Temper and Salvage only — see
+  // `docs/named-items.md`), so a cosmetic does not get to overwrite it either.
+  //
+  // The check is on the ITEM being named, never on what art happens to exist. A named
+  // weapon of a family nobody has drawn yet still refuses the skin and draws its ordinary
+  // weapon — the rule is about what you are holding, not about the state of the pipeline.
+  const namedArt = namedId ? ATLAS_WEAPON_SKINS[namedId] : undefined;
+  if (namedArt && namedArt.family === family) {
+    const png = atlasCanvas(namedArt.id);
+    if (png) return { canvas: png, gripX: namedArt.gripX, gripY: namedArt.gripY, worldScale: namedArt.worldScale };
+  }
+
   // A skin draws only when it has authored art for the family actually being **held** (the
   // "may never lie" rule in `data/cosmetics.ts`). When it has none, the ordinary authored
   // weapon draws — not the procedural bake. That is what lets skins ship one weapon at a
   // time, and it ends a live defect: a skin used to force the bake, so equipping a mythic
   // cosmetic made your weapon look markedly *worse* than wearing none. An undrawn skin is
   // now inert rather than destructive.
-  const skinArt = skinId ? ATLAS_WEAPON_SKINS[skinId] : undefined;
+  const skinArt = !namedId && skinId ? ATLAS_WEAPON_SKINS[skinId] : undefined;
   if (skinArt && skinArt.family === family) {
     const png = atlasCanvas(skinArt.id);
     if (png) return { canvas: png, gripX: skinArt.gripX, gripY: skinArt.gripY, worldScale: skinArt.worldScale };
@@ -571,7 +587,7 @@ function resolveWeaponDraw(
 
   // The procedural bake, and the only rung where a skin is still a palette rather than art.
   const art = WEAPON_ART[family] ?? WEAPON_ART.sword!;
-  const skin = skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
+  const skin = !namedId && skinId ? COSMETICS_BY_ID[skinId]?.weapon ?? null : null;
   return {
     canvas: bake(art.grid, weaponPalette(skin ?? rarityWeaponPalette(rarity))),
     gripX: art.ax, gripY: art.ay, worldScale: null,
@@ -590,12 +606,12 @@ function resolveWeaponDraw(
  * a third of their size (`b1e3f2e`); one decision is the fix, in both places.
  */
 export function weaponDraw(
-  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null, namedId: string | null = null,
 ): WeaponDraw {
-  const key = `${family}|${skinId ?? "-"}|${rarity ?? "-"}`;
+  const key = `${family}|${skinId ?? "-"}|${rarity ?? "-"}|${namedId ?? "-"}`;
   const hit = weaponDrawCache.get(key);
   if (hit) return hit;
-  const made = resolveWeaponDraw(family, skinId, rarity);
+  const made = resolveWeaponDraw(family, skinId, rarity, namedId);
   if (weaponDrawCache.size > 128) weaponDrawCache.clear();
   weaponDrawCache.set(key, made);
   return made;
@@ -603,9 +619,9 @@ export function weaponDraw(
 
 /** Just the picture, for the surfaces that only need one (icons, the paper doll). */
 export function weaponSprite(
-  family: WeaponFamily, skinId: string | null, rarity: Rarity | null,
+  family: WeaponFamily, skinId: string | null, rarity: Rarity | null, namedId: string | null = null,
 ): HTMLCanvasElement {
-  return weaponDraw(family, skinId, rarity).canvas;
+  return weaponDraw(family, skinId, rarity, namedId).canvas;
 }
 
 /** Where the grip sits inside a weapon sprite, so it can be rotated around the hand. */

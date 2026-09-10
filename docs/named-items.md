@@ -247,6 +247,21 @@ own monsters, the same rule the kill quota uses.
 - **Reforge.** The Forge's reforge on a named item re-rolls the definition's own ranges
   and random extras rather than replacing them from the pool — the same item, another
   copy of it — and never decorates the name with a prefix or suffix.
+- **Cosmetics.** A weapon skin never draws over a named weapon. Owner ruling, Sept 2026,
+  and it is the same rule as the workbench one reaching a surface this doc had not
+  considered: a named item's identity is not for sale, so a cosmetic cannot overwrite it
+  any more than Recast or Augment can. Note this sits *against* the neighbouring ruling
+  that a skin beats an item's rarity wash — the order is decoration < vanity < identity. A
+  rarity wash is a colour, so what the player chose to look at wins; a named weapon is an
+  object, so it wins over what they chose. The check in `weaponSprite` is on the **item**
+  being named, never on which art exists, so a named weapon whose own sprite has not been
+  drawn yet still refuses the skin and draws its ordinary family weapon.
+
+  Their authored art, when it lands, goes in `ATLAS_WEAPON_SKINS` — the same table the
+  wardrobe uses, because "an authored weapon of a declared family, with its own grip and
+  world scale" is one mechanism and not two. That table is what closes
+  `docs/art-manifest.md` §5's open item, where a named weapon "renders its icon correctly
+  but swings in combat as an ordinary rarity-tinted family weapon."
 - **Junk.** "Sell all junk" never sells a named item, whatever its score says.
 - **Score.** `itemScore` prices each live effect like a grant so the upgrade arrows don't
   read a passive-heavy item as a stat stick.
