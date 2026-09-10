@@ -16,13 +16,36 @@
  * something implausible, the number in the output is what makes that visible instead of
  * inferred.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const scripts = Object.entries(pkg.scripts ?? {});
+
+/**
+ * Is this checkout's `node_modules` its own?
+ *
+ * The runner makes a shared `node_modules` safe for bundle collisions specifically. It
+ * does nothing about everything else two checkouts would then share, and the rule is that
+ * a worktree gets its own `npm install`. That rule needs enforcing rather than
+ * remembering: the session that *found* the original fault reproduced it within the hour,
+ * in the worktree they were about to certify a merge in, while holding the write-up in
+ * working memory. A rule its own author breaks the same day does not survive a fresh
+ * session next week.
+ *
+ * Resolved with `realpath` rather than `lstat`, so this catches a symlinked
+ * `node_modules`, a symlinked parent directory, and a bind-mount alike — the property
+ * that matters is where the bytes actually live, not how the link was spelled.
+ */
+function nodeModulesHome() {
+  const nm = join(root, "node_modules");
+  if (!existsSync(nm)) return { ok: false, reason: "absent", real: nm };
+  const real = realpathSync(nm);
+  const expected = join(realpathSync(root), "node_modules");
+  return { ok: real === expected, reason: real === expected ? "own" : "elsewhere", real, expected };
+}
 
 const offenders = scripts.filter(([, v]) => v.includes("node_modules/.cache"));
 const viaRunner = scripts.filter(([, v]) => v.includes("run-tool.mjs"));
@@ -54,5 +77,23 @@ if (viaRunner.length === 0) {
 }
 
 console.log(`  ok   no script bundles to a shared fixed path`);
+
+const home = nodeModulesHome();
+if (!home.ok) {
+  console.error("");
+  console.error(`  FAIL  this checkout's node_modules is not its own (${home.reason}).`);
+  console.error(`        node_modules resolves to: ${home.real}`);
+  if (home.expected) console.error(`        expected:                 ${home.expected}`);
+  console.error("");
+  console.error("  A worktree needs its own `npm install`. Sharing one checkout's");
+  console.error("  node_modules with another is how four sessions ran each other's test");
+  console.error("  bundles on 2026-09-10 — see docs/gate-isolation.md. The bundle paths");
+  console.error("  are safe now; everything else two checkouts would share is not.");
+  console.error("");
+  console.error("        rm node_modules && npm install");
+  console.error("");
+  process.exit(1);
+}
+console.log(`  ok   node_modules is this checkout's own — ${home.real}`);
 console.log("");
 console.log("ALL HARNESS CHECKS PASSED");

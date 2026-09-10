@@ -85,7 +85,21 @@ of `tools/` is refused.
   a shared `node_modules` safe *for bundle collisions specifically*; it does not make it
   supported, and it does nothing about anything else two checkouts would share. "It worked
   and it saved an `npm install`" is precisely why someone does it again, so the reason is
-  written here rather than remembered.
+  written here rather than remembered — **and, since 2026-09-10, enforced**: `npm run
+  harness` fails when `node_modules` does not resolve inside the checkout running it, and
+  prints where it actually resolved to.
+
+  That escalation from convention to check has a specific cause. The session that *found*
+  the original fault reproduced it within the hour, in the worktree they were about to
+  certify the multiplayer merge in, while holding their own write-up in working memory.
+  They caught it before the gate ran. **A rule whose author breaks it the same day, with
+  the reasoning fresh, will not survive a session that has never read this file.**
+
+  It is deliberately resolved with `realpath` rather than `lstat`, so a symlinked parent
+  or a bind mount is caught the same as a symlinked `node_modules`: what matters is where
+  the bytes live, not how the link was spelled. This is also the "prove it ran clean"
+  check — a session can point at the `node_modules is this checkout's own` line rather
+  than at its intentions.
 - **Any green `npm test` reported on 2026-09-10 from a symlinked worktree is suspect** and
   should be re-run isolated before it is believed.
 - **Leave the shared checkout on `master`.** Unrelated to this fault, discovered the same
