@@ -5,10 +5,14 @@ logic, `src/render/atlas/manifest.ts` holds the tables, and `npm run anim`
 (`tools/anim.ts`, in the `npm test` chain) is the gate.
 
 **The method below is proven end to end and three raid bosses are animated through it** —
-`boss.ferryman`, `boss.war-queen` and `boss.exiled-tyrant` each carry an `idle` and a `cast`
-wind-up. Everything after the method is either the architecture it runs on or the record of
-what each step cost to find; **the failures are kept because every one of them is a
-generation the next person does not have to spend.**
+`boss.ferryman`, `boss.war-queen` and `boss.exiled-tyrant` each carry an `idle`, a `cast`
+wind-up and a `strike` release. Everything after the method is either the architecture it
+runs on or the record of what each step cost to find; **the failures are kept because every
+one of them is a generation the next person does not have to spend.**
+
+**Only one of the three releases is a blow.** `boss.ferryman`'s is (see "The blow: where
+the third pose has to be"); `boss.war-queen`'s and `boss.exiled-tyrant`'s are still rises,
+and their manifest rows say so. Do not read the tag name as a promise on the other two.
 
 A sprite with no `anim` table is a static single frame and behaves exactly as it did before
 any of this existed. That is a supported state, not a backlog item: the fallback ladder means
@@ -556,6 +560,87 @@ The first means stop and fix the encoding. The second is the generator trimming 
 an extremity, is consistent across that run's own frames, and shows up only at the one
 frame boundary where generated art meets committed art. On the Tyrant it was judged
 acceptable and shipped; it is the reason its seam is 522 rather than nearer zero.
+
+### The blow: where the third pose has to be
+
+`boss.ferryman` is the first release in this repo that is **a blow rather than a rise**
+(2026-09-10), and it cost 7 generations. The structure this document predicted — apex ->
+impact -> rest, with a third authored pose — is correct and is what shipped. What it did
+*not* predict is the part that actually decided the animation, so that is what this
+section is for.
+
+**The owner raised this three times and it was misread twice.** The wind-ups are approved
+art; the gap was never in them. Do not re-measure or regenerate a wind-up on the strength
+of a "halfway" report — read the docket entry first.
+
+#### The impact pose must be far from REST, not merely far from the apex
+
+The obvious impact pose for a boss holding a pole is "slam it into the ground". On this
+sprite that is a trap, and the reason generalises: **the Ferryman rests with his pole
+already butt-down on the ground.** So the terminal pose of a ground slam is nearly the
+rest pose, and an animation that ends on a rest-shaped pose is an unwind no matter how
+the motion is prompted, how many frames it gets, or what the tag is called. That is the
+mechanical reason the old release read as a settle — not a bad generation, a bad
+*destination*.
+
+So the pose was differentiated on **body** instead of on weapon height: braced low
+stance, pole swept diagonally across the body, mantle flared. The check that this is a
+strike at all is a comparison against a fixed reference the pose cannot move:
+
+    apex   vs rest   2306 silhouette px
+    impact vs rest   2378 silhouette px      <- further from rest than the apex is
+
+**A candidate impact pose closer to rest than the apex is cannot read as a strike.** That
+is one line of measurement, it is cheap, and it is the thing to re-run if any of this is
+regenerated. Note it is a *comparison*, not a threshold — the same discipline the
+CLAUDE.md campaign note argues for, and the reason it survives a re-roll that moves every
+absolute number.
+
+#### The generator will not give you a mid-downswing frame, and that is not a sampling error
+
+Two independent pinned runs between the same endpoints (6 frames seed 11, 4 frames seed
+29) both put nearly all the travel in the **last step**. The 4-frame run's single mid
+frame drops the pole out of the silhouette altogether — which reads as the weapon
+vanishing, not as a smear. So the downswing really is one fast step; do not spend
+generations trying to sample it more finely, and do not read the hard cut at impact as a
+defect. It is what sells the hit.
+
+#### Silhouette XOR cannot see a rotation
+
+The shipped sweep's distance-to-target runs **1856 -> 1804 -> 0** — not monotonic, and by
+the numbers it looks like the animation wanders. It does not. A pole swinging through an
+arc keeps a roughly constant silhouette area while its *angle* changes, and XOR has no
+access to angle. The motion is monotonic in the two quantities that describe it — pole
+angle, and content top: **3 -> 4 -> 24 -> 35 px**.
+
+This is the same family as the caution above about `npm run windup` ranking a settle as
+the best-travelling animation in the repo, and the same answer applies: the instrument is
+fine and it is answering a question nobody asked. **Look at the frames.** Judging a
+pinned *wind-up* by monotonic approach is right; judging a *swing* by it is not.
+
+#### `repair-split-accent.py` refusing is the system working
+
+Of the sweep's generated frames, two were dropped on accent and only one of them was ever
+repairable:
+
+    lost the eye entirely            unrepairable, dropped (already documented)
+    ONE PIXEL PER EYE, both drifted  repair-split-accent.py REFUSES — and is right
+
+The second is worth naming because it is the case most likely to be argued with: the eyes
+are clearly located, one shade off, and painting them would have passed the gate. It was
+also the only frame in either generation sitting mid-downswing, so the incentive to force
+it in was maximal. The script's own words are the ruling — a one-pixel accent is not a
+split one, and widening it is a change to shipped art that wants the owner, the same
+ruling `art/bosses/minotaur-accent.py` is parked under. **A refusal that costs you
+something is still a refusal; that is when it is load-bearing rather than decorative.**
+
+#### What it cost, and what it did not
+
+7 generations: 2 harvest (one usable, one rejected off-model), 1 rejected re-roll of the
+sweep, 1 sweep, 1 recovery, plus the harvest's second seed. **No canvas change at all** —
+`w`, `h`, `worldScale` and `feet` are all untouched, because the blow travels *down* into
+a canvas that was already padded for the rise. The strip grew by one frame (24 -> 25
+cols). The rise frames and the whole `cast` are byte-identical to what shipped.
 
 ## The manifest tables
 

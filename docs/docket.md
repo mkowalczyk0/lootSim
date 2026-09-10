@@ -204,7 +204,31 @@ precedent for the simulation resolving its own stalls rather than asking the pla
 **higher** priority than items 3-6 above: both are direct reports of something wrong in
 front of them, which outranks anything queued from a planning conversation.*
 
-## 7. Bosses have no attack animation
+## 7. Bosses have no attack animation — FERRYMAN LANDED, two bosses to go
+
+**2026-09-10: `boss.ferryman` now has a real blow** — rise, the pole swings over the top,
+impact, recover, rest. 25 frames, no canvas change (`w`/`h`/`worldScale`/`feet` all
+untouched), `cast` and the rise frames byte-identical to what shipped. Method and the two
+findings that decided it are in `docs/animation.md` "The blow: where the third pose has to
+be"; the per-frame provenance is `art/anim/raw/ferryman-blow/README.md`.
+
+**The finding worth carrying to the other two bosses**, because it is not what this entry
+predicted: the impact pose has to be far from **rest**, not merely far from the apex. The
+Ferryman rests with his pole already butt-down on the ground, so "slam it down" terminates
+on a rest-shaped pose and reads as an unwind however it is prompted — which is the
+mechanical reason the old release settled. Differentiate the impact on **body** (stance,
+lean, trailing cloth), and check it as a comparison: impact-vs-rest must exceed
+apex-vs-rest, or it cannot read as a strike. It measured 2378 vs 2306 here.
+
+**Still open: `boss.war-queen` and `boss.exiled-tyrant`.** Both remain rises and their
+manifest rows say so. The War Queen is the known-hard one — every generated attempt at
+real overhead arms came back off-model (forearms as detached tubes), and her kit is things
+that arrive from the sky rather than things she swings, so a commanding gesture may
+genuinely be the right release for her. The Tyrant lifts a sword and is the better next
+target. Ship them one at a time; the owner asked for a batch review in the running game
+and said "acceptable is okay".
+
+The original entry follows, and all of it still applies.
 
 > "Not seeing attack animations on bosses - could you add that to the docket?"
 
@@ -306,3 +330,27 @@ Constraints on whatever gets built:
 - Check `RANGER_PROGRESSION` for tree nodes that scale it further before assuming the base
   numbers are the whole story — `the_last_hunt.packet` is a declared mutation hook, and
   Winter's Quarry adds a freeze plus a shattering nova chain on top.
+
+## 9. Two more ultimates with the same shape as item 8 — NOT owner-reported
+
+**Nobody has complained about these.** They are recorded because they were found while
+fixing item 8 and would otherwise have to be rediscovered. Do not treat this as a request.
+
+Fixing the Ranger's "The Last Hunt" turned up two abilities carrying the same two
+ingredients that made it a problem — an unbounded `to: "enemies"` (field-wide by the
+runtime's convention when no `shape.radius` is given) combined with a large
+`executeMissingHealth` term:
+
+- **Reaper — "Death Comes Due"**: `executeMissingHealth: 0.8`, unbounded. Twice the Ranger's
+  original execute term, which was itself halved to 0.2.
+- **Assassin** — an ultimate mutation with `executeMissingHealth: 0.4`, unbounded.
+
+Deliberately untouched. The owner reported one ability, and quietly rebalancing two more
+classes off the back of it is how "a tad overpowered" becomes a week of work and a save
+migration. **The right move is to ask the owner whether they want these looked at, not to
+pre-emptively nerf classes they have not complained about** — they may well be fine in
+play, and the Ranger's numbers were only confirmed as a problem because a person hit them.
+
+If it is picked up, `docs/ranger-last-hunt-nerf.md` has the method: measure the two symptoms
+separately (trash-clear reach, and boss time-to-kill at a *contested* depth where neither
+side is saturated), and A/B against master on widened seeds in a throwaway worktree.

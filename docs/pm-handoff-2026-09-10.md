@@ -47,7 +47,7 @@ Message them by name. Every one of them is mid-task; none is idle.
 | Session | Holding | State |
 |---|---|---|
 | `lootsim-26` | **Docket §7 — boss attack animations.** Owner priority. | Just reassigned; War Queen inpaint parked behind it |
-| `lootsim-f1` | **Docket §8 — nerf the Ranger's ultimate.** Owner priority. | Just assigned |
+| `lootsim-f1` | Idle — docket §8 (Ranger nerf) landed and merged | Available |
 | `lootsim-d8` | Weapon skins, families #3 and #4, then the four named rows | 2 of 14 families done |
 | `lootsim-56` | Trophy hall follow-ups | Hall merged; no case art, nothing renders in-world yet |
 | `lootsim-97` | Idle — last task (universal-tree measurement) merged | Available |
@@ -70,7 +70,8 @@ outstanding as of this handoff.
 | 5 | In-game UI cleanup | **Landed** |
 | 6 | Map + last-monster indicator | **Landed** |
 | 7 | **Boss attack animations** | **In flight — owner priority** |
-| 8 | **Nerf the Ranger's "The Last Hunt"** | **In flight — owner priority** |
+| 8 | Nerf the Ranger's "The Last Hunt" | **Landed** (`docs/ranger-last-hunt-nerf.md`) |
+| 9 | Two more ultimates with item 8's shape | **Not owner-reported — ask before acting** |
 
 Items 7 and 8 came from the owner *playing the game* and outrank anything queued from a
 planning conversation. That ordering is written into the docket file itself.
@@ -174,4 +175,18 @@ not at all.
 3. **Keep `docs/player-visible-changes.md` current.** It is written in player terms and it
    is what the owner reads when they come back. It deliberately records what did *not* get
    fixed as well; a batch review that quietly omits the failures is worth less than none.
-4. `lootsim-97` is free.
+4. `lootsim-97` and `lootsim-f1` are both free.
+
+**One thing to resist.** Docket §9 records two other ultimates carrying the same bug shape
+the Ranger's had. Nobody has complained about them. The temptation to sweep the remaining
+19 classes for outliers is exactly how a "tad overpowered" turns into a week of rebalancing
+and a save migration — and the Ranger's numbers were only *confirmed* to be a problem
+because a person hit them in play. Ask the owner; do not pre-emptively nerf classes they
+have not mentioned.
+
+Related and worth internalising: on item 8 I briefed `lootsim-f1` that the strongest lead
+was restricting the ultimate to elites only, since that is what its own tooltip promises.
+**They were right not to do it.** `eliteCapForFloor()` returns 0 on most floors below depth
+4, so an elites-only filter would have made the ultimate deal zero damage on ordinary trash
+floors — a gutting, not a nerf. They used a radius bound instead and said why. A delegate
+overruling the PM's lead with a measured reason is the system working, not a deviation.
