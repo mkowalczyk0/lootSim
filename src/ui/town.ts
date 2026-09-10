@@ -3,6 +3,7 @@ import { clamp, formatNumber } from "../core/math";
 import { challengerMultiplier, challengerName, MAX_CHALLENGER_TIER } from "../data/challenger";
 import { CHEST_CATEGORIES, CHESTS, CHEST_TIERS, chestName } from "../data/chests";
 import { msUntilShopReset, SHOP_TIERS, SHOP_TIER_IDS, type ShopTierId } from "../data/shop";
+import { RecordsClient, type LeaderboardRow, type RecentRow } from "../net/recordsClient";
 import {
   AUGMENT_AXES, AUGMENT_BY_ID, augmentAxisLabel, augmentsOnAxis, emptyLoadout,
   loadoutProblems, loadoutSummary, withAugment, type AugmentAxis, type AugmentLoadout,
@@ -120,7 +121,7 @@ const AUGMENT_CATEGORY = CHEST_CATEGORIES.length;
 
 const CYCLE_TABS = [
   "Chests", "Shop", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
-  "Records", "Settings",
+  "Records", "Leaderboards", "Settings",
 ] as const;
 const STATION_TABS = [
   "Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Altar", "Party", "Vigil",
@@ -277,6 +278,7 @@ function tabHelp(
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
     case "Codex": return `${sel} browse the class roster · ${adj} switch view — the full 21-class design; play one from the Path tab`;
     case "Records": return "Nothing to do here — just numbers.";
+    case "Leaderboards": return `${adj} switch board · ${semi} switch class filter · self-reported, no anti-cheat`;
     case "Settings": return `${sel} select · ${e} toggle/rebind · ${q} resets a key/backs out · reset progress asks twice`;
   }
 }
@@ -287,6 +289,52 @@ function tabHelp(
 // The planet shell, the daily Vigil and the weekly Convergence are rift-*shaped* but
 // have their own screens.
 const RIFT_MODES = RUN_MODES.filter((m) => MODES[m].isRift && m !== "planet" && m !== "vigil" && m !== "convergence");
+
+/**
+ * The Leaderboards screen's board list (`docs/leaderboards.md`), in A/D cycling order.
+ * Board ids match `tools/accounts.ts`'s allowlist exactly — a new one needs a line here,
+ * a line there, and a line in `src/net/records.ts`'s `computeRecords`, the same three-way
+ * duplication the shop's `ShopRarity` already accepted as the cost of not sharing runtime
+ * code between the server and the client's pure math. Reliquary sectors are deliberately
+ * not here yet — see the design doc's "not built" section. `"recent"` is not a real
+ * server-side board: it's the flavour ticker, handled as its own case in
+ * `renderLeaderboards`.
+ */
+const LEADERBOARD_BOARDS: readonly { readonly id: string; readonly label: string }[] = [
+  { id: "delve", label: "The Delve — deepest floor" },
+  { id: "tower", label: "The Tower — highest floor" },
+  { id: "abyss", label: "Abyssal Rift — Challenger tier" },
+  { id: "hoard", label: "Avarice Rift — Challenger tier" },
+  { id: "vigil", label: "The Vigil — Challenger tier" },
+  { id: "convergence", label: "The Convergence — Challenger tier" },
+  { id: "memory", label: "A Memory — Challenger tier" },
+  ...RAIDS.map((r) => ({ id: `raid.${r.id}`, label: `Raid — ${r.name}` })),
+  { id: "item.score", label: "Strongest item in the game" },
+  { id: "damage.max", label: "Highest recorded max hit" },
+  { id: "recent", label: "Recent records" },
+];
+
+const LEADERBOARD_CLASS_FILTERS: readonly (ClassId | "all")[] = ["all", ...CLASS_IDS];
+
+/** One leaderboard row's value, in the terms that board actually measures — never a bare
+ *  number, per the "hardest thing actually done" rule every board here is built on. */
+function formatLbValue(board: string, value: number, tier: number, meta: Readonly<Record<string, string | number>>): string {
+  if (board === "delve" || board === "tower") {
+    return tier > 0 ? `depth ${value} (Challenger ${challengerName(tier)})` : `depth ${value}`;
+  }
+  if (board === "item.score") {
+    const rarity = String(meta.rarity ?? "");
+    return `${String(meta.name ?? "an item")}${rarity ? ` (${rarity})` : ""} — score ${formatNumber(Math.round(value))}`;
+  }
+  if (board === "damage.max") return `${formatNumber(Math.round(value))} in one hit`;
+  // Every other board's value already *is* the Challenger tier (a fixed-length activity's
+  // one honest number — see `Player.challengerBadges`'s own doc comment).
+  return value > 0 ? challengerName(value) : "Challenger off";
+}
+
+function lbBoardLabel(board: string): string {
+  return LEADERBOARD_BOARDS.find((b) => b.id === board)?.label ?? board;
+}
 
 /**
  * The town hub: dive selection, rift tiers, chest gambling, stash, equipment, skills
@@ -307,6 +355,19 @@ export class TownUI {
   private chestCategory = 0;
   /** Which `SHOP_TIER_IDS` entry the Shop screen is showing — left/right cycles it. */
   private shopTier: ShopTierId = "daily";
+  /** Leaderboards screen state (`docs/leaderboards.md`). `lbBoardIdx` indexes
+   *  `LEADERBOARD_BOARDS`, A/D cycles it; `lbClassFilter` is `;`'s cycle. `lbKey` is the
+   *  (board, class) pair the currently-cached rows answer — `renderLeaderboards` compares
+   *  it every render and kicks off a fresh fetch the moment either changes, so switching
+   *  board or filter needs no separate wiring anywhere else. */
+  private lbBoardIdx = 0;
+  private lbClassFilter: ClassId | "all" = "all";
+  private lbKey = "";
+  private lbFetchToken = 0;
+  private lbLoading = false;
+  private lbError: string | null = null;
+  private lbRows: LeaderboardRow[] | null = null;
+  private lbRecent: RecentRow[] | null = null;
   /**
    * The augment loadout being assembled. **Reset to a Basic chest every time the view is
    * entered**, which is a rule and not a default (§5.2): augments never require an
@@ -399,6 +460,10 @@ export class TownUI {
     private readonly party: Party,
     /** Settings' "Log out" row. `main.ts` owns what logging out actually does. */
     private readonly onLogout: () => void,
+    /** The Leaderboards screen's reads (`docs/leaderboards.md`). Submission is a
+     *  background concern owned by `GameState.recordsHook`/`RecordsSubmitter` in
+     *  `main.ts` — this screen only ever reads. */
+    private readonly records: RecordsClient,
   ) {
     this.roll = new ChestRoll(this.root.parentElement ?? document.body);
 
@@ -439,6 +504,18 @@ export class TownUI {
       const shopActionEl = target.closest<HTMLElement>("[data-shop-action]");
       if (shopActionEl) {
         if (shopActionEl.dataset.shopAction === "buy") this.primary(); else this.secondary();
+        this.render();
+        return;
+      }
+      const lbBoardEl = target.closest<HTMLElement>("[data-lb-board]");
+      if (lbBoardEl) {
+        this.lbBoardIdx = Number(lbBoardEl.dataset.lbBoard);
+        this.render();
+        return;
+      }
+      const lbClassEl = target.closest<HTMLElement>("[data-lb-class]");
+      if (lbClassEl) {
+        this.lbClassFilter = lbClassEl.dataset.lbClass as ClassId | "all";
         this.render();
         return;
       }
@@ -838,6 +915,7 @@ export class TownUI {
       case "Capsules": return CAPSULE_TIERS.length;
       case "Codex": return ALL_CLASSES.length;
       case "Records": return 0;
+      case "Leaderboards": return 0;
       case "Settings": return this.logoutIndex + 1;
     }
   }
@@ -904,6 +982,10 @@ export class TownUI {
       const i = SHOP_TIER_IDS.indexOf(this.shopTier);
       this.shopTier = SHOP_TIER_IDS[(i + dir + SHOP_TIER_IDS.length) % SHOP_TIER_IDS.length]!;
       this.cursor = 0;
+      return true;
+    }
+    if (this.tab === "Leaderboards") {
+      this.lbBoardIdx = (this.lbBoardIdx + dir + LEADERBOARD_BOARDS.length) % LEADERBOARD_BOARDS.length;
       return true;
     }
     if (this.tab === "Path") {
@@ -1806,6 +1888,12 @@ export class TownUI {
    * left/right drive the carousel instead.
    */
   private tertiary(): void {
+    if (this.tab === "Leaderboards") {
+      const i = LEADERBOARD_CLASS_FILTERS.indexOf(this.lbClassFilter);
+      this.lbClassFilter = LEADERBOARD_CLASS_FILTERS[(i + 1) % LEADERBOARD_CLASS_FILTERS.length]!;
+      this.render();
+      return;
+    }
     if (this.tab === "Altar" && this.altarMode === "workbench") {
       const i = MEMORY_OPS.indexOf(this.altarOp);
       this.altarOp = MEMORY_OPS[(i + 1) % MEMORY_OPS.length]!;
@@ -2003,6 +2091,7 @@ export class TownUI {
       case "Capsules": return this.renderCapsules();
       case "Codex": return this.renderCodex();
       case "Records": return this.renderRecords();
+      case "Leaderboards": return this.renderLeaderboards();
       case "Settings": return this.renderSettings();
     }
   }
@@ -4976,6 +5065,97 @@ export class TownUI {
         <h3>Chests opened</h3>
         <table class="cmp">${chests}</table>
       </aside>`;
+  }
+
+  /**
+   * Global leaderboards (`docs/leaderboards.md`, docket item 4). A pure reading screen —
+   * no action bar, per `docs/actions-vs-reading-panels`, because there is nothing here to
+   * act on: submission happens automatically in the background
+   * (`GameState.recordsHook`/`RecordsSubmitter` in `main.ts`), and every board and class
+   * filter here is navigation, not a mutation. `lbKey` is the (board, class) pair the
+   * currently-held rows answer for; the moment A/D or `;` moves either one, this render
+   * notices the mismatch and kicks off a fresh fetch — the same "recompute on render, the
+   * cache key says whether to" idiom `buildMinimapBackground` uses for a different cache.
+   */
+  private renderLeaderboards(): string {
+    const board = LEADERBOARD_BOARDS[this.lbBoardIdx]!;
+    const key = `${board.id}:${this.lbClassFilter}`;
+    if (key !== this.lbKey) {
+      this.lbKey = key;
+      this.lbError = null;
+      this.fetchLeaderboard(board.id, this.lbClassFilter);
+    }
+
+    const boardChips = LEADERBOARD_BOARDS.map((b, i) => `
+      <span class="chip ${i === this.lbBoardIdx ? "on" : ""}" data-lb-board="${i}">${escapeHtml(b.label)}</span>
+    `).join("");
+    const classChips = LEADERBOARD_CLASS_FILTERS.map((c) => `
+      <span class="chip ${c === this.lbClassFilter ? "on" : ""}" data-lb-class="${c}">
+        ${c === "all" ? "All classes" : escapeHtml(CLASSES[c].name)}</span>
+    `).join("");
+
+    let body: string;
+    if (board.id === "recent") {
+      const rows = this.lbRecent;
+      body = this.lbLoading && !rows ? `<p class="muted">Loading…</p>`
+        : this.lbError ? `<p class="muted">${escapeHtml(this.lbError)}</p>`
+        : !rows || rows.length === 0 ? `<p class="muted">Nothing recorded yet — go do something first.</p>`
+        : `<table class="cmp wide"><tr><th>Board</th><th>Who</th><th>Class</th><th></th></tr>${
+          rows.map((r) => `<tr><td>${escapeHtml(lbBoardLabel(r.board))}</td><td>${escapeHtml(r.username)}</td>
+            <td>${escapeHtml(CLASSES[r.classId as ClassId]?.name ?? r.classId)}</td>
+            <td>${escapeHtml(formatLbValue(r.board, r.value, r.tier, r.meta))}</td></tr>`).join("")
+        }</table>`;
+    } else {
+      const rows = this.lbRows;
+      body = this.lbLoading && !rows ? `<p class="muted">Loading…</p>`
+        : this.lbError ? `<p class="muted">${escapeHtml(this.lbError)}</p>`
+        : !rows || rows.length === 0 ? `<p class="muted">Nobody's on this board yet.</p>`
+        : `<table class="cmp wide"><tr><th>#</th><th>Who</th><th>Class</th><th>Record</th></tr>${
+          rows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.username)}</td>
+            <td>${escapeHtml(CLASSES[r.classId as ClassId]?.name ?? r.classId)}</td>
+            <td>${escapeHtml(formatLbValue(board.id, r.value, r.tier, r.meta))}</td></tr>`).join("")
+        }</table>`;
+    }
+
+    return `
+      <div class="list records">
+        <div class="chest-cats">${boardChips}</div>
+        <div class="chest-cats">${classChips}</div>
+        ${body}
+      </div>
+      <aside class="side">
+        <h3>How this works</h3>
+        <p class="muted">Records are submitted on their own, in the background, as you
+        play — there's nothing to do on this screen but look. Everything here is
+        self-reported: there's no anti-cheat anywhere in this game, so a wild number is
+        worth exactly as much trust as a friend's fishing story.</p>
+      </aside>`;
+  }
+
+  private fetchLeaderboard(board: string, classFilter: ClassId | "all"): void {
+    this.lbLoading = true;
+    const token = ++this.lbFetchToken;
+    const onError = (err: unknown) => {
+      if (token !== this.lbFetchToken) return;
+      this.lbLoading = false;
+      this.lbError = err instanceof Error ? err.message : String(err);
+      this.refresh();
+    };
+    if (board === "recent") {
+      this.records.fetchRecent().then((rows) => {
+        if (token !== this.lbFetchToken) return;
+        this.lbLoading = false;
+        this.lbRecent = rows;
+        this.refresh();
+      }).catch(onError);
+    } else {
+      this.records.fetchBoard(board, classFilter === "all" ? undefined : classFilter).then((rows) => {
+        if (token !== this.lbFetchToken) return;
+        this.lbLoading = false;
+        this.lbRows = rows;
+        this.refresh();
+      }).catch(onError);
+    }
   }
 }
 

@@ -83,7 +83,18 @@ Candidate sinks, best first, none of them built:
 - **Custom room codes** for co-op.
 - **Character rename**, and paid re-rolls of appearance choices that are currently free.
 
-## 4. Global leaderboards and multiplayer flavour
+## 4. Global leaderboards and multiplayer flavour — LANDED
+
+**Shipped 2026-09-10**, design record `docs/leaderboards.md`, gate `npm run leaderboards`.
+Records travel over their own small, independently-versioned payload
+(`src/net/records.ts`'s `computeRecords`, `POST /api/records`) — the save string is never
+touched, the same load-bearing property `docs/accounts.md` already promised and the shop's
+SAVE_VERSION bump already proved. Every board keys on activity + depth/tier + Challenger
+tier, never a bare number, the same "a height is not a depth" rule the badges system
+already holds. "Strongest item" reuses `itemScore`; the multiplayer-flavour half became a
+"Recent records" ticker rather than a second feature. No anti-cheat — one stated paragraph
+instead, since none exists anywhere else in this game either. The paragraphs below are the
+original brief, kept for context.
 
 > "records in the abyssal/raids/memories, random records like 'strongest item currently in
 > the game' 'highest recorded max damage' 'furthest depth/tower reached for each activity'
