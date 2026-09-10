@@ -140,6 +140,21 @@ console.log("\n=== 2. tradeoffs, not a shopping list ===");
   check("the cap leaves a real decision, not a rounding error",
     UNIVERSAL_POINT_CAP < wholeTree * 0.7,
     `${Math.round((UNIVERSAL_POINT_CAP / wholeTree) * 100)}% of the tree is affordable`);
+  // The line above is true only of a player who reaches frontier 40. `docs/reachable-band.md`
+  // measures an attentive same-level character's real ceiling at roughly depth 13-19
+  // (`tools/universal-reachability.ts`'s own fresh 60-seed campaign, 2026-09-10, reads
+  // Delve avg 11.7 / Tower avg 10.8 — the two ladders read the same, matching
+  // `tools/world.ts`'s height-for-depth equality). Printed, not asserted: this number
+  // depends on the campaign bot and the shared depth curve, neither of which this file
+  // owns, so it can't be a `check` here without silently re-deriving someone else's
+  // measurement. Re-run `tools/universal-reachability.ts` before trusting it stale.
+  const realisticFrontier = 12; // today's fresh Delve/Tower average, see the comment above
+  const realisticPts = universalPointsFor(realisticFrontier);
+  console.log(
+    `        (at a realistic frontier of ~${realisticFrontier}, not the cap's 40: ` +
+    `${realisticPts} pts, ${Math.round((realisticPts / wholeTree) * 100)}% of the tree — ` +
+    `docs/universal-tree-reachability.md)`,
+  );
   check("the curve reaches the cap and then stops",
     universalPointsFor(2 * UNIVERSAL_POINT_CAP) === UNIVERSAL_POINT_CAP
     && universalPointsFor(10_000) === UNIVERSAL_POINT_CAP);
