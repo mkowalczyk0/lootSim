@@ -4322,7 +4322,21 @@ console.log("\n=== multiplayer ===");
     corrections.sort((a, b) => a - b);
     const median = corrections[Math.floor(corrections.length / 2)] ?? Infinity;
     const worst = corrections[corrections.length - 1] ?? Infinity;
-    check("a walking client is never tugged back by the host", median < 0.1 && worst < 1.5,
+    // **THIS CHECK RUNS AT A CONSTANT LAG WITH NO JITTER AND NO LOSS, AND IS THEREFORE
+    // BLIND TO THE FAILURE IT LOOKS LIKE IT COVERS.** `LAG` is a fixed number of ticks and
+    // every packet arrives, in order. Re-measured 2026-09-10 with a real link underneath
+    // (`npm run mpjitter`, the input-path section), the same rig breaks this very bar:
+    //
+    //     wifi, congested   median 0.02px   p95 0.03px   worst 2.00px   (bar is 1.5)
+    //     transatlantic     median 0.02px   p95 1.95px   worst 5.94px
+    //
+    // and 26-50% of host ticks arrive with no input at all. So a green here says
+    // reconciliation is correct, and says NOTHING about whether a client's movement holds
+    // up on a real connection. It is kept because the property it does check is real; do
+    // not cite it as evidence about live conditions. Same shape as the localhost tests
+    // that could not see the snapshot chop.
+    check("a walking client is never tugged back by the host (CONSTANT lag — see note above)",
+      median < 0.1 && worst < 1.5,
       `median ${median.toFixed(3)}px, worst ${worst.toFixed(2)}px over ${corrections.length} snapshots at ${LAG * 2} ticks RTT`);
     check("the client dashed the instant it pressed, and the host agreed", clientDashed && hostDashed);
     // The uncorrected baseline, for the record: how far ahead a client at this RTT

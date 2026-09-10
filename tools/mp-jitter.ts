@@ -45,7 +45,7 @@
 import { Dungeon } from "../src/game/dungeon";
 import { delveConfig } from "../src/data/modes";
 import {
-  applySnapshot, configFromWire, configToWire, encodeSnapshot,
+  InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput,
 } from "../src/net/sync";
 import type { Snapshot } from "../src/net/protocol";
 import { SNAPSHOT_HZ } from "../src/net/protocol";
@@ -78,7 +78,7 @@ interface Link {
   mode: "tcp" | "udp";
 }
 
-interface Packet { snap: Snapshot; at: number; sentAt: number; }
+interface Packet<T> { snap: T; at: number; sentAt: number; }
 
 /**
  * The network. `send` stamps a delivery time; `arrivals` returns what has landed by now.
@@ -88,8 +88,8 @@ interface Packet { snap: Snapshot; at: number; sentAt: number; }
  * it. That is the head-of-line behaviour the transport question turns on, and modelling it
  * is the entire reason this is not just `setTimeout`.
  */
-class SimLink {
-  private queue: Packet[] = [];
+class SimLink<T> {
+  private queue: Packet<T>[] = [];
   private lastDelivery = 0;
   private readonly rand: () => number;
   lost = 0;
@@ -97,7 +97,7 @@ class SimLink {
 
   constructor(private readonly link: Link, seed: number) { this.rand = rng(seed); }
 
-  send(snap: Snapshot, now: number): void {
+  send(snap: T, now: number): void {
     this.sent++;
     const oneWay = this.link.rtt / 2;
     const jitter = (this.rand() * 2 - 1) * this.link.jitter;
@@ -116,7 +116,7 @@ class SimLink {
     this.queue.push({ snap, at, sentAt: now });
   }
 
-  arrivals(now: number): Packet[] {
+  arrivals(now: number): Packet<T>[] {
     if (this.queue.length === 0) return [];
     const ready = this.queue.filter((p) => p.at <= now);
     if (ready.length === 0) return [];
@@ -159,7 +159,7 @@ function run(depth: number, players: number, seconds: number, link: Link, seed: 
   });
   const clientInput = new FakeInput();
 
-  const net = new SimLink(link, seed);
+  const net = new SimLink<Snapshot>(link, seed);
   let t = 0, tick = 0, routeTimer = 0;
   let starvedTicks = 0, totalTicks = 0;
   let freezeRun = 0, longestFreeze = 0;
@@ -351,6 +351,107 @@ for (const { name, link } of PROFILES) {
       + `${r.starvedPct.toFixed(1).padStart(6)}%   `
       + `${r.longestFreezeMs.toFixed(0).padStart(7)}ms   `
       + `${r.avgLagMs.toFixed(0).padStart(10)}ms`);
+  }
+}
+console.log("");
+
+// =========================================================================================
+// The INPUT path — a separate question from everything above, and a separate complaint.
+//
+// The owner reported "very laggy, very choppy". Chop is the snapshot path and the buffer
+// above fixes it. **Lag is the input path, and the owner has since confirmed that MOVEMENT
+// felt laggy too** — which is the branch that should NOT happen: `predictLocal` predicts
+// the client's own movement, facing and dash locally, and `net/sync.ts` reconciles by
+// replaying unacknowledged inputs. Local movement is supposed to feel instant at any RTT.
+//
+// `tools/smoke.ts` asserts exactly that and is green: *"a walking client is never tugged
+// back by the host — median 0.022px, worst 0.04px over 90 snapshots at 8 ticks RTT."*
+// **That check runs at a CONSTANT lag with zero jitter and zero loss**, so it is
+// structurally incapable of seeing the reported failure, in precisely the way loopback was
+// incapable of seeing the chop. This section is that check with a real link under it, and
+// its job is to go RED where the green one cannot.
+//
+// The mechanism under suspicion: `NetInput` centres a remote player's stick after
+// `STALE_TICKS` (12) host ticks with no packet. If inputs stall — a wifi burst, a TCP
+// retransmit — the host stops moving that hero while the client keeps predicting forward,
+// and the next snapshot yanks it back. That is rubber-banding, and no constant-lag harness
+// can produce it.
+interface InputResult { medianPx: number; p95Px: number; worstPx: number; stalledPct: number; }
+
+function runInputPath(link: Link, seed: number, ticks = 600): InputResult {
+  const hostS = geared(18, 8813, 16, "swordsman");
+  const cliS = geared(18, 8814, 16, "lancer");
+  const pair = [
+    { netId: "p1", name: "Host", player: hostS.player, appearance: hostS.appearance, potions: 5, local: true },
+    { netId: "p2", name: "Cousin", player: cliS.player, appearance: cliS.appearance, potions: 5, local: false },
+  ];
+  const cfg = delveConfig(2, 0, 2);
+  const h = new Dungeon(hostS, cfg, { seed: 777, role: "host", heroes: pair });
+  const c = new Dungeon(cliS, configFromWire(configToWire(cfg)), {
+    seed: 777, role: "client", heroes: pair.map((p, i) => ({ ...p, local: i === 1 })),
+  });
+  const remote = new NetInput();
+  h.heroes[1]!.input = remote as unknown as AvatarInput;
+  const log = new InputLog();
+  const hostInput = new FakeInput();
+  const cliInput = new FakeInput();
+  const up = new SimLink<ReturnType<typeof packInput>>(link, seed);
+  const down = new SimLink<Snapshot>(link, seed + 1);
+  const corrections: number[] = [];
+  const me = c.localHero.avatar;
+  let stalled = 0, hostTicks = 0;
+  cliInput.hold("right", true);
+  cliInput.hold("down", true);
+
+  let t = 0;
+  for (let tick = 0; tick < ticks; tick++) {
+    hostInput.beginTick();
+    cliInput.beginTick();
+    if (tick % 120 === 60) { cliInput.hold("down", false); cliInput.hold("up", true); }
+    if (tick % 120 === 0 && tick > 0) { cliInput.hold("up", false); cliInput.hold("down", true); }
+
+    c.update(DT, cliInput as unknown as AvatarInput);
+    const seq = log.record(cliInput.moveVector(), cliInput.wasPressed("dash"));
+    up.send(packInput(cliInput as unknown as AvatarInput, me.x, me.y, seq), t);
+
+    const got = up.arrivals(t);
+    for (const pkt of got) remote.receive(pkt.snap);
+    hostTicks++;
+    if (got.length === 0) stalled++;
+    remote.beginTick();
+    h.update(DT, hostInput as unknown as AvatarInput);
+    h.enemies.length = 0;  // movement only, exactly as the smoke check isolates it
+    h.drainEvents();
+    if (tick % SEND_EVERY === 0) {
+      down.send(JSON.parse(JSON.stringify(encodeSnapshot(h))) as Snapshot, t);
+    }
+    for (const pkt of down.arrivals(t)) {
+      const wasX = me.x, wasY = me.y;
+      applySnapshot(c, pkt.snap, undefined, log);
+      if (tick > 60) corrections.push(Math.hypot(me.x - wasX, me.y - wasY));
+    }
+    t += DT;
+  }
+  corrections.sort((a, b) => a - b);
+  const at = (q: number) => corrections[Math.min(corrections.length - 1, Math.floor(corrections.length * q))] ?? 0;
+  return {
+    medianPx: at(0.5), p95Px: at(0.95), worstPx: corrections[corrections.length - 1] ?? 0,
+    stalledPct: hostTicks > 0 ? (100 * stalled) / hostTicks : 0,
+  };
+}
+
+console.log(`\n=== the INPUT path: is the client's own movement corrected? ===\n`);
+console.log(`  smoke.ts asserts median < 0.1px and worst < 1.5px, at a CONSTANT 8-tick lag.`);
+console.log(`  Same rig, real links. A correction is how far the local hero is yanked when a`);
+console.log(`  snapshot lands — i.e. how far prediction and the host had drifted apart.\n`);
+console.log("  profile          transport   median      p95     worst   host ticks with no input");
+for (const { name, link } of PROFILES) {
+  for (const mode of ["tcp", "udp"] as const) {
+    const r = runInputPath({ ...link, mode }, 4242);
+    const verdict = r.medianPx < 0.1 && r.worstPx < 1.5 ? "" : "   <- smoke's bar BROKEN";
+    console.log(`  ${name}  ${mode === "tcp" ? "TCP (today)" : "UDP (WebRTC)"}  `
+      + `${r.medianPx.toFixed(2).padStart(7)}px ${r.p95Px.toFixed(2).padStart(7)}px `
+      + `${r.worstPx.toFixed(2).padStart(7)}px   ${r.stalledPct.toFixed(0).padStart(3)}%${verdict}`);
   }
 }
 console.log("");
