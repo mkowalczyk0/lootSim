@@ -2,7 +2,7 @@ import { chromium } from "playwright-core";
 import { writeFileSync } from "node:fs";
 
 const PORT = 5834;
-const user = "measure3" + Date.now();
+const user = "abtest" + Date.now();
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -19,19 +19,29 @@ await page.waitForTimeout(200);
 await page.getByRole("button", { name: /register|login|play|enter/i }).first().click();
 await page.waitForTimeout(1500);
 
-// Try a few reloads until a Halo Fragment lands close to the hero without a fight starting.
-for (let attempt = 0; attempt < 5; attempt++) {
+// Confirm canvas geometry matches viewport 1:1 before trusting coordinate alignment.
+const geom = await page.evaluate(() => {
+  const c = document.getElementById("game");
+  const r = c.getBoundingClientRect();
+  return { left: r.left, top: r.top, width: r.width, height: r.height, cw: c.width, ch: c.height, dpr: window.devicePixelRatio };
+});
+console.log("canvas geometry", JSON.stringify(geom));
+
+let found = false;
+for (let attempt = 0; attempt < 8 && !found; attempt++) {
   await page.goto(`http://localhost:${PORT}/?tower=28`);
   await page.waitForTimeout(2200);
   const alive = await page.evaluate(() => !document.body.innerText.includes("YOU DIED"));
   if (!alive) continue;
-  const info = await page.evaluate(() => {
-    const c = document.getElementById("game");
-    return { dataUrl: c.toDataURL("image/png") };
-  });
-  const base64 = info.dataUrl.replace(/^data:image\/png;base64,/, "");
-  writeFileSync(`/tmp/canvas-attempt-${attempt}.png`, Buffer.from(base64, "base64"));
-  console.log(`attempt ${attempt}: saved, alive=${alive}`);
+
+  // Capture BOTH, back to back, no waits between them.
+  const shotBuf = await page.screenshot();
+  const canvasData = await page.evaluate(() => document.getElementById("game").toDataURL("image/png"));
+
+  writeFileSync(`/tmp/ab-screenshot-${attempt}.png`, shotBuf);
+  writeFileSync(`/tmp/ab-canvas-${attempt}.png`, Buffer.from(canvasData.replace(/^data:image\/png;base64,/, ""), "base64"));
+  console.log(`attempt ${attempt}: captured both`);
+  found = true;
 }
 
 await browser.close();

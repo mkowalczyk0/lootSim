@@ -532,9 +532,22 @@ export function weaponSprite(
   const hit = weaponCache.get(key);
   if (hit) return hit;
 
-  // Pipeline weapon: the authored greyscale PNG, tinted toward the rarity colour so a
-  // mythic axe still glows before anyone reads the word. A cosmetic weapon skin is a
-  // palette over the procedural grid, so those fall through to the bake below for now.
+  // Pipeline weapon: the authored PNG, tinted toward the rarity colour so a mythic axe
+  // still glows before anyone reads the word.
+  //
+  // **A skin overrides the rarity tint rather than composing with it, and that is a
+  // ruling, not an oversight.** The owner was asked directly (Sept 2026) and chose it: a
+  // skinned mythic reads as *starforged* in the hand, not as mythic, because cosmetics are
+  // pure vanity and vanity is never overruled by power. Rarity stays legible everywhere it
+  // is actually read — the stash card, the compare panel, the loot banner and the paper
+  // doll all go through `itemSprite`, which is untouched by this. It looks like a bug from
+  // inside this function, so: it is not, and re-composing the two would reverse a decision
+  // the owner made with the trade-off in front of them.
+  //
+  // The fall-through below is the *unmigrated* case: a skin is still a palette over the
+  // procedural grid, which is why a skinned weapon currently draws far worse art than an
+  // unskinned one. That is a live defect with a design answer already chosen — a skin
+  // becomes its own authored weapon — and not something to paper over by tinting here.
   const aw = ATLAS_WEAPONS[family];
   if (aw && !skinId) {
     const png = atlasCanvas(aw.id);
