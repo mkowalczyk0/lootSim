@@ -1023,11 +1023,18 @@ export class GameState {
       const item = rollItem({
         rarity, type, ilvl, rng: this.rng, favorElement, ensureMods: pull.ensureMods,
       });
-      found.push(item);
-      this.stats.raritiesFound[rarity]++;
-      // Named items (UAT §28) ride alongside the ordinary pull rather than replacing it, so
-      // a chest never pays out *less* for having a table. `data/named.ts` owns the odds.
-      for (const def of rollNamedDrops({ kind: "chest", tier }, this.rng)) found.push(this.forgeNamed(def, ilvl));
+      // Named items (UAT §28) take this pull's slot rather than riding alongside it — a
+      // chest returns exactly the number of items it promised (docket §21: a 10-pull was
+      // paying out 11 whenever a named item hit). A named drop outvalues the roll it
+      // displaces, so the player loses nothing real; if more than one definition hits the
+      // same pull, only the first fills the slot; the rest are simply a miss this time.
+      const namedHits = rollNamedDrops({ kind: "chest", tier }, this.rng);
+      if (namedHits.length > 0) {
+        found.push(this.forgeNamed(namedHits[0]!, ilvl));
+      } else {
+        found.push(item);
+        this.stats.raritiesFound[rarity]++;
+      }
     }
     this.stats.chestsOpened[tier] += available;
     this.addToInventory(found);
