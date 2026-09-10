@@ -181,6 +181,11 @@ export function playFloor(
   maxSeconds = 300,
   seed = 1000,
   dodge = 0.55,
+  /** Fires once per simulated tick, after `d.update` — an observation hook for a
+   *  caller that needs live per-tick state (monster positions, pathing, whatever)
+   *  rather than just the end-of-run `FloorResult`. Optional and a no-op by default,
+   *  so every existing call site is untouched. */
+  onTick?: (d: Dungeon, t: number) => void,
 ): FloorResult {
   const d = new Dungeon(state, run, seed);
   const input = new FakeInput();
@@ -337,6 +342,7 @@ export function playFloor(
     const primary = d.localHero.resources.all().find((pool) => !pool.spec.isUltimateMeter);
     if (primary) lowestMana = Math.min(lowestMana, primary.fraction * 100);
     t += DT;
+    onTick?.(d, t);
   }
 
   // Mopping up. A boss and a clear cache both drop everything at the instant the floor
