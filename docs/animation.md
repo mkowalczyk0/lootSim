@@ -961,53 +961,106 @@ tool prints "every X is Y", "only N of these", "all of them except", derive it f
 data on every run instead of writing it down. Whoever hits the third instance of this: it
 is the third, not the first.
 
-### A sprite with two accents, and a gate that assumes one
+### A sprite with two accents — RESOLVED, and the resolution is stricter than what it replaced
 
-`boss.corrupted-saint` (2026-09-10) ships an **idle only**, and the missing wind-up is
-blocked on a ruling rather than on art. It is the second-richest sprite in the borrow
-graph — 6 encounters, 5 of them Provings — and its idle alone moved coverage from 10/35
-to **16/35**.
+`boss.corrupted-saint` is the second-richest sprite in the borrow graph (6 encounters, 5 of
+them Provings). Its idle shipped 2026-09-10 and its wind-up was **blocked for a day by the
+chroma gate, on art nothing was wrong with**. Both now ship. The episode is worth keeping
+because the fix is a case study in changing a gate without weakening it.
 
-The Saint has **two** hot accents: a gold halo (hue 40) and violet eyes (hue 277). Both
-are deliberate, both are shipped, and both sit far above the hero's 35.3 bar. `npm run
-chroma` checks that each frame's *loudest 2+px colour* stays within 45 degrees of the
-strip's accent, which is exactly right for a one-accent sprite and cannot express this one.
+The Saint has **two** hot accents: a gold halo (hue 40) and violet eyes (hue 277). Both are
+deliberate, both are far above the hero's 35.3 bar, and neither ever goes anywhere:
 
-Measured across the shipped idle and a generated wind-up, **neither accent ever vanishes**:
+    gold    63.9 - 74.9 chroma, in every frame of both tags
+    violet  62.0 - 80.8 chroma, in every frame of both tags
 
-    gold    63.9 - 74.9 chroma, present in all 14 frames
-    violet  62.0 - 80.8 chroma, present in all 14 frames
+They only **trade rank**. Gold is loudest through the idle; violet is loudest through most
+of the wind-up, because the spell energy grows. The old gate derived one accent from the
+strip's loudest 2+px colour and expected every frame's loudest to be that same thing, so it
+read the swap as the accent having been REPLACED — a ~125 degree hue jump against a 45
+degree tolerance — and failed a strip on which its own intent was perfectly satisfied.
 
-They only **trade rank**. Gold is loudest in the five idle frames; violet is loudest in six
-of the nine wind-up frames, because the spell energy grows. The gate sees the swap as the
-accent being REPLACED — a ~125 degree hue jump against a 45 degree tolerance — and fails.
+#### What was rejected, and why it matters more than what was built
 
-**The gate's intent is satisfied and its implementation cannot say so.** That is a
-gate-semantics decision, and it is deliberately NOT made here, because the session that
-wants it changed is the session whose art it is blocking. This document already records
-what that looks like when it goes wrong: a correct check overruled by prose, where the
-argument sounded strictly stronger and was not. The measurement above is offered as
-evidence; the ruling belongs to the owner.
+The obvious fix, written down here the day before the ruling, was: *a sprite may declare
+several accents, and each frame must keep **some** declared accent above the bar.* That is
+the shape to reach for and **it is weaker than the check it replaces** — it cannot tell "the
+halo went out while the eyes carried the frame" from "both are fine", which is precisely the
+thing a per-frame accent check exists to catch.
 
-If it is ever taken up, the shape is probably that a sprite may declare more than one
-accent and each frame must keep *some* declared accent above the bar — but note that
-weakens the check, and the thing it currently catches (an accent replaced by a dull robe
-colour) is real.
+What shipped instead inverts it. A sprite may **declare** its accents in
+`AtlasSprite.accents`; a sprite that declares nothing is a one-accent sprite and takes the
+derived path unchanged; and a sprite that declares two must keep **every** declared accent
+above the bar in **every** frame, independently. Three properties, in the order they matter:
 
-The wind-up itself is good art and is parked in `art/anim/raw/saint-windup-blocked/`.
-**Do not re-roll it hoping for a luckier seed**: the swap is a property of the sprite's
-palette, not of the generation.
+1. **Declared, never inferred.** No auto-detection of how many accents a sprite appears to
+   have. A derived classifier is exactly the failure CLAUDE.md's fourth lesson catalogues,
+   and it has silently under-covered three times in this repo already.
+2. **Declaring buys strictness.** On the Saint the new check is strictly harder than the old
+   one: the derived check can only ever see whichever accent is loudest, so gold could go
+   out entirely while violet carried the strip and it would never know.
+3. **The replacement guard survives.** Giving up rank ordering must not give up what rank
+   ordering was catching, so a declared sprite also has to keep every frame's loudest colour
+   near one of its declared hues. With one declared accent that is identical to the derived
+   check; with two it is the same property over a set.
+
+#### The falsification, which is the only part of this that is evidence
+
+Everything above is an argument, and this document already records what happens when an
+argument about a gate is trusted: `windup-check.py` implemented the right property, the
+Ferryman failed it, and it shipped anyway because a docstring claimed a different
+measurement was "strictly stronger". It wasn't. **A written argument is not evidence.**
+
+So the claim was injected rather than asserted. `art/anim/dim-accent.py` dims one declared
+accent of one frame below the bar — violet eyes, idle frame 2, desaturated to chroma 20 with
+its hue and its brightest channel preserved, while the gold halo stays bright and stays the
+loudest thing in the frame. The two gates on those same bytes:
+
+    the old gate, on the art it was green on   ok    the accent is not REPLACED in any of the 5 frames
+                                               ok    the accent stays above the hero's in all 5 frames
+                                               chroma gate: all checks passed
+
+    the new gate, same injection               ok    the declared accent "gold halo" stays above the hero's
+                                               FAIL  the declared accent "violet eyes" ... frame 2 is 20.0
+                                                     #9279ac vs hero 35.3 — this accent is gone or dimmed
+                                                     out of legibility
+                                               ok    no frame's loudest colour is an UNDECLARED hue
+
+Not one number in the old gate's output even moves, because it never asks after the second
+accent at all. That gap is the coverage the declaration buys, and it is why the change is
+not a waiver. The script is committed so the next person to touch this can re-run it rather
+than re-read this section.
+
+> A note on running that comparison honestly: the old gate is *already* red on the shipped
+> 12-frame strip, for the rank-trade reason this whole section is about. Injecting into that
+> strip and watching it fail proves nothing — it was failing anyway. The comparison has to be
+> made on art the old gate was green on, which is why the injection above goes into an idle
+> frame of the 5-frame strip that actually shipped.
 
 #### Never prompt the dominant accent to pulse
 
-The first Saint idle failed this way too, and that one was self-inflicted: the prompt asked
+The first Saint idle failed the gate too, and that one was self-inflicted: the prompt asked
 for *"the golden halo pulsing gently"*, and the pulse dimmed gold below the violet on three
 of five frames. Re-rolled with *"the halo stays steady, bright and undimmed throughout"*,
 gold led every frame and the gate passed.
 
-One generation, and the rule is cheap to remember: **on a sprite with more than one bright
-feature, never ask the dominant one to pulse, dim or fade.** The animation does not need it
-and the gate cannot tell that kind of dimming from an accent dying.
+One generation, and the rule is cheap to remember:
+
+> **On a sprite with more than one bright feature, never ask the dominant accent to pulse,
+> dim or fade.**
+
+The animation does not need it, and no gate can tell that kind of dimming from an accent
+dying — the declaration does not change this, it only makes the failure name which accent
+went out.
+
+#### An open question that is the owner's, not a gate's
+
+§1.4 says the only bright colour on a monster is the part that is looking at you, and a
+whole gold halo is not that. By the letter of the style guide the Saint should arguably have
+one accent rather than two. **The art is not being touched on that reading**: it is shipped,
+approved, and a metric saying approved art is defective is a hypothesis until the owner's eye
+agrees. Repainting it to satisfy a rule nobody raised is the pre-emptive-fix pattern. The
+question is with the owner as a note, not as a blocker.
 
 ## The manifest tables
 

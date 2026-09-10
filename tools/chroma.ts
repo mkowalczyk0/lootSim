@@ -223,6 +223,44 @@ const KNOWN_ACCENT_VIOLATIONS: readonly string[] = [
 // So the bar is BOTH, and each catches what the other cannot: the hue must stay near the
 // strip's accent (the accent was not replaced) AND the chroma must stay above the hero's
 // (it is still legible as an accent). Between those two the chroma is free to pulse.
+//
+// ## Sprites with more than one accent (2026-09-10)
+//
+// Everything above derives ONE accent from the strip and infers the rest from rank: the
+// loudest 2+px colour in the whole strip is the accent, and every frame's loudest is
+// expected to be that same thing. On a sprite with two bright features that is wrong, and
+// `boss.corrupted-saint` is the case that proved it — a gold halo (hue 40) and violet eyes
+// (hue 277), both deliberate, both shipped, neither ever vanishing, which nonetheless
+// **trade rank**: gold leads the idle, violet leads the wind-up as the spell energy grows.
+// The gate read that swap as a ~125° hue jump and called a perfectly good accent replaced.
+//
+// The fix is a MANIFEST DECLARATION (`AtlasSprite.accents`), and three things about it are
+// deliberate:
+//
+//   1. **Declared, never inferred.** No auto-detection of how many accents a sprite "seems
+//      to have" — that is a derived classifier of exactly the kind CLAUDE.md's fourth
+//      lesson is about. A sprite that declares nothing is a one-accent sprite and takes the
+//      derived path above, byte for byte unchanged.
+//   2. **Declaring buys strictness, not slack.** The obvious shape — "each frame must keep
+//      SOME declared accent above the bar" — was rejected for being weaker than what it
+//      replaces. What runs instead is that **every** declared accent must clear the bar in
+//      **every** frame, independently. On the Saint that is a strictly harder test than the
+//      one it replaces: the derived check can only ever see whichever accent is loudest, so
+//      gold could go out entirely while violet carried the strip.
+//   3. **The replacement guard survives.** Giving up rank ordering must not give up the
+//      thing rank ordering was catching ("the accent was replaced by a dull robe colour"),
+//      so a declared sprite ALSO has to keep every frame's loudest colour near one of its
+//      declared hues. With one declared accent that is identical to the derived check; with
+//      two it is the same property generalised to a set.
+//
+// Falsified rather than argued, per this repo's scar about a correct check talked down by
+// prose: `art/anim/dim-accent.py` dims ONE of the Saint's two accents below the bar while
+// leaving the other bright and loudest, and the two verdicts on that same injection are
+//
+//     derived (the old check)    ok    the accent is not REPLACED / stays above the hero's
+//     declared (this check)      FAIL  "violet eyes" is below the bar in frame 2
+//
+// which is the demonstration, not the paragraph above it.
 
 section("§1.4 per frame: an animated accent may pulse, but it may not vanish");
 
@@ -248,46 +286,114 @@ function hueGap(a: number, b: number): number {
  */
 const HUE_TOLERANCE = 45;
 
+/**
+ * The loudest 2+px colour whose hue sits within `HUE_TOLERANCE` of `targetHue` — i.e. "how
+ * bright is THIS accent here", as opposed to `maxAccentChroma`'s "what is the brightest
+ * thing here". Returns 0 when the accent is absent from the frame entirely, which is the
+ * reading that matters: an accent that is not in the frame cannot clear the bar.
+ */
+function accentNear(pixels: readonly number[], targetHue: number): { max: number; hex: string } {
+  const counts = new Map<number, number>();
+  for (const c of pixels) counts.set(c, (counts.get(c) ?? 0) + 1);
+  let max = 0, hex = "absent";
+  for (const [c, n] of counts) {
+    if (n < 2) continue;
+    if (hueGap(hue(c), targetHue) > HUE_TOLERANCE) continue;
+    const s = chroma(c);
+    if (s > max) { max = s; hex = `#${c.toString(16).padStart(6, "0")}`; }
+  }
+  return { max, hex };
+}
+
 {
+  // The walk is animated monster/boss sprites UNION everything that declares accents. The
+  // union is the point: a declaration on a sprite the walk did not reach would be a check
+  // that silently does nothing, which is CLAUDE.md's "the scope" failure exactly. A static
+  // declared sprite is walked as a one-frame strip.
   const animated = Object.values(ATLAS).filter((m) => m.anim && m.anim.cols > 1
     && (isBoss(m.id) || /\.monster\./.test(m.id)));
-  if (animated.length === 0) {
+  const declaredOnly = Object.values(ATLAS)
+    .filter((m) => m.accents?.length && !animated.includes(m));
+  const walk = [...animated, ...declaredOnly];
+  if (walk.length === 0) {
     console.log("  (no animated monster/boss sprites yet — nothing to measure per frame)");
   }
-  for (const meta of animated) {
+  let walked = 0, declaredCount = 0, multiCount = 0;
+  for (const meta of walk) {
     const path = `src/render/atlas/${dirFor(meta.id)}/${meta.id}.png`;
     if (!existsSync(path)) continue;
     const png = decodePng(readFileSync(path));
-    const cols = meta.anim!.cols;
-    const strip = maxAccentChroma(opaquePixels(png.data, png.width, png.height));
-    const stripHue = hue(parseInt(strip.hex.slice(1), 16));
-    const perFrame = Array.from({ length: cols }, (_, i) =>
-      maxAccentChroma(framePixels(png.data, png.width, meta.w, meta.h, i)));
+    const cols = meta.anim?.cols ?? 1;
+    const frames = Array.from({ length: cols }, (_, i) =>
+      framePixels(png.data, png.width, meta.w, meta.h, i));
+    const perFrame = frames.map((f) => maxAccentChroma(f));
+    walked++;
 
-    const drifted = perFrame
-      .map((f, i) => ({ i, f, gap: hueGap(hue(parseInt(f.hex.slice(1), 16)), stripHue) }))
-      .filter((e) => e.gap > HUE_TOLERANCE);
-    const dimmed = perFrame
-      .map((f, i) => ({ i, f }))
-      .filter((e) => e.f.max <= hero.max);
+    const declared = meta.accents;
+    if (!declared) {
+      // --- the derived path: one accent, taken from the strip. UNCHANGED. --------------
+      const strip = maxAccentChroma(opaquePixels(png.data, png.width, png.height));
+      const stripHue = hue(parseInt(strip.hex.slice(1), 16));
+      const drifted = perFrame
+        .map((f, i) => ({ i, f, gap: hueGap(hue(parseInt(f.hex.slice(1), 16)), stripHue) }))
+        .filter((e) => e.gap > HUE_TOLERANCE);
+      const dimmed = perFrame
+        .map((f, i) => ({ i, f }))
+        .filter((e) => e.f.max <= hero.max);
 
-    console.log(`  ${meta.id}: accent ${strip.hex} (hue ${stripHue.toFixed(0)}°) — per frame `
-      + perFrame.map((f) => `${f.max.toFixed(1)}${f.hex}`).join(" "));
-    check(`${meta.id}: the accent is not REPLACED in any of the ${cols} frames`,
-      drifted.length === 0,
-      drifted.map((e) => `frame ${e.i} is ${e.f.hex} (${e.gap.toFixed(0)}° away — the accent is gone, not dimmed)`).join("; "));
-    check(`${meta.id}: the accent stays above the hero's in all ${cols} frames`,
-      dimmed.length === 0,
-      dimmed.map((e) => `frame ${e.i} is ${e.f.max.toFixed(1)} ${e.f.hex} vs hero ${hero.max.toFixed(1)}`
-        + " — dimmed until it is no longer an accent").join("; "));
+      console.log(`  ${meta.id}: accent ${strip.hex} (hue ${stripHue.toFixed(0)}°) — per frame `
+        + perFrame.map((f) => `${f.max.toFixed(1)}${f.hex}`).join(" "));
+      check(`${meta.id}: the accent is not REPLACED in any of the ${cols} frames`,
+        drifted.length === 0,
+        drifted.map((e) => `frame ${e.i} is ${e.f.hex} (${e.gap.toFixed(0)}° away — the accent is gone, not dimmed)`).join("; "));
+      check(`${meta.id}: the accent stays above the hero's in all ${cols} frames`,
+        dimmed.length === 0,
+        dimmed.map((e) => `frame ${e.i} is ${e.f.max.toFixed(1)} ${e.f.hex} vs hero ${hero.max.toFixed(1)}`
+          + " — dimmed until it is no longer an accent").join("; "));
 
-    const lo = Math.min(...perFrame.map((f) => f.max));
-    const hi = Math.max(...perFrame.map((f) => f.max));
-    if (hi - lo > 1) {
-      console.log(`       · pulses ${lo.toFixed(1)}-${hi.toFixed(1)} across the cycle`
-        + " — allowed on purpose; only vanishing is a defect");
+      const lo = Math.min(...perFrame.map((f) => f.max));
+      const hi = Math.max(...perFrame.map((f) => f.max));
+      if (hi - lo > 1) {
+        console.log(`       · pulses ${lo.toFixed(1)}-${hi.toFixed(1)} across the cycle`
+          + " — allowed on purpose; only vanishing is a defect");
+      }
+      continue;
     }
+
+    // --- the declared path: EVERY accent, independently, in EVERY frame ----------------
+    declaredCount++;
+    if (declared.length > 1) multiCount++;
+    console.log(`  ${meta.id}: ${declared.length} declared accent(s), ${cols} frames`);
+    for (const accent of declared) {
+      const values = frames.map((f) => accentNear(f, accent.hue));
+      const gone = values.map((v, i) => ({ i, v })).filter((e) => e.v.max <= hero.max);
+      const lo = Math.min(...values.map((v) => v.max));
+      const hi = Math.max(...values.map((v) => v.max));
+      console.log(`       · "${accent.name}" (hue ${accent.hue}°) ${lo.toFixed(1)}-${hi.toFixed(1)} — `
+        + values.map((v) => `${v.max.toFixed(1)}${v.hex}`).join(" "));
+      check(`${meta.id}: the declared accent "${accent.name}" stays above the hero's in all ${cols} frames`,
+        gone.length === 0,
+        gone.map((e) => `frame ${e.i} is ${e.v.max.toFixed(1)} ${e.v.hex} vs hero ${hero.max.toFixed(1)}`
+          + " — this accent is gone or dimmed out of legibility").join("; "));
+    }
+
+    // The replacement guard, kept from the derived path rather than traded away with the
+    // rank-ordering assumption: whatever is loudest in a frame must still BE one of the
+    // declared accents. With one declared accent this is the derived check; with two it is
+    // the same property over a set.
+    const foreign = perFrame
+      .map((f, i) => ({
+        i, f,
+        gap: Math.min(...declared.map((a) => hueGap(hue(parseInt(f.hex.slice(1), 16)), a.hue))),
+      }))
+      .filter((e) => e.gap > HUE_TOLERANCE);
+    check(`${meta.id}: no frame's loudest colour is an UNDECLARED hue (the accent was not replaced)`,
+      foreign.length === 0,
+      foreign.map((e) => `frame ${e.i} is ${e.f.hex} at ${e.f.max.toFixed(1)}`
+        + ` (${e.gap.toFixed(0)}° from the nearest declared accent)`).join("; "));
   }
+  console.log(`\n  walked ${walked} sprite(s): ${animated.length} animated, `
+    + `${declaredCount} declaring accents, ${multiCount} declaring more than one`);
 }
 
 console.log(`\n${failures === 0 ? "chroma gate: all checks passed" : `chroma gate: ${failures} FAILED`}`);
