@@ -242,3 +242,10 @@ working.** Three of the four above were caught that way.
   wind-up rejection, the campaign-check thinness, and the raid threat-rate instrument.
 - **Both branches adding to the `npm test` chain conflict in `package.json` every time.**
   Expect it, keep both scripts.
+- **CLAUDE.md edits go to the owner, not through a session.** The PM asked a delegate to
+  write two lessons into CLAUDE.md this run; the delegate correctly refused and took the
+  text to the owner instead, who approved it as drafted. CLAUDE.md instructs *every future
+  session* in this repo, so a peer directing content into it is the escalation shape a
+  session's own rules exist to catch — and "the content is benign" is exactly what that
+  would look like from the receiving end. `docs/*.md` design records are ordinary work and
+  can be delegated freely; CLAUDE.md cannot.
