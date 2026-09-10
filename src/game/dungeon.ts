@@ -1724,7 +1724,13 @@ export class Dungeon implements CombatHost, RuleHost {
 
   private updateTelegraphs(dt: number): void {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
-      const t = this.telegraphs[i]!;
+      // Resolving one telegraph can cascade into `killEnemy` on the boss — a caught trash
+      // monster dies, its kill event fires a build's on-kill effect, and that finishes the
+      // boss. A boss death empties this array outright (see `killEnemy`), so the slots this
+      // backwards walk has yet to reach are gone rather than shifted. A `!` here asserted
+      // they were still there and turned that into a crash on the next line.
+      const t = this.telegraphs[i];
+      if (!t) continue;
       if (t.followId !== null) {
         const owner = this.enemies.find((e) => e.id === t.followId);
         // The owner died mid-cast: the ability dies with it. That's a real reward for
