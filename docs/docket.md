@@ -8,7 +8,154 @@ strike them when they land, and add the design record's path next to the entry.
 
 ---
 
-## 1. Multiplayer stuttering — INVESTIGATED, NOT FIXED, BLOCKED ON THE OWNER
+## 1. Multiplayer stuttering — A BUFFER WAS BUILT, SHIPPED, AND REVERTED THE SAME DAY
+
+**Status 2026-09-10 evening: still not fixed, and the night's product is a diagnosis plus
+a correction to how this section has been measuring things.** Revert on master as
+`5c0ebaf` (`bd20dd1`); `src/net/party.ts` is byte-identical to its pre-buffer state.
+
+### What was built, and what happened
+
+`882ac04` added a de-jitter buffer on the client: hold arriving snapshots briefly, play
+them out on a steady cadence. It measured as a large improvement. Played by a human on the
+real link it was **worse** — *"Everything is more laggy now — monsters are stuttering,
+attacks are more delayed, but movement remains fine."* Reverted the same evening.
+
+The host was unaffected and movement was fine in every reading, both of which are
+consistent with the code: `drainSnapshots` returns on `role !== "client"` before it touches
+anything, and local movement is predicted.
+
+### The root cause — the finding worth keeping
+
+**`netClock` was a simulation clock driving a mechanism whose entire job is reconciling
+wall clock.** It advanced by a hardcoded `1/60` from `main.ts`'s per-sim-tick
+`beforeSim()`, while `core/loop.ts`'s spiral guard *discards* leftover time at `MAX_STEPS`
+(`if (steps === MAX_STEPS) accumulator = 0`). A client that cannot hold 60Hz therefore
+loses netClock time permanently. Arrivals (wall clock, 20/s) outpace playout (20 per
+*netClock* second), the queue passes `maxHeld` = 4, and the catch-up loop applies several
+snapshots in one tick — a teleport, not a smoothing.
+
+**The buffer coupled network smoothness to frame rate, which is exactly backwards: it
+degraded worst on the busy floors where it mattered most.**
+
+Two mechanisms that turn "it felt worse" into arithmetic, both read off the source:
+
+- **An underrun re-armed the full fill.** On an empty queue the drain set `playing = false;
+  fillStartedAt = -1`, so the next packet did not resume playback — it began a fresh 80ms
+  fill. Every underrun was **strictly 80ms worse than apply-on-arrival**, which resumed
+  instantly.
+- **80ms at 50ms spacing is a 1.6-packet cushion**, so any jitter past ~80ms underran.
+- Staleness went from ~93ms to as much as **190ms** (fill 80 + playout granularity 50 +
+  `LERP_SPAN` 60). That is "attacks are more delayed", to the millisecond.
+
+No value of `SNAPSHOT_BUFFER_MS` fixes this. The two failure modes are opposite — a deeper
+buffer fixes stutter and worsens delay, a shallower one does the reverse — and both were
+reported at once. **That is a design being wrong rather than a number**, which is why this
+was reverted rather than retuned.
+
+### The correction: machine load was an uncontrolled variable in every reading
+
+**Do not quote a magnitude from any of tonight's co-op measurements.** They were taken on
+a machine nobody audited:
+
+- The *"everything is more laggy"* reading ran with one core pinned by an orphaned `tsx`
+  probe from a previous session incarnation — running 2h13m, unnoticed.
+- The earlier *"very laggy, very choppy, near unplayable"* reading overlapped four gates
+  **plus** that orphan: five cores.
+
+Since the buffer's specific defect is that it couples playout to frame rate, **a starved
+host measured it close to its worst case.** *"The buffer made the client measurably
+worse"* is safe and is why the revert stands. *"By this much"* is not, and **the buffer's
+cost on a healthy host was never measured at all.**
+
+**Determinism under load was measured afterwards, and it passed — but read what it
+clears.** Two floor-playing stages were re-run under a deliberate 2x load swing
+(7.10 -> 13.83) and came back byte-identical, so contention costs wall-clock and not
+correctness. That retroactively clears every *seeded, byte-comparable* number in the
+batch, including the ones the orphaned probe overlapped. **It does not clear the readings
+in this section.** A human saying "monsters are stuttering" is a judgement about wall
+clock, which is exactly the quantity contention does move, and it is not seeded, not
+byte-comparable and not re-runnable. The determinism result and the load correction are
+about different kinds of measurement and neither substitutes for the other — do not let
+"contention doesn't affect correctness" be read as "the owner's readings were fine after
+all."
+
+What the load does **not** touch is the reason for the revert, which is code-level and
+load-independent: a starved machine cannot invent an 80ms fixed re-arm that is not in the
+source, a `netClock` clocked off the sim tick, or a spiral guard that discards time. Those
+are properties of the file.
+
+**The general rule, and it is this section's real lesson: record machine load alongside
+every co-op reading the way a seed is recorded.** This project has been rigorous about
+seeds, sample sizes, bounds and scope, and completely silent about the machine — while
+measuring the one system whose host *is* the simulation. **Treat every co-op number taken
+before 2026-09-10 as having an unknown machine attached to it.** That is not an instrument
+being blind; it is the room the instrument was standing in.
+
+**Second standing rule, and it is the same finding from the polluter's side: on a shared
+machine, load is somebody's data until you know otherwise.** The rule above says *record
+the machine*; this one says *the machine may be someone else's independent variable, and
+you cannot tell by looking*. Both halves turned up within three hours on 2026-09-10 — an
+orphaned probe nobody knew about, and then a near-miss with the roles reversed, when six
+detached spin loops turned out to be a determinism check deliberately holding load
+constant. An unannounced `npm test` there would not have added noise to a measurement; it
+would have **changed the quantity being measured**. Ask before starting anything heavy, and
+assume unexplained load is deliberate until someone says it isn't.
+
+**Standing rule: audit load by CPU, never by expected command name.**
+`ps aux | awk '$3 > 15'` finds a runaway probe from three hours ago; `grep smoke` finds
+only the work you already expected and is blind to exactly the process that matters. (On
+its first use this rule immediately caught two more full-core smoke runs during a
+re-test.)
+
+### What this does NOT conclude
+
+**"We tried a buffer and it made things worse" must not calcify into "buffers don't work
+here."** A sim-tick-clocked buffer is a frame-rate-coupled mechanism and a pinned core is a
+frame-rate attack; the two met on one machine. **A buffer clocked off wall clock may be
+entirely fine on that same host.** The revert closed a bad implementation, not the idea.
+
+### The next test — do this BEFORE any rebuild
+
+**Hypothesis: the client's chop is host-side CPU starvation, not network jitter.** A
+starved host emits late, unevenly spaced snapshots, and **a client cannot distinguish that
+from network jitter** — same symptom, different cause, which is precisely why nothing in
+`net/` would ever have caught it.
+
+**This hypothesis was already the third bullet of this section** ("A host who is themself
+dropping frames delivers late snapshots to everyone... those have completely different
+fixes and only one of them is a networking bug"). It was written down, and then a
+networking fix was built anyway. That is worth more than the hypothesis.
+
+The experiment needs no code: the owner hosts twice, once with the machine deliberately
+quiet and once with a couple of cores deliberately loaded, and the client says which felt
+worse. If load dominates, this entire investigation has been aimed at the wrong layer. It
+costs a session rather than a sprint, and **measuring before building is the whole lesson
+of the day.**
+
+### If a buffer is rebuilt afterwards, it needs all four
+
+1. Clock playout off `performance.now()`, never the sim tick. Wall clock in, wall clock out.
+2. On underrun, resume on the next packet **without** re-arming the full fill; let depth
+   recover gradually rather than paying the whole buffer per hiccup.
+3. Drop the burst catch-up, or make it interpolate rather than snap.
+4. Make depth **adaptive to observed jitter** rather than a constant — a fixed 80ms cannot
+   express both a loopback and the owner's wifi. Note that an adaptive version *was* built
+   and measured worse, and was rejected **on the modelled link that also blessed the
+   version that shipped and failed**. It deserves a second look on a real one.
+
+### Why the harness did not catch any of this
+
+`tools/mp-jitter.ts` was written **in the same commit as the fix it validates**, so the
+bound, the scope and the subject all came from the thing under test — CLAUDE.md's fourth
+lesson, three days old, in the one place nobody checked. It models a link; it does not
+model a browser that drops frames, which is the half that broke. It is kept, because it is
+still the right shape of harness for the rebuild and because deleting it would lose the
+record of why it agreed with itself.
+
+### The original entry follows.
+
+## 1 (original). Multiplayer stuttering — INVESTIGATED, NOT FIXED, BLOCKED ON THE OWNER
 
 **Measured 2026-09-10**, finding in `docs/mp-stuttering.md`, harness `tools/mp-stutter.ts`.
 Two of the three suspects below came back **clean** with real numbers:
