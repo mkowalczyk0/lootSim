@@ -192,3 +192,99 @@ Two distinct problems inside it:
 
 The wave director already forces owed elites when a floor runs out of bodies, which is the
 precedent for the simulation resolving its own stalls rather than asking the player to.
+
+---
+
+*Added 2026-09-10, later the same day, from the owner playing the game. These two are
+**higher** priority than items 3-6 above: both are direct reports of something wrong in
+front of them, which outranks anything queued from a planning conversation.*
+
+## 7. Bosses have no attack animation
+
+> "Not seeing attack animations on bosses - could you add that to the docket?"
+
+**This is the third time the owner has raised this and the second time it has been
+misread. Read this whole entry before touching anything.**
+
+The history matters because it is the reason this is still open. The owner first said the
+boss animations looked *"halfway done"*. Two sessions took that as a report that the
+wind-up frames themselves were defective, built a measurement tool, calibrated it, went red
+on all three shipped strips and designed a regeneration plan around it. Then the owner
+clarified:
+
+> "the windups last frame stops right before the attack. it looks good, my comment was that
+> i was expecting an attack but it seems like that wasnt the intention here. the wind ups
+> look really good. thats what i mean by 'halfway'"
+
+So the wind-ups are **approved art**. What is missing is the blow that should follow them.
+Do not re-measure the wind-ups. Do not regenerate them. See
+`docs/anim-method.md` and the memory of that episode: a metric that fails art the owner
+likes is not a defect.
+
+**The repo already knows this and says so out loud.** `src/render/atlas/manifest.ts` carries
+the comment, above the boss rows:
+
+> **The art in `strike` is a RISE, not a blow — read this before assuming it is done.**
+
+Three bosses have a `strike` tag wired, resolving through `STRIKE_TAG` and the
+`[ability, "strike", "idle"]` chain in `src/render/anim.ts`, with `cast` beating `strike`
+always. **The wiring is done and correct; the art in those frames is the wrong art.** The
+Ferryman and Tyrant rises that landed 2026-09-10 are the *top* of the motion — the pole
+raised, the sword overhead — which is what makes the absence of the downswing more
+conspicuous, not less.
+
+So the task is narrow and well-supported: **author the blow.** The frames that come after
+the wind-up's last held frame and before the return to idle. Everything needed already
+exists — the tag chain, the latch, the padded canvases with real headroom, the rest-file
+substitution trick for a byte-identical hand-off back to idle, and the accent-preservation
+scripts (`art/anim/target-accent.py`, `art/anim/repair-split-accent.py`).
+
+Two traps recorded from the rises work, both of which nearly cost good animations:
+
+- **Silhouette XOR over body area under-reports a thin feature.** The Tyrant's sword going
+  from low to overhead is the most dramatic pose change of the three bosses and scores
+  8-12%, *under* `windup-check`'s 25% fidget bar. A downswing is the same shape of motion
+  and will read the same way to that instrument. Do not judge a blow by it.
+- **Judge a seam against the animation's own steps, not against zero.** The cast→strike
+  hand-off measures 458 and 522 and looks like a pop on a contact sheet; consecutive steps
+  *inside* those same animations run 518-930 and 274-1801. There is no pop.
+
+`npm run windup` is a printed diagnostic, deliberately not a gate, for exactly the reason
+above. The owner's eye is the acceptance test.
+
+## 8. Nerf the Ranger's ultimate, "The Last Hunt"
+
+> "nerf the rangers ultimate ability 'the last hunt' - its a tad overpowerd and wipes the
+> entire map and bosses way too quickly."
+
+Note the owner named **two distinct symptoms**, and they have two distinct causes in
+`src/progression/ranger.ts` (`RANGER_THE_LAST_HUNT`). Fixing one will not fix the other.
+
+**"Wipes the entire map"** — the damage effect is `to: "enemies"`, unbounded. Every enemy on
+the floor, no cap, no falloff, no line of sight. Note that the ability's own description
+promises something much narrower: *"Mark every elite in sight as quarry, vanish, and loose
+one precision shot at each in sequence."* **The implementation is more generous than the
+text the player is shown** — it hits everything, not every elite, and not in sequence. That
+gap is a strong hint at intended design: the honest fix is likely to make the ability do
+what it already says it does, rather than to invent a new limit.
+
+**"And bosses way too quickly"** — `executeMissingHealth: 0.4` on a `base: 3.4`
+`scale: "attack"` packet with `canCrit: true` on the `ultimate` channel. An execute term
+scales with the health already gone, which is precisely the term that deletes a single
+enormous body; a boss is the one target in the game with enough health for 40% missing-health
+to be a huge number. This is the boss half, and it is separate from the target count.
+
+Constraints on whatever gets built:
+
+- **"A tad overpowered" is a nerf, not a gutting.** The class's identity is marking quarry
+  and executing the wounded, and the ultimate should still feel like the last thing a very
+  large monster hears. Do not remove the execute; size it.
+- **This is a live balance change to a shipped class.** A single default `npm run smoke` run
+  cannot show the delta — the shared rng reshuffles every dive, so a one-run before/after is
+  noise. Widen the seeds and A/B against master in a throwaway worktree.
+- **Measure both symptoms separately**, because they have separate causes: trash-clear on an
+  ordinary floor, and time-to-kill on a boss. A change that fixes the map-wipe and leaves
+  the boss deletion intact has solved half the report.
+- Check `RANGER_PROGRESSION` for tree nodes that scale it further before assuming the base
+  numbers are the whole story — `the_last_hunt.packet` is a declared mutation hook, and
+  Winter's Quarry adds a freeze plus a shattering nova chain on top.
