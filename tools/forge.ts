@@ -38,9 +38,10 @@ import { ELEMENT_LABELS, RESERVED_ELEMENTS, type Element } from "../src/data/ele
 import { NAMED_BY_ID, NAMED_ITEMS, craftRecipeFor, craftableNamed } from "../src/data/named";
 import { RARITIES, RARITY_MULTIPLIERS, RARITY_VALUE, rarityIndex, type Rarity } from "../src/data/rarity";
 import {
-  affixRange, ascend, ascendComponents, augment, forgeOpBlocker, inscribe, recast, salvageYield, temper,
+  affixRange, ascend, ascendComponents, augment, awaken, forgeOpBlocker, forgePossibilities, inscribe, recast,
+  salvageYield, temper,
 } from "../src/game/forge";
-import { MOD_ROLL_BY_ID, forgeNamedItem, itemMods, rollItem, type Item } from "../src/game/item";
+import { MOD_ROLL_BY_ID, forgeNamedItem, itemMods, reforgeAffixes, rollItem, type Item } from "../src/game/item";
 import { GameState } from "../src/game/state";
 import { GRANTABLE_ABILITY_IDS } from "../src/progression/index";
 
@@ -507,6 +508,171 @@ section("9. mass-salvage is the same op run N times, not a second economy");
 
   check("an id that doesn't exist is skipped, not a crash",
     batched.salvageItems(["not-a-real-id"]).ash === 0);
+}
+
+// =========================================================================
+section("10. the possibilities panel lists exactly what the op can roll");
+{
+  // Docket §10 applies the §20 drop-preview rule to the bench: **a preview that can
+  // disagree with the roll is worse than no preview.** `forgePossibilities` is written so
+  // it *cannot* hold a table of its own — it reads `modPoolFor`, `recastPool`,
+  // `augmentPool`, `inscribePool`, `TRIGGER_SHAPES` and `affixRange`, which are the same
+  // functions the ops roll through. This section is the property that keeps that true:
+  // for every drawing op, the set the panel lists and the set the roll produces must be
+  // *equal*, in both directions.
+  //
+  // Both directions matter and they fail differently. An outcome the roll produces and
+  // the panel omits is a player told an affix was impossible when it wasn't; an outcome
+  // the panel lists and the roll never produces is Ash spent chasing something that isn't
+  // there. Neither is caught by a one-sided containment check, which is the repo's
+  // standing lesson about bounds-versus-comparisons.
+  //
+  // The sampling is deterministic — one fixed seed, iteration count derived from the pool
+  // being walked — so this check cannot flip on a lucky draw. Each case prints the size of
+  // the pool it walked, because a filter over a pool that has silently emptied passes.
+
+  /** Every outcome id the real op actually produced, over enough draws to cover its pool. */
+  function drawn(item: Item, op: ForgeOp, affix: number, runs: number): Set<string> {
+    const rng = new Rng(4242);
+    const seen = new Set<string>();
+    for (let i = 0; i < runs; i++) {
+      switch (op) {
+        case "reforge":
+          for (const m of reforgeAffixes(item, rng).mods) seen.add(m.id);
+          break;
+        case "recast": {
+          const m = recast(item, affix, rng).mods[affix];
+          if (m) seen.add(m.id);
+          break;
+        }
+        case "augment": {
+          const after = augment(item, rng);
+          const m = after.mods[after.mods.length - 1];
+          if (m && after.mods.length > item.mods.length) seen.add(m.id);
+          break;
+        }
+        case "inscribe":
+        case "rescribe": {
+          const g = inscribe(item, rng).grant;
+          if (g) seen.add(g);
+          break;
+        }
+        case "awaken": {
+          const t = awaken(item, rng).trigger;
+          if (t) seen.add(t.id);
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return seen;
+  }
+
+  function comparePool(label: string, item: Item, op: ForgeOp, affix = 0) {
+    const poss = forgePossibilities(item, op, affix);
+    const listed = new Set(poss.outcomes.map((o) => o.id));
+    const observed = drawn(item, op, affix, Math.max(600, listed.size * 250));
+    const hidden = [...observed].filter((id) => !listed.has(id));
+    const phantom = [...listed].filter((id) => !observed.has(id));
+    check(`${label}: walked a real pool`, listed.size > 0, `${listed.size} outcomes listed`);
+    check(`${label}: the panel lists everything the roll produced`,
+      hidden.length === 0, hidden.length ? `rolled but never shown: ${hidden.join(", ")}` : `${observed.size} seen`);
+    check(`${label}: and nothing the roll can't produce`,
+      phantom.length === 0, phantom.length ? `shown but unreachable: ${phantom.join(", ")}` : "");
+  }
+
+  const rng = new Rng(1010);
+
+  // A legendary sword with room for one more affix — the one item that exercises Reforge,
+  // Recast, Augment, Temper, Inscribe and Awaken all at once.
+  let sword: Item | null = null;
+  for (let i = 0; i < 400 && !sword; i++) {
+    const it = rollItem({ rarity: "legendary", type: "sword", ilvl: 24, rng });
+    if (it.mods.length > 0 && it.mods.length < MOD_COUNTS.legendary[1] && affixRange(it, 0)) sword = it;
+  }
+  check("staged a legendary sword with room and a temperable first affix", !!sword);
+
+  if (sword) {
+    comparePool("reforge, legendary sword", sword, "reforge");
+    comparePool("recast, legendary sword", sword, "recast", 0);
+    comparePool("augment, legendary sword", sword, "augment");
+    comparePool("inscribe, legendary sword", sword, "inscribe");
+    comparePool("awaken, legendary sword", sword, "awaken");
+
+    // Recast is the op whose pool is *narrower* than the slot's, and the narrowing is the
+    // whole point of showing it: what the item already carries can't come back.
+    const recastListed = new Set(forgePossibilities(sword, "recast", 0).outcomes.map((o) => o.id));
+    const held = new Set(sword.mods.map((m) => m.key));
+    const poolKeys = [...recastListed].map((id) => MOD_ROLL_BY_ID.get(id)?.key);
+    check("recast's pool excludes every affix the item already carries",
+      poolKeys.every((k) => k !== undefined && !held.has(k)),
+      `${sword.mods.length} held, ${recastListed.size} offered`);
+    check("...and it is strictly narrower than a reforge's",
+      recastListed.size < forgePossibilities(sword, "reforge").outcomes.length);
+
+    // Temper is a range, not a pool: the panel's job is to say where the value can land,
+    // and `temper` must never leave it.
+    const tRange = forgePossibilities(sword, "temper", 0).outcomes[0]?.range;
+    check("temper quotes a range", !!tRange);
+    if (tRange) {
+      const tRng = new Rng(77);
+      let out = 0;
+      for (let i = 0; i < 500; i++) {
+        const v = temper(sword, 0, tRng).mods[0]!.value;
+        // The roll is rounded to three places, so the bound is checked to that precision.
+        if (v < tRange[0] - 0.001 || v > tRange[1] + 0.001) out++;
+      }
+      check("temper never leaves the range the panel quoted", out === 0, `${out}/500 outside`);
+    }
+
+    // The rarity gate is shown, not merely obeyed — that's what makes the panel an
+    // argument for ascending rather than a list of affixes that never turn up.
+    const gated = forgePossibilities(sword, "reforge").outcomes.filter((o) => o.minTier > 0);
+    check("the panel carries the rarity gate each affix unlocked at", gated.length > 0,
+      `${gated.length} of ${forgePossibilities(sword, "reforge").outcomes.length} are gated above common`);
+    check("...and every gate it shows is one this item has actually cleared",
+      gated.every((o) => o.minTier <= rarityIndex(sword!.rarity)));
+  }
+
+  // An epic ring: a different slot group, so a different pool. If the two came back
+  // identical the filter would be doing nothing.
+  const ring = rollItem({ rarity: "epic", type: "ring", ilvl: 18, rng });
+  comparePool("reforge, epic ring", ring, "reforge");
+  if (sword) {
+    const a = forgePossibilities(sword, "reforge").outcomes.map((o) => o.id).sort().join(",");
+    const b = forgePossibilities(ring, "reforge").outcomes.map((o) => o.id).sort().join(",");
+    check("a sword's pool and a ring's pool are genuinely different lists", a !== b);
+  }
+
+  // A named item reforges through its *definition's* ranges, not the pool. A generic
+  // "here are all the affixes" panel would be a straight lie on this one, which is the
+  // sharpest case for why the panel is per-op rather than one list.
+  const namedDef = NAMED_ITEMS.find((d) => (d.randomMods ?? 0) > 0) ?? NAMED_ITEMS[0]!;
+  const namedItem = forgeNamedItem(namedDef, namedDef.rarity === "unspoken" ? 30 : 24, rng);
+  comparePool(`reforge, named (${namedDef.id})`, namedItem, "reforge");
+  check("a named reforge's panel names the definition's own affixes",
+    forgePossibilities(namedItem, "reforge").outcomes.some((o) => o.id.startsWith(`named:${namedDef.id}:`)));
+  for (const op of ["recast", "augment", "inscribe", "awaken"] as ForgeOp[]) {
+    const poss = forgePossibilities(namedItem, op);
+    check(`a named item's ${op} panel offers nothing, because the op refuses it`,
+      poss.draw === "certain" && poss.outcomes.length === 0,
+      forgeOpBlocker(op, namedItem, 0) ? "" : "the op did not actually refuse it");
+  }
+
+  // The ops that don't roll must say so rather than showing an empty list with a pool's
+  // heading — "certain, not rolled" is the answer to "what could this give me?"
+  for (const op of ["ascend", "eraseGrant", "eraseTrigger", "salvage"] as ForgeOp[]) {
+    const poss = forgePossibilities(ring, op);
+    check(`${op} is presented as certain, not as a draw`,
+      poss.draw === "certain" && poss.outcomes.length === 0 && poss.note.length > 0);
+  }
+
+  // A new op must be given a panel. The switch is exhaustive by type, but an op returning
+  // an empty note would render a blank strip, so the roster is walked rather than trusted.
+  const blank = FORGE_OPS.filter((op) => forgePossibilities(ring, op, 0).note.trim().length === 0);
+  check("every one of the bench's ops has something to say about its outcome space",
+    blank.length === 0, `walked ${FORGE_OPS.length} ops${blank.length ? `, blank: ${blank.join(", ")}` : ""}`);
 }
 
 console.log(`\n${failures === 0 ? "ALL FORGE CHECKS PASSED" : `${failures} FORGE CHECK(S) FAILED`}\n`);
