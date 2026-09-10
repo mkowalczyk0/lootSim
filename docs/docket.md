@@ -692,3 +692,34 @@ complained about the *mechanic* rather than about one ability's tuning, and the 
 version is strictly worse than the thing they are reporting. **Ask; do not pre-emptively
 sweep.** But this is no longer a symmetrical judgement call — a player who takes the Reaper
 into a raid produces this exact report a third time.
+
+### §20 addendum — the owner extended it to all three, and that changes where the fix goes
+
+Asked whether the Reaper and Assassin should be swept in the same pass or left until someone
+hit them, the owner answered:
+
+> "Yeah. Let's do it for reaper and assassin. Like, I just think this mechanic is a little
+> broken at the moment. Maybe we'll come back to it. But for now, yeah, add it to the pass."
+
+**So §9 is closed as a question and folded into §20.** All three abilities are in scope:
+`RANGER_THE_LAST_HUNT`, the Reaper's **"Death Comes Due"** (`executeMissingHealth: 0.8`,
+unbounded — four times the Ranger's current term) and the **Assassin**'s ultimate mutation
+(0.4, unbounded).
+
+**And note what the owner actually called broken: the mechanic, not the three numbers.** That
+is a judgement about the vocabulary, so the fix belongs at the vocabulary level in
+`src/combat/` — **an execute term that cannot be authored without a threshold** — rather than
+three separate patches with the same bug sitting one keystroke away from a fourth ability.
+This repo's own standing preference applies exactly: a rule that cannot be violated beats a
+check that notices when it was. Three hand-patched abilities leave the hole open; a required
+threshold closes it.
+
+"Maybe we'll come back to it" is the owner leaving the door open on the mechanic's future,
+**not** an invitation to redesign the execute concept now. Ship the threshold, pay the three
+classes back, stop there.
+
+**This sweep was correct because it was asked for. It does not set a precedent.** The
+standing rule against pre-emptively rebalancing classes nobody has complained about is still
+right and is still in §9's original entry — what made this different is that the owner's
+complaint was explicitly about the mechanic rather than about one ability's tuning, and the
+question was put to them rather than answered on their behalf.
