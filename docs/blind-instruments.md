@@ -367,6 +367,9 @@ bullet, written and read before the buffer was built:
 > stutters' from 'the host stutters and the client faithfully reproduces it' — those have
 > completely different fixes and only one of them is a networking bug."
 
+(`docs/docket.md` §1, "Multiplayer stuttering," third bullet — check it against the source
+rather than this quotation, the same standard this section is about.)
+
 That is the current leading hypothesis for the underlying bug. It was correctly identified, in
 the exact document the work was scoped from, and a networking fix got built and shipped anyway
 — the buffer, and the harness that validated it (item 8 above), neither of which could ever have
