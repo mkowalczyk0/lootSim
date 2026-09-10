@@ -1,373 +1,242 @@
-# Handoff — 2026-09-09 (late evening addendum)
+# PM handoff — end of the 2026-09-10 (evening) run
 
-**Master is green and clean at `0d5493d`.** Everything below the addendum was written
-mid-run and is superseded where the two disagree. Read this section first.
+You are the incoming PM. The owner's standing instructions define the job:
 
-## Five owner decisions gate everything. Nothing else is worth starting.
+> "You are the PM here. You will dictate priority, delegate work, approve and sign off, and
+> keep the ball rolling. Do not re-do or extensively check other agents'/sessions' work.
+> Only ping me once you roll something out and need me to take a look. Be mindful of the
+> session limit and token consumption — use compact and clear after every task."
 
-1. **The hero — candidate E**, last row of the v7 sheet, nothing committed. Unblocks all 21
-   class heroes. Its one problem is that its art-pixel height (105) is outside the legal
-   portrait band. **Do not solve that by loosening `MAX_SPREAD`, retiring the procedural
-   composer, or padding to 155** (11.9% against a 12% limit — this run has been bitten twice
-   by margins that thin). The band *widens* as the hero grows, so target **78–87** by
-   re-rolling `pro` against a smaller **boss** as style reference. A monster is not an
-   acceptable style reference; that would let a portrait constraint pick the hero's visual
-   family.
-2. **Do the boss wind-ups read at speed?** Gates the remaining seventeen encounters, which is
-   a real budget. **If the tell reads quiet, try the cheap hypothesis before the canvas
-   decision** — see the falsifiable prediction below.
-3. **The Minotaur's eyes**: 3+ px per eye, same hue, same position. Measured, not guessed —
-   1px/eye holds the accent in 0 of 8 generated frames, 2px/eye in 4 of 8. Its wind-up
-   *shape* is already fine (40% from rest, lands to 0.1%); the accent is the only blocker.
-   The script is committed and applies cleanly; the shipped sprite is untouched.
-4. **The Tower's monsters** (`docs/art-manifest.md` §4) — Heaven has floors now and Hell's
-   monsters are standing on them. Palette-swap the existing eleven, or bespoke celestial
-   silhouettes. Untouched, deliberately.
-5. **The unreachable deep Reliquary sectors** — the largest blast radius of the five.
+Plus, always: **`docs/game_story_worldbuilding.md` is the creative tiebreaker.** Read the
+relevant part of it before any task touching lore, naming, realm identity or the structure
+of a system. Other `docs/*.md` files carry the design records.
 
-## A falsifiable prediction, worth testing before the canvas question
-
-If the owner says the wind-up tell reads too quiet, the expensive answer is changing the
-canvas — which moves `worldScale` and every boss's drawn size, and is ruled out without the
-owner. **Try this first: it costs two generations, changes no manifest row and moves no
-footprint, so a rejected attempt costs nothing else.**
-
-The Ferryman is the only one of the three whose target pose was *harvested from an old
-rejection*, before the turn lever was worked out. The Queen and Tyrant were commissioned with
-the quarter-turn prompt. **So if exactly one of the three reads weak, expect it to be the
-Ferryman, and the fix is to re-harvest it the way the other two were done.** If instead the
-owner says the Ferryman reads fine and one of the others does not, this hypothesis is wrong
-and the canvas question is genuinely back on the table.
-
-## What the deep-Reliquary finding actually blocks
-
-`tools/reachability.ts` + `docs/reliquary-reachability.md`. Sector 7 (baseDepth 34) could not
-be cleared by a bot at its own depth, at +20/+66/+116 levels over it, or by four classes at
-level 100 — 0/5 or 0/3 every time. Control (sector 1 at level 30) cleared 5/5, so the harness
-is sound. First occasional clears appear around **level 300, ~9× its own depth**: a steep
-curve, not a hard cap, which is what makes it a tuning question rather than a relocation one.
-
-**The ladder is real and never exercised** — nobody gets far enough to be gated by it.
-
-Three things shipped today sit behind those sectors and are therefore currently unreachable:
-the three new sector tilesets (Ossuary, Spire, Orchard), and both new recipes (The Unbound
-Ward from the Spire, order 8; Rootbound Plate from the Hollow Orchard, order 9). None of that
-work was wrong — the collision only became visible when both landed the same day.
-
-## Method notes that cost real generations to learn
-
-- **`docs/animation.md` is the pick-up-and-go document and it is now correct** — its opening
-  and its step 1 were both actively wrong until they were rewritten, and step 1's stale advice
-  ("start near 50, the generator dims accents by 39%") was the exact move the four-boss
-  measurement retired.
-- **Accents are about REDUNDANCY, not brightness.** The Minotaur is not the dimmest and is the
-  only failure, because a 1px accent has nothing to fall back on when the generator splits it
-  into two near-identical shades that each fall under the 2px measurement floor.
-- **On a full canvas, amplitude means a TURN.** Coiling in place: 17% / 21% from rest, under
-  the 25% bar. "Pivots a quarter turn to present one shoulder": 32% / 40% on the same bosses.
-- **The loop generator is a reliable POSE generator** when prompted for amplitude rather than
-  wind-up shape — and the rejection does not have to already exist, it can be commissioned.
-- **Pinning usually but not always lands** (one seed finished 3.5% away having reached 1% two
-  frames earlier), and the penultimate-frame retreat reproduced on four of five runs. Both are
-  why `windup-check.py` in pinned mode is not optional.
-- **You CAN run the game in a browser here** — playwright, cached Chromium, your own
-  worktree's dev server on a throwaway port, throwaway account through the normal login. Never
-  port 5173. A full day was lost to assuming otherwise, and every defect the owner reported
-  that day was one a single frame would have shown.
+Master is at the merge of `fix/keystone-symmetry`, **gate green (`npm test`, all stages)**.
 
 ---
 
-# Handoff — 2026-09-09 (evening)
+## 1. THE ONE THING THAT MATTERS RIGHT NOW: multiplayer is near-unplayable
 
-Written at the end of a multi-session run: PM `lootsim-21`, with `lootsim-26`, `lootsim-56`,
-`lootsim-76`, `lootsim-97`. **Master is green at `a0a80ef` (`npm test` GATE_EXIT=0, full
-suite, verified after the last merge), the working tree is clean, and every branch this run
-produced has been merged.** Fifteen merges landed.
+This is the owner's top priority and everything else is behind it.
 
-This file replaces the previous handoff. Everything on that docket is closed.
+**The report (today, their words):** they played co-op with another real person on a second
+machine — the first time that has ever happened; every previous test was one process on
+localhost. The other player found it *"very laggy, very choppy, near unplayable."*
 
----
+**Owner-supplied facts, all confirmed by them directly. Do not re-ask:**
 
-## The previous docket, closed
+| Question | Answer |
+| --- | --- |
+| Who hosted | The owner |
+| Did the host feel it | **No** — "perfectly fine on my end... very playable, very good," maybe marginally less smooth |
+| Both ends | **Wifi** |
+| Onset | **Bad immediately**, not degrading |
+| Movement or attacks | **"Movement felt laggy as well"** |
 
-| Item | Outcome |
-|---|---|
-| Chest augments WASD / click bug | **Fixed and merged** (98c4c57) |
-| Bosses all fight the same | **Fixed and merged** (e015d27) — see below, the numbers are stark |
-| Citadel/lobby looks wrong | **Fixed and merged** (068f6a4, 76d7ed0) |
-| Delve drawing the Reliquary's monsters | **Was already resolved** — `SHARED_MONSTER_SETS` declares the overlap deliberately. No work needed. |
-| Item-level axis (3 sites + guard + docs) | **Fixed and merged** (afcc198) |
-| Rune Fragment / Heartwood Sap recipes | **Still open** — see below |
-| Reliquary reachability (sectors 7–9) | **Still open** — see below |
-| Raid party threat-rate direction | **Built, measured and merged** (e015d27) |
-| Augment discount: divine or unspoken? | **PM ruling: stays on divine.** Closed. |
-| Hero redraw | **Three candidates rendered, awaiting the owner's pick.** Nothing committed. |
-| Animation + art overhaul | **Architecture, gate and three animated raid bosses merged.** Wind-ups blocked — see below. |
+Host-fine + client-bad rules out local frame budget and confirms the network path. Wifi +
+immediate confirms jitter rather than a leak.
 
----
+**Still unknown, worth getting if they offer it:** ping and jitter numbers between the two
+machines, and whether it was same-LAN or over the internet. Do not block on these.
 
-## The one thing blocking work: the hero pick
+### The diagnosis (lootsim-26, found in code before measuring — verified by me)
 
-Three candidates were rendered on a real graded floor beside the unchanged monster cast and
-sent to the owner. **Nothing is committed** — deliberately, so a rejected direction cannot be
-mistaken for a starting point. The instrument (`art/characters/candidates.ts`) is committed
-and re-derives every number from the PNGs.
+**Cause 1 — the chop. The client's tolerance for a late packet is 10 milliseconds.**
+`SNAPSHOT_HZ = 20` in `src/net/protocol.ts` (a snapshot every 50ms) against
+`LERP_SPAN = 1.2 / SNAPSHOT_HZ` = 60ms at `src/net/sync.ts:48`. `advanceRemote` slides each
+remote body toward its last known position over that window; when it expires the body
+**freezes on its last known position** until the next packet lands, then jerks. 10ms of
+slack is nothing over wifi. I verified both constants myself.
 
-|  | lever | px | colours | max chroma | head/body lum | world h | tiles | density |
-|---|---|---|---|---|---|---|---|---|
-| v4 shipped | — | 39×57 | 40 | 30 (skin) | 2.1× | 32 | 1.00 | 3.56× |
-| A cut the ink | colour only | 16×41 | 27 | 35 (skin) | 1.17× | 32 | 1.00 | 2.56× |
-| B coarse + tall | height only | 20×51 | 18 | **73 #dba820** | 1.6× | 58 | 1.81 | 1.76× |
-| C both | both | 16×39 | 24 | 26 (skin) | 1.17× | 52 | 1.63 | 1.50× |
+**This is why every check we have is green.** On loopback the inter-arrival gap never
+exceeds 60ms, so the failure mode is *structurally unreachable* in every test the project
+has ever run.
 
-- **B carries a hot accent** (saturated gold buckle, chroma 73, plus lit blue eyes) — the
-  §1.4 violation the hero is forbidden outright, and what v3 was rejected for. It is
-  invisible to colour count, because one bright pixel pair costs exactly one colour. B also
-  lands at h=51, inside a portrait dead zone (free to fix: pad to 52).
-- **B and C do not subtly tower** — the monsters read as children beside them. Picking either
-  commits to rescaling every monster's *drawn* size. Mechanically free (`worldScale` is
-  decoupled from collision, so no hitbox, telegraph radius or camera geometry moves), but it
-  reads as a more zoomed-in game.
-- **The PM's read, offered and not decided:** the references put the *whole cast* at 2–3
-  tiles and ours is at 1, so "too high in scale" may have always been a world-scale problem
-  the hero merely made visible. The honest third option is "hero + cast rescale as one
-  deliberate piece of work."
+**Cause 2 — attacks are not predicted at all.** `predictLocal` covers movement, facing and
+dash. Attacks, skills, ultimates and interacts are host-authoritative with no local echo, so
+a client waits a full round trip to see its own swing.
 
-Findings that must not be re-derived a fourth time (all now in `NOTES.md` and the manifest):
-- **Town portraits scale off art-pixel height (`heroMeta.h`), never `worldScale`** — so
-  drawing the hero taller is free. Legal h band: **16–43, 46–50, 52–58, 78–87, 155–160**.
-- `density = 2h / worldHeight`; the floor is fixed at 2.0 world units per art pixel, so both
-  levers are one equation and a ratio can be targeted rather than guessed. `npm run inworld`.
-- **PixelLab `standard` mode is the only mode that honours `shading: flat` and `detail: low`**
-  — `pro` and `v3` silently ignore both. This plausibly explains several earlier passes
-  coming back more rendered than asked for. In `docs/art-tooling-setup.md`.
+**Cause 3 — unexplained, and this is the open one.** The owner says **movement felt laggy
+too**, which contradicts the design: the client predicts its own movement and reconciles by
+replaying unacknowledged inputs, so it should feel instant at any RTT. Either prediction
+isn't working under real conditions, or the problem is on the **input path** rather than the
+snapshot path — if inputs stall going up, the hero stops *on the host* and the next snapshot
+pulls it back, which is rubber-banding. **Nobody has diagnosed this yet.**
 
----
+### State of the work
 
-## What landed, and what is load-bearing about it
+`art/two-accents` carries `882ac04` *"fix(net): a de-jitter buffer on the client — the chop
+was a 10ms tolerance."* **I asked 26 to confirm it is finished and gate-green before I
+merged it, and the session was handed off before that answer landed. Check with 26 first —
+do not merge an unfinished net change on your own judgement.**
 
-### Bosses stopped being five fights in 44 costumes (e015d27)
+Three questions I put to them that you should make sure get answered:
 
-Measured first (`npm run bossvariety`, in `npm test`). The owner's complaint was literally
-true as data:
+1. **Did they falsify the check?** `tools/smoke.ts` asserts *"a walking client is never
+   tugged back by the host"* — at **constant RTT with zero jitter and zero loss**. It cannot
+   see the reported bug. If it still passes under injected jitter and loss, that must be
+   recorded as known-blind rather than read as coverage.
+2. **Is the buffer's window a named constant with its assumption written beside it?** The
+   old 60ms was right for loopback and wrong for wifi. That is the exact failure shape as
+   docket §25 (below). Do not ship a second one.
+3. **Does the commit claim to fix the whole report?** It addresses the chop. It does not
+   obviously address laggy movement. Narrow the message if so.
 
-| | before | after |
-|---|---|---|
-| pairs that are the same fight | 74 of 946 | **0** |
-| abilities in 100% of kits | quake, summon | **none** |
-| full-kit overlap mean | 58.3% | 44.5% |
-| Proving vs Proving mean / worst | 71.8% / **100%** | 50.5% / 88.2% |
-| raid vs raid mean | 50.3% | **37.1%** |
+### Scope the owner has already opened
 
-- **14 encounters were byte-identical fights with a new name plate** — `planetBossSpec` and
-  `towerBossSpec` spread the template and never touched `phases`. `variantPhases` gained a
-  `drop` half; a variant that can only ADD ends up as the template plus more, which is
-  exactly how quake and summon reached 100%.
-- Eight new mechanics: `hunt`, `drift`, `sunder`, `blink`, `sanctuary`, `judgment`, `mark`,
-  `crescendo`. Design record `docs/boss-abilities.md`.
-- **A true dash-reader was declined and stays declined.** "A dash always beats them" is
-  load-bearing. `judgment` punishes the reflex dash, not the dash.
-- **THE FINDING THAT OUTRANKS THE FIX: a kit's difficulty is cadence × mean threat per card,
-  NOT card count.** Adding low-threat abilities to a fixed-cadence rotation makes a fight
-  *easier*. In CLAUDE.md's boss section.
-- **Raid party threat rate works.** Ferryman T1 went 58%→96% clear rate solo-to-four; now
-  67%→75%. T4's "bloodier without being winnable" inverts. `docs/raid-threat-rate.md`.
-  **Instrument caveat: `dmgBill/player` is confounded when fight length moves.**
-- `blink` needed no wire field — the interpolator snaps any remote body that moved further
-  than legitimate movement could in one snapshot. **That is the precedent for the next
-  discontinuous ability: handle it by distance in the interpolator, don't teach the protocol.**
+They said: *optimize the current setup — **and if not, we look at something alternative.***
+That is explicit permission to replace the transport or architecture.
 
-### The animation seam (7ee1bd0, a8d3277, 1bf7fdc, 6860dd3, a0a80ef)
+**WebRTC DataChannel (unreliable/unordered) is the leading alternative** and costs no runtime
+dependency, since it is built into browsers — the project's no-deps rule survives. We are on
+WebSocket/TCP today, so one lost packet stalls every snapshot behind it: classic
+head-of-line blocking, and a clean mechanism for laggy movement specifically.
 
-`docs/animation.md` is the pick-up-and-go document. Read it before touching this.
+**I told the owner the transport swap might not be needed, then walked that back when they
+said movement was affected. Do not let my earlier "complements, not alternatives" framing
+anchor the decision.** Price it on what the diagnosis actually finds.
 
-- The sim never learns about animation. The clock lives in `render/`, reads `BossState`'s
-  existing `ability`/`castTimer`/`castTotal`, writes nothing. The co-op wire already carried
-  all three, so a cast animation resolves identically host and client with **no new field**.
-- **A wind-up is keyed to PROGRESS, not a clock**, because `DepthProfile.telegraph` squeezes
-  cast length with depth — a free-running animation drifts the "now" frame away from the hit
-  as you descend, which is backwards from where it is most needed.
-- **`sprite()` returns FRAME 0 of a strip, asserted pixel-identical to what shipped before.**
-  Every un-migrated call site keeps drawing what it drew; a missed call site is a still
-  picture, not a bug. `resolveSprite(name, set)` plus `spriteFrame`/`spriteFrameTinted`/
-  `spriteFrameSilhouette` are the opt-in — and the only way to get a world scale, because
-  a scale and a canvas are one decision (see `render/spriteart.ts`).
-- Three of four raid bosses idle: Ferryman, War Queen, Exiled Tyrant.
+Other unpriced avenues: no delta/dirty encoding, JSON rather than binary, float precision
+nobody needs (int16 position quantization is nearly free), no view-culling. Bandwidth is
+already known to be **66–105 kB/s at depth 18–26**, higher at four players
+(`docs/mp-stuttering.md`, `tools/mp-stutter.ts`).
 
-### Two new art gates
-
-- **`npm run chroma`** — the hot accent as a comparison: the hero's loudest colour must sit
-  **below** the monsters'. Also per-frame, on **both hue and chroma** (see below). Found and
-  fixed `boss.warden`, which had no lit accent at all.
-- **A floor may not be its own sector's element** (in `tools/smoke.ts`) — washes each monster
-  sprite toward its biome element at the real `tinted()` 0.28 and asserts 28+ luminance
-  separation from the graded floor.
+**Docket §1 is the entry point** and has been reopened in place rather than renumbered.
 
 ---
 
-## The animation roadmap (owner-queued, 2026-09-09)
+## 2. THE THEME OF THIS RUN, AND THE THING TO CARRY FORWARD
 
-The owner wants the animation work rolling once the current round lands. **The order below
-is deliberate — each step is blocked by the one above it, so taking them out of order
-wastes generations.**
+Four times in one day, a check or an instrument turned out to be **structurally incapable of
+seeing the thing it was pointed at.** Not broken — blind.
 
-0. **The atlas scale/canvas mismatch (P0, in flight).** Nothing else in this list is worth
-   doing until it lands, because it is the thing making animated bosses draw as tiny
-   procedural stand-ins. It is also plausibly a *ceiling* on strip size — if big PNGs are
-   failing to load rather than merely arriving late, that caps how many frames a sprite can
-   carry, and every plan below depends on the answer.
-1. **The wind-up pipeline.** The blocker, and the one that matters most for the game rather
-   than for looks: a cast animation *is* part of the telegraph's readability. Needs a target
-   pose per boss fed to `last_frame_base64` so the generator interpolates between two poses
-   instead of animating open-endedly. Evidence, numbers and `art/anim/windup-check.py` are
-   already in the repo — **do not re-run the open-ended call, it has been falsified three
-   times.**
-2. **Cast wind-ups for the four raid bosses**, once (1) works. Then their remaining idles.
-3. **The Minotaur.** Still static, and it is a *hold* rather than an oversight: its accent is
-   two pixels and the generator loses it (measured 39% dimming), so `npm run chroma` fails
-   every attempt. The next thing to try is **enlarging its eyes on the source sprite** —
-   more pixels, not merely brighter — which is a change to shipped art and **wants the
-   owner's approval before anyone spends a generation on it.**
-4. **The ordinary boss roster.** Idles at minimum. Cheap once (1) exists, and it is where the
-   "bosses are a main attraction" payoff scales past four encounters.
-5. **The hero — blocked on the owner's pick, and deliberately last of the characters.**
-   Animating v4 is wasted work while a redraw is live. Once a candidate is chosen, the hero
-   needs more tags than a boss does (idle, walk, dash, attack, cast, hurt, death) and is the
-   single most-seen sprite in the game, so it is the biggest single animation job.
-6. **Monsters — explicitly deferred by the owner** ("we can leave monsters for now"). Do not
-   start these without being asked.
+- **Localhost cannot see multiplayer jitter.** Inter-arrival gaps never exceed the tolerance.
+- **`tools/bot.ts` cannot measure "find the last monster."** Line 228 iterates *every* enemy
+  on the floor with no line-of-sight filter and walks straight at the nearest. Its 1.1s
+  average is an **omniscient** agent's walk time; the human problem is *search*. I nearly
+  killed a docket item on that number before checking.
+- **The "never tugged back" check** runs at fixed RTT with no jitter or loss.
+- **`recommendedLevel`'s equip floor** (§25) kept a term whose justification had been deleted
+  under it, and stayed green because the term only bites when the Challenger dial is up.
 
-**Method is written down; follow it rather than rediscovering it.** `docs/animation.md`
-carries the pick-up-and-go sequence in order: measure the accent with headroom (near 50)
-BEFORE animating, convert with `art/pixellab-upload.py` and why, generate with
-`no_background: true` (passing false flattens transparency onto white), run
-`windup-check.py` before stripping, assemble with `art/anim/strip.py`, then `npm test`.
-Accents are fixed on the **source sprite before generating**, never repaired on a finished
-strip — the feature moves between frames, so post-hoc repair is per-frame coordinate work
-that invalidates on every regeneration.
-
-## Open items, in the order I would take them
-
-1. **The hero pick** (owner). Everything else in the art queue is downstream of it.
-
-2. **The wind-up pipeline** — the top open item on the animation stream, and a real piece of
-   work rather than a re-roll. `animate_image` free-form produces a **loop**: across three
-   attempts with explicit one-shot prompting, every sequence peaked mid-way and came back
-   toward rest (ferryman `8 21 31 39 41 43 40 39`, queen `1 1 2 6 7 10 17 9`, minotaur
-   `6 13 18 23 26 26 22 17`). Because a wind-up is keyed to progress, **the last frame is
-   what the player sees at the instant of the hit**, so these do not merely fail to help —
-   they actively mis-cue, and would read worse than the static sprite. Three generations were
-   rejected and committed as evidence under `art/anim/raw/` with a README saying they are not
-   art waiting to be wired. **The fix is `last_frame_base64`**, which pins the ending so the
-   generator interpolates between two poses — that needs a target pose authored or generated
-   per boss, which is a different pipeline. `art/anim/windup-check.py` rejects any candidate
-   that does not build monotonically and end at its extreme. **Run it before stripping.**
-
-3. **The Ashen Wastes still hides its own monsters, and is deliberately held.** The Cinder
-   Catacombs and The Veil were fixed and unpinned (e7f9047); the Wastes was not. Its best
-   candidate reached Δ27 against a bar of 28, and — more decisively — the before/after
-   picture does not clearly favour it either: the shipped blue-grey floor separates red
-   monsters reasonably well, while the candidate's dark ember floor sits *closer* to the
-   dark red grunt. It is also the first floor of the game. Four attempts, all numbers, and
-   where a fifth should start are in `docs/ashen-wastes-infusion-fix.md` — **start there, not
-   from scratch**. The owner has the before/after sheet and it is their call whether to move
-   it at all. **Do not unpin without them.**
-
-   A rule from this that generalises past the one gate, now in `art-style-guide.md` §17.7:
-   **which of floor and wall carries the light is a property of the biome family.** The PM
-   issued "element on the wall, dark neutral floor" as if universal; it is not, and the first
-   attempt applying it made all three floors *worse*. "Increase separation" is the
-   instruction; darkening the floor is only how one family gets there.
-
-4. **The Minotaur will not hold its accent through animation, and it is a hold, not a bug.**
-   Two attempts, the second starting from #a855f7 at 63.5 on the source per the headroom
-   rule; still 22.4 and 23.1 in two frames of five. **The generator dims accents — measured
-   39%** — and it is not scaling a two-pixel feature down, it is losing it. Next thing to try
-   is *enlarging* its eyes on the source (more pixels, not merely brighter), which is a change
-   to shipped art and wants the owner. Also: an element's palette entry is not always enough
-   — void is `#c084fc`, a light violet reading only 47.1.
-
-5. **The sharp-vs-reckless campaign check can still invert, on seeds alone.** Margin across
-   five disjoint 12-seed blocks: **2.42** (master's own seeds), 2.92, 4.83, 6.08, **−0.33**.
-   That last block is a live inversion with no code change. Master's seeds read comfortably
-   because they are not a bad block, not because the promise holds. **Deliberately not
-   fixed**: ~85s per 12-seed block, so a full power sweep costs hours, not minutes — a cost
-   decision for the owner. **Do not read a green campaign check as proof the promise holds.**
-   In CLAUDE.md.
-
-6. **Rune Fragment and Heartwood Sap still have a source and no dedicated recipe.** A source
-   with no sink. Untouched this run.
-
-7. **Reliquary reachability is still unmeasured.** Sectors 7–9 sit behind nine sequential
-   clears that nothing exercises past `PLANETS[1]`. A prior harness attempt produced zero
-   numbers. Untouched this run.
-
-8. **The three deepest Reliquary sectors have no visual escalation** — `infusionChance` caps
-   at 65% around depth 22 and they start at baseDepth 34/39/44, so they are at the cap from
-   floor one and look identical all the way down. Defensible (a sector is a place, not a
-   ladder) but nobody chose it. **If escalation is ever wanted there, the lever is the cap,
-   not the tilesets.** Recorded in `docs/art-manifest.md`.
-
-**Unverified in a browser** — no session on this machine can click through the UI. Wants the
-owner's eye: the augment tab, the Citadel hall (including the eight floor-dressing placements,
-still the original blind arrangement — **do not rearrange them blind a second time**), the
-three new Reliquary sector floors, and whether the boss idles read at 0.22s/frame. The
-Ferryman's head shifts a pixel or two between frames and may read as a wobble rather than a
-breath.
+This is CLAUDE.md's own most-repeated lesson — *a check's bound, scope and subject must come
+from somewhere other than the thing under test*, and *a harness that runs but is blind
+returns a plausible number rather than an error*. **Ask of every green check and every
+delegate's number: could this instrument have seen the failure?** It caught real problems
+four times today and it is the highest-value question a PM can ask here.
 
 ---
 
-## The lesson this run kept re-learning
+## 3. Sessions and what they are holding
 
-**A check that looks like it states a promise can prove nothing, and only running it against
-the real failing input finds out.** Four instances in one day:
+Names are addresses for `SendMessage`. Model matters — the owner wants the longest and
+hardest work on Opus and generic work on Sonnet.
 
-1. The animation gate's first version compared the frame at the **end** of a cast — which a
-   non-looping tag clamps to, so it passed both ways. Two sides, and still vacuous.
-2. A seed count derived from **one** sweep looked rigorous; a second, disjoint sweep dropped
-   the candidate size from +0.10 to +0.05 margin. One sweep cannot tell plateau from edge.
-3. The PM specified the per-frame accent check as "above the hero's floor in every frame."
-   Built to spec, it **passed the real pre-fix art** — with the eye gone, a dull olive robe
-   pixel was the loudest thing at 31.4 against the hero's 30.2. Max-chroma-per-frame never
-   asks *which* colour is the accent. Replaced with a hue bar — and then the Minotaur showed
-   the hue bar alone was also insufficient (eyes *darkened* within the same hue family to
-   27.8, below the hero's skin). **The bar is now both, and each catches what the other
-   cannot.**
-4. Three wind-up generations looked like plenty of movement on a contact sheet. The defect
-   existed only in the relationship between the last frame and the first.
+| Session | Model | Holding |
+| --- | --- | --- |
+| **lootsim-26** | **Opus** | Multiplayer latency (§1). De-jitter buffer built, merge-readiness unconfirmed. Also owns §19 (boss blow), parked on an owner decision. |
+| **lootsim-d8** | **Opus** | The reachable band. Briefed to report a **diagnosis before changing any number**; had not reported when this session ended. |
+| **lootsim-97** | Sonnet | Docket §6, the minimap. Building. |
+| **lootsim-56** | Sonnet | **Free.** Just delivered the gem-sink shortlist and the docket hygiene pass. |
+| **lootsim-f1** | Sonnet | **Free.** Just delivered weapon skins and the keystone fix, both merged. |
 
-Corollary worth keeping: **a delegate correcting a PM ruling with evidence is the process
-working.** Three of the four above were caught that way.
+**Merge discipline, learned the hard way this run:** verify the main checkout is on `master`
+before merging. Seven commits once landed on a leftover feature branch while master sat
+still; a peer session caught it from the outside. Merge `--no-ff` with a real message, run
+the full gate, then reply to the delegate.
+
+**Browser verification IS available** — this was falsified today. `playwright-core` with the
+cached Chromium, your own worktree's dev server on a throwaway port, a throwaway account
+through the normal login flow. **Never use port 5173 — that is the owner's dev server.**
+Revert any dev scaffolding before committing. The honest caveat is narrower than "unverified":
+a screenshot proves a frame, not a session — it says nothing about feel over minutes of play.
 
 ---
 
-## Working rules that still cost something to relearn
+## 4. Waiting on the owner — do not decide these yourself
 
-- **`~/Desktop/lootSim` is the owner's dev server.** It must contain every merged change and
-  must never sit on a feature branch or hold half-finished work. 33 stale worktrees are still
-  registered under `~/Desktop/lootSim-worktrees/`; they are harmless but somebody should prune.
-- **Never stash, commit or discard another session's uncommitted work.** To preserve something
-  at risk: `git stash create` plus `git tag`. The owner's chest-ilvl edit was preserved that
-  way this run (`owner-wip/chest-ilvl-2026-09-09`) before being superseded on master.
-- **Capture the real exit status**: `npm test > /tmp/gate.log 2>&1; echo "GATE_EXIT=$?"`.
-  Never `| tail`.
-- **Never merge a red gate.** If a check goes red, first find out whether *you* turned it red.
-  If the check itself is at fault, fix the check on master **alone, first**, justified by
-  master's own numbers — that ordering is the difference between fixing a check and rigging one.
+**The boss blow (docket §19).** 26 closed every cheap route with evidence: free-form
+generation, rigid transform and compositing are all eliminated. The reason is structural and
+worth keeping — *an arms-down pose is near rest by definition, because rest IS arms-down*, so
+on any boss that rests with hands low a downward blow terminates on a rest-shaped silhouette
+and gets vetoed however well it is drawn. What remains is a commissioned hand-drawn impact
+frame per **sprite** (not per fight — that is the leverage).
+
+- **12 poses finishes the roster. 4 poses buy 23 of 35 encounters** (Warden 7, Saint 6,
+  Colossus 5, Herald 5). A fifth reaches 26 of 35.
+- **The cost of not doing it:** the cut from last wind-up frame back to idle moves 54–70% of
+  the body, roughly twice the largest real motion inside the animation, on 3 of 6 animated
+  sprites covering 18 of 35 fights.
+- 26 refused to claim "most players won't notice," correctly: the only player data that
+  exists is the owner, unprompted, calling it *"halfway."*
+
+**Gem sinks (docket §3).** 56 recommends **Standards** — one thing you actually did, rendered
+under your name in the lobby, on the in-run nameplate and in the hall ("Death March IV ·
+Delve 22"). The mark is earned and free; gems buy only the cloth it renders in. Design only,
+nothing built, `docs/gem-sinks.md`.
+
+Two things from it worth keeping regardless of the decision:
+- **A gem sink is safe iff what it buys is never read by `game/`.** That is *why* "cosmetics
+  are powerless" has held — not care, but that nothing in the simulation can see them.
+  Necessary but not sufficient: appearance re-rolls pass it and are still wrong, because
+  pricing something currently free is a takeaway, not a sink.
+- **Refused in writing:** a gem-bought ping that finds the last monster. It is convenience
+  substituting for play, and it is docket §6 — *selling the repair for a reported bug* is the
+  worst available shape for a real-money sink. **Gems are planned to become a real-money
+  currency, so the no-pay-to-win rule binds every gem sink, not just cosmetic ones.**
+
+**Docket §25 — `recommendedLevel`'s equip floor.** Small, and genuinely theirs to call: should
+hard content advise a *higher level* than the same depth does? Nothing in `game/` reads
+`recommendedLevel`, so no measurement can answer it and no check will go red either way.
+
+**Docket §24 — the Reaper may not be able to charge its ultimate on a raid boss at all.**
+Untouched, needs them.
+
+**The Universal Tree point cap.** Deliberately deferred behind the band decision. Note the
+keystone fix changed the honest number: the reachability doc's "a realistic frontier buys one
+keystone" now reads **zero**. That is correct — the old answer was propped up by the bug —
+and it sharpens the cap question rather than answering it.
+
+---
+
+## 5. Landed this run (all merged to master, gate green)
+
+- **§22 — bodies and items no longer end up inside rock.** Both causes my brief predicted
+  were **wrong**: 0 of 188 sampled boss spawns were embedded, and knockback stressed to 9,600
+  (real values ~140) produced no penetration. It was `separateEnemies()`/`separateMinions()`
+  shoving a body back into rock after that tick's own wall-resolve had cleared it. 43
+  penetration episodes → 0 across ~323k ticks. The 2–3s unstick net is built as a backstop and
+  **fires zero times**; the doc says plainly that a future nonzero count is a *regression
+  signal*, not the net working.
+- **§23 — item level tracks the receiving character's level everywhere.** Monster drops, clear
+  caches and named tables, not just chests. Per-hero in co-op; the clear cache round-robins its
+  one physical pile across the live party. §16's `itemPower` was **kept, not repealed** — a new
+  `powerIlvl` still scales stats and affix magnitude without moving `requiredLevel`.
+- **Seven dead weapon skins now draw.** They had no authored art and fell through to a plain
+  tint, so gems had bought nothing visible. Scoped to the seven already sold; it does **not**
+  reopen the owner's standing call that a *new* skin is its own authored weapon.
+- **Universal Tree keystones all cost 7.** Three cost 5–6 because `CROSS_LINKS` pointed at the
+  neighbour path's row-1 node instead of row-2. Cap and node costs untouched.
+- **THE EXECUTE RULE** is in `CLAUDE.md`, on the owner's explicit approval.
+- **The Colossus idle**, shipped on an owner override that is recorded *as* an override —
+  `loop-check.py`'s bar was not moved, and the approval re-measures the value it was granted
+  for, so regenerating that art re-reds the check.
+- **Docket hygiene**: seven items were shipped but still reading as open. Keep it current —
+  I nearly briefed a session onto finished work.
+
+---
+
+## 6. Standing rules worth not rediscovering
+
+- **CLAUDE.md edits go to the owner directly, not through the PM.** I got this wrong and was
+  corrected by a delegate mid-run.
 - **Assert design promises as comparisons, not one-sided bounds — and give the comparison
-  power.** A thin comparison fails the same silent way a bound does.
-- **Derive numbers, don't hand-scan them.** Three times now a hand-computed figure was wrong
-  and the derived one was right.
-- **`docs/game_story_worldbuilding.md` is the tiebreaker** and it settled a real documented
-  contradiction this run. Do not commit it as a side effect.
-- **A measurement ships even when the fix does not.** Landed three times this run: the
-  wind-up rejection, the campaign-check thinness, and the raid threat-rate instrument.
-- **Both branches adding to the `npm test` chain conflict in `package.json` every time.**
-  Expect it, keep both scripts.
-- **CLAUDE.md edits go to the owner, not through a session.** The PM asked a delegate to
-  write two lessons into CLAUDE.md this run; the delegate correctly refused and took the
-  text to the owner instead, who approved it as drafted. CLAUDE.md instructs *every future
-  session* in this repo, so a peer directing content into it is the escalation shape a
-  session's own rules exist to catch — and "the content is benign" is exactly what that
-  would look like from the receiving end. `docs/*.md` design records are ordinary work and
-  can be delegated freely; CLAUDE.md cannot.
+  power.** A thin comparison fails as silently as a bound.
+- **A rule that cannot be violated beats a check that notices when it was.**
+- **Never report a balance delta from one default smoke run.** Widen the seeds and A/B against
+  master in a throwaway worktree.
+- **The owner reliably trades effort for a better-looking game.** Price both options honestly
+  and never withhold the expensive one because it looks like too much work — but a measurement
+  showing the cheap option is *adequate* is not an argument that it is *preferred*.
+- **Cosmetics are a permanent pillar and never the scope to cut.**
+- **Don't commit `docs/game_story_worldbuilding.md`** — it is usually the owner's live WIP.
