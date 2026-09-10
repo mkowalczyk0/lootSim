@@ -1435,3 +1435,77 @@ has silently emptied is visible rather than inferred.
 The runner branch is a harness fix under a merge freeze; growing it into a second new
 check is how a narrow fix becomes an unreviewable one. Whoever picks this up: it is one
 new tool, one line in the chain, and the allowlist is the only judgement call in it.
+
+---
+
+## 27. An armed Engineer's ultimate refills its own meter — NEEDS AN OWNER CALL
+
+Found by the gate re-baseline (§ `docs/arm-the-trees-rebaseline.md`) on its first run, and
+it is a live UAT §10 violation on a build a real player can make. Full diagnosis, the
+0.0 → 2.0 measurement and three fix axes with **no number proposed** are in
+`docs/engineer-ultimate-loop.md`.
+
+**Why it survived**: `ENGINEER_ULTIMATE_METER` carries a comment stating that *"even a
+fully built-out engineer needs the constructs to work for a while"* — a claim about a
+built-out Engineer, made in a repo where **nothing had ever built one out**. The previous
+fix for this same loop was verified against a character structurally incapable of
+expressing the bug.
+
+**The mechanism is narrower than it first looked, and the narrowing is the useful part.**
+THE ULTIMATE RULE is enforced structurally in `src/combat/resources.ts` —
+`abilityBlocksUltimateCharge()` stamps `fromUltimate` on every packet an ultimate emits
+and `isUltimateSourced()` refuses it — so an ultimate's own damage cannot charge its own
+meter on **any** class, tag overlap or not. All seven damage-fed meters overlap their own
+ultimate's tags and six are fine. The Engineer fails because **the stamp does not
+propagate to what an ultimate creates**: a construct is a separate entity whose packets are
+built from the construct, so the guard never sees them, and the `construct` tag matches its
+own gate.
+
+That *predicts* the exposure set rather than observing it — a class whose ultimate creates
+persistent damage sources carrying its meter's gating tag — and only the Engineer's
+ultimate summons anything.
+
+**Pinned, not fixed**, per the `tools/legends.ts` precedent: the gate is green, the
+violation prints itself on every run, a **second** class self-refilling goes red, and
+silently fixing the Engineer without removing the pin also goes red.
+
+**Still open and flagged rather than waved through**: `warlock.ts` carries
+`{ on: "damageDealt", amount: 0.03 }` with no tag gate at all — the exact shape the
+Engineer's rule had before its first fix. Its own ultimate is blocked by the runtime like
+everyone else's, so it is not the Engineer's bug. **It passes today. Passing today is not
+the same as being gated**, and if the Warlock ever gains a summon or a persistent zone it
+inherits the Engineer's defect with no gate to narrow it.
+
+## 28. Nothing sweeps for prose that outlived the decision it describes
+
+Named after three instances found in one evening, **all three by accident while doing
+something else, none by looking**:
+
+- `ENGINEER_ULTIMATE_METER`'s comment asserting a property of a built-out Engineer that
+  had never been tested (§27).
+- `docs/boss-xp-hole.md` still specifying a widened A/B *against master* after that
+  baseline had been overruled in favour of the arming branch — surfaced only because
+  someone happened to be editing the paragraph above it.
+- `CLAUDE.md`'s "Loot is per-hero and physical" and the clear cache's round-robin sentence,
+  both describing machinery deleted the same afternoon.
+
+Add to those the ones this docket already records: §25's `recommendedLevel` term whose
+justification had been deleted under it, and `art/anim/windup-check.py`'s docstring
+arguing a correct check down.
+
+**The species**: a comment, doc or design record that names a decision, a measurement or a
+guarantee which has since been overturned — and which reads as authoritative precisely
+because it is specific. It is worse than a stale TODO, because a reader trusts it and
+builds on it.
+
+**Why it is unswept**: every existing instrument checks that *code* agrees with *code*.
+Nothing compares prose against the thing it claims. `npm run markers` proves the shape is
+cheap — a grep-only stage that refuses one specific bad state.
+
+**Not obviously solvable, and that is the honest entry.** "Find prose that is now false"
+is not mechanically decidable. What might be: prose citing a constant, function or file
+that no longer exists; a doc naming a decision the docket has since marked overturned; a
+comment on a symbol whose definition changed after the comment's last edit. Each is a
+proxy and each has a false-positive rate. **The value of this entry is the category, not a
+proposed check** — and a check for this must not be waved through on the strength of the
+category being real. See `docs/blind-instruments.md`.

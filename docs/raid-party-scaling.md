@@ -268,6 +268,26 @@ retune — and it deserves the owner's sign-off before anyone builds it, the sam
 this rework was already held to for staying scoped to raids alone rather than every boss
 floor in the game.
 
+## The economy moved under this document (2026-09-10)
+
+**Every number here is still valid, and a future re-run may not be.** On 2026-09-10 the
+owner ruled that a party's total take now scales with headcount — two players bank roughly
+2x a solo — which is a live change to what a party run *pays*.
+
+Nothing in this document reads a payout. Its metrics are `dmgBill`, `dmgBill/player`,
+clear rate, downs, potions, `avgSec` and phases reached: all difficulty measures, none of
+them loot, coins or XP. The finding — that `partyScale`, tuned for a crowd of ordinary
+monsters, does not transfer to one enormous body — is about how hard a fight is, and the
+ruling does not touch that. **So do not treat these tables as stale.**
+
+The hazard is on the other side. `playFloorParty` and `tools/raid-party-measure.ts` are on
+`master` precisely so the next attempt can be measured with the same instrument, and the
+obvious next question about party raids ("does a party raid pay fairly for its difficulty?")
+is an economy question. **A measurement taken after that ruling cannot be compared against
+a number taken before it on any loot, coin or XP axis** — that column is measuring a
+different game. Re-running the difficulty tables above and comparing them to these is fine;
+adding a payout column and comparing it to anything predating 2026-09-10 is not.
+
 ## Status
 
 - `singleBodyPartyScale`, the co-op wiring (`main.ts`'s `handleHubInteraction` and the War

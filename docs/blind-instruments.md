@@ -468,6 +468,146 @@ thing that was seen and built past anyway.
 > When a post-mortem is entirely about what couldn't be seen, check whether something *was* seen
 > and skipped. That half doesn't surface on its own.
 
+## A fourteenth instance, a new species: an instrument that returns nothing rather than a wrong number
+
+Attributing a crash between two branches, a session wrote a probe that runs 60 campaign
+seeds and prints one line per seed — `seed N: ok` or `seed N: CRASH <message>` — and
+launched it as `npx tsx tools/reckless-probe.ts 2>&1 | tail -25`, then watched the output
+file. It stayed empty. Eight minutes were spent waiting, on the reasoning that 60 seeds
+of dives is genuinely slow — true, and irrelevant, because the process had already died.
+`ps aux | awk '$3 > 15'` (item 11's own remedy) found no node process at all, not even
+one above 1.5%.
+
+`tail -25` cannot emit a line until its stdin closes, because it has to know which lines
+are the last 25. The pipeline swallowed every per-seed line the probe was writing **and**
+the error that killed it — the progress output and the failure went into the same hole.
+The probe was built to report on completion and then used to monitor liveness, two
+different jobs that only the first one was designed for.
+
+Every entry above this one is a check that ran and returned a plausible-but-wrong number.
+This one returns no number at all, and the silence read as patience rather than as
+absence — arguably worse, because a wrong number at least invites a sanity check, while
+silence invites waiting. An empty output file is indistinguishable between "still
+running" and "died instantly," and that ambiguity was resolved by assumption rather than
+by measurement — the same gap item 7's `kill`/exit-signal entry names for process
+lifecycles, one layer up: a *buffering shell construct* silently changing what you're
+able to observe, the same family as item 12's `PIPESTATUS`-under-zsh (there it was *what*
+exit code got read; here it's *when* output becomes visible at all).
+
+**How to apply:** never put a buffering filter (`tail`, `head`, `sort`, anything that
+must see EOF or a full sort key before it can emit) between a long-running job and the
+file you intend to watch live. Redirect raw (`cmd > log 2>&1 &`) and filter at *read*
+time (`tail -25 log`, rerun as needed) — that costs nothing and keeps progress and
+failure on the same visible path. And per item 11: audit liveness by process table
+(`ps aux | awk '$3 > 15'`), not by expecting output — the process table answers in one
+command what watching a file cannot answer at all.
+
+## A fifteenth instance, a different species again: a cast is a place the typechecker stops being an instrument
+
+Under the owner's shared-loot ruling, a private method's signature changed —
+`collect(hero: Hero, p: Pickup)` in `src/game/dungeon.ts` became `collect(p: Pickup)`,
+because the method now pays every hero and must not be told who collected the drop.
+`npm run check` passed clean. `npm run relics` then failed four checks, all named as
+symptoms nowhere near the actual mistake — "picking one up puts it in the run's unbanked
+loot," "banking the floor puts it in the collection." The cause was two call sites away:
+`tools/relics.ts` reaches private methods through a `rig` helper — a Proxy behind an
+`as unknown as { ... }` with a hand-written declaration of the members it wants — and
+that declaration still said `collect(hero: Hero, p: Pickup): void`. **The cast is an
+assertion, so TypeScript type-checked the call against the stale declaration and never
+looked at the real method.** A `Hero` was passed where a `Pickup` belonged, the switch
+saw an undefined `kind`, nothing was credited, and four checks went red several steps
+downstream of the one-line arity mismatch that caused it.
+
+Every strongest guarantee this project leans on is compile-time — a required field that
+won't compile if omitted, `buildSprites()` returning `Record<SpriteName, …>`, a derived
+`worldScale` that cannot lie about a weapon's reach. "A rule that cannot be violated
+beats a check that notices when it was" is the house position, stated in CLAUDE.md itself.
+**This is the documented hole in that entire class of guarantee:** every
+`as unknown as {…}` in `tools/` is a place where a compile-time rule silently stops
+applying, and the hole is invisible at the call site because the code around it reads
+like ordinary typed code — nothing marks the boundary where the compiler quietly stopped
+checking. It is this document's own catching question turned on the type system rather
+than on a runtime check: *if the signature I changed were wrong, would the typechecker's
+green have told me?* Here the honest answer was no, for the same reason item 14's `tail`
+couldn't surface a dead process — the instrument (`tsc`) never saw the thing that
+changed, because the cast fed it a stale declaration instead.
+
+**What saved it, and what that implies about ordering.** Four *behavioural* checks in
+`npm run relics` caught the defect the typechecker couldn't — real evidence that the
+acceptance suite is doing exactly the job this document keeps asking whether an
+instrument can do. But every failure named a symptom nowhere near a stale type
+declaration, so a run-time arity mismatch hidden behind a cast is cheap to diagnose once
+suspected and expensive to find starting from the symptom alone — the same "several steps
+downstream" cost the earlier fixture and sentinel entries (items 9, 10, 12) all describe.
+
+**A remedy exists but wasn't built here, and it's worth recording as unfinished rather
+than closed:** the `rig` pattern could *derive* its declared members from the class
+(a mapped/`Pick`-style type off `Dungeon`) instead of hand-restating their signatures,
+which would turn a signature change into a compile error at every rig site — this
+project's preferred shape, per the house position quoted above. The pattern recurs in at
+least `tools/relics.ts`, `tools/named.ts` and `tools/raids.ts`; only the first was
+touched to fix this specific defect, so whether the other two carry the same latent gap
+is unverified.
+
+**How to apply:** treat every `as unknown as {…}` (or any hand-written interface standing
+in for a real class's private surface) as a place where `npm run check` has gone blind to
+that one relationship — a signature changed on either side of the cast can drift from the
+other without a compile error, and only a behavioural check downstream would ever notice,
+several steps removed from the actual line that broke. Comment the cast site saying so,
+the way the fix here does, until (or unless) the declaration is derived rather than
+hand-written.
+
+## A sixteenth instance, a different species from every one above: an instrument that could see fine, aimed at the wrong object
+
+Every entry so far is an instrument that couldn't *see* the failure it was built to
+catch — an omniscient bot, a wrapper's exit code, `ps`'s blindness to a cwd, a
+self-consistent modeled link. Enabling co-op raids (`feat/coop-raids`, commit `36ba7da`),
+`tools/smoke.ts` added a check that each party member's own `raidProgress` advances
+exactly once, independently, on their own machine after a co-op raid clear — the precise
+fear ("credit duplicated or desynced across saves") that had kept raids solo up to then.
+That check's instrument had nothing wrong with it. It read a real, populated `GameState`
+and reported a real number. It was just reading the wrong one.
+
+A host+client smoke harness necessarily builds two `GameState` objects for the party's
+second hero: `raidMateState`, the host's own local copy of the party member's character,
+passed into the host's `Dungeon` only to seed the shared hero's initial
+`Player`/appearance and never written to again, and `raidClientState`, the object the
+*client*-side `Dungeon.bankLoot()` actually calls `recordDepth` on — the one standing in
+for the party member's own machine. Both are real. Both look exactly like "the party
+member's save." Only one is the save under test. The check asserted against
+`raidMateState` and read `1 -> 1`, a number that reads exactly like a genuine desync on
+the exact property being tested, rather than like a wiring mistake.
+
+**This is not "the check is blind" — the check could see perfectly. It was pointed at the
+wrong object, and the wrong object doesn't error.** Every prior entry's catching question
+— *if the defect were true right now, would this instrument's number be different?* —
+still applies, but it doesn't distinguish this failure from a real one: a stale
+`raidMateState` genuinely never advances, so injecting an actual duplication bug and
+re-running would *also* leave the number unchanged, for the wrong reason. The two
+failure modes ("no bug, wrong object" and "real bug, right object") are indistinguishable
+from the assertion's own output; only reading which object the code under test actually
+writes to (here, grepping `bankLoot`'s own `recordDepth` call) resolves it.
+
+**Why this one is worth its own species rather than filed under an existing entry:** it
+is a *credible false positive*, not an implausible one. Item 10's mistyped raid id
+(`raid-the-ferryman` vs `the-ferryman`) was also a wiring mistake dressed as passing
+evidence, but in the opposite direction — a bound with slack let a broken fixture read as
+correct. Here the check was strict (`1 -> 1`, no slack) and *failed* on a wiring mistake,
+in the one direction that costs the most: a maintainer seeing this red would have every
+reason to believe the exact bug the design had been afraid of for months had finally
+shown up, and either sunk real investigation into a bug that didn't exist or reverted a
+shipped, correct feature over it. Caught here only because the mistake was noticed and
+fixed in the same session, with the wrong-then-right diff kept in the commit message
+rather than squashed away.
+
+**How to apply:** in any host/client (or otherwise two-sided) test, before trusting an
+assertion that reads a "your side's state" object, name explicitly which concrete object
+the code path under test actually writes to, and confirm the assertion reads *that* one
+— not a same-shaped object built for a different purpose (seeding, mirroring, display).
+When a multi-sided harness necessarily holds more than one object that could plausibly be
+"the" state, the harness should say in a comment which one is live and which is inert, so
+the next person extending it doesn't have to re-derive it from the write path.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

@@ -196,7 +196,19 @@ export interface RunLoot {
 export type RunEvent =
   | { kind: "damage"; x: number; y: number; amount: number; crit: boolean; onPlayer: boolean; element: Element }
   | { kind: "death"; x: number; y: number; elite: Rarity | null }
-  | { kind: "pickup"; x: number; y: number; label: string; color: string }
+  /**
+   * A scrap of floating text at a point — a drop landing in somebody's bags, a "no
+   * resource", a dodge, a revive.
+   *
+   * `owner` is **optional and means "this line is for one player"**. The loot sites set it,
+   * because a drop is shared and one collection raises one of these per hero: each player's
+   * floating number is what their *own* find multipliers paid them, not the collector's. The
+   * sites that don't set it are the ones whose text the whole room should read, and they
+   * behave exactly as they always have — `main.ts` and `net/party.ts` both route on
+   * `"owner" in ev`, so an absent key is seen by everybody. Never write `owner: undefined`:
+   * the key would be present and the event would reach nobody.
+   */
+  | { kind: "pickup"; x: number; y: number; label: string; color: string; owner?: number }
   /** An item specifically, rather than a generic pickup: the presentation layer needs the
    *  rarity to decide whether this is a line of text or an event.
    *
@@ -1724,7 +1736,13 @@ export class Dungeon implements CombatHost, RuleHost {
 
   private updateTelegraphs(dt: number): void {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
-      const t = this.telegraphs[i]!;
+      // Resolving one telegraph can cascade into `killEnemy` on the boss — a caught trash
+      // monster dies, its kill event fires a build's on-kill effect, and that finishes the
+      // boss. A boss death empties this array outright (see `killEnemy`), so the slots this
+      // backwards walk has yet to reach are gone rather than shifted. A `!` here asserted
+      // they were still there and turned that into a crash on the next line.
+      const t = this.telegraphs[i];
+      if (!t) continue;
       if (t.followId !== null) {
         const owner = this.enemies.find((e) => e.id === t.followId);
         // The owner died mid-cast: the ability dies with it. That's a real reward for
@@ -3037,14 +3055,14 @@ export class Dungeon implements CombatHost, RuleHost {
     }
 
     const coins = Math.round(coinDropFor(this.profile) * lootMult * quantity * trashMult * this.rng.range(0.8, 1.25));
-    this.dropPickup(e.x, e.y, { kind: "coin", value: coins, owner: source.index });
+    this.dropPickup(e.x, e.y, { kind: "coin", value: coins });
 
     // Keys are the bridge back to the chest gambling. A dive should fund a couple of
     // pulls, not a spree — the chests are the slot machine, not the payout.
     const keyChance = clamp((0.075 + lootMult * 0.014) * this.config.mode.keyMult * trashMult, 0, 0.5);
     if (e.boss || this.rng.chance(keyChance)) {
       const tier = keyDropTier(this.profile.depth, this.rng.next());
-      this.dropPickup(e.x, e.y, { kind: "key", keyTier: tier, owner: source.index });
+      this.dropPickup(e.x, e.y, { kind: "key", keyTier: tier });
     }
 
     // Gems. A thin, steady trickle on ordinary monsters and a real handful off a boss —
@@ -3053,12 +3071,12 @@ export class Dungeon implements CombatHost, RuleHost {
     const gemChance = clamp((0.09 + lootMult * 0.02) * this.config.mode.gemMult * trashMult, 0, 0.45);
     if (e.boss) {
       this.dropPickup(e.x, e.y, {
-        kind: "gem", owner: source.index,
+        kind: "gem",
         value: Math.round((14 + this.profile.depth * 1.2) * this.config.mode.gemMult),
       });
     } else if (this.rng.chance(gemChance)) {
       this.dropPickup(e.x, e.y, {
-        kind: "gem", owner: source.index,
+        kind: "gem",
         value: this.rng.int(1, 2 + Math.floor(this.profile.depth / 5)),
       });
     }
@@ -3072,13 +3090,13 @@ export class Dungeon implements CombatHost, RuleHost {
         const amount = Math.round(
           this.rng.range(2, 5) * yieldMult * (e.boss ? 5 : 1) * challengerRewardMult(this.config.challengerTier));
         this.dropPickup(e.x, e.y, {
-          kind: "material", value: amount, element: this.config.planet.spec.element, owner: source.index,
+          kind: "material", value: amount, element: this.config.planet.spec.element,
         });
       }
     }
 
     if (this.rng.chance((0.02 + lootMult * 0.004) * quantity * trashMult)) {
-      this.dropPickup(e.x, e.y, { kind: "potion", owner: source.index });
+      this.dropPickup(e.x, e.y, { kind: "potion" });
     }
 
     // Direct gear drops. Elites and bosses roll several, weighted deeper by floor.
@@ -3091,8 +3109,11 @@ export class Dungeon implements CombatHost, RuleHost {
     for (let i = 0; i < rolls; i++) {
       const boost = (e.elite ? rarityIndex(e.elite) * 2 : 0) + (e.boss ? 5 : 0);
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + boost, bias));
-      const item = this.rollDrop(rarity, source.player.heroClass.affinity, source);
-      this.dropPickup(e.x, e.y, { kind: "item", item, rarity, owner: source.index });
+      // `source` biases which weapon family this is, as it always has. It no longer
+      // decides who is paid: `dropPickup` forges a copy for every hero.
+      this.dropPickup(e.x, e.y, {
+        kind: "item", rarity, forge: this.rollDrop(rarity, source.player.heroClass.affinity),
+      });
     }
 
     // Named items (UAT §28). A boss rolls its own table, a wave monster the world table;
@@ -3120,41 +3141,44 @@ export class Dungeon implements CombatHost, RuleHost {
   }
 
   /**
-   * Rolls every drop table for one event and drops whatever hit. Named items forge at
-   * `levelHero`'s own level (docket §23), never this floor's depth; relics drop as
+   * Rolls every drop table for one event and drops whatever hit. Named items forge at each
+   * receiving hero's own level (docket §23), never this floor's depth; relics drop as
    * themselves. `danger` (rift tier × Challenger) lifts the odds — UAT §16's "harder pays
-   * better" — through the one helper in `data/drops.ts`. Recorded in the account's
-   * records only for the local hero's drops, since every browser keeps its own save.
+   * better" — through the one helper in `data/drops.ts`. Recorded in the account's records
+   * only for the local hero's drops, since every browser keeps its own save.
    *
    * The relic roll skips what the local account already owns or is carrying unbanked, so
    * the chase never hands you a duplicate. For a remote hero the host can't see the
    * collection and rolls blind; a duplicate that reaches their save is a counter, never
    * power (`GameState.bankRelics`).
    *
-   * `source` decides that ownership/notification bookkeeping (the codex entry, the relic
-   * dedup set below) — it stays whichever hero the caller already had in hand (the kill's
-   * credited hero, or `localHero` for a shared clear cache, unchanged). `levelHero` is a
-   * separate parameter on purpose: a clear cache is one physical pile with several
-   * named/relic queries fired against it, and the docket §23 rule ("a drop's level comes
-   * from the hero receiving it") governs the second question, not the first — rotating
-   * who a codex credit lands on is a different, unasked change.
+   * `source` is **bookkeeping only** — the codex entry and the relic dedup set below. It is
+   * whichever hero the caller already had in hand (the kill's credited hero, or `localHero`
+   * for the clear cache), and it answers "which account noticed this", never "who gets
+   * paid": a drop is shared, so `dropPickup` forges a copy of a named item for every hero
+   * and credits every hero with a relic. The old second `levelHero` parameter is gone with
+   * the round-robin it served — there is no one hero a shared drop is levelled for.
    */
-  private dropFromTables(x: number, y: number, q: DropQuery, source: Hero, levelHero: Hero = source): void {
+  private dropFromTables(x: number, y: number, q: DropQuery, source: Hero): void {
     for (const def of rollNamedDrops(q, this.rng, this.config.danger)) {
-      // Item level tracks levelHero's own level (docket §23), same rule as an ordinary
-      // drop; item power (UAT §16) still lifts a named copy exactly as it lifts an
-      // ordinary one, but only the magnitude — see `rollDrop`. `minIlvl` on the
-      // definition still floors both from below.
-      const namedIlvl = Math.max(1, levelHero.player.level);
-      const item = forgeNamedItem(def, namedIlvl, this.rng, namedIlvl + this.profile.itemPower);
+      // One seed for the party's copies, exactly as `rollDrop` does it and for the same
+      // reason: `forgeNamedItem`'s draws are independent of the level, so replaying the
+      // seed per hero gives the same named item with each hero's own magnitudes and
+      // `requiredLevel`. `minIlvl` on the definition still floors both from below, and item
+      // power (UAT §16) still lifts a named copy exactly as it lifts an ordinary one — see
+      // `forgeNamedItem`.
+      const seed = this.rng.int(0, 0x7fffffff);
       if (source.local) this.state.noteNamed(def.id);
-      this.dropPickup(x, y, { kind: "item", item, rarity: item.rarity, owner: levelHero.index });
+      this.dropPickup(x, y, {
+        kind: "item",
+        forge: (ilvl, powerIlvl) => forgeNamedItem(def, ilvl, new Rng(seed), powerIlvl),
+      });
     }
     const owned = source.local
       ? new Set([...this.state.relics, ...source.loot.relics])
       : new Set(source.loot.relics);
     for (const def of rollRelicDrops(q, this.rng, this.config.danger, owned)) {
-      this.dropPickup(x, y, { kind: "relic", defId: def.id, rarity: def.rarity, owner: levelHero.index });
+      this.dropPickup(x, y, { kind: "relic", defId: def.id, rarity: def.rarity });
     }
     // Augments (`docs/augments.md`) come off the same shared table, but through `rollOne`
     // rather than `rollTable`: you are hunting "an augment", and which one it turns out to
@@ -3163,7 +3187,7 @@ export class Dungeon implements CombatHost, RuleHost {
     // the low tiers lives on each definition's own source, so it is `sourceMatches` that
     // enforces it and not a branch here.
     const augment = rollOne(AUGMENTS, q, this.rng, this.config.danger);
-    if (augment) this.dropAugment(x, y, augment.id, levelHero.index);
+    if (augment) this.dropAugment(x, y, augment.id);
   }
 
   /**
@@ -3171,24 +3195,28 @@ export class Dungeon implements CombatHost, RuleHost {
    * bail-out, banked only by finishing. The rarest objects in the game are still the
    * reward for closing the floor, and never make death free.
    */
-  private dropAugment(x: number, y: number, id: string, owner: number): void {
+  private dropAugment(x: number, y: number, id: string): void {
     const def = AUGMENT_BY_ID[id];
     if (!def) return;
-    this.dropPickup(x, y, { kind: "augment", defId: id, rarity: def.grade, owner });
+    this.dropPickup(x, y, { kind: "augment", defId: id, rarity: def.grade });
   }
 
   /**
-   * One dropped item, rolled the way this floor's difficulty says to (UAT §16).
+   * One dropped item as a **recipe**, rolled the way this floor's difficulty says to
+   * (UAT §16). Returns a `forge` for `dropPickup` to apply once per hero rather than a
+   * finished `Item`, because a drop is shared and every hero gets their own copy.
    *
-   * Both drop sites — a monster's gear and the clear cache — go through here so the two
-   * axes difficulty adds can't apply to one and not the other:
+   * Everything random is drawn **here, once**: the rarity and the type come in, the
+   * variant roll and one seed are drawn off the floor's own `rng`, and the forge itself
+   * consumes no shared randomness at all. So the party's copies are the same item — same
+   * name, same affix ids, same grant, same trigger, same variance — differing only where
+   * the level reaches in:
    *
-   *  - **item level** tracks the *receiving hero's own level* (`Math.max(1, level)`), the
-   *    same rule chests and crafting already follow (`GameState.openChests`/`craftItem`) —
-   *    an owner ruling (docket §23) that a character earns gear they can equip, not gear
-   *    keyed to whatever depth or Memory produced it. `hero` is deliberately a parameter
-   *    rather than `this.localHero`: co-op loot is per-hero, so a level 20 and a level 50
-   *    in the same party each roll off their own level.
+   *  - **item level** tracks the *receiving hero's own level*, the same rule chests and
+   *    crafting already follow (`GameState.openChests`/`craftItem`) — an owner ruling
+   *    (docket §23) that a character earns gear they can equip, not gear keyed to whatever
+   *    depth or Memory produced it. `dropPickup` supplies it per hero; this function never
+   *    sees a `Hero`, which is what stops the level being pinned to one of them.
    *  - **item power**: `profile.itemPower` still lifts the roll for the Challenger dial
    *    (which deliberately never touches depth) — but only the *magnitude* (`powerIlvl`),
    *    never the level the returned `Item.ilvl` reports. `requiredLevel` (`ilvl` minus one
@@ -3197,18 +3225,27 @@ export class Dungeon implements CombatHost, RuleHost {
    *  - **special variants**: with `profile.variantChance`, the roll leans toward the
    *    floor's own element via `favorElement` — the same knob a crafting essence uses.
    *    Same rarity, same affix count; what changes is which element it rolls, which is
-   *    the thing a themed build is actually farming for.
+   *    the thing a themed build is actually farming for. Drawn once, so an infused drop is
+   *    infused for everybody.
+   *
+   * `affinity` is still one class's, because a shared object is one object: the party finds
+   * *a spear*, and which class biased that draw is the credited kill's (a kill's drop) or
+   * the floor's owner of record (the cache). It decides what the thing is, never who is
+   * paid for it.
    */
-  private rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[], hero: Hero): Item {
+  private rollDrop(
+    rarity: Rarity, affinity: readonly WeaponFamily[],
+  ): (ilvl: number, powerIlvl: number) => Item {
     const infused = this.profile.variantChance > 0 && this.rng.chance(this.profile.variantChance);
-    const ilvl = Math.max(1, hero.player.level);
-    return rollItem({
-      rarity,
-      type: randomItemType(this.rng, affinity),
-      ilvl,
-      powerIlvl: ilvl + this.profile.itemPower,
-      rng: this.rng,
-      favorElement: infused ? this.profile.variantElement : undefined,
+    const type = randomItemType(this.rng, affinity);
+    const favorElement = infused ? this.profile.variantElement : undefined;
+    // The seed is what makes the copies the same item. Replaying it per hero replays every
+    // draw `rollItem` makes, and none of those draws depends on the level — the level
+    // reaches the result only through `levelScale`, which is a parameter. Drawn from the
+    // floor's `rng` so the floor stays reproducible from its own seed.
+    const seed = this.rng.int(0, 0x7fffffff);
+    return (ilvl, powerIlvl) => rollItem({
+      rarity, type, ilvl, powerIlvl, rng: new Rng(seed), favorElement,
     });
   }
 
@@ -3225,63 +3262,45 @@ export class Dungeon implements CombatHost, RuleHost {
     // The last floor of a rift pays for the whole rift, which is what makes bailing
     // out of one at floor three hurt.
     const finale = this.config.lastFloor ? 2.4 : 1;
-    // The cache is one physical pile, but item level is per-hero (docket §23) — a level
-    // 20 and a level 50 in the same party should each find something they can wear, not
-    // just whichever gear `localHero` would have earned. Cycle the party round-robin
-    // across every item the pile rolls; solo has one hero, so this is a no-op there.
-    const party = this.heroes.filter((h) => !h.departed);
-    const recipients = party.length > 0 ? party : [this.localHero];
-    let recipientCursor = 0;
-    const nextRecipient = (): Hero => recipients[recipientCursor++ % recipients.length]!;
-    // Every drop belongs to exactly one hero now (owner ruling, docket §19 follow-up), and
-    // the cache is the one payout that isn't already spread by play: per-kill drops go to
-    // whoever landed the kill and distribute themselves across a floor, but the cache
-    // fires once. Handing one pile to one owner would make the floor's main payout a
-    // lottery, so a divisible currency is *split* into one owned pile per hero instead of
-    // rotated. The total is unchanged — `partyScale` has no loot term, so this pile has
-    // always been one pile for the whole party — which keeps the ruling a change to who
-    // may pick a coin up, not to what a floor pays.
+    // The cache is one physical pile and it is **shared**: every item in it is forged for
+    // every hero at their own level, and every currency pile is credited to every hero in
+    // full. The round-robin recipient cursor and the integer `shareOut` split that used to
+    // live here are both gone rather than left as dead intent — they existed to answer "who
+    // is this one for", and under the owner's ruling nothing in the cache is for one person.
     //
-    // Solo takes the identical path rather than a special case: one recipient means one
-    // pile of the whole amount, so it also consumes exactly the rng draws it always did.
-    const shareOut = (total: number, drop: (share: number, hero: Hero) => void): void => {
-      if (total <= 0) return;
-      const n = recipients.length;
-      let left = total;
-      for (let i = 0; i < n; i++) {
-        // Integer split with the remainder spread over the first few, so nothing is lost
-        // to rounding and a 3-coin pile across 4 heroes doesn't silently become 0.
-        const share = Math.floor(left / (n - i));
-        left -= share;
-        if (share > 0) drop(share, recipients[i]!);
-      }
-    };
-
+    // That makes a party's *total* take scale with the party, items and currency alike,
+    // which is the ruling rather than a side effect of it: "we can both collectively farm
+    // the same stuff". `partyScale` has always fattened the floor without a loot term, so
+    // the work went up with party size already and the payout now follows.
     const coins = Math.round(coinDropFor(this.profile) * 9 * quantity * finale * this.rng.range(0.9, 1.15));
-    shareOut(coins, (share, hero) => this.dropPickup(x, y, { kind: "coin", value: share, owner: hero.index }));
+    this.dropPickup(x, y, { kind: "coin", value: coins });
 
     const drops = Math.max(1, Math.round(quantity * finale));
     for (let i = 0; i < drops; i++) {
-      const hero = nextRecipient();
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2, this.profile.rarityBias));
-      const item = this.rollDrop(rarity, hero.player.heroClass.affinity, hero);
-      this.dropPickup(x, y, { kind: "item", item, rarity, owner: hero.index });
+      // One class biases the family, because the pile holds one of each thing rather than
+      // one per person. `localHero` is the floor's owner of record for every other piece of
+      // cache bookkeeping below, so it is the consistent choice here too.
+      this.dropPickup(x, y, {
+        kind: "item", rarity,
+        forge: this.rollDrop(rarity, this.localHero.player.heroClass.affinity),
+      });
     }
     // The clear cache has its own named table (UAT §28): a reward that, like the rest of
     // the cache, only exists for finishing the floor. Bookkeeping (the codex, relic dedup)
-    // stays on `localHero` as before; only the item level the query forges at follows the
-    // rotation above.
+    // stays on `localHero` as before; the item level each copy forges at is the receiving
+    // hero's own, supplied by `dropPickup`.
     this.dropFromTables(x, y, {
       kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id,
       tier: this.config.tier, lastFloor: this.config.lastFloor,
-    }, this.localHero, nextRecipient());
+    }, this.localHero);
     // ...and the ascent's cache emits its own kind on top of that (UAT §21). A `tower`
     // query carries the **height**, not the effective depth, even though the two are the
     // same number today: the height is what the source means, and the one place the
     // ascent's rewards get addressed by the descent's number is the place the §21 rule
     // would start leaking. `recordHeight` keeps the same distinction on the save side.
     if (this.config.tower) {
-      this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero, nextRecipient());
+      this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero);
     }
     // ...and so does the cache that closes a raid (UAT §15). The raid's floor *is* its
     // boss floor, so this is the second half of the same payout and the same query the
@@ -3289,11 +3308,11 @@ export class Dungeon implements CombatHost, RuleHost {
     if (this.config.raid) {
       this.dropFromTables(x, y, {
         kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
-      }, this.localHero, nextRecipient());
+      }, this.localHero);
     }
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
-    shareOut(gems, (share, hero) => this.dropPickup(x, y, { kind: "gem", value: share, owner: hero.index }));
+    this.dropPickup(x, y, { kind: "gem", value: gems });
 
     if (this.config.planet) {
       const yieldMult = this.config.planet.spec.materialYield;
@@ -3302,9 +3321,7 @@ export class Dungeon implements CombatHost, RuleHost {
       const element = this.config.planet.spec.element;
       const materials = Math.round(
         (6 + this.profile.depth * 0.4) * yieldMult * finale * challengerRewardMult(this.config.challengerTier));
-      shareOut(materials, (share, hero) => this.dropPickup(x, y, {
-        kind: "material", value: share, element, owner: hero.index,
-      }));
+      this.dropPickup(x, y, { kind: "material", value: materials, element });
     }
     // A Memory that happens to recall the Unbound Spire or the Hollow Orchard pays out
     // that place's own material too (docs/reliquary-reachability.md,
@@ -3322,9 +3339,7 @@ export class Dungeon implements CombatHost, RuleHost {
         const materials = Math.round(
           (6 + this.profile.depth * 0.4) * source.materialYield * finale
             * challengerRewardMult(this.config.challengerTier));
-        shareOut(materials, (share, hero) => this.dropPickup(x, y, {
-          kind: "material", value: share, element: source.element, owner: hero.index,
-        }));
+        this.dropPickup(x, y, { kind: "material", value: materials, element: source.element });
       }
     }
 
@@ -3332,7 +3347,7 @@ export class Dungeon implements CombatHost, RuleHost {
     for (let i = 0; i < keys; i++) {
       if (i > 0 || this.rng.chance(0.7)) {
         this.dropPickup(x, y, {
-          kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()), owner: nextRecipient().index,
+          kind: "key", keyTier: keyDropTier(this.profile.depth, this.rng.next()),
         });
       }
     }
@@ -3344,22 +3359,23 @@ export class Dungeon implements CombatHost, RuleHost {
     // mythic and holds it there) — the same guarantee the Convergence already has,
     // extended to its daily sibling rather than invented twice.
     if (this.config.daily) {
-      this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier, owner: this.localHero.index });
+      this.dropPickup(x, y, { kind: "key", keyTier: this.config.daily.keyTier });
       // ...and one augment, guaranteed and capped (`docs/augments.md` §4.2). A guarantee is
       // not a chance, so this is a direct pick rather than a `DropSource` with `chance: 1`
       // — a source would be scaled by `dropChance` and would put the daily's payout on the
       // §16 danger curve, the exact double-dip the Vigil's modifier split exists to stop.
       const daily = pickAugment(augmentsUpTo(DAILY_AUGMENT_CAP), this.rng.next());
-      if (daily) this.dropAugment(x, y, daily.id, this.localHero.index);
+      if (daily) this.dropAugment(x, y, daily.id);
       if (dailyGuaranteesItem(this.config.challengerTier)) {
         const rarity = challengerGuaranteedRarity(DAILY_GUARANTEED_RARITY, this.config.challengerTier);
         // The Vigil is solo-only (UAT §17 v1), so `this.player` (localHero) is the whole
         // party — item level tracks it exactly like a chest does (docket §23).
-        const item = rollItem({
-          rarity, type: randomItemType(this.rng, this.player.heroClass.affinity),
-          ilvl: Math.max(1, this.player.level), rng: this.rng,
+        // The Vigil is solo-only (UAT §17 v1), so the shared path has one recipient and
+        // `rollDrop` resolves to exactly the roll this site always made — item level off the
+        // one hero's own level, the same rule a chest follows (docket §23).
+        this.dropPickup(x, y, {
+          kind: "item", rarity, forge: this.rollDrop(rarity, this.player.heroClass.affinity),
         });
-        this.dropPickup(x, y, { kind: "item", item, rarity, owner: this.localHero.index });
       }
     }
     // The Convergence's signature reward lands only on the boss floor (UAT §17): one
@@ -3370,50 +3386,66 @@ export class Dungeon implements CombatHost, RuleHost {
     // the ordinary depth-weighted loot above and nothing more, so the reward can't be
     // farmed piecemeal.
     if (this.config.weekly && this.config.lastFloor) {
-      this.dropPickup(x, y, { kind: "key", keyTier: this.config.weekly.keyTier, owner: this.localHero.index });
+      this.dropPickup(x, y, { kind: "key", keyTier: this.config.weekly.keyTier });
       const weekly = pickAugment(augmentsUpTo(WEEKLY_AUGMENT_CAP), this.rng.next());
-      if (weekly) this.dropAugment(x, y, weekly.id, this.localHero.index);
+      if (weekly) this.dropAugment(x, y, weekly.id);
       const rarity = challengerGuaranteedRarity(WEEKLY_GUARANTEED_RARITY, this.config.challengerTier);
       // The Convergence is solo-only (UAT §17 v1) exactly like the Vigil above — same rule.
-      const item = rollItem({
-        rarity,
-        type: randomItemType(this.rng, this.player.heroClass.affinity),
-        ilvl: Math.max(1, this.player.level),
-        rng: this.rng,
+      this.dropPickup(x, y, {
+        kind: "item", rarity, forge: this.rollDrop(rarity, this.player.heroClass.affinity),
       });
-      this.dropPickup(x, y, { kind: "item", item, rarity, owner: this.localHero.index });
     }
-    if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion", owner: nextRecipient().index });
+    if (this.rng.chance(0.5)) this.dropPickup(x, y, { kind: "potion" });
   }
 
   /**
-   * One pickup onto the floor, belonging to exactly one hero.
+   * One pickup onto the floor — one physical object, shared by the whole party.
    *
-   * `owner` is **required** rather than defaulted, and that is the whole enforcement
-   * mechanism: every drop has an owner and only its owner can collect it, so a drop site
-   * written tomorrow cannot fall back to first-come by forgetting a field. It is a rule
-   * that cannot be violated rather than a check that notices when it was — a drop with no
-   * owner doesn't roll unclaimable, it fails to compile. See `Pickup.owner`.
+   * For an `item` drop the caller hands over a `forge` rather than an `Item`, and **this**
+   * method calls it once per hero on the roster. That is the whole enforcement mechanism,
+   * and it replaces the `owner` field it grew out of: there is no single-item slot to fill,
+   * so a drop site cannot hand the party one roll that only one of them can use — it
+   * supplies a recipe and every hero gets a copy, or it drops no item at all.
+   *
+   * `forge` is handed the two levels and never a `Hero`, which is what makes docket §23
+   * unforgeable here as well: the level a copy is rolled at comes from the hero receiving
+   * it, supplied by this loop, and a caller has no way to reach past it to a fixed hero the
+   * way the old per-site `owner: someHero.index` argument invited. Item power (UAT §16)
+   * still lifts the magnitudes through `powerIlvl` and still never touches `requiredLevel`.
+   *
+   * The pickup's `rarity` — the glow on the floor — is read off the forged copies rather
+   * than passed in beside them, so the halo and the item can't disagree. The kinds that
+   * have a rarity without an item (a relic, an augment) pass it explicitly.
    */
   private dropPickup(
     x: number, y: number,
     opts: {
-      kind: Pickup["kind"]; owner: number; value?: number; item?: Item; keyTier?: string;
+      kind: Pickup["kind"]; value?: number; keyTier?: string;
       rarity?: Rarity; element?: Element; defId?: string;
+      forge?: (ilvl: number, powerIlvl: number) => Item;
     },
   ): void {
     const angle = this.rng.angle();
     const speed = this.rng.range(40, 110);
+    // One copy per hero on the roster, not per *living* hero: the roster is frozen for the
+    // run, and whether a hero is still in it is a question for the moment of collection
+    // (`collect` skips the departed), not for the moment of the roll.
+    const forge = opts.forge;
+    const copies = forge
+      ? this.heroes.map((h) => {
+        const ilvl = Math.max(1, h.player.level);
+        return forge(ilvl, ilvl + this.profile.itemPower);
+      })
+      : [];
     this.pickups.push({
       x, y, px: x, py: y, radius: 6,
       kind: opts.kind,
       value: opts.value ?? 0,
-      item: opts.item ?? null,
       keyTier: opts.keyTier ?? null,
-      rarity: opts.rarity ?? null,
+      rarity: opts.rarity ?? copies[0]?.rarity ?? null,
       element: opts.element ?? null,
       defId: opts.defId ?? null,
-      owner: opts.owner,
+      copies,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 0,
@@ -4182,27 +4214,23 @@ export class Dungeon implements CombatHost, RuleHost {
       p.py = p.y;
       p.life += dt;
 
-      // Who may collect this. A drop rolled *for* a hero (an item, a relic, an augment —
-      // its level and affinity came from that hero's own character, docket §23) is that
-      // hero's and nobody else's; a drop rolled for the floor (coins, gems, keys,
-      // materials, potions) is still first-come and pulls toward whoever is nearest.
-      // See `Pickup.owner`. Before this, every drop was claimed by `nearestHero` and a
-      // party member could walk off with an item rolled at someone else's level — which
-      // is both theft and a wrong-level roll.
+      // Who may collect this: **anyone**. A drop is shared (owner ruling, 2026-09-10) —
+      // one physical object that anybody in the party can walk onto, and collecting it pays
+      // every hero still in the run (`collect`). So the physical half is nearest-hero again,
+      // the way it was before ownership: the drop falls toward whoever is closest and that
+      // hero's walk over it is what triggers the payout for everybody.
       //
-      // A departed owner releases their claim: a disconnect must never strand loot on the
-      // floor for the rest of the run ("A disconnected player can't wedge the run").
-      // Downed is *not* departed — you get revived, and your drops wait for you.
-      const owner = p.owner >= 0 ? this.heroes[p.owner] ?? null : null;
-      const claimant = owner && !owner.departed ? owner : this.nearestHero(p.x, p.y);
+      // There is deliberately nothing here about who it belongs to. The brief ownership
+      // version of this loop gated collection and magnetism on `p.owner` and had to special-
+      // case a departed owner so a disconnect couldn't strand loot on the floor; a shared
+      // drop cannot be stranded by anybody leaving, so that case is gone with the gate.
+      const claimant = this.nearestHero(p.x, p.y);
       const a = claimant.avatar;
       const d = dist(p.x, p.y, a.x, a.y);
-      // The universal tree's pickup-radius nodes (UAT §18) widen both ranges. Applied to
-      // the *claimant* rather than to whoever has the biggest radius on the floor, which
-      // keeps the rule above intact from both sides: on a shared drop a wider magnet
-      // reaches further but still can't reach past a hero standing closer, and on an owned
-      // one it's the owner's own radius that decides, so nobody else's Avarice nodes can
-      // drag a teammate's item around.
+      // The universal tree's pickup-radius nodes (UAT §18) widen both ranges, and they are
+      // the nearest hero's: a wider magnet reaches further but still can't reach past
+      // somebody standing closer. Whoever's radius wins, the payout is the whole party's, so
+      // one player's Avarice nodes speed the pile up for everybody rather than claiming it.
       const reach = claimant.player.pickupRangeMult;
       // A short delay before magnetism kicks in lets the drop pop out and be seen.
       if (p.life > 0.35 && d < MAGNET_RANGE * reach) p.magnet = true;
@@ -4229,37 +4257,79 @@ export class Dungeon implements CombatHost, RuleHost {
       this.tickEmbedTimer(p, dt);
 
       if (p.life > 0.3 && d < PICKUP_RANGE * reach) {
-        this.collect(claimant, p);
+        this.collect(p);
         this.pickups.splice(i, 1);
       }
     }
   }
 
-  private collect(hero: Hero, p: Pickup): void {
+  /**
+   * One drop, collected — and a drop is **shared**.
+   *
+   * The hero who walked onto it is only the trigger, and is not even passed in. Every hero
+   * still in the run is credited
+   * with their own copy: their own item (rolled at their own level, `Pickup.copies`), their
+   * own coins through their own find multiplier, their own key, relic, augment, potion. This
+   * is the owner's ruling of 2026-09-10 in one place — *"whoever kills anything, the items
+   * drop, and we will both get that item no matter who picks it up... so we can both
+   * collectively farm the same stuff"* — and it is why nothing in the loop below reads who
+   * the collector was except to decide nothing at all.
+   *
+   * A departed hero gets nothing: they are out of the run. Downed is not departed — you are
+   * still in it, and a friend clearing the floor pays you.
+   *
+   * Solo is structurally unchanged rather than special-cased: one hero in `heroes`, one
+   * credit, one copy, exactly the behaviour and exactly the events it had before.
+   */
+  private collect(p: Pickup): void {
+    // **This method is not told who collected the drop**, and that is deliberate: it is the
+    // last place a finder's bonus could creep back in, and it cannot favour a hero it has no
+    // way to name. `updatePickups` has the claimant in hand and keeps it to itself.
+    for (const hero of this.heroes) {
+      if (hero.departed) continue;
+      this.credit(hero, p);
+    }
+  }
+
+  /**
+   * One hero's share of a collected drop, which is a whole copy of it rather than a share.
+   *
+   * Every event raised here is stamped with `owner`, which is what makes a shared drop read
+   * correctly on four screens at once: `main.ts` drops an owned event that isn't the local
+   * hero's, and `net/party.ts` forwards each one only to the member it belongs to. So each
+   * player sees their own banner with their own copy's numbers, and the floating `+coins`
+   * each player reads is the amount their own find multiplier actually paid them — not the
+   * collector's.
+   */
+  private credit(hero: Hero, p: Pickup): void {
     switch (p.kind) {
       // The universal tree's Avarice path (UAT §18) is the only *player-sourced* loot
       // multiplier in the game — everything else (mode, depth, Challenger) is decided by
-      // where you went, not by who went there. It lands here, at the moment of pickup,
-      // which for the two kinds it applies to (coin, gem) is also the only place they
-      // have an owner: currency is rolled for the floor and belongs to whoever collects
-      // it. Items, relics and augments carry an owner from the roll instead — see
-      // `Pickup.owner` — and none of them read a find multiplier.
+      // where you went, not by who went there. It lands here, at the moment of pickup, and
+      // it is per hero: a shared pile pays each of them through their own nodes, so one
+      // player's Avarice build never decides what their friend takes home.
       case "coin": {
         const coins = Math.round(p.value * hero.player.coinFindMult);
         hero.loot.coins += coins;
-        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${coins}`, color: "#fbbf24" });
+        this.events.push({
+          kind: "pickup", x: p.x, y: p.y, label: `+${coins}`, color: "#fbbf24", owner: hero.index,
+        });
         break;
       }
       case "key":
         if (p.keyTier) {
           hero.loot.keys[p.keyTier as ChestTier]++;
-          this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `${p.keyTier} Key`, color: "#e2e8f0" });
+          this.events.push({
+            kind: "pickup", x: p.x, y: p.y, label: `${p.keyTier} Key`, color: "#e2e8f0", owner: hero.index,
+          });
         }
         break;
       case "gem": {
         const gems = Math.round(p.value * hero.player.gemFindMult);
         hero.loot.gems += gems;
-        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: `+${gems} gems`, color: "#f0abfc" });
+        this.events.push({
+          kind: "pickup", x: p.x, y: p.y, label: `+${gems} gems`, color: "#f0abfc", owner: hero.index,
+        });
         break;
       }
       case "material":
@@ -4268,21 +4338,27 @@ export class Dungeon implements CombatHost, RuleHost {
           this.events.push({
             kind: "pickup", x: p.x, y: p.y,
             label: `+${p.value} ${MATERIAL_NAMES[p.element]}`, color: ELEMENT_COLORS[p.element],
+            owner: hero.index,
           });
         }
         break;
       case "potion":
         hero.potions++;
-        this.events.push({ kind: "pickup", x: p.x, y: p.y, label: "Potion", color: "#4ade80" });
+        this.events.push({
+          kind: "pickup", x: p.x, y: p.y, label: "Potion", color: "#4ade80", owner: hero.index,
+        });
         break;
-      case "item":
-        if (p.item) {
-          hero.loot.items.push(p.item);
-          hero.itemsPending.push(p.item);
-          if (hero.local) this.state.stats.raritiesFound[p.item.rarity]++;
-          this.events.push({ kind: "loot", x: p.x, y: p.y, item: p.item, owner: hero.index });
+      case "item": {
+        // This hero's own copy — same item as everybody else's, rolled at their level.
+        const item = p.copies[hero.index];
+        if (item) {
+          hero.loot.items.push(item);
+          hero.itemsPending.push(item);
+          if (hero.local) this.state.stats.raritiesFound[item.rarity]++;
+          this.events.push({ kind: "loot", x: p.x, y: p.y, item, owner: hero.index });
         }
         break;
+      }
       case "augment":
         if (p.defId) {
           hero.loot.augments.push(p.defId);
