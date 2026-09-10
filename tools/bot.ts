@@ -153,6 +153,21 @@ export interface FloorResult {
   mechanicsResolved: number;
   /** Seconds the bot spent pinned against geometry — instrument health, not game data. */
   pinned: number;
+  /** Non-boss enemies that died during the run (total "death" events minus "bossDown"
+   *  ones) — the boss's own AoE killing its own adds is exactly what this catches, and
+   *  it's a live measurement for the enemy-friendly-fire fix (Sept 2026). */
+  enemyDeaths: number;
+  /** Non-boss enemies alive, averaged over every tick of the fight — a continuous
+   *  reading of "how many bodies are on the floor" that a peak count can't give: two
+   *  fights can share the same `peakEnemies` while one of them spends the whole rest of
+   *  the fight down to one or two adds and the other stays crowded. */
+  avgEnemies: number;
+  /** Casts of the boss's own `summon` ability ("Call the Chorus") seen this run — lets a
+   *  caller confirm the fight actually reached its summon-heavy phases rather than dying
+   *  or clearing before it got there (a instrument that never sees the code under test
+   *  proves nothing, see CLAUDE.md's "check your instrument can see the thing you
+   *  changed"). */
+  summonCasts: number;
 }
 
 /**
@@ -183,6 +198,11 @@ export function playFloor(
   let mechanicsEaten = 0;
   let mechanicsResolved = 0;
   let pinnedTicks = 0;
+  let deathEvents = 0;
+  let bossDownEvents = 0;
+  let summonCasts = 0;
+  let nonBossEnemySum = 0;
+  let enemyTicks = 0;
   const potionsAtStart = state.potions;
   // Input here is polled every tick, so an ungated press would chug the whole belt.
   let potionCooldown = 0;
@@ -303,8 +323,13 @@ export function playFloor(
     for (const ev of d.drainEvents()) {
       if (ev.kind === "bossPhase") bossPhases++;
       if (ev.kind === "damage" && ev.onPlayer) damageTaken += ev.amount;
+      if (ev.kind === "death") deathEvents++;
+      if (ev.kind === "bossDown") bossDownEvents++;
+      if (ev.kind === "bossCast" && ev.name === "Call the Chorus") summonCasts++;
     }
     peakEnemies = Math.max(peakEnemies, d.enemies.length);
+    nonBossEnemySum += d.enemies.reduce((n, e) => n + (e.boss ? 0 : 1), 0);
+    enemyTicks++;
     if (circleHitsWall(d.level, d.avatar.x, d.avatar.y, d.avatar.radius + 2)) pinnedTicks++;
     for (const e of d.enemies) peakAilments = Math.max(peakAilments, e.sc.list.length);
     // The "mana" the modern classes actually spend is their own primary resource — the
@@ -339,6 +364,9 @@ export function playFloor(
     d, seconds: t, peakEnemies, peakAilments, lowestMana, skillCasts, bossPhases,
     damageTaken, potionsDrunk: Math.max(0, potionsAtStart - state.potions),
     mechanicsEaten, mechanicsResolved, pinned: pinnedTicks * DT,
+    enemyDeaths: Math.max(0, deathEvents - bossDownEvents),
+    avgEnemies: enemyTicks > 0 ? nonBossEnemySum / enemyTicks : 0,
+    summonCasts,
   };
 }
 
