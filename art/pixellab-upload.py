@@ -35,6 +35,21 @@ def tight_png(path: str) -> bytes:
     """The same image as an indexed PNG with no wasted palette entries."""
     im = Image.open(path).convert("RGBA")
     px = list(im.getdata())
+    # Normalise RGB under FULL transparency to zero before anything else.
+    #
+    # `animate_image` can return frames whose transparent pixels carry stale non-zero RGB
+    # (measured on the Warden idle: 2,323 of them; every generation before it came back
+    # clean, which is why this went unnoticed). Those channels are invisible — alpha is 0
+    # — but the round-trip assertion below compares whole RGBA tuples, so the script
+    # refused perfectly good art and blamed itself for altering it.
+    #
+    # This is the same distinction docs/animation.md already draws in the other direction:
+    # an assertion about pixel COLOUR is not an assertion about pixel PRESENCE. Here the
+    # assertion was about colour where only presence and visible colour can matter. The
+    # normalisation is a visible no-op by construction (it only touches alpha==0 pixels),
+    # and doing it here rather than at the call site keeps the round-trip check STRICT
+    # instead of loosening it to "close enough".
+    px = [(0, 0, 0, 0) if p[3] == 0 else p for p in px]
     alphas = {p[3] for p in px}
     if not alphas <= {0, 255}:
         raise SystemExit(f"{path}: alpha is not binary ({sorted(alphas)[:8]}...) — "

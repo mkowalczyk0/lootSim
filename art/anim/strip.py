@@ -77,6 +77,27 @@ def dir_for(sprite_id: str) -> str:
     return "icons"
 
 
+def scrub_transparent(im: Image.Image) -> Image.Image:
+    """Zero the RGB of fully transparent pixels.
+
+    `animate_image` sometimes returns frames whose transparent pixels carry stale non-zero
+    RGB — first seen on the Warden idle, 2,323 of them per frame, where every generation
+    before it came back clean. It is invisible (alpha is 0), but it is a live instance of
+    the hazard `alpha_box` below is written to survive, and leaving it in the committed
+    strip means any future tool reaching for `getbbox()` gets the whole canvas instead of
+    the sprite. Normalising here keeps the COMMITTED art canonical rather than relying on
+    every reader to be as careful as `alpha_box` is.
+
+    Visible no-op by construction: it only touches pixels with alpha 0.
+    """
+    px = list(im.getdata())
+    if all(p[3] != 0 or p[:3] == (0, 0, 0) for p in px):
+        return im
+    out = Image.new("RGBA", im.size)
+    out.putdata([(0, 0, 0, 0) if p[3] == 0 else p for p in px])
+    return out
+
+
 def alpha_box(im: Image.Image):
     """The sprite's own extent — see the note above on why `getbbox()` is the wrong call."""
     return im.getchannel("A").point(lambda v: 255 if v > 128 else 0).getbbox()
@@ -164,7 +185,7 @@ def load_tag(spec: str):
     paths = [p for i, p in enumerate(paths) if i not in drop]
     if not paths:
         raise SystemExit(f"{where}: every frame was dropped")
-    return tag, [Image.open(p).convert("RGBA") for p in paths]
+    return tag, [scrub_transparent(Image.open(p).convert("RGBA")) for p in paths]
 
 
 def current_row(sprite_id: str):

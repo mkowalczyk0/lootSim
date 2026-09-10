@@ -107,8 +107,28 @@ if (problems === 0) ok(`all ${specs.length} encounters resolve to a committed sp
 const animatedSpecs = specs.filter((s) => ATLAS[SPRITE_OVERRIDES[s.sprite] ?? s.sprite]?.anim);
 console.log(`\n  HEADLINE: ${animatedSpecs.length} of ${specs.length} encounters resolve to an ANIMATED sprite.`);
 console.log(`  The other ${specs.length - animatedSpecs.length} draw a single static frame, wind-up and release alike.`);
-console.log("  Every animated one is a RAID, reached only from the War Table. Every boss on the");
-console.log("  Delve, the Tower and the Proving — the ladders a player actually climbs — is static.");
+// DERIVE this sentence, never assert it. The first version of this tool hardcoded
+// "every animated one is a raid", which was true the day it was written and became a lie
+// the moment boss.warden was animated — the exact failure CLAUDE.md's fourth lesson names,
+// a claim whose scope comes from the thing under test rather than from outside it.
+const ladderOf = (s: BossSpec) =>
+  RAIDS.some((r) => raidBossSpec(r).id === s.id) ? "raid"
+  : (Object.keys(LEGENDS) as ClassId[]).some((c) => legendBossSpec(c).id === s.id) ? "Proving"
+  : towerHeights.some((h) => towerBossSpec(h).id === s.id) ? "Tower"
+  : "Delve";
+const byLadder = new Map<string, { animated: number; total: number }>();
+for (const sp of specs) {
+  const k = ladderOf(sp);
+  const e = byLadder.get(k) ?? { animated: 0, total: 0 };
+  e.total++;
+  if (ATLAS[SPRITE_OVERRIDES[sp.sprite] ?? sp.sprite]?.anim) e.animated++;
+  byLadder.set(k, e);
+}
+for (const [k, e] of [...byLadder].sort()) {
+  const note = e.animated === 0 ? "  <- no animated boss on this ladder"
+    : e.animated === e.total ? "  <- fully covered" : "";
+  console.log(`    ${k.padEnd(8)} ${String(e.animated).padStart(2)} of ${String(e.total).padStart(2)} animated${note}`);
+}
 
 console.log("\n  encounters sharing each animated sprite (a release is per SPRITE, not per fight):");
 for (const [atlasId, ids] of [...seen].sort()) {
