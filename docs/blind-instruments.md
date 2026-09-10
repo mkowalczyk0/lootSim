@@ -200,6 +200,35 @@ observed to pass licenses nothing beyond "nothing has gone wrong on the inputs I
 happened to run" — which is also true of a check that is structurally blind, right up
 until someone asks it the one question that would have told the difference.
 
+## A seventh instance, found the same day: `kill` reporting success it can't see
+
+A background gate got piped through `grep | head`; `head` closed the pipe early, the
+shell reported the job done, and the actual `esbuild`/`node` children kept running
+detached rather than exiting. Re-launching the same gate twice more without checking
+`ps` first left three copies of `smoke.mjs` pinning cores — during the one window this
+project has ever had the owner and a co-op partner both live on the same dev server,
+which made the contention itself a false positive for the exact symptom (input lag)
+their session was trying to characterise.
+
+The instrument here is not the gate — it's the **kill/exit signal itself**. A shell
+reporting a background job as finished, or a `kill` call returning without error, is a
+claim about a process tree it did not actually inspect: it knows a signal was sent (or a
+pipe closed), not that every descendant actually exited. The same question this document
+has been asking of every other instrument applies to process-lifecycle tools too — *if
+the child had survived the signal, would this call have told me?* Here the honest
+answer was no, and the only thing that closed the gap was checking `ps`/`lsof` for the
+actual process and its cwd after the fact, the same way every other entry in this
+document was only settled by measuring the real thing rather than trusting the report
+about it.
+
+**How to apply:** after backgrounding, piping through `head`, or killing a long-running
+process, verify with `ps` (and `lsof -p <pid>` for cwd, when multiple worktrees could be
+confused for each other) that nothing of yours survived — don't trust an exit code or a
+"done" message on a job you didn't watch die. This bit twice in one project today: once
+as a resource-contention incident during a live measurement, and once earlier in the
+same family as the shared-`node_modules/.cache` hazard (item 6) — a killed job's orphaned
+child can go on writing to that same shared bundle path exactly as a live one would.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
