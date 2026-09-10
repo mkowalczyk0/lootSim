@@ -167,10 +167,14 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // First animated row (docs/animation.md). `w`/`h` are ONE FRAME and are unchanged, so
   // `worldScale` is unchanged too and the encounter's world height, telegraph radii, arena
   // sizing and camera framing all stay exactly where they were tuned. The strip PNG is
-  // `w * cols` = 375 wide. Frame 0 is pixel-identical to the sprite that shipped before
+  // `w * cols` = 975 wide (5 idle + 8 wind-up). Frame 0 is pixel-identical to the sprite that shipped before
   // this, which is what makes the static fallback and the first frame the same picture.
   "boss.ferryman":            { id: "boss.ferryman",            w: 75,  h: 107, worldScale: 0.9318, feet: 0.03,
-    anim: { cols: 5, tags: { idle: { from: 0, to: 4, seconds: 0.22, loop: true } } } },
+    anim: { cols: 13, tags: { idle: { from: 0, to: 4,  seconds: 0.22, loop: true },
+                              // The generic wind-up: `cast` covers every ability the
+                              // Ferryman has, and `seconds` is unread for a
+                              // progress-keyed tag (see anim.ts#frameAtProgress).
+                              cast: { from: 5, to: 12, seconds: 0.09, loop: false } } } },
   // Animated: `w`/`h` are ONE FRAME. Height unchanged, so `worldScale` is unchanged and the
   // encounter's world height (110.0) is exactly where it was tuned.
   "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 108, worldScale: 1.0185, feet: 0.03,
