@@ -176,9 +176,21 @@
 // 30 (2026-09-10): the Rotating Shop's per-tier purchase/reroll bookkeeping
 // (`GameState.shop`).
 // 31 (2026-09-10): `Player.lifetimeMaxHit`, for the leaderboards' "highest recorded max
-// damage" board (`docs/leaderboards.md`). Claimed provisionally — confirm this number at
-// merge time in case a parallel branch also claimed 31 (the multi-session convention: PM
-// assigns the real number at merge, never two branches in parallel).
+// damage" board (`docs/leaderboards.md`).
+//
+// --- CLAIMED, NOT YET MERGED ------------------------------------------------
+// Bumping the version? Add your number to this list in the SAME commit that starts the
+// work, before you write anything else. Two branches claimed 31 on 2026-09-10 because
+// each was told the number in a private message; a reservation that lives in one
+// session's inbox does not exist for anybody else. This list is the only reservation
+// that counts, and it is here rather than in a doc because this is the line you have to
+// edit anyway.
+//
+//   32 — `Appearance.weapons`, a per-family weapon-skin map replacing the single
+//        `Appearance.weapon` slot (the authored weapon-skin stream).
+//
+// Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
+// merged, and the list above is what is in flight.
 export const SAVE_VERSION = 31;
 
 /**
