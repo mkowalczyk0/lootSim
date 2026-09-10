@@ -54,45 +54,6 @@ export interface PartyPlan {
 /** Why a floor ended for *this* browser: the wire's three, plus the host vanishing. */
 export type RunEndReason = RunEnd | "hostLeft";
 
-/**
- * How long a client holds an arriving snapshot before playing it out — the de-jitter
- * buffer's depth. See `Party.drainSnapshots` for the mechanism.
- *
- * **80ms is a measured knee, not a round number, and here is the sweep that produced it**
- * (`tools/mp-jitter.ts`, depth 18, 2 players, 45s, chop = % of client render ticks with no
- * snapshot inside the 60ms interpolation window):
- *
- *     link profile        0ms     40ms    60ms    80ms   100ms   140ms
- *     LAN                0.0%    0.0%    0.0%    0.0%    0.0%    0.0%
- *     same city          0.0%    0.0%    0.0%    0.0%    0.0%    0.0%
- *     cross-country      1.6%    0.4%    0.0%    0.0%    0.0%    0.0%
- *     wifi, congested   13.4%    0.8%    0.7%    0.0%    0.0%    0.0%
- *     transatlantic     10.0%    1.1%    1.1%    0.6%    1.2%    0.0%
- *
- * 80 is where the owner's actual reported conditions — both ends on wifi — reach zero, and
- * anything above it buys nothing on those profiles while adding staleness one-for-one.
- *
- * **THE ASSUMPTION THIS NUMBER IS ONLY TRUE UNDER**, written down because this repo's
- * most-repeated failure is a constant that was correct for one rung (the atlas scale, the
- * biome tint, the snapshot kB/s figure — and `LERP_SPAN`'s own 10ms of slack, which was
- * correct for loopback and is the very bug this fixes): **it assumes one-way jitter up to
- * roughly ±40ms.** Beyond that the buffer underruns and chop returns — visible in the
- * transatlantic row, which is why that row is not zero until 140ms. If a report ever
- * arrives from a link worse than the profiles above, this is the number to re-derive, and
- * `npm run mpjitter` is the tool that re-derives it. Do not simply raise it: every
- * millisecond here is a millisecond of staleness paid by everyone, including the LAN
- * players who had no problem to begin with.
- *
- * The cost, stated plainly and measured in the same sweep: the world a client draws goes
- * from ~33ms stale to ~129ms stale. That is the price of the fix and it is paid on every
- * link, not only the bad ones. An adaptive window was built and measured to avoid charging
- * LAN players for wifi's problem, and it was **rejected** — it came out worse than a fixed
- * 80ms on three of four profiles (it oversizes off p95 gaps and recovers badly from an
- * underrun). The numbers are in `docs/mp-stuttering.md`; do not re-derive it from scratch
- * without reading them.
- */
-export const SNAPSHOT_BUFFER_MS = 80;
-
 export class Party {
   readonly net = new NetClient();
   /** Everyone else in the room. You are never in here. */
@@ -150,16 +111,6 @@ export class Party {
   private readonly inputLog = new InputLog();
   private hubTimer = 0;
   private snapTimer = 0;
-  /**
-   * Snapshots that have arrived but are not due to be applied yet — the de-jitter buffer.
-   * See `SNAPSHOT_BUFFER_MS` and `drainSnapshots`.
-   */
-  private snapQueue: Snapshot[] = [];
-  /** Local time (seconds, accumulated in `beforeSim`) — the buffer's playout clock. */
-  private netClock = 0;
-  private playoutAt = 0;
-  private playing = false;
-  private fillStartedAt = -1;
   /** Renderer events since the last snapshot. Batched to the same cadence so a busy
    *  fight doesn't turn into sixty tiny messages a second per player. */
   private fxBuffer: RunEvent[] = [];
@@ -384,21 +335,10 @@ export class Party {
       hero.input = input;
     }
     this.snapTimer = 0;
-    this.resetSnapshotBuffer();
-  }
-
-  /** A new floor is a new stream: never play last floor's backlog into this one. */
-  private resetSnapshotBuffer(): void {
-    this.snapQueue.length = 0;
-    this.netClock = 0;
-    this.playoutAt = 0;
-    this.playing = false;
-    this.fillStartedAt = -1;
   }
 
   detach(): void {
     this.dungeon = null;
-    this.resetSnapshotBuffer();
     this.inputs.clear();
     this.slots.clear();
     this.running = false;
@@ -429,65 +369,6 @@ export class Party {
   beforeSim(): void {
     if (!this.running) return;
     for (const input of this.inputs.values()) input.beginTick();
-    this.drainSnapshots(1 / 60);
-  }
-
-  /**
-   * The de-jitter buffer: hold arriving snapshots briefly, then play them out on a STEADY
-   * cadence rather than applying each one the instant it lands.
-   *
-   * ## Why this exists, measured
-   *
-   * A client never simulates. `Dungeon.advanceRemote` slides every remote body toward the
-   * position the newest snapshot gave it over `LERP_SPAN` (`1.2 / SNAPSHOT_HZ` = 60ms) and
-   * then stops dead until another arrives. Snapshots are sent every 50ms, so before this
-   * the client had **10ms of tolerance** for a late packet; past that, every monster, ally
-   * and minion froze in place and then jerked. Owner report, two machines, both on wifi:
-   * *"very laggy, very choppy, near unplayable"* — and the host, who waits for nothing,
-   * felt fine, which is what pointed at the network path rather than the frame budget.
-   *
-   * **Every check this repo had was structurally incapable of seeing it**: they all ran
-   * over loopback, where the inter-arrival gap never exceeds 60ms, so the failure mode is
-   * unreachable. `tools/mp-jitter.ts` puts a modelled link in between and reproduces it.
-   *
-   * ## Re-clocking, not delaying — the distinction is the whole fix
-   *
-   * The first version of this measured as a total null, and it is worth knowing why: it
-   * held each snapshot for a fixed delay and then applied it. **A constant delay shifts
-   * every arrival equally and therefore preserves the gaps between them**, and jitter is
-   * variance in those gaps. Draining the queue on a fixed cadence is what actually spreads
-   * bunched arrivals back out and lets depth cover a late one.
-   */
-  private drainSnapshots(dt: number): void {
-    const d = this.dungeon;
-    if (!d || d.role !== "client") return;
-    this.netClock += dt;
-    if (this.snapQueue.length === 0 && !this.playing) return;
-
-    if (!this.playing) {
-      if (this.fillStartedAt < 0) this.fillStartedAt = this.netClock;
-      if (this.netClock - this.fillStartedAt < SNAPSHOT_BUFFER_MS / 1000) return;
-      this.playing = true;
-      this.playoutAt = this.netClock;
-    }
-    if (this.netClock < this.playoutAt) return;
-
-    if (this.snapQueue.length === 0) {
-      // Underrun. Re-fill before playing out again, or the buffer never recovers its depth
-      // and every later packet is late too.
-      this.playing = false;
-      this.fillStartedAt = -1;
-      return;
-    }
-    // A queue far deeper than the buffer is pure added lag with no smoothing left to buy,
-    // which happens after a stall or a tab regaining focus. Catch up by applying the
-    // backlog at once rather than trickling it out for the next several seconds.
-    const maxHeld = Math.ceil((SNAPSHOT_BUFFER_MS / 1000) * SNAPSHOT_HZ) + 2;
-    while (this.snapQueue.length > maxHeld) {
-      applySnapshot(d, this.snapQueue.shift()!, this.rosterNames(), this.inputLog);
-    }
-    applySnapshot(d, this.snapQueue.shift()!, this.rosterNames(), this.inputLog);
-    this.playoutAt += 1 / SNAPSHOT_HZ;
   }
 
   /**
@@ -605,9 +486,7 @@ export class Party {
       }
       case "snap": {
         const d = this.dungeon;
-        // Queued, never applied on arrival — see `drainSnapshots`. Applying here is what
-        // made the client's smoothness a direct function of the network's jitter.
-        if (d && d.role === "client") this.snapQueue.push(msg.s as Snapshot);
+        if (d && d.role === "client") applySnapshot(d, msg.s as Snapshot, this.rosterNames(), this.inputLog);
         return;
       }
       case "fx": {
