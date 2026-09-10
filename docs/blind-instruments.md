@@ -502,6 +502,61 @@ failure on the same visible path. And per item 11: audit liveness by process tab
 (`ps aux | awk '$3 > 15'`), not by expecting output — the process table answers in one
 command what watching a file cannot answer at all.
 
+## A fifteenth instance, a different species again: a cast is a place the typechecker stops being an instrument
+
+Under the owner's shared-loot ruling, a private method's signature changed —
+`collect(hero: Hero, p: Pickup)` in `src/game/dungeon.ts` became `collect(p: Pickup)`,
+because the method now pays every hero and must not be told who collected the drop.
+`npm run check` passed clean. `npm run relics` then failed four checks, all named as
+symptoms nowhere near the actual mistake — "picking one up puts it in the run's unbanked
+loot," "banking the floor puts it in the collection." The cause was two call sites away:
+`tools/relics.ts` reaches private methods through a `rig` helper — a Proxy behind an
+`as unknown as { ... }` with a hand-written declaration of the members it wants — and
+that declaration still said `collect(hero: Hero, p: Pickup): void`. **The cast is an
+assertion, so TypeScript type-checked the call against the stale declaration and never
+looked at the real method.** A `Hero` was passed where a `Pickup` belonged, the switch
+saw an undefined `kind`, nothing was credited, and four checks went red several steps
+downstream of the one-line arity mismatch that caused it.
+
+Every strongest guarantee this project leans on is compile-time — a required field that
+won't compile if omitted, `buildSprites()` returning `Record<SpriteName, …>`, a derived
+`worldScale` that cannot lie about a weapon's reach. "A rule that cannot be violated
+beats a check that notices when it was" is the house position, stated in CLAUDE.md itself.
+**This is the documented hole in that entire class of guarantee:** every
+`as unknown as {…}` in `tools/` is a place where a compile-time rule silently stops
+applying, and the hole is invisible at the call site because the code around it reads
+like ordinary typed code — nothing marks the boundary where the compiler quietly stopped
+checking. It is this document's own catching question turned on the type system rather
+than on a runtime check: *if the signature I changed were wrong, would the typechecker's
+green have told me?* Here the honest answer was no, for the same reason item 14's `tail`
+couldn't surface a dead process — the instrument (`tsc`) never saw the thing that
+changed, because the cast fed it a stale declaration instead.
+
+**What saved it, and what that implies about ordering.** Four *behavioural* checks in
+`npm run relics` caught the defect the typechecker couldn't — real evidence that the
+acceptance suite is doing exactly the job this document keeps asking whether an
+instrument can do. But every failure named a symptom nowhere near a stale type
+declaration, so a run-time arity mismatch hidden behind a cast is cheap to diagnose once
+suspected and expensive to find starting from the symptom alone — the same "several steps
+downstream" cost the earlier fixture and sentinel entries (items 9, 10, 12) all describe.
+
+**A remedy exists but wasn't built here, and it's worth recording as unfinished rather
+than closed:** the `rig` pattern could *derive* its declared members from the class
+(a mapped/`Pick`-style type off `Dungeon`) instead of hand-restating their signatures,
+which would turn a signature change into a compile error at every rig site — this
+project's preferred shape, per the house position quoted above. The pattern recurs in at
+least `tools/relics.ts`, `tools/named.ts` and `tools/raids.ts`; only the first was
+touched to fix this specific defect, so whether the other two carry the same latent gap
+is unverified.
+
+**How to apply:** treat every `as unknown as {…}` (or any hand-written interface standing
+in for a real class's private surface) as a place where `npm run check` has gone blind to
+that one relationship — a signature changed on either side of the cast can drift from the
+other without a compile error, and only a behavioural check downstream would ever notice,
+several steps removed from the actual line that broke. Comment the cast site saying so,
+the way the fix here does, until (or unless) the declaration is derived rather than
+hand-written.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
