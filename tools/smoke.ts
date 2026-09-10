@@ -81,7 +81,8 @@ import { decodePng } from "./png";
 import { existsSync, readFileSync } from "node:fs";
 import { RARITIES, rarityIndex } from "../src/data/rarity";
 import { rollItem } from "../src/game/item";
-import { MOD_COUNTS } from "../src/data/items";
+import { ITEM_TYPES, MOD_COUNTS } from "../src/data/items";
+import { MAX_TROPHY_CASES, trophyCaseCost } from "../src/data/trophies";
 import { STAT_KEYS } from "../src/data/mods";
 import { Rng } from "../src/core/rng";
 import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
@@ -1447,8 +1448,8 @@ console.log("\n=== the Citadel deck (the hub, on the tile lattice) ===");
   const kinds = all.stations.map((s) => s.kind).sort();
   const expected = ([
     "abyss", "altar", "comms", "convergence", "dive", "expedition", "forge", "hoard",
-    "memoryPortal", "quartermaster", "raidPortal", "starmap", "tower", "training", "vigil",
-    "warTable",
+    "memoryPortal", "quartermaster", "raidPortal", "starmap", "tower", "training",
+    "trophyHall", "vigil", "warTable",
   ] as string[]).sort();
   check("every station the deck used to hold is still on it",
     kinds.length === expected.length && kinds.every((k, i) => k === expected[i]),
@@ -3287,6 +3288,37 @@ console.log("\n=== gems and the wardrobe ===");
   // now keeps its answer.
   check("wearing everything fills every slot",
     COSMETIC_SLOTS.every((slot) => wornInSlot(dressed.appearance, slot, heldFamily) !== null));
+
+  // The Trophy Hall (docket §3) makes the same promise, the same way: a case is a
+  // picture of an item, not a second copy of it doing anything. Buy every case, put the
+  // best thing in the stash in each one, and check the sheet — and the stash itself —
+  // never moved.
+  const cased = geared(20, 4245, 10);
+  const itemRng = new Rng(4246);
+  cased.inventory = ITEM_TYPES.slice(0, MAX_TROPHY_CASES).map((_, i) =>
+    rollItem({ rarity: "mythic", type: ITEM_TYPES[i % ITEM_TYPES.length]!, ilvl: 60, rng: itemRng }));
+  const stashBefore = JSON.stringify(cased.inventory);
+  const modsBefore = JSON.stringify(cased.player.mods);
+  for (let i = 0; i < MAX_TROPHY_CASES; i++) {
+    cased.gems = 0;
+    check(`case ${i + 1} refuses with no gems`, !cased.buyTrophyCase());
+    cased.gems = trophyCaseCost(i);
+    if (!cased.buyTrophyCase()) throw new Error(`case ${i} should have been affordable`);
+    if (!cased.assignTrophy(i, cased.inventory[i]!)) throw new Error(`case ${i} should have accepted an item`);
+  }
+  cased.player.refresh();
+  check("every case is filled", Array.from({ length: MAX_TROPHY_CASES }, (_, i) => cased.trophyItem(i))
+    .every((it) => it !== null));
+  check("a displayed item is a copy, not the stash item itself",
+    cased.trophyItem(0) !== cased.inventory[0] && JSON.stringify(cased.trophyItem(0)) === JSON.stringify(cased.inventory[0]));
+  check("the stash never moved", JSON.stringify(cased.inventory) === stashBefore);
+  check("a fully-cased character's sheet is byte-identical to an uncased one",
+    JSON.stringify(cased.player.mods) === modsBefore);
+  check("clearing a case empties it without touching the stash",
+    (cased.clearTrophy(0), cased.trophyItem(0) === null && JSON.stringify(cased.inventory) === stashBefore));
+  check("a case past what's bought refuses a placement",
+    !cased.assignTrophy(MAX_TROPHY_CASES, cased.inventory[0]!));
+  check("gems actually left the account", cased.gems === 0);
 }
 
 console.log("\n=== combat stats overlay: powerless, like cosmetics ===");

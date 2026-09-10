@@ -317,7 +317,8 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
     // walks into one and confirms, and that portal becomes where everybody readies up. A
     // client pressing confirm at one is told so; the stations that don't start a run (the
     // Comms Relay, the Quartermaster, the Forge) stay open to everybody.
-    const startsARun = station.kind !== "comms" && station.kind !== "quartermaster" && station.kind !== "forge";
+    const startsARun = station.kind !== "comms" && station.kind !== "quartermaster"
+      && station.kind !== "forge" && station.kind !== "trophyHall";
     if (party.inRoom && startsARun && !party.isHost) {
       flash(party.plan
         ? `The host picked ${describeRun(party.plan.config)} — stand in that portal to ready up.`
@@ -368,6 +369,7 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
         state.player.fullHeal();
         enterDungeon(trainingConfig(state.challengerTier));
         break;
+      case "trophyHall": enterTown("Trophy"); break;
       case "vigil": enterTown("Vigil"); break;
       case "convergence": enterTown("Convergence"); break;
       case "memoryPortal": {

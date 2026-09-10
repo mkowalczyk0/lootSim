@@ -38,7 +38,11 @@ export type HubStationKind =
   // The build-tester room: the first second room the deck has ever had. One station,
   // one dummy, no config screen — walking in and confirming is the whole interaction,
   // the same as `dive`.
-  | "training";
+  | "training"
+  // The Trophy Hall (docs/docket.md §3): the second room to use the second-room seam
+  // the training room's own comment promised. One station opens the case-management
+  // screen; what's on display is drawn beside it in the world (`render/hub.ts`).
+  | "trophyHall";
 
 /**
  * The hall. One character per 32-unit tile; `#` is stone you cannot cross.
@@ -85,6 +89,11 @@ export type HubStationKind =
  * corridor, and a small walled room holding the training dummy's own station (`P`). It
  * is drawn from the painted deck's interior wall list the way every station already is
  * (`DECK_INTERIOR_WALLS`) rather than needing a rendering special case.
+ *
+ * **The Trophy Hall is the second second room** — the same seam, exercised again: a
+ * doorway at row 11 only (rows 10 and 12 keep the old wall solid, exactly the training
+ * room's buffer-row shape), leading into a room at columns 23-28, holding the Trophy
+ * Hall's one station (`Y`). Docket §3, `data/trophies.ts`, `docs/trophy-hall.md`.
  */
 const DECK: readonly string[] = [
   "##############################",
@@ -97,9 +106,9 @@ const DECK: readonly string[] = [
   "###..............######......#",
   "###.D..V...G...E..r.r.X......#",
   "###..............######..P...#",
-  "###..............#############",
-  "###p...b.n.s...pb#############",
-  "####.W..Q....F..##############",
+  "###..............######......#",
+  "###p...b.n.s...pb........Y...#",
+  "####.W..Q....F..#######......#",
   "#########.@###################",
   "##############################",
 ];
@@ -163,6 +172,7 @@ export const STATION_PROP: Record<HubStationKind, string | null> = {
   warTable: "prop.citadel-wartable",
   altar: "prop.citadel-altar",
   training: "prop.citadel-dummy",
+  trophyHall: "prop.citadel-trophy-case",
   // The portals are the shared summoning glyph turning over a ring cut into the floor, and
   // that is deliberate: a portal should read as the same promise wherever it stands, so it
   // is drawn rather than painted. `drawPortalPad` already grounds it in the flagstone.
@@ -175,7 +185,7 @@ const STATION_GLYPH: Record<HubStationKind, string> = {
   dive: "D", abyss: "A", hoard: "H", starmap: "R", expedition: "E",
   forge: "F", quartermaster: "Q", comms: "C", warTable: "W", raidPortal: "X",
   tower: "T", vigil: "V", convergence: "G", altar: "L", memoryPortal: "M",
-  training: "P",
+  training: "P", trophyHall: "Y",
 };
 
 export const DECK_COLS = DECK[0]!.length;

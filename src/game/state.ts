@@ -48,6 +48,7 @@ import {
 } from "../data/shop";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
+import { MAX_TROPHY_CASES, trophyCaseCost } from "../data/trophies";
 import { MOD_KEYS, type ModKey } from "../data/mods";
 import { universalPointsFor } from "../progression/universal";
 import {
@@ -265,6 +266,19 @@ export class GameState {
   gems = 0;
   /** Cosmetic ids pulled from capsules. Owning one is permanent. */
   cosmetics: string[] = [];
+  /**
+   * The Trophy Hall (`data/trophies.ts`, docs/docket.md §3): how many display cases this
+   * account has bought, 0-`MAX_TROPHY_CASES`, always the first N — a case is furniture at
+   * a fixed spot in the room, not a slot you pick, so there is nothing to index by id.
+   */
+  trophyCasesUnlocked = 0;
+  /**
+   * What's on display, one snapshot per case, account-wide — a walk-past hall of what this
+   * account has found, not what any one character is wearing. Read `trophies.ts`'s own
+   * header for why this is a frozen copy rather than a live binding: nothing here is ever
+   * read by the simulation, which is what keeps display power-free by construction.
+   */
+  trophyItems: (Item | null)[] = [];
   /** What the character looks like. Read by the renderer and the wardrobe, nothing else. */
   appearance: Appearance = defaultAppearance();
   /**
@@ -502,6 +516,46 @@ export class GameState {
       }
     }
     return pulls;
+  }
+
+  /** What's sitting in case `index`, or null — a case past what's unlocked reads as
+   *  empty rather than throwing, the same "past the edge is nothing" rule every other
+   *  fixed-slot read in this file follows. */
+  trophyItem(index: number): Item | null {
+    if (index < 0 || index >= this.trophyCasesUnlocked) return null;
+    return this.trophyItems[index] ?? null;
+  }
+
+  /** Buys the next locked case — always the first one not yet owned, since a case is a
+   *  fixed spot in the room and there is nothing to choose between them. */
+  buyTrophyCase(): boolean {
+    if (this.trophyCasesUnlocked >= MAX_TROPHY_CASES) return false;
+    const cost = trophyCaseCost(this.trophyCasesUnlocked);
+    if (this.gems < cost) return false;
+    this.gems -= cost;
+    this.trophyCasesUnlocked++;
+    return true;
+  }
+
+  /**
+   * Puts a snapshot of a stash item on display. A deep copy, never the item itself —
+   * `data/trophies.ts`'s own header says why: a case is furniture, not a container, and
+   * nothing about salvaging, selling or re-equipping the real item should ever have to
+   * ask a display case first. Refuses a case that isn't bought yet rather than silently
+   * no-opping, so a UI bug here fails loud in `tools/trophies.ts` instead of quietly
+   * losing a placement.
+   */
+  assignTrophy(index: number, item: Item): boolean {
+    if (index < 0 || index >= this.trophyCasesUnlocked) return false;
+    this.trophyItems[index] = structuredClone(item);
+    return true;
+  }
+
+  /** Empties a case. The original item was never touched, so there is nothing to return
+   *  to the stash — it was already there the whole time. */
+  clearTrophy(index: number): void {
+    if (index < 0 || index >= this.trophyCasesUnlocked) return;
+    this.trophyItems[index] = null;
   }
 
   /**
@@ -1262,6 +1316,8 @@ export class GameState {
       potions: this.potions,
       gems: this.gems,
       cosmetics: this.cosmetics,
+      trophyCasesUnlocked: this.trophyCasesUnlocked,
+      trophyItems: this.trophyItems,
       appearance: this.appearance,
       maxUnlockedDepth: this.maxUnlockedDepth,
       maxUnlockedHeight: this.maxUnlockedHeight,
@@ -1357,6 +1413,17 @@ export class GameState {
       );
       state.cosmetics = normalizeOwned(d.cosmetics);
       state.appearance = normalizeAppearance(d.appearance);
+      // Version 31 added the Trophy Hall (docs/docket.md §3); an older save owns no
+      // cases. Clamped rather than trusted, the same as every other fixed-slot count in
+      // this file — a hand-edited or corrupted save can't claim more cases than the room
+      // has, and a malformed item snapshot is dropped to an empty case instead of
+      // crashing the hall the way a retired cosmetic id is dropped rather than kept.
+      state.trophyCasesUnlocked = Math.max(0, Math.min(MAX_TROPHY_CASES,
+        Math.floor(Number(d.trophyCasesUnlocked ?? 0)) || 0));
+      state.trophyItems = Array.isArray(d.trophyItems)
+        ? (d.trophyItems as unknown[]).slice(0, MAX_TROPHY_CASES)
+          .map((it) => (it && typeof it === "object" ? it as Item : null))
+        : [];
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
       // A save from before the Tower has climbed nothing, which is the fresh value anyway.
       state.maxUnlockedHeight = Number(d.maxUnlockedHeight ?? 1);

@@ -64,6 +64,7 @@ import { previewForRun, type ActivityPreview } from "../data/previews";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
 import { WEAPONS, type WeaponFamily } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
+import { MAX_TROPHY_CASES, trophyCaseCost } from "../data/trophies";
 import {
   ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
   REBINDABLE_ACTIONS, SETTING_SPECS, type RebindableAction, type Settings,
@@ -125,7 +126,7 @@ const CYCLE_TABS = [
 ] as const;
 const STATION_TABS = [
   "Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Altar", "Party", "Vigil",
-  "Convergence",
+  "Convergence", "Trophy",
 ] as const;
 type StationTab = (typeof STATION_TABS)[number];
 export type Tab = (typeof CYCLE_TABS)[number] | StationTab;
@@ -134,7 +135,7 @@ const STATION_LABELS: Record<StationTab, string> = {
   Dive: "THE DELVE", Rifts: "RIFT PORTAL", StarMap: "THE ASHEN RELIQUARY", Craft: "THE FORGE",
   Party: "COMMS RELAY", Vigil: "THE VIGIL", Convergence: "THE CONVERGENCE",
   Tower: "THE TOWER", Raid: "THE WAR TABLE",
-  Altar: "THE ALTAR",
+  Altar: "THE ALTAR", Trophy: "THE TROPHY HALL",
 };
 
 /** The glyph an empty paper-doll slot shows in place of an item icon. */
@@ -262,6 +263,7 @@ function tabHelp(
         ? `${sel} choose a named item · ${e} forge it for exactly what it says · ${forgeToggle} switch to crafting`
         : `${sel} choose rarity · ${adj} essence · ${semi} category · ${e} craft · ${q} clear essence · ${forgeToggle} switch to reforging`;
     case "Party": return `${sel} select · ${e} do it · then the host walks into a portal and picks, and everyone walks into that portal`;
+    case "Trophy": return `${sel} choose a case · ${e} buy, place or clear it · ${q} back out of the stash picker`;
     case "Chests": return augmentView
       ? `${sel} pick a slot · ${adj} change what's in it · ${e} open · ${q} buy a key · ${semi} clear`
       : `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
@@ -382,6 +384,9 @@ export class TownUI {
   /** Which of the four raids the War Table is showing (UAT §15). A/D switches it, the
    *  cursor picks a tier — the Reliquary Gate's shape exactly. */
   private warTableRaid: RaidSpec = RAIDS[0]!;
+  /** The Trophy Hall (docket §3): which case is being assigned right now, or null when
+   *  the screen is showing the row of cases rather than a stash picker for one of them. */
+  private trophyPicking: number | null = null;
   private craftCategory: CraftCategory = "weapon";
   private craftEssence: Element | null = null;
   /** The Stash's mass-salvage: which ids the mouse has checked, and whether the "salvage
@@ -897,6 +902,9 @@ export class TownUI {
         ? this.reforgeCandidates().length
         : this.forgeMode === "named" ? craftableNamed().length : CRAFTABLE_RARITIES.length;
       case "Party": return this.partyRows().length;
+      case "Trophy": return this.trophyPicking !== null
+        ? this.filteredStash().length
+        : MAX_TROPHY_CASES;
       // Five loadout slots in the Augment view (the base chest plus one per axis), the
       // category's chests otherwise.
       case "Chests": return this.augmentView
@@ -1344,6 +1352,10 @@ export class TownUI {
         this.partyAction(this.partyRows()[this.cursor]);
         break;
       }
+      case "Trophy": {
+        this.trophyAction();
+        break;
+      }
       case "Dive": {
         if (!this.requireClass()) break;
         const depth = this.cursor + 1;
@@ -1774,6 +1786,13 @@ export class TownUI {
 
   private secondary(): void {
     switch (this.tab) {
+      case "Trophy": {
+        if (this.trophyPicking !== null) {
+          this.trophyPicking = null;
+          this.cursor = 0;
+        }
+        break;
+      }
       // Both ladders sell you a potion on the way in — same belt, same price.
       case "Tower":
       case "Dive": {
@@ -2086,6 +2105,7 @@ export class TownUI {
       case "Dive": return this.renderDive();
       case "Tower": return this.renderTower();
       case "Party": return this.renderParty();
+      case "Trophy": return this.renderTrophy();
       case "Rifts": return this.renderRifts();
       case "StarMap": return this.renderStarMap();
       case "Raid": return this.renderRaid();
@@ -2123,6 +2143,92 @@ export class TownUI {
     for (let i = 0; i < this.party.size; i++) rows.push({ kind: "member", index: i });
     rows.push({ kind: "leave" });
     return rows;
+  }
+
+  /**
+   * The Trophy Hall (docket §3): a row of cases, each locked, empty or holding a
+   * snapshot. Confirming a locked case buys it; confirming an empty one switches the
+   * screen to a stash picker (`trophyPicking`); confirming a filled one clears it — one
+   * screen, two modes, the same shape `craftMode`/`altarMode` already use elsewhere here.
+   */
+  private trophyAction(): void {
+    if (this.trophyPicking !== null) {
+      const item = this.filteredStash()[this.cursor];
+      if (item) {
+        this.state.assignTrophy(this.trophyPicking, item);
+        this.notify(`${item.name} goes on display.`, RARITY_COLORS[item.rarity]);
+      }
+      this.trophyPicking = null;
+      this.cursor = 0;
+      return;
+    }
+    const index = this.cursor;
+    if (index >= this.state.trophyCasesUnlocked) {
+      const cost = trophyCaseCost(this.state.trophyCasesUnlocked);
+      if (this.state.gems < cost) {
+        this.notify(`Need ${cost} gems for the next case.`, "#ef4444");
+        return;
+      }
+      this.state.buyTrophyCase();
+      this.notify(`Case ${index + 1} is yours.`, "#f0abfc");
+      return;
+    }
+    if (this.state.trophyItem(index)) {
+      this.state.clearTrophy(index);
+      this.notify("Case cleared.", "#9aa4b2");
+      return;
+    }
+    if (this.filteredStash().length === 0) {
+      this.notify("Nothing in the stash to put on display.", "#9aa4b2");
+      return;
+    }
+    this.trophyPicking = index;
+    this.cursor = 0;
+  }
+
+  private renderTrophy(): string {
+    const cls = this.state.heroClass;
+    if (this.trophyPicking !== null) {
+      const items = this.filteredStash();
+      const rows = items.map((it, i) => {
+        const on = i === this.cursor ? "on" : "";
+        const icon = pixelImageFit(itemArt(it), 48, 48, itemArtKey("item", it));
+        return `
+          <div class="row ${on}" data-index="${i}">
+            <div class="row-main">${icon}
+              <span class="name" style="color:${RARITY_COLORS[it.rarity]}">${escapeHtml(it.name)}</span>
+            </div>
+            <div class="row-side">${rarityLabel(it.rarity)} · score ${Math.round(itemScore(it, cls))}</div>
+          </div>`;
+      }).join("");
+      return `
+        <p class="muted">Case ${this.trophyPicking + 1} — pick something from the stash. It stays exactly
+          where it is; this only puts a copy on the shelf.</p>
+        <div class="stash-grid">${rows || '<div class="stash-none">The stash is empty.</div>'}</div>
+        <aside class="side"><p class="muted">${k(this.state.settings, "confirm")} place it ·
+          ${k(this.state.settings, "cancel")} back to the cases</p></aside>`;
+    }
+    const rows = Array.from({ length: MAX_TROPHY_CASES }, (_, i) => {
+      const on = i === this.cursor ? "on" : "";
+      const locked = i >= this.state.trophyCasesUnlocked;
+      const item = this.state.trophyItem(i);
+      const body = locked
+        ? `<span class="name muted">Locked</span><div class="row-side">${trophyCaseCost(i)} gems</div>`
+        : item
+          ? `${pixelImageFit(itemArt(item), 48, 48, itemArtKey("item", item))}
+             <span class="name" style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</span>
+             <div class="row-side">${rarityLabel(item.rarity)} · ${k(this.state.settings, "confirm")} to clear</div>`
+          : `<span class="name muted">Empty</span><div class="row-side">${k(this.state.settings, "confirm")} to place something</div>`;
+      return `<div class="row ${on}" data-index="${i}"><div class="row-main">${body}</div></div>`;
+    }).join("");
+    return `
+      <p class="muted">Display cases, bought with gems. What's in one is a copy — the real
+        item never leaves the stash, and nothing here changes your sheet.</p>
+      <div class="stash-grid">${rows}</div>
+      <aside class="side">
+        <p class="muted">Gems: ${this.state.gems}</p>
+        <p class="muted">${k(this.state.settings, "confirm")} buy, place or clear a case.</p>
+      </aside>`;
   }
 
   private partyAction(row: PartyRow | undefined): void {

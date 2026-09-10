@@ -186,6 +186,12 @@
 // exactly the reach they had — and only on its own family if it is an authored one,
 // because restoring it elsewhere would claim something the player will never see.
 //
+// 33 (2026-09-10): the Trophy Hall (`docs/trophy-hall.md`) — `trophyCasesUnlocked` and
+// `trophyItems` on `GameState`. A case holds a snapshot of an item, never the item
+// itself, so an older save loads owning no cases and having stashed nothing, which is
+// what a new account has. Claimed as 33 while 31 and 32 were still in flight and
+// assigned that number at merge; the claim list below did its job twice in one day.
+//
 // --- CLAIMED, NOT YET MERGED ------------------------------------------------
 // Bumping the version? Add your number to this list in the SAME commit that starts the
 // work, before you write anything else. Two branches claimed 31 on 2026-09-10 because
@@ -193,10 +199,11 @@
 // session's inbox does not exist for anybody else. This list is the only reservation
 // that counts, and it is here rather than in a doc because this is the line you have to
 // edit anyway.
+//   (nothing in flight)
 //
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.
-export const SAVE_VERSION = 32;
+export const SAVE_VERSION = 33;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to
