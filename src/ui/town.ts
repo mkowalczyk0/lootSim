@@ -269,11 +269,11 @@ function tabHelp(
     case "Chests": return augmentView
       ? `${sel} pick a slot · ${adj} change what's in it · ${e} open · ${q} buy a key · ${semi} clear`
       : `${sel} switch category · ${adj} browse chests · ${e} open · ${q} buy key · ${semi} bulk 1↔10`;
-    case "Shop": return `${sel} pick a slot · ${adj} switch tier · ${e} buy · ${q} reroll this slot`;
+    case "Shop": return `${sel} / ${adj} move · up onto the tabs to switch tier · ${e} buy · ${q} reroll this slot`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
       + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk · ${salvageAll} salvage all junk`);
-    case "Hero": return `${sel} pick a slot · ${e} unequip · on a relic slot, ${adj} browses your collection and ${e} sockets or removes`;
+    case "Hero": return `${sel} / ${adj} move — the relic row too · ${e} unequip, or open the relic picker on an empty one · ${q} back out of the picker`;
     case "Skills": return `${sel} / ${adj} move · up onto the bar to pick which slot, ${adj} to switch it · `
       + `${e} or click a card to set it there · ${q} clear the active slot`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
@@ -428,8 +428,6 @@ export class TownUI {
   private salvageArmed: string | null = null;
   /** Codex tab: which slice of a class's design the side panel is showing. */
   private codexView: 0 | 1 | 2 = 0;
-  /** Which owned relic the Hero screen's relic slot has highlighted (UAT §19). */
-  private relicPick = 0;
   /**
    * Skills (docket item 12): which of the three real slots a card click or `confirm`
    * fills. The grid itself (`cursor`, into `abilityPool`) and this are independent axes,
@@ -438,6 +436,17 @@ export class TownUI {
    * focus, and left/right there change this instead of the grid position.
    */
   private skillSlot = 0;
+  /**
+   * Which relic slot (0-based) the Hero screen is filling from a picker, or `null` when
+   * the doll is showing normally. Same shape as `trophyPicking` (docket #11 PM ruling,
+   * 2026-09-10): confirming an empty relic slot opens a picker over the whole collection
+   * instead of the old "step through candidates with A/D" browse, because A/D on a
+   * visually horizontal row (`.doll-locked` is `flex-wrap`) has to move along that row,
+   * not adjust something else — the exact complaint this docket item is about, one level
+   * deeper. The picker also shows the whole collection at once rather than cycling
+   * through it blind.
+   */
+  private relicPicking: number | null = null;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
   /** The same, for the universal tree's six paths. Its own field, since the two screens
@@ -603,8 +612,11 @@ export class TownUI {
         return;
       }
       const relicEl = target.closest<HTMLElement>("[data-relic]");
-      if (relicEl && this.tab === "Hero" && this.cursor >= EQUIP_SLOTS.length) {
-        this.socketRelicInto(this.cursor - EQUIP_SLOTS.length, relicEl.dataset.relic!);
+      if (relicEl && this.tab === "Hero" && this.relicPicking !== null) {
+        const slot = this.relicPicking;
+        this.socketRelicInto(slot, relicEl.dataset.relic!);
+        this.relicPicking = null;
+        this.cursor = EQUIP_SLOTS.length + slot;
         this.render();
         return;
       }
@@ -758,12 +770,10 @@ export class TownUI {
   refresh(): void {
     // A room filling up or emptying changes how many rows this screen has underneath a
     // cursor that was pointing at one of them.
-    // Stash and Skills allow cursor -1 (their bar above the grid has focus); every
-    // other tab floors at 0.
-    this.cursor = Math.max(
-      this.tab === "Stash" || this.tab === "Skills" ? -1 : 0,
-      Math.min(this.cursor, this.rowCount() - 1),
-    );
+    // Stash, Skills and Shop allow cursor -1 (a bar above the grid, or the tier tabs,
+    // has focus); every other tab floors at 0.
+    const floor = this.tab === "Stash" || this.tab === "Skills" || this.tab === "Shop" ? -1 : 0;
+    this.cursor = Math.max(floor, Math.min(this.cursor, this.rowCount() - 1));
     if (!this.root.hidden) this.render();
   }
 
@@ -845,14 +855,18 @@ export class TownUI {
 
     const count = this.rowCount();
 
-    // Stash, Hero, Skills and Reforge (Craft's other screen) are real 2-D grids:
-    // W/A/S/D walk them in both axes and A/D are spent on nothing but movement. Every
-    // other tab keeps the flat-list model — up/down walk the cursor, left/right adjust
-    // whatever that tab adjusts.
+    // Stash, Shop, Skills, the Hero doll and Reforge (Craft's other screen) are real 2-D
+    // grids: W/A/S/D walk them in both axes and A/D are spent on nothing but movement.
+    // Every other tab — including Hero while a relic picker is open, which is a flat
+    // list over the whole collection, the same shape `trophyPicking` already uses —
+    // keeps the flat-list model: up/down walk the cursor, left/right adjust whatever
+    // that tab adjusts.
     const reforgeGrid = this.tab === "Craft" && this.forgeMode === "reforge";
-    if (this.tab === "Stash" || this.tab === "Hero" || this.tab === "Skills" || reforgeGrid) {
+    const heroDoll = this.tab === "Hero" && this.relicPicking === null;
+    if (this.tab === "Stash" || this.tab === "Shop" || this.tab === "Skills" || heroDoll || reforgeGrid) {
       const walk = (dx: number, dy: number) => {
         const moved = this.tab === "Stash" ? this.navStash(dx, dy)
+          : this.tab === "Shop" ? this.navShop(dx, dy)
           : this.tab === "Skills" ? this.navSkills(dx, dy)
           : reforgeGrid ? this.navReforge(dx, dy)
           : this.navHero(dx, dy);
@@ -959,7 +973,9 @@ export class TownUI {
         : CHEST_CATEGORIES[this.chestCategory]!.tiers.length;
       case "Shop": return SHOP_TIERS[this.shopTier].slots;
       case "Stash": return this.filteredStash().length;
-      case "Hero": return EQUIP_SLOTS.length + RELIC_SLOTS;
+      case "Hero": return this.relicPicking !== null
+        ? this.relicCandidates().length
+        : EQUIP_SLOTS.length + RELIC_SLOTS;
       // The whole learnable pool, not just the three equipped slots (docket item 12) —
       // `navSkills` walks this exact array as the card grid.
       case "Skills": return this.state.player.abilityPool.length;
@@ -1035,12 +1051,6 @@ export class TownUI {
       this.cursor = (this.cursor + dir + tiers.length) % tiers.length;
       return true;
     }
-    if (this.tab === "Shop") {
-      const i = SHOP_TIER_IDS.indexOf(this.shopTier);
-      this.shopTier = SHOP_TIER_IDS[(i + dir + SHOP_TIER_IDS.length) % SHOP_TIER_IDS.length]!;
-      this.cursor = 0;
-      return true;
-    }
     if (this.tab === "Leaderboards") {
       this.lbBoardIdx = (this.lbBoardIdx + dir + LEADERBOARD_BOARDS.length) % LEADERBOARD_BOARDS.length;
       return true;
@@ -1100,12 +1110,6 @@ export class TownUI {
       if (this.keybindRowAction(this.cursor)) return false; // rebind is E; A/D do nothing here
       if (this.cursor < SETTING_SPECS.length) return this.toggleSetting(this.cursor);
       return false;
-    }
-    if (this.tab === "Hero" && this.cursor >= EQUIP_SLOTS.length) {
-      const n = this.relicCandidates().length;
-      if (n === 0) return false;
-      this.relicPick = (this.relicPick + dir + n) % n;
-      return true;
     }
     if (this.tab === "Stash") {
       // The ◀ ▶ chips in the aside still adjust the rarity filter for the mouse; the
@@ -1193,6 +1197,39 @@ export class TownUI {
   }
 
   /**
+   * 2-D movement across the Shop. Same shape as `navStash` — `cursor < 0` means the tier
+   * tab strip has focus (A/D there cycle `shopTier`, the same tabs `data-shop-tier`
+   * clicks hit) and S drops back into the listing grid, which shares `.stash-grid` with
+   * the Stash and reads its column count off the same `stashColumns()`. Before this, the
+   * Shop tab fell into the flat-list branch below: up/down walked the cursor one slot at
+   * a time regardless of the grid's real column count, and A/D were spent entirely on
+   * switching tier (`adjust()`'s old Shop case) — the grid itself never took A/D at all.
+   */
+  private navShop(dx: number, dy: number): boolean {
+    const n = SHOP_TIERS[this.shopTier].slots;
+    const cycleTier = (dir: number): boolean => {
+      const i = SHOP_TIER_IDS.indexOf(this.shopTier);
+      this.shopTier = SHOP_TIER_IDS[(i + dir + SHOP_TIER_IDS.length) % SHOP_TIER_IDS.length]!;
+      this.cursor = 0;
+      return true;
+    };
+    if (n === 0) { this.cursor = -1; return dx !== 0 && cycleTier(dx); }
+    if (this.cursor < 0) {
+      if (dx !== 0) return cycleTier(dx);
+      if (dy > 0) { this.cursor = 0; return true; }
+      return false;
+    }
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /**
    * 2-D movement across the Reforge screen — the card grid, *and* the workbench bar
    * beneath it, as one continuous space rather than a grid plus a separate sidebar.
    * "Down" off the cards' last row drops onto the op bar; "up" off the bar's top row
@@ -1263,14 +1300,60 @@ export class TownUI {
     ["gloves", "ring", "necklace"],
   ];
 
-  /** 2-D movement across the Hero equipment slots, following the drawn column layout. */
+  /**
+   * 2-D movement across the Hero paper-doll. The CSS grid (`.doll`'s
+   * `grid-template-areas`) is two columns on top of one full-width row — "left centre
+   * right" over "locked locked locked", and that bottom row is drawn `flex-wrap` (see
+   * `.doll-locked` in styles.css) so the relic slots genuinely sit side by side. The
+   * relic slots are the interactive tail of that row (`renderHero`'s
+   * `EQUIP_SLOTS.length + i` indices). The old version only knew about the two top
+   * columns: any cursor value past `EQUIP_SLOTS.length` fell through
+   * `EQUIP_SLOTS[this.cursor] ?? "weapon"` and was silently treated as "weapon", so a
+   * relic slot could be clicked into but never reached — or escaped — with the movement
+   * keys. This is the same "drop down into a row below the grid" shape `navReforge`
+   * already uses for the workbench bar, not a new pattern.
+   *
+   * A/D walk the relic row exactly like the doll's own columns — a visually horizontal
+   * row moving on A/D is the literal thing docket #11 asks for, and an early version of
+   * this fix put candidate-browsing on A/D instead (matching what `tabHelp()` used to
+   * say); the PM ruling on 2026-09-10 was that A/D must stay on movement here too, and
+   * browsing moved to `relicPicking`, a picker screen entered with confirm (mirroring
+   * `trophyPicking`) rather than stepped through blind on the doll itself. W/S enter and
+   * leave the row.
+   */
   private navHero(dx: number, dy: number): boolean {
     const layout = TownUI.DOLL_LAYOUT;
+    const relicIndex = this.cursor - EQUIP_SLOTS.length;
+
+    if (relicIndex >= 0) {
+      if (dx !== 0) {
+        const next = clamp(relicIndex + dx, 0, RELIC_SLOTS - 1);
+        if (next === relicIndex) return false;
+        this.cursor = EQUIP_SLOTS.length + next;
+        return true;
+      }
+      if (dy < 0) {
+        // Back up onto whichever column sits roughly above this relic slot — there's no
+        // stored "which column were you last in", so this is an honest nearest-column
+        // guess rather than a remembered position, same as landing anywhere else on a
+        // full-width row that spans both columns above it.
+        const col = clamp(relicIndex, 0, layout.length - 1);
+        const bottomRow = layout[col]!.length - 1;
+        this.cursor = EQUIP_SLOTS.indexOf(layout[col]![bottomRow]!);
+        return true;
+      }
+      return false; // dy > 0: the relic row is the bottom of the doll, nothing below it
+    }
+
     const cur = EQUIP_SLOTS[this.cursor] ?? "weapon";
     let col = layout.findIndex((c) => c.includes(cur));
     if (col < 0) col = 0;
     let row = Math.max(0, layout[col]!.indexOf(cur));
     if (dx !== 0) col = clamp(col + dx, 0, layout.length - 1);
+    if (dy > 0 && row === layout[col]!.length - 1) {
+      this.cursor = EQUIP_SLOTS.length; // off the bottom of a column, into the relic row
+      return true;
+    }
     if (dy !== 0) row = row + dy;
     row = clamp(row, 0, layout[col]!.length - 1);
     const next = EQUIP_SLOTS.indexOf(layout[col]![row]!);
@@ -1657,16 +1740,25 @@ export class TownUI {
         break;
       }
       case "Hero": {
+        if (this.relicPicking !== null) {
+          const pick = this.relicCandidates()[this.cursor];
+          const slot = this.relicPicking;
+          if (pick) this.socketRelicInto(slot, pick.id);
+          this.relicPicking = null;
+          this.cursor = EQUIP_SLOTS.length + slot;
+          break;
+        }
         const relicSlot = this.cursor - EQUIP_SLOTS.length;
         if (relicSlot >= 0) {
           const worn = this.state.player.relics[relicSlot];
           if (worn) {
             this.state.unsocketRelic(relicSlot);
             this.notify(`Took off ${RELIC_BY_ID[worn]?.name ?? worn}`);
+          } else if (this.relicCandidates().length === 0) {
+            this.notify("Nothing to socket yet. Relics are found, not made.", "#9aa4b2");
           } else {
-            const pick = this.relicCandidates()[this.relicPick];
-            if (pick) this.socketRelicInto(relicSlot, pick.id);
-            else this.notify("Nothing to socket yet. Relics are found, not made.", "#9aa4b2");
+            this.relicPicking = relicSlot;
+            this.cursor = 0;
           }
           break;
         }
@@ -1863,6 +1955,14 @@ export class TownUI {
         if (this.trophyPicking !== null) {
           this.trophyPicking = null;
           this.cursor = 0;
+        }
+        break;
+      }
+      case "Hero": {
+        if (this.relicPicking !== null) {
+          const slot = this.relicPicking;
+          this.relicPicking = null;
+          this.cursor = EQUIP_SLOTS.length + slot;
         }
         break;
       }
@@ -4445,36 +4545,58 @@ export class TownUI {
   }
 
   /**
-   * The side panel for a relic slot: what's in it, and the collection to fill it from.
-   * Every candidate is a clickable row; the keyboard walks them with the adjust keys.
+   * The side panel for a relic slot when the doll is showing normally (not picking):
+   * what's in it, or a prompt to open the picker. `renderRelicPicker` is the picker
+   * itself, opened separately by `primary()`.
    */
-  private renderRelicPanel(slot: number): string {
-    const p = this.state.player;
+  private renderRelicSlotPanel(slot: number): string {
     const e = k(this.state.settings, "confirm");
-    const adj = `${k(this.state.settings, "left")} / ${k(this.state.settings, "right")}`;
-    const worn = p.relics[slot] ? RELIC_BY_ID[p.relics[slot]!] : undefined;
+    const id = this.state.player.relics[slot];
+    const worn = id ? RELIC_BY_ID[id] : undefined;
+    return worn
+      ? `${this.renderRelicLore(worn)}<p class="muted">${e} takes it off.</p>`
+      : `<h3>Relic slot ${slot + 1}</h3><p class="muted">Empty. ${e} to browse your collection.</p>`;
+  }
+
+  /**
+   * The relic picker (docket #11, PM ruling 2026-09-10): a flat list over the whole
+   * collection, replacing the doll entirely while it's open — the same shape
+   * `trophyPicking`'s stash picker already uses for the Trophy Hall. Up/down walk it
+   * (`rowCount()` reads `relicCandidates().length` while `relicPicking !== null`),
+   * confirm sockets the highlighted one, clicking a row does the same thing through the
+   * identical `socketRelicInto` call, and cancel backs out untouched. Replaces the old
+   * always-visible "browse with A/D" list, which put movement keys on a second axis and
+   * cycled the collection blind one name at a time instead of showing all of it.
+   */
+  private renderRelicPicker(slot: number): string {
+    const p = this.state.player;
     const candidates = this.relicCandidates();
-    if (this.relicPick >= candidates.length) this.relicPick = 0;
-    const list = candidates.length === 0
-      ? `<p class="muted">You own none yet. Artifacts come out of the Abyssal Rift; Relics from a Legend's Proving, the bottom of the Delve and the Abyss's deepest tiers.</p>`
-      : `<ul class="pulls">${candidates.map((d, i) => {
-          const wornElsewhere = p.relics.indexOf(d.id);
-          const blocker = wornElsewhere === slot ? "in this slot" : p.relicBlocker(slot, d.id);
-          const info = RELIC_TIER_INFO[d.tier];
-          return `<li data-relic="${d.id}" style="cursor:pointer;${i === this.relicPick ? "background:var(--panel)" : ""}">
-            <b style="color:${blocker && wornElsewhere !== slot ? "#5a6270" : info.color}">${i === this.relicPick ? "▸ " : ""}${escapeHtml(d.name)}</b>
-            <span class="muted">${info.label.toLowerCase()}${blocker ? ` · ${escapeHtml(blocker)}` : ""}</span>
-            <em>${escapeHtml(d.description)}</em></li>`;
-        }).join("")}</ul>`;
-    const wornBlock = worn
-      ? `${this.renderRelicLore(worn)}<p class="muted">[${e}] takes it off.</p>`
-      : `<h3>Relic slot ${slot + 1}</h3><p class="muted">Empty. ${adj} to browse what you own, [${e}] to socket the highlighted one, or click it.</p>`;
-    return `${wornBlock}
-      <h3>Your collection <span class="muted">${this.state.relics.length} / ${RELICS.length}</span></h3>
-      ${list}`;
+    const rows = candidates.map((d, i) => {
+      const wornElsewhere = p.relics.indexOf(d.id);
+      const blocker = wornElsewhere === slot ? "in this slot" : p.relicBlocker(slot, d.id);
+      const info = RELIC_TIER_INFO[d.tier];
+      return `
+        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}" data-relic="${d.id}">
+          <div class="row-main">
+            <span class="name" style="color:${blocker && wornElsewhere !== slot ? "#5a6270" : info.color}">${escapeHtml(d.name)}</span>
+          </div>
+          <div class="row-side">${info.label.toLowerCase()}${blocker ? ` · ${escapeHtml(blocker)}` : ""}</div>
+        </div>`;
+    }).join("");
+    const sel = candidates[this.cursor];
+    return `
+      <p class="muted">Relic slot ${slot + 1} — pick something from your collection
+        (${this.state.relics.length} / ${RELICS.length} found).</p>
+      <div class="stash-grid">${rows || `<div class="stash-none">You own none yet. Artifacts come out of the `
+        + `Abyssal Rift; relics from a Legend's Proving, the bottom of the Delve, and the Abyss's deepest tiers.</div>`}</div>
+      <aside class="side">
+        ${sel ? this.renderRelicLore(sel) : `<p class="muted">Nothing to socket yet.</p>`}
+        <p class="muted">${k(this.state.settings, "confirm")} socket it · ${k(this.state.settings, "cancel")} back to the doll</p>
+      </aside>`;
   }
 
   private renderHero(): string {
+    if (this.relicPicking !== null) return this.renderRelicPicker(this.relicPicking);
     const p = this.state.player;
     const cls = p.heroClass;
     const a = this.state.appearance;
@@ -4511,7 +4633,7 @@ export class TownUI {
     const selSlot = EQUIP_SLOTS[this.cursor];
     const selItem = selSlot ? p.equipment[selSlot] : undefined;
     const selPanel = relicSlot >= 0
-      ? this.renderRelicPanel(relicSlot)
+      ? this.renderRelicSlotPanel(relicSlot)
       : selItem
         ? this.renderEquipped(selItem)
         : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
