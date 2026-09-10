@@ -397,6 +397,31 @@ be different if the defect were true?* — doesn't apply here, because nothing m
 at all; a person looking is the only reason this entry exists, which is evidence for
 needing that habit, not evidence that any instrument already in place would have caught it.
 
+## A thirteenth instance, the far end of item 6's family: nobody had enumerated which worktrees could even run a gate
+
+Gating `docs/blind-instruments` itself tonight turned up a worktree with no `node_modules`
+at all — never `npm install`ed, because it had only ever been used for editing this file
+until tonight asked it to run one. `npm test` died immediately on `sh: tsc: command not
+found`.
+
+Zoomed out, this is item 6's collision hazard from the other side. Eleven worktrees
+tonight were symlinked into a shared install (item 6's actual hazard — one `esbuild` racing
+another's bundle); at least four others, this one included, had no install whatsoever. So
+"the gate is green here" was never one claim tonight — depending on which directory a
+session happened to be standing in, it meant a real isolated run, a raced shared-cache run,
+or nothing ran at all. Nobody had enumerated which worktrees were in which state before
+hitting each one in practice, the same shape as item 11's unaudited machine: the variable
+existed the whole time and simply hadn't been asked about.
+
+**The saving grace, worth stating precisely because it's the asymmetry that matters:** of
+the three states, only the symlinked one is a genuine blind instrument — it produces a
+plausible, contaminated green. The empty one failed *loudly*, on the very first step that
+needed a binary, with a message that named exactly what was missing. A check that dies
+noisily on missing infrastructure is not this document's subject; a check that runs to a
+convincing green on missing or wrong infrastructure is. 56's harness fix already closes the
+dangerous case (refuses the symlinked path outright); the empty case needed nothing beyond
+noticing it, once assumed, was cheap: `npm ci` and a re-run.
+
 ## A different failure, and this document has no slot for it: seen and skipped, not unseen
 
 Every entry above is an instrument — human-built or otherwise — that could not see the thing it
