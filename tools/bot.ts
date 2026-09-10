@@ -26,6 +26,7 @@ import type { RunConfig } from "../src/data/modes";
 import { Dungeon, inTelegraph, type Hero, type HeroSetup } from "../src/game/dungeon";
 import { itemScore, rollItem } from "../src/game/item";
 import { circleHitsWall, FlowField } from "../src/game/level";
+import { UNIVERSAL_TREE } from "../src/progression/universal";
 import { GameState, POTION_PRICE } from "../src/game/state";
 
 export const DT = 1 / 60;
@@ -605,6 +606,49 @@ export function townVisit(state: GameState): void {
 }
 
 /** Levels a character up to `level` and dresses it, so a boss test isn't a naked one. */
+/**
+ * Spends every tree point the character is owed — class tree and universal tree — greedily.
+ *
+ * This exists because for most of this project's life the shared bot did not spend any.
+ * `geared()` allocated nothing and never set a frontier (so `GameState.universalPoints`
+ * was 0), and `campaign()` finished a 20-dive run holding 4-6 unspent class points and
+ * 2-5 unspent universal points. Every campaign depth, balance threshold and difficulty
+ * figure this repo has ever quoted described a character with an empty build, while
+ * `docs/progression-architecture.md` says the class tree is most of what a class *is*.
+ *
+ * It surfaced as a disagreement about a game number, not as an obviously broken harness:
+ * `tools/powercurve.ts` read depth 28 as needing level 90 in Legendary gear where
+ * `docs/difficulty-curves.md` §3 measured a 4/4 clear at level 45. `tools/curves.ts`'s own
+ * `character()` had always armed both trees; nothing built on `geared()` ever had, and the
+ * two instruments had never been compared. Armed, the sweep reads 35 and they agree.
+ *
+ * The greedy order is `tools/curves.ts`'s, kept deliberately identical so the two builders
+ * produce comparable characters. It is not an optimal build — it will take a keystone
+ * whose downside a real player might refuse — so it is a floor on what a built character
+ * has, not a ceiling.
+ */
+export function armTrees(state: GameState): GameState {
+  for (let pass = 0; pass < 40; pass++) {
+    let moved = false;
+    for (const node of state.player.tree) {
+      if (!state.player.allocated.includes(node.id) && state.player.allocate(node)) moved = true;
+    }
+    if (!moved) break;
+  }
+  for (let pass = 0; pass < 40; pass++) {
+    let moved = false;
+    for (const node of UNIVERSAL_TREE) {
+      const available = state.universalPoints - state.player.universalSpent;
+      if (available <= 0) break;
+      if (!state.player.universalAllocated.includes(node.id)
+          && state.player.allocateUniversal(node, available)) moved = true;
+    }
+    if (!moved) break;
+  }
+  state.player.refresh();
+  return state;
+}
+
 export function geared(level: number, seed = 5150, keys = 14, classId?: ClassId): GameState {
   const state = new GameState(seed);
   // The class comes first: chest rolls favour the weapons it was built for.
@@ -625,6 +669,14 @@ export function geared(level: number, seed = 5150, keys = 14, classId?: ClassId)
     const weapon = rollItem({ rarity: "rare", type: family, ilvl: level, rng: new Rng(seed ^ 0x51ed) });
     state.player.equip(weapon);
   }
+  // A frontier, or `universalPoints` is 0 and the universal half of `armTrees` has nothing
+  // to spend. `level + 1` is `tools/curves.ts`'s own default for the same reason, kept
+  // identical so the two builders stay comparable. This is part of the arming, not a
+  // separate change: the delta the owner approved (dps x4.50 vs x4.04, eHP x15.2 vs x8.9
+  // over levels 5-60) was measured with it set.
+  state.player.deepestDepth = Math.max(state.player.deepestDepth, level + 1);
+  state.stats.deepestDepth = Math.max(state.stats.deepestDepth, level + 1);
+  armTrees(state);
   state.player.fullHeal();
   state.potions = 5;
   return state;
@@ -655,6 +707,11 @@ export function campaign(
 
   for (let dive = 0; dive < dives; dive++) {
     townVisit(state);
+    // Per dive, not once at the start: the character levels up as the campaign runs, so
+    // points earned mid-run would otherwise sit unspent exactly as they used to. Called
+    // here rather than inside `townVisit`, which is shared with
+    // `tools/universal-reachability.ts` and is deliberately left alone.
+    armTrees(state);
     const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge, onTick);
     if (log) {
       console.log(
