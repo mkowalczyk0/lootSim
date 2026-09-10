@@ -4,11 +4,108 @@ The design record for the animation subsystem. `src/render/anim.ts` is the whole
 logic, `src/render/atlas/manifest.ts` holds the tables, and `npm run anim`
 (`tools/anim.ts`, in the `npm test` chain) is the gate.
 
-**Phase 1 shipped the architecture and the gate with no art in them.** Zero rows in
-`ATLAS` carry an `anim` table today and the game draws exactly what it drew before. That
-is the intended state, not an unfinished one — the fallback ladder means art can arrive
-one sprite at a time, and a sprite that never gains an animation is not a sprite that is
-behind.
+**The method below is proven end to end and three raid bosses are animated through it** —
+`boss.ferryman`, `boss.war-queen` and `boss.exiled-tyrant` each carry an `idle` and a `cast`
+wind-up. Everything after the method is either the architecture it runs on or the record of
+what each step cost to find; **the failures are kept because every one of them is a
+generation the next person does not have to spend.**
+
+A sprite with no `anim` table is a static single frame and behaves exactly as it did before
+any of this existed. That is a supported state, not a backlog item: the fallback ladder means
+art arrives one sprite at a time, and a boss that never gains an animation is not behind.
+
+## Picking this up: the method, in order
+
+Everything below is a thing that cost a session to find. Doing them out of order wastes
+generations rather than failing loudly, which is why the order is written down.
+
+**1. Check the accent BEFORE you animate, and count PIXELS, not brightness.** `npm run
+chroma` is the check. If the sprite is weak on §1.4's hot accent, fix it on the **source
+sprite** and only then generate.
+
+> **This step used to say "the generator dims accents by 39%, so start near 50". That
+> explanation is retired — it is wrong, and reaching for a brighter colour because of it
+> wastes generations.** The same generator call across four bosses:
+>
+>     boss.war-queen           91.8, many px         -> 90.6-91.8 in every frame
+>     boss.exiled-tyrant       76.1, many px         -> 62.7-76.1 in every frame
+>     boss.ferryman            49.8, 2 px            -> holds, once the TARGET is lit too
+>     boss.labyrinth-minotaur  45.5, ONE px per eye  -> 22.4 in every frame
+>
+> The Minotaur is not the dimmest and is the only failure. **What survives generation is
+> redundancy, not intensity** — an accent carried by one or two pixels has no margin, and a
+> single shade of drift destroys it as far as any 2+-pixel measure is concerned. Starting
+> brighter has been tried on that sprite twice, from `#a855f7` at 63.5, and did not help.
+
+So: an accent on many pixels needs nothing. An accent on **two** pixels survives only if the
+pinned target carries it too (step 3) — that is what `art/anim/target-accent.py` is for. An
+accent on **one** pixel per feature does not survive at all, and widening it is a change to
+shipped art that wants the owner rather than a session; `art/bosses/minotaur-accent.py` is
+the worked example, measured and deliberately not applied.
+
+Whatever you paint, paint it on the **source**, never on a finished strip. The feature moves
+between frames as the body does (the Ferryman's eye sits on rows 15/16/18/19/17 through its
+idle), so repairing a strip is per-frame coordinate work that invalidates the moment anything
+is regenerated. `art/bosses/warden-accent.py` and `art/bosses/ferryman-accent.py` are the
+other worked examples; every one of these asserts each target pixel's current value before
+painting, so a redrawn sprite fails loudly instead of getting two bright pixels somewhere in
+its robe.
+
+**2. Convert the sprite with `art/pixellab-upload.py`, never by hand.** Sending a committed
+PNG's bytes inline fails, and the error blames truncation, which is misleading — the RGBA
+original arrives at the *right byte count* and still will not decode. It is corruption, and
+what corrupts is **long runs of identical base64 characters**. An indexed PNG with PIL's
+default 256-entry palette fails for that reason (its unused entries are zeros); the same
+image with the palette trimmed to the colours actually used goes through. Padding after
+`IEND` does not help. The script does the conversion, asserts pixel-exactness, and refuses
+rather than silently sending altered art. It is still occasionally rejected — retry, it is
+intermittent.
+
+**3. Generate with `animate_image`, `no_background: true`.** Passing `false` flattens a
+transparent sprite onto **white**. `animate_character`/`animate_object` are not options here:
+they need an id of something PixelLab generated, and the committed boss art is not that.
+
+For an **idle**, that is the whole step — a loop is what an idle wants, and a loop is what
+this tool reliably makes.
+
+For a **cast wind-up** it is three calls, because a wind-up must build and END at its extreme
+and free-form generation cannot do that (the section below has the measurements). In order:
+
+- **3a. Harvest a target pose.** Run `animate_image` free-form and keep the peak frame. You
+  are using the loop generator as a *pose* generator — asking it for the one thing it does
+  well instead of the thing it demonstrably cannot. A rejected generation already in
+  `art/anim/raw/` may already hold a usable pose; the Ferryman's target is the peak frame of
+  one of the three original rejections. Otherwise commission one, at two generations.
+  **Prompt for AMPLITUDE, not for wind-up shape**, and on a full canvas amplitude means a
+  **turn**: measured on three bosses, prompts that coil or fold in place gave 17% and 21% of
+  silhouette change from rest — under `windup-check.py`'s 25% bar — while "pivots a quarter
+  turn to present one shoulder" gave 32% and 40% on those same sprites. Nothing can extend
+  past the frame (see "A wind-up may not extend the silhouette"), so reorienting the whole
+  body is the only large change available.
+- **3b. Light the target** with `art/anim/target-accent.py` if the accent is small. With a
+  pinned ending there are **two** source sprites and step 1 applies to both — this was the
+  whole difference between the Ferryman's accent surviving and dying.
+- **3c. Pin it**, passing the target as `last_frame_base64`. The final frame usually comes
+  back byte-identical to what you pinned, so the pose the player reads at the instant of the
+  hit is a file you chose rather than something the generator invented. *Usually* — one run
+  in four finished 3.5% away, which is why step 4 is not optional.
+
+**4. Run `art/anim/windup-check.py` on any cast candidate BEFORE stripping it.** It exits
+non-zero on a sequence that does not build monotonically and end at its extreme. Pass the
+target as a second argument for a pinned run and it asserts the stronger property instead —
+that the approach to the target is monotonic and the last frame lands on it exactly. Idles
+do not need this; loop-shaped motion is what an idle wants.
+
+**5. Assemble with `art/anim/strip.py`,** passing **every tag in one invocation**
+(`idle=<dir> cast=<dir>`), because the tags share one strip and therefore one trim — trimming
+per tag is invisible until the boss starts casting, and then the body jumps. `:drop=<i>`
+removes the penultimate-frame retreat — expect it, it reproduced on four of five
+pinned runs (see "The penultimate frame backs off, systematically"). It prints the `ATLAS` row including
+the `worldScale` that keeps the world footprint fixed.
+
+**6. `npm test`.** The gate checks the strip is `w * cols` wide, the tags name frames that
+exist, the frame rects tile the strip, and — for an animated monster or boss — that the hot
+accent is present in **every** frame rather than only the strip as a whole.
 
 ## The seam: the simulation never knows about animation
 
@@ -147,7 +244,7 @@ what the gate checks it against.
 > `hero.legend-base` an `anim` table, or the hero is the one sprite whose animation fails
 > the gate next door.
 
-## Making the art (Phase 2)
+## The art scripts, and why each one exists
 
 Two scripts sit next to the raws, following the pattern `art/bosses/finish.ts` states for
 every art batch: **a treatment that lives in a script survives a re-roll; one applied by
@@ -176,7 +273,7 @@ committed boss art is not that. Cost is about one generation per short animation
 sizes. Pass `no_background: true` — the default follows the input, but passing `false`
 flattens a transparent sprite onto **white**.
 
-## Wind-ups: free-form does not work, a pinned ending does
+## Wind-ups: the evidence behind step 3
 
 **`animate_image` free-form cannot produce a cast wind-up, and this is measured rather than
 felt.** Three raid bosses were generated with prompts that named the requirement explicitly
@@ -313,78 +410,14 @@ pipeline rather than in whoever remembers to do it.
 Idles are unaffected by all of this — a loop-shaped motion is exactly what an idle wants,
 which is why `boss.ferryman`'s shipped fine.
 
-## Picking this up: the method, in order
-
-Everything below is a thing that cost a session to find. Doing them out of order wastes
-generations rather than failing loudly, which is why the order is written down.
-
-**1. Measure the boss's accent BEFORE you animate it, and leave HEADROOM.** `npm run chroma`
-is the check. If the sprite is missing or weak on §1.4's hot accent, fix it on the **source
-sprite** and only then generate — the generator carries the accent through into every frame.
-
-Headroom is the part that is easy to miss. **The generator does not preserve an accent's
-intensity; it dims it.** Measured on the Minotaur: violet eyes at 45.5 on the still came
-back at 27.8 across four of five frames — a 39% drop, and 27.8 is *below* the hero's own
-skin at 30.2, so the accent had dimmed until it was no longer an accent. A still that merely
-passes the gate can therefore produce a strip that fails it. Start near 50 or above, so a
-39% drop still clears the hero's floor. Note the element palette entry is not always enough
-on its own: void is `#c084fc`, a *light* violet that only reads 47.1, so the Minotaur uses
-the saturated step of the same ramp (`#a855f7`, 63.5) instead. Repairing
-a finished strip is a treadmill: the eye *moves between frames* because the head drifts
-through the animation (rows 15/16/18/19/17 on the Ferryman), so it is per-frame coordinate
-work, and it invalidates the moment anything is regenerated. `art/bosses/warden-accent.py`
-and `art/bosses/ferryman-accent.py` are the worked examples; both assert every target pixel's
-current value before painting, so a redrawn sprite fails loudly instead of getting two bright
-pixels somewhere in its robe.
-
-**2. Convert the sprite with `art/pixellab-upload.py`, never by hand.** Sending a committed
-PNG's bytes inline fails, and the error blames truncation, which is misleading — the RGBA
-original arrives at the *right byte count* and still will not decode. It is corruption, and
-what corrupts is **long runs of identical base64 characters**. An indexed PNG with PIL's
-default 256-entry palette fails for that reason (its unused entries are zeros); the same
-image with the palette trimmed to the colours actually used goes through. Padding after
-`IEND` does not help. The script does the conversion, asserts pixel-exactness, and refuses
-rather than silently sending altered art. It is still occasionally rejected — retry, it is
-intermittent.
-
-**3. Generate with `animate_image`, `no_background: true`.** Passing `false` flattens a
-transparent sprite onto **white**. `animate_character`/`animate_object` are not options here:
-they need an id of something PixelLab generated, and the committed boss art is not that.
-
-**4. Run `art/anim/windup-check.py` on any cast candidate BEFORE stripping it.** It exits
-non-zero on a sequence that does not build monotonically and end at its extreme. Pass the
-target as a second argument for a pinned run and it asserts the stronger property instead —
-that the approach to the target is monotonic and the last frame lands on it exactly. Idles
-do not need this; loop-shaped motion is what an idle wants.
-
-**5. Assemble with `art/anim/strip.py`,** passing **every tag in one invocation**
-(`idle=<dir> cast=<dir>`), because the tags share one strip and therefore one trim — trimming
-per tag is invisible until the boss starts casting, and then the body jumps. `:drop=<i>`
-removes the penultimate-frame retreat described above. It prints the `ATLAS` row including
-the `worldScale` that keeps the world footprint fixed.
-
-**6. `npm test`.** The gate checks the strip is `w * cols` wide, the tags name frames that
-exist, the frame rects tile the strip, and — for an animated monster or boss — that the hot
-accent is present in **every** frame rather than only the strip as a whole.
-
 ## A sprite whose accent is too small to survive generation
 
-`boss.labyrinth-minotaur` is deliberately **not** animated, and the reason is worth knowing
-before someone spends generations rediscovering it.
-
-Its hot accent is two violet eye pixels. Two attempts at an idle both came back with those
-eyes dimmed below the hero's own skin in several frames — 45.5 -> 27.8 on the first, and on
-the second, starting from a much brighter `#a855f7` at 63.5, still 22.4 and 23.1 in two
-frames of five, one of them a different hue entirely. Starting brighter did not help enough:
-the generator is not scaling the accent down proportionally, it is losing a two-pixel
-feature.
-
-So the headroom rule above has a limit: **an accent carried by only a pixel or two may not
-survive generation at any starting intensity.** The options, in order of preference, are to
-enlarge the accent on the source sprite first (more pixels, not just brighter), to pin the
-animation with a target frame, or to leave the boss static. Leaving it static is a hold, not
-a regression — an un-animated boss is exactly what ships today, and the `chroma` gate
-catching this is the gate doing its job rather than an obstacle to route around.
+`boss.labyrinth-minotaur` is deliberately **not** animated. Its accent is one `#b577eb` pixel
+per eye and the two are eleven pixels apart, so neither eye has any redundancy at all; see
+step 1 above for the measurement across four bosses, and "Known open ends" for the exact
+number the owner has to approve. Leaving it static is a **hold, not a regression** — an
+un-animated boss is what ships today, and `npm run chroma` catching this is the gate doing
+its job rather than an obstacle to route around.
 
 ## The first animated strips did not load at all, and the gate stayed green
 
