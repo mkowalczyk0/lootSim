@@ -619,8 +619,18 @@ function start(state: GameState, who: AccountInfo): void {
           fx.sparkle(ev.x, ev.y, ev.color, 8, 90);
           break;
         case "cleared":
-          fx.text(d.portal.x, d.portal.y - 40, "PORTAL OPEN", "#7dd3fc", 16);
-          fx.ring(d.portal.x, d.portal.y, 120, "#7dd3fc", 3);
+          // Fired at the entrance portal's fixed spawn point until this fix — never
+          // where the player actually was, and not even the portal that just opened
+          // (that's `d.completionPortal`, spawned fresh "somewhere on the floor" per
+          // `floorQuotaMet`'s own comment). Every other milestone in this switch
+          // (levelUp, bossSpawn, bossDown, ultimate) fires at the avatar for exactly
+          // the reason this one has to as well: it's the one point on the floor
+          // guaranteed to be on screen. This is the fix for "hard to tell when you
+          // clear a floor" — the moment itself was playing out off camera.
+          fx.text(d.avatar.x, d.avatar.y - 50, "FLOOR CLEARED", "#7dd3fc", 22);
+          fx.ring(d.avatar.x, d.avatar.y, 130, "#7dd3fc", 4);
+          fx.burst(d.avatar.x, d.avatar.y, "#7dd3fc", 30, 260);
+          fx.sparkle(d.avatar.x, d.avatar.y, "#ffffff", 20, 200);
           break;
         case "playerDied":
           fx.addShake(20);
