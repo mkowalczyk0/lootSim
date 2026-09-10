@@ -1,10 +1,19 @@
 # The Universal Skill Tree's point cap — measured against a player who exists
 
-Status: **measured, not fixed, and deliberately not recommended.** `docs/reachable-band.md`
-flagged this in its "derived" tier and stopped there: "the frontier that funds the cap
-itself falling this far short of it does not read as the same deliberate choice... worth
-the owner's eye independent of everything else here." This document is that independent
-look — a real campaign against both ladders, not arithmetic against the curve alone.
+Status: **measured, not fixed, and deliberately not recommended** — for the point-cap
+question itself. `docs/reachable-band.md` flagged this in its "derived" tier and stopped
+there: "the frontier that funds the cap itself falling this far short of it does not read
+as the same deliberate choice... worth the owner's eye independent of everything else
+here." This document is that independent look — a real campaign against both ladders, not
+arithmetic against the curve alone.
+
+**Update (Sept 2026, PM ruling): the keystone-cost asymmetry below (Part B, "the six
+keystones are not equally priced") is fixed.** All six now cost 7 points minimum — see
+the note inline in that section for what changed and why, and the note at the end of Part
+B for the consequence this has for "what a realistic frontier buys," which moved. The
+point cap, `universalPointsFor`'s rate, and the Delve-vs-Tower reachable-band question in
+Part A are untouched and remain exactly as measured below — fixing the asymmetry was
+ruled independent of those and was applied without waiting on them.
 
 ## The finding, stated once
 
@@ -58,10 +67,10 @@ estimate, the minimum-cost legal chain to every keystone and to every hybrid/Myt
 unlock, then brute-forces (2^6 subsets — small enough to be exact) how many keystones a
 given point budget can hold at once.
 
-**The six keystones are not equally priced**, and not by design choice — it falls out of
-where the three cross-links point:
+**FIXED, Sept 2026 (PM ruling).** The six keystones used to price out unequally, and not
+by design choice — it fell out of where the three cross-links pointed:
 
-| Keystone | Path | Minimum cost | Why |
+| Keystone | Path | Minimum cost (before the fix) | Why |
 | --- | --- | --- | --- |
 | Hoarder | Avarice | **5** | cross-linked to Might's row-0 node (`force`), which needs no predecessor of its own |
 | Unbound | Attunement | **6** | cross-linked to Swiftness's row-1 node (`reflexes`) |
@@ -70,39 +79,66 @@ where the three cross-links point:
 | Windborne | Swiftness | 7 | straight chain, not cross-linked |
 | Overwhelming Force | Might | 7 | straight chain, not cross-linked |
 
-The cross-link is not an optional shortcut a player can choose to skip — it *replaces*
-the in-path prerequisite entirely (`bulwark`'s only legal prerequisite is
-`vitality/toughness`; `warding/barrier` is no longer required for anything). So Hoarder,
-Unbound and Adamant are unconditionally the cheap third of the roster, and reaching them
-never requires spending in their own path's middle nodes at all.
+The cross-link was not an optional shortcut a player could choose to skip — it *replaced*
+the in-path prerequisite entirely (`bulwark`'s only legal prerequisite was
+`vitality/toughness`; `warding/barrier` was no longer required for anything). So Hoarder,
+Unbound and Adamant were unconditionally the cheap third of the roster, and reaching them
+never required spending in their own path's middle nodes at all — a real player always
+reached one of the same cheap three, never a genuine choice across six.
 
-**Full sweep, points to keystones simultaneously affordable:**
+**The fix** (`src/progression/universal.ts`, `CROSS_LINKS`): each of the three links now
+targets its neighbouring path's **row-2** node instead of row-1 — the same row the in-path
+node it replaces sits at, so the substitute route costs exactly what the replaced one did.
+All six keystones now cost **7** points minimum, uniformly. The cross-link/DAG structure
+itself (§1 of the file header) is untouched — a build still can't reach any of the six
+keystones "purely," every one still carries a down-payment in a neighbouring path — only
+the size of that down-payment changed, from "smaller than the straight chain" to "the
+same as it."
+
+**Full sweep, points to keystones simultaneously affordable (post-fix):**
 
 | Points | % of tree | Keystones reachable |
 | --- | --- | --- |
-| 0-4 | 0-11% | **none** |
-| 5 | 14% | 1 (Hoarder) |
-| 6-9 | 16-24% | 1 (Unbound, then Immovable) |
-| 10-13 | 27-35% | 2 |
-| 14-18 | 38-49% | 3 |
-| 19-20 (the cap) | 51-54% | 4 |
+| 0-6 | 0-16% | **none** |
+| 7-9 | 19-24% | 1 (Immovable) |
+| 10-15 | 27-41% | 2 (Windborne, Unbound — then Immovable, Windborne) |
+| 16-18 | 43-49% | 3 (Immovable, Windborne, Unbound) |
+| 19-20 (the cap) | 51-54% | 4 (+ Adamant) |
 
-**Hybrids and Paragon, the tree's other payoff, cost about the same as the cheap
-keystones**: Channeller and Treasure Hunter are reachable at 6 points, Duelist's Step and
+**A consequence worth naming plainly, not burying: fixing the asymmetry moved the
+"realistic frontier" answer, and moved it the wrong way for anyone hoping the fix would
+also help the point-cap finding below.** Before the fix, a realistic 5-6 point budget
+bought exactly one (cheap) keystone. After the fix, the cheapest keystone costs 7 — one
+more point than that budget has — so a realistic player today reaches **zero** keystones,
+not one. This is the correct, intended result of the fix (the old "one keystone" answer
+was itself an artifact of the same asymmetry being fixed here, not a real tradeoff), but it
+sharpens rather than softens the Part B finding below: the point cap and the curve that
+funds it are unchanged, and they were already the more consequential open question. Fixing
+the asymmetry was ruled independent of that question and correct either way — but whoever
+picks up the cap/rate options at the end of this document should know the "one keystone at
+a realistic budget" framing they were written against no longer holds.
+
+**Hybrids and Paragon, the tree's other payoff, cost about the same as the keystones
+now**: Channeller and Treasure Hunter are reachable at 6 points, Duelist's Step and
 Stonewall at 7, Paragon at 10. At the campaign's realistic budgets (5-6 points) a player
-affords a keystone *or* the cheapest hybrid, never both, and never a second keystone.
+affords the cheapest hybrid but no keystone at all; at 7 points, a keystone *or*
+Duelist's Step/Stonewall, never both.
 
-**Answering the question directly**: at the Delve's fresh average (frontier 12, 6
-points), exactly one keystone (Unbound) is reachable, with nothing left over. At the
+**Answering the question directly (pre-fix numbers, kept for the record — see the
+consequence note above for what changed):** at the Delve's fresh average (frontier 12, 6
+points), exactly one keystone (Unbound) was reachable, with nothing left over. At the
 Tower's fresh average (frontier 11, 5 points), exactly one keystone (Hoarder). At the
 best single campaign result across 120 dives (frontier 20, 10 points), two keystones —
 Windborne and Unbound, which happen to share almost their entire prerequisite chain
-(Swiftness's own first two nodes), so this is a cheap coincidence of the DAG's shape, not
-evidence a typical build reaches two keystones by two different routes. **A keystone is
-reachable at a realistic frontier — the tree does not lock all six behind the cap — but
-"choose which one keystone" is a much smaller decision than "trade off across six paths
-and their keystones," which is what the tree's own design comments (§18, "meaningful
-paths and tradeoffs") describe.**
+(Swiftness's own first two nodes), so this was a cheap coincidence of the DAG's shape, not
+evidence a typical build reaches two keystones by two different routes. Post-fix, the
+frontier-20/10-point case still reaches the same two (Windborne, Unbound — see the full
+sweep table above), but the Delve/Tower fresh-average cases now reach **zero**, not one.
+**A keystone was reachable at a realistic frontier before the fix and no longer is after
+it — the asymmetry was the only thing making one affordable at all.** Whether the tree
+should therefore fund more of itself at a realistic frontier is exactly the point-cap
+question this document already raises below; this fix didn't answer it, it removed the
+one thing that was quietly softening it.
 
 ## What this does and doesn't mean
 
@@ -112,20 +148,20 @@ paths and tradeoffs") describe.**
   `tools/universal.ts` now prints the realistic-frontier figure (6 points, 16%) directly
   under the cap figure, sourced from this document, so the next person reading the
   test's output sees both numbers rather than only the flattering one.
-- **This is not evidence the tree is broken.** One keystone, chosen from six real
-  options, each with a real downside, is still a tradeoff — it's a narrower one than the
-  tree's own design language describes, not a nonexistent one. Whether "one meaningful
-  choice most characters ever make" satisfies §18's intent is the owner's call, not this
-  document's.
-- **The DAG's own cost asymmetry (5/6/6/7/7/7) is worth a second, separate look**: it
-  means the "cheap third" of keystones (all three of them cross-linked ones) are reached
-  through a neighboring path's early nodes rather than their own path's body, which is an
-  interesting side effect of the cross-link design independent of the point-cap question.
-  Flagged, not sized — this document didn't measure whether that's felt as a problem in
-  play, only that it's true of the graph.
-- **Nothing here touched `universalPointsFor`, `UNIVERSAL_POINT_CAP`, any node's cost, or
-  the cross-links.** Per the brief this was scoped under: this is a measurement and a
-  written finding, and changing the curve is a live balance change to shipped progression
+- **This is not evidence the tree is broken.** Zero-to-one keystone at a realistic
+  frontier, chosen from six real options each with a real downside, is a narrower
+  tradeoff than the tree's own design language describes, not a nonexistent one. Whether
+  the point cap should fund more of it is the owner's call, not this document's.
+- **FIXED (Sept 2026): the DAG's own cost asymmetry (formerly 5/6/6/7/7/7, now 7/7/7/7/7/7
+  uniformly)** — see the "FIXED" callout in Part B above for what changed
+  (`src/progression/universal.ts`'s `CROSS_LINKS` now targets each neighbouring path's
+  row-2 node instead of row-1) and the consequence note there for how it moved the
+  realistic-frontier answer. This was the PM's ruling, not the owner's — it was judged a
+  defect (an accidental side effect of which row a cross-link happened to point at) rather
+  than a balance choice, so it didn't wait on the point-cap questions below.
+- **`universalPointsFor`, `UNIVERSAL_POINT_CAP` and every other node's cost are still
+  untouched.** Only the three `CROSS_LINKS` target nodes moved. Changing the curve or the
+  cap remains a live balance change to shipped progression
   every existing save reads — the owner's call, the same as the reachable band itself.
 
 ## Options, priced — not recommended

@@ -246,30 +246,50 @@ const PATHS: readonly UniversalPathDef[] = [
 /**
  * The cross-links that make this a DAG rather than six ladders.
  *
- * Each entry re-points **one deep node's** prerequisite into a *shallow* node of a
- * neighbouring path. Two consequences, both deliberate:
+ * Each entry re-points **one row-3 node's** prerequisite into a **row-2 node** of a
+ * neighbouring path, in place of that row-3 node's own in-path predecessor. Two
+ * consequences, both deliberate:
  *
  * - Every path's first node still hangs off the root, so all six are enterable
  *   immediately. Gating a whole path's *entrance* behind another path would be punishing
  *   at this pool size, and would make the sixth path unreachable for most of the game.
- * - But the bottom half of those paths — including the keystone behind it — costs a small
- *   down-payment in a neighbour. So no deep build is ever *pure*: every keystone carries
- *   a little of the path next to it.
+ * - The bottom half of those paths — including the keystone behind it — costs a
+ *   down-payment in a neighbour instead of its own path's middle. So no deep build is
+ *   ever *pure*: every keystone carries a little of the path next to it.
  *
  * That sets the two payoffs against each other, which is the tension worth having:
  * keystones reward depth, the hybrids below reward breadth, and the cross-links mean
  * depth can never completely ignore breadth.
+ *
+ * **The target row is load-bearing, not a free choice — it's what makes all six
+ * keystones cost the same.** A cross-link *replaces* a node's in-path prerequisite
+ * rather than adding to it (`buildUniversalTree` below: `link?.requires ?? def.after`,
+ * never both), so the cheapest chain to a cross-linked keystone runs entirely through
+ * whichever route — in-path or cross-linked — is cheaper to reach. Until Sept 2026 all
+ * three links pointed at a neighbouring path's row-1 node, which is cheaper to reach
+ * (one predecessor) than the row-2 in-path node it replaced (two predecessors) — so
+ * Hoarder/Unbound/Adamant cost 5-6 points while Immovable/Windborne/Overwhelming Force,
+ * which have no cross-link at all, cost 7. That wasn't a balance choice, it fell out of
+ * which row happened to be picked; a real player always reached one of the same cheap
+ * three (`docs/universal-tree-reachability.md`). Every link now targets a **row-2**
+ * node specifically because that is the same row the replaced in-path node sat at, so
+ * the substitute route costs exactly as much as the one it replaces: root + 2
+ * predecessors + the row-3 node + the keystone, in every one of the six paths. Moving a
+ * link to a shallower or deeper row would reopen the asymmetry in whichever direction it
+ * moved; `tools/universal-reachability.ts` computes the minimum-cost chain to every
+ * keystone from the live tree, not a pinned table, so it's the check to re-run if a link
+ * or a path's row count ever changes.
  *
  * Authored separately from the path tables so the columns stay readable and every link is
  * visible in one place when tuning them.
  */
 const CROSS_LINKS: readonly { path: string; key: string; requires: string }[] = [
   // Living through everything is what teaches you to shrug off an element.
-  { path: "warding", key: "bulwark", requires: "vitality/toughness" },
+  { path: "warding", key: "bulwark", requires: "vitality/recovery" },
   // Constant movement is what turns a set of cooldowns into a rhythm.
-  { path: "attunement", key: "conduit", requires: "swiftness/reflexes" },
+  { path: "attunement", key: "conduit", requires: "swiftness/recover" },
   // You only get greedy once you can actually clear the room.
-  { path: "avarice", key: "magnetism", requires: "might/force" },
+  { path: "avarice", key: "magnetism", requires: "might/tempo" },
 ];
 
 // --- flattening -----------------------------------------------------------
