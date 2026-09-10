@@ -586,3 +586,38 @@ wrong there.
 **That carve-out is the fix shape**, and §15 is now a worked example of it: give the row its
 own attribute and a select-only handler, and move executing into an action strip of its own,
 outside the scrolling grid and outside the reading panel.
+
+## 19. The blow is ONE art problem with global leverage, not 35 boss problems
+
+Split out of §7 on 2026-09-10 after Stage B of the Warden came back a negative result. §7 is
+now "give bosses motion"; this is "give bosses the moment the motion is for."
+
+**The finding that creates this item:** three generations, three prompt strategies, from an
+on-model apex, on a small simple sprite that had just animated cleanly through idle and cast.
+Every attempt that achieved a strike's silhouette change achieved it by **deforming** the
+body — legs merging, helmet sinking into shoulders — rather than by posing it.
+`boss.war-queen`'s row had already said a real blow needs a hand-authored pose, and that was
+read as a remark about one unusually dense sprite. It reproduces on the Warden. So:
+
+> **The generator interpolates and re-renders. It does not pose. A strike's defining moment
+> is a pose.**
+
+That reframes the work. A blow is not a per-boss generation task that happens to keep
+failing; it is **one hand-authoring problem, and solving it once unblocks every boss in the
+game.** The Ferryman's blow is the existence proof that it can be done — but note *how* it
+was done: differentiated on body rather than weapon height, and only after the third pose was
+put somewhere the generator could reach. That route may not generalise.
+
+**Do not let the roster quietly settle at "wind-up only".** The owner's original report on
+§7 was that the wind-ups stop right before the attack and they expected an attack — the word
+they used was *"halfway"*. Shipping wind-ups on ten more bosses without ever landing a blow
+delivers ten more halves of the exact thing they already told us was incomplete. Wind-ups on
+a boss that has **nothing** are a real gain and are the right per-generation value today;
+wind-ups as a permanent destination are not.
+
+**Before spending a long hand-authoring session, know what would prove it.** The metric built
+for this job — impact-vs-rest exceeding apex-vs-rest — is a **veto, not an acceptance**, and
+that is now documented in `docs/animation.md`: it correctly rejected a too-small pose at 1001
+against a 1485 bar, and passed a deformed blob at 1735-1745 with the accent intact, because a
+deformation *is* a large distance. Both failure modes live at opposite ends of one number, so
+no threshold on it can separate them. **The acceptance test for a blow is an eye.**
