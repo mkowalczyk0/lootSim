@@ -966,3 +966,60 @@ owner's answer there was reached by *asking*. Put it to them.
 Worth noting when it is raised: this is also the reason §20's Reaper compensation
 (`executeMissingHealth` 0.8 → 1.0) is **reasoned rather than measured**, and that label
 should survive into any future conversation about the Reaper's numbers.
+
+## 25. `recommendedLevel`'s equip floor outlived the rule that justified it
+
+**Found while merging §23.** Not a bug the owner reported — a term whose stated reason
+was deleted by the change that landed under it, which is this repo's most-repeated
+failure shape (`lootsim-numbers-outlive-their-assumption`: the atlas scale, the biome
+tint, the mp-stutter figure, now this).
+
+`profileFor` in `src/data/depth.ts` advises a level:
+
+```ts
+recommendedLevel: Math.max(
+  1,
+  d + reward.itemPower - 1,          // <- this term
+  Math.round(d * 0.9 * Math.pow(danger, 0.35)),
+),
+```
+
+That middle term was the **equip floor**, and its comment said so explicitly: loot rolled
+at `ilvl = depth + itemPower`, `requiredLevel` is `ilvl - 1`, so advising anything lower
+told the player to bring a character who could not wear what the floor paid out.
+
+**§23 repealed the premise.** A drop now rolls at the receiving hero's own level and
+`itemPower` feeds `powerIlvl` alone, so *no floor in the game can pay out gear its earner
+cannot equip*. There is no equip floor left to defend. lootsim-56 correctly declined to
+retune player-facing advice inside a loot commit and flagged it; the stale comment has
+been corrected on master already, because a comment asserting a repealed rule is a trap
+rather than a tuning question. **The term itself is still there and still untouched.**
+
+### Why it is not obviously wrong, which is the trap
+
+At `danger` 1, `rewardCurve.itemPower` is 0 and the term is just `d - 1` — so every plain
+Delve floor advises exactly what it always did, and a green gate says nothing. It only
+bites where **danger is up**: the Challenger dial, a deep rift tier, a burdened Memory.
+There it inflates "req. lv" for a reason that has been deleted, and `danger^0.35` — the
+line directly below it — is already the term that prices danger.
+
+### The question for the owner
+
+Should hard content advise a **higher level** than the same depth does?
+
+- **Yes** → keep a danger term, but re-derive it from difficulty rather than from a dead
+  equip rule, and say so in the comment. `danger^0.35` may already be it.
+- **No** → drop the term; `recommendedLevel` becomes a pure statement about how hard the
+  floor hits, which is what the "req. lv" chip and its `under` warning read as anyway.
+
+**Do not answer this by measurement alone.** It is advice text, not a simulation input —
+nothing in `game/` reads `recommendedLevel`; it is six "req. lv" chips in `ui/town.ts`
+plus one smoke-test log column. So the smoke test cannot see a wrong answer here, and no
+acceptance check will go red whichever way it goes. That is precisely why it needs a
+decision rather than a tuning pass.
+
+### Scope note
+
+Whoever takes this: the fix is a handful of lines in one function. The *work* is the
+write-up and the owner's call, not the edit. Do not let it grow into a `recommendedLevel`
+overhaul — the `0.9 * d * danger^0.35` shape is not under review.

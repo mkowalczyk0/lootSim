@@ -194,14 +194,23 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // reason `rollElement` skips infusing monsters on one.
     variantChance: biome.element === "physical" ? 0 : reward.variantChance,
     variantElement: biome.element,
-    // Levelling now tracks depth closely, so the advice should too. The hard floor is
-    // the level a character needs to *equip this floor's own drops*: loot rolls at
-    // `ilvl = depth + itemPower` (see `rollDrop` / `dropClearCache` in `game/dungeon.ts`)
-    // and `requiredLevel` is `ilvl - 1` (`game/item.ts`), so advising anything below
-    // `d + itemPower - 1` tells the player to bring a character that can't wear what the
-    // floor pays out. The old `0.9 * d * danger^0.35` sat just under that from depth ~10
-    // on. Keep it as the shallow-floor / high-danger term, but never advise below the
-    // equip floor.
+    // Levelling now tracks depth closely, so the advice should too.
+    //
+    // WARNING — the `d + reward.itemPower - 1` term below has outlived its reason, and is
+    // kept pending an owner call rather than because it is still justified (docket §25).
+    // It was the *equip floor*: loot used to roll at `ilvl = depth + itemPower`, so
+    // advising below `d + itemPower - 1` told the player to bring a character who couldn't
+    // wear what the floor paid out. Docket §23 repealed exactly that — a drop now rolls at
+    // the receiving hero's own level, `itemPower` feeds `powerIlvl` alone, and **no floor
+    // in the game can pay out gear its earner cannot equip.** So the equip floor no longer
+    // exists and this term no longer defends anything.
+    //
+    // It is not obviously wrong, which is the trap: at danger 1 `itemPower` is 0 and the
+    // term is just `d - 1`, so plain Delve advice is unchanged. It only bites where the
+    // Challenger dial is up, where it now inflates "req. lv" for a reason that has been
+    // deleted — and `danger^0.35` below is already the term that prices danger. Retuning
+    // player-facing level advice is a live balance change, so it is docketed, not quietly
+    // dropped here.
     recommendedLevel: Math.max(
       1,
       d + reward.itemPower - 1,
