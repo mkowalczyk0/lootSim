@@ -10,6 +10,7 @@ import { DEFAULT_KEYBINDS, keyLabel, type RebindableAction, type Settings } from
 import { getStatusSpec } from "../combat/status";
 import type { ResourcePool } from "../combat/resources";
 import { REVIVE_TIME, type Dungeon } from "../game/dungeon";
+import type { Level } from "../game/level";
 
 /**
  * The class's real casting resource — Momentum, Rage, Chi, whatever it calls itself —
@@ -36,8 +37,19 @@ function k(settings: Settings, action: RebindableAction): string {
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
+/** Pathing's own navigation grid (`game/level.ts`'s `GRID`) — world units per minimap
+ *  cell. `Level.blocked`/`cols`/`rows` are already indexed on this pitch. */
+const MAP_GRID = 16;
+
 /** Screen-space overlay for a dive: vitals, floor progress, unbanked loot, prompts. */
 export class Hud {
+  /** Cached per floor — this doesn't change until the level does, and rebuilding a
+   *  ~150x90 cell image from scratch every frame is wasted work a real-time HUD
+   *  shouldn't pay for. Keyed on the `Level` object's own identity: a new floor is
+   *  always a new object, so reference equality is a free, correct cache key. */
+  private minimapBg: HTMLCanvasElement | null = null;
+  private minimapBgLevel: Level | null = null;
+
   draw(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, h: number, paused = false): void {
     ctx.save();
     ctx.textBaseline = "top";
@@ -57,6 +69,7 @@ export class Hud {
     if (d.settings.combatStats) this.drawCombatStats(ctx, d, h);
     if (d.boss) this.drawBossFrame(ctx, d, w, floorInfoBottom);
     else this.drawEliteBars(ctx, d, w, floorInfoBottom);
+    this.drawMinimap(ctx, d, w, h);
 
     if (d.phase !== "dead" && d.localHero.downed) this.drawDownedPrompt(ctx, w, h);
     if (d.phase !== "dead") this.drawPortalPrompt(ctx, d, w, h);
@@ -462,6 +475,103 @@ export class Hud {
     ctx.fillStyle = "#6b7480";
     ctx.fillText(`WAVE ${Math.min(d.wave, d.profile.waves)} / ${d.profile.waves}`, cx, y);
     return y + 14;
+  }
+
+  /**
+   * A schematic of the walkable grid, rasterised once per floor into an offscreen
+   * canvas — the same grid `FlowField`/`resolveCircle` navigate on
+   * (`game/level.ts`'s `GRID`, `Level.blocked`), so what the minimap shows is exactly
+   * what a monster can and can't stand on, not an approximation of it.
+   */
+  private buildMinimapBackground(level: Level): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    canvas.width = level.cols;
+    canvas.height = level.rows;
+    const bgCtx = canvas.getContext("2d")!;
+    const img = bgCtx.createImageData(level.cols, level.rows);
+    for (let i = 0; i < level.cols * level.rows; i++) {
+      const o = i * 4;
+      if (level.blocked[i]) continue; // leave wall cells transparent
+      img.data[o] = 58; img.data[o + 1] = 62; img.data[o + 2] = 76; img.data[o + 3] = 255;
+    }
+    bgCtx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  /**
+   * Docket item 6: wayfinding (where the completion portal spawned, once it has) and
+   * the low-monster-count indicator (§6's "some indicators when there is like 10 more
+   * monsters left" — a threshold, not a permanent readout, so it stays off entirely
+   * outside that window). Every field this reads — `d.level`, `d.completionPortal`,
+   * `d.enemies` — is already on the client in co-op: the level regenerates identically
+   * from the shared seed on every browser (`net/sync.ts`'s own header), and the
+   * completion portal's position and every monster on the floor are already part of the
+   * snapshot the client draws every frame regardless of this feature. No wire change.
+   */
+  private drawMinimap(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, h: number): void {
+    const level = d.level;
+    if (this.minimapBgLevel !== level) {
+      this.minimapBg = this.buildMinimapBackground(level);
+      this.minimapBgLevel = level;
+    }
+
+    const mapW = 168, mapH = 168;
+    const x = w - mapW - 18;
+    const y = h - mapH - 24;
+    panel(ctx, x - 4, y - 4, mapW + 8, mapH + 8);
+
+    const scale = Math.min(mapW / level.cols, mapH / level.rows);
+    const drawW = level.cols * scale, drawH = level.rows * scale;
+    const ox = x + (mapW - drawW) / 2, oy = y + (mapH - drawH) / 2;
+    const toMap = (wx: number, wy: number) => ({ x: ox + (wx / MAP_GRID) * scale, y: oy + (wy / MAP_GRID) * scale });
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (this.minimapBg) ctx.drawImage(this.minimapBg, ox, oy, drawW, drawH);
+
+    // The entrance: always on, dim — it's never the way onward once the floor clears,
+    // but it's still the early-exit escape hatch the whole time before that.
+    const entrance = toMap(d.portal.x, d.portal.y);
+    ctx.fillStyle = "rgba(251,191,36,0.65)";
+    ctx.beginPath(); ctx.arc(entrance.x, entrance.y, 3, 0, Math.PI * 2); ctx.fill();
+
+    // The completion portal, once it exists — the actual wayfinding ask: it spawns at a
+    // fresh spot the instant the quota is met, and the player may be nowhere near it.
+    if (d.completionPortal) {
+      const cp = toMap(d.completionPortal.x, d.completionPortal.y);
+      ctx.fillStyle = "#7dd3fc";
+      ctx.beginPath(); ctx.arc(cp.x, cp.y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(125,211,252,0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cp.x, cp.y, 8, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // The low-monster-count indicator: a threshold, not a permanent readout. Only the
+    // wave director's own monsters count toward the objective (chaff and shards can't
+    // hold it open), so the same filter applies here — a blip that doesn't count toward
+    // the number above it would be a lie on the map.
+    if (!d.profile.isBoss) {
+      const remaining = Math.max(0, d.killsRequired - d.killsSoFar);
+      if (remaining > 0 && remaining <= 10) {
+        const pulse = 0.55 + 0.45 * Math.sin(d.elapsed * 6);
+        for (const e of d.enemies) {
+          if (e.boss || e.summoned || e.state === "spawning") continue;
+          const p = toMap(e.x, e.y);
+          ctx.fillStyle = `rgba(248,113,113,${pulse.toFixed(2)})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    // The player, always the brightest thing on it.
+    const you = toMap(d.avatar.x, d.avatar.y);
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(you.x, you.y, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(you.x, you.y, 6, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.restore();
   }
 
   private drawLoot(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
