@@ -157,7 +157,33 @@ everything else two checkouts share through one `node_modules` is not** — an i
 mutated mid-run, a differing dependency tree, a postinstall artifact. That is why the
 rule is a real `npm install` per worktree rather than a tolerated shortcut.
 
+The negative case arrived by accident too, ten minutes after the pair above, and it is
+the half that pair cannot show. Three gates running at once, all on the **pre-fix** script
+shape, cwd resolved with `lsof -a -p <pid> -d cwd` and each one's `node_modules` then
+checked with `readlink`:
+
+```
+58316  node_modules/.cache/smoke.mjs   cwd=worktrees/gem-sinks-standards   node_modules: own
+58759  node_modules/.cache/smoke.mjs   cwd=worktrees/last-monster-map      node_modules: own
+60793  node_modules/.cache/smoke.mjs   cwd=worktrees/arm-trees             node_modules: own
+```
+
+Three processes, one identical relative path, **zero collision risk** — because each owns
+its install. Had any two been symlinked to the shared checkout they would have been
+writing and executing one file. Together the two observations bracket the claim: **the
+shared path string was never the hazard; a shared install was.** Which is also why moving
+the output to `tmpdir()` is a complete fix rather than a mitigation.
+
 ### Landing this turns several worktrees' gates red, on purpose
+
+**If your gate just went red at the `harness` step, this is the fix:**
+
+```
+rm -rf node_modules && npm install
+```
+
+Then re-gate, and treat anything you certified green from that worktree earlier today as
+unproven rather than as passed.
 
 Counted at the time of writing, **11 of the worktrees on this machine have `node_modules`
 symlinked** to the shared checkout (one of them chained through a second worktree), and
