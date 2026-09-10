@@ -27,12 +27,12 @@ export const MOUSE_SECONDARY_LABELS: Record<MouseSecondaryAction, string> = {
 export type RebindableAction =
   | "up" | "down" | "left" | "right"
   | "attack" | "dash" | "potion" | "special" | "skill1" | "skill2" | "skill3" | "skill4"
-  | "confirm" | "cancel" | "tabPrev" | "tabNext" | "pause" | "mark";
+  | "confirm" | "cancel" | "tabPrev" | "tabNext" | "pause" | "mark" | "salvageAll";
 
 export const REBINDABLE_ACTIONS: readonly RebindableAction[] = [
   "up", "down", "left", "right",
   "attack", "dash", "potion", "skill1", "skill2", "skill3", "skill4", "special",
-  "confirm", "cancel", "tabPrev", "tabNext", "pause", "mark",
+  "confirm", "cancel", "tabPrev", "tabNext", "pause", "mark", "salvageAll",
 ];
 
 export const ACTION_LABELS: Record<RebindableAction, string> = {
@@ -42,6 +42,7 @@ export const ACTION_LABELS: Record<RebindableAction, string> = {
   confirm: "Confirm / interact", cancel: "Back / cancel",
   tabPrev: "Previous tab", tabNext: "Next tab", pause: "Pause / back to the Citadel",
   mark: "Mark for a batch (Stash)",
+  salvageAll: "Salvage all junk (Stash)",
 };
 
 export const DEFAULT_KEYBINDS: Record<RebindableAction, string> = {
@@ -63,6 +64,7 @@ export const DEFAULT_KEYBINDS: Record<RebindableAction, string> = {
   tabNext: "KeyO",
   pause: "Escape",
   mark: "KeyF",
+  salvageAll: "KeyG",
 };
 
 export interface Settings {

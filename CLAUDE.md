@@ -1138,6 +1138,7 @@ Rebinding two actions to the same key swaps them.
 | `Q` | Back / cancel |
 | `I` / `O` | Previous / next tab (Quartermaster's screens only) |
 | `F` | Mark an item for a batch action (Stash's mass-salvage) |
+| `G` | Salvage all junk in one press (Stash) — same two-press confirm as a marked batch |
 | `Esc` | Pause a dive, or back out of a town screen |
 
 This table is just the shipped default — `Settings` can rebind every row, this table
