@@ -898,6 +898,21 @@ A boss floor is one wave containing the boss; everything else on it was summoned
 encounter and evaporates when it dies. Boss arenas are generated larger and only from
 the open layouts, because a two-hundred-unit quake needs somewhere to run to.
 
+**A kit's difficulty is cadence × mean threat per card, not card count.** A boss casts on
+a timer, so the danger it delivers is (casts per second) × (mean threat of whatever card
+it drew). Adding abilities to a kit therefore does **not** make it harder — it *dilutes*
+it, because every cast spent on a territory-denial or pursuit ability is a cast not spent
+on a big hit. Measured, Sept 2026: the Ferryman gained `drift` and `hunt` as a
+deliberately same-size hand (as many drops as additions, on the assumption that card count
+was the lever) and went from 9/16 to 15/16 wins while the fight got *longer*; two Tower
+kits had to be re-authored for the same reason. Party size divides the same quantity from
+the other side, which is why `raidThreatRate` is a cadence term rather than the health or
+damage terms that were tried and failed (`docs/raid-threat-rate.md`,
+`docs/raid-party-scaling.md`). So: to make a fight harder, move the cadence or raise the
+threat of the cards in it — do not add cards and assume you added danger. The vocabulary,
+the eight abilities added to it and the three deliberately not built are in
+`docs/boss-abilities.md`; `npm run bossvariety` is the gate.
+
 ### Every floor is a generated dungeon, not one room
 
 `src/game/level.ts` builds each floor from a seed as a **graph of connected rooms**: a
@@ -946,6 +961,20 @@ Boss floors are measured differently, because a raid boss that one-shots a carel
 player is a wall rather than a fight. The test runs the same character on the same
 floor with telegraph-reading on and off and asserts the *damage bill* diverges sharply
 and the potion belt empties.
+
+**Check that your instrument can see the thing you changed before you believe its
+number.** A measurement harness that runs but is blind returns a plausible number rather
+than an error, which is worse than a red check. Two instances in one day, Sept 2026: a
+boss-floor A/B geared to level 40 had every deep row dying in under 20 seconds, so it
+never reached the phase-two abilities the branch had changed and reported confident deltas
+for content it never exercised — the fix was to calibrate gearing until each row was
+genuinely *contested* (neither a certain win nor a certain loss), because a row pinned at
+0/16 or 16/16 cannot move in either direction and measures nothing. Separately, an
+end-of-cast animation check passed against boss state that persists on a corpse. Before
+trusting a comparison, confirm the run actually reaches the code under test — assert a
+phase was entered, an ability was cast, a branch was hit — and prefer an unconfounded
+metric: see `docs/raid-party-scaling.md` on why damage-per-player silently lies when the
+fight's length is itself part of what you changed.
 
 The economy is deliberately slow. Coins per kill, per-kill gear drops, key drops and the
 vendor's `SELL_RATE` were all cut hard, and most of a floor's actual pay comes from the
