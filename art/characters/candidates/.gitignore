@@ -1,0 +1,5 @@
+# The three candidate PNGs are deliberately not committed: they are open options waiting on
+# an owner's pick, and committing a direction nobody chose gives the next session something
+# to mistake for a starting point. The instrument (../candidates.ts) and the write-up
+# (NOTES.md) do land — the measurement is not the rejected thing.
+*.png
