@@ -252,7 +252,20 @@ Two traps recorded from the rises work, both of which nearly cost good animation
 `npm run windup` is a printed diagnostic, deliberately not a gate, for exactly the reason
 above. The owner's eye is the acceptance test.
 
-## 8. Nerf the Ranger's ultimate, "The Last Hunt"
+## 8. Nerf the Ranger's ultimate, "The Last Hunt" — LANDED
+
+**Shipped 2026-09-10**, design record `docs/ranger-last-hunt-nerf.md`. Both symptoms had
+separate causes in `RANGER_THE_LAST_HUNT` and got separate, minimal fixes: `shape: {
+radius: 350 }` bounds the mark/volley to a real radius instead of the whole floor, and
+`executeMissingHealth` halved (0.4 → 0.2) so the execute term stops being able to burn 40%
+of a boss's remaining health bar per hit. A/B'd in a throwaway worktree against master, 24
+seeds each side: reach confirmed bounded at exactly the declared radius (master hit a target
+1200u away; patched left it untouched), boss time-to-kill up 15% on a shallow calibrated
+floor and 49% on a deeper, genuinely-contested one (more runs also survived to clear under
+the patch). `npm run test` green. Elites-only targeting (the literal tooltip reading) was
+considered and rejected — elites are capped to 0 on most early floors, so it would have zero'd
+the ultimate's damage on most trash floors rather than sizing it down. The paragraphs below
+are the original brief, kept for context.
 
 > "nerf the rangers ultimate ability 'the last hunt' - its a tad overpowerd and wipes the
 > entire map and bosses way too quickly."
