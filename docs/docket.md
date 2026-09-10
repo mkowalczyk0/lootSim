@@ -177,7 +177,12 @@ it. Either way, know it before building.
 Per-class filtering is asked for explicitly. `Player` is already per-class
 (`GameState.players`), so the data shape is there.
 
-## 5. In-game UI cleanup
+## 5. In-game UI cleanup — LANDED
+
+**Shipped 2026-09-10**, commit `9c7e9f2` (branch `fix/hud-cleanup`), all four defects in
+one pass. Marked here 2026-09-10 evening: the work landed at 07:19 and the item was never
+updated, and a later session was briefed onto it as open work. See the note at the end of
+this item for the one claim in it that has still never been observed.
 
 > "clean up the in game UI like health and mana. i don't believe mana is used universally
 > anymore. keybinds in the health bar ui don't update. elite enemy health bars overlap the
@@ -201,7 +206,46 @@ Four separate defects, all of them things the owner hit while playing:
 Nothing here is verifiable headlessly. Stand the game up in a browser (Playwright with
 cached Chromium works on this machine; see `docs/art-verification.md`) and look.
 
-## 6. A map, and finding the last monster
+### How each one was actually fixed
+
+- **Mana.** `primaryResource()` (`src/ui/hud.ts`) draws the first non-hidden,
+  non-ultimate-meter pool off `hero.resources`, labelled `resource.spec.label` — so the bar
+  is named the way the class names it. Legacy `Player.mana` survives only as a fallback for
+  a hero with no resolved pool, which no live class is.
+- **Keybinds — the cause, not the label.** Two hardcoded literals, `[;]` for the ultimate
+  and `[L]` for the potion, both inside `drawVitals`, both sitting next to the
+  `k(settings, action)` helper the rest of the same file already used correctly. Rebinding
+  either action updated every legend on screen except those two. A re-grep of `src/ui/`,
+  `src/render/` and `main.ts` for key literals in on-screen strings finds none left.
+- **Elite bars.** The overlap was a constant: `drawEliteBars` and `drawBossFrame` began at a
+  hardcoded y (74 and 72) tuned against a boss floor's *one-line* info panel, while a wave
+  floor's panel is taller by design and grows again when `profile.tag` is present.
+  `drawFloorInfo` now returns the lowest y it actually drew to and both frames start at
+  `max(default, that + 8)`, so there is one computation of where the taller layout ends
+  rather than two numbers that can drift apart.
+- **Floor-clear legibility.** `main.ts`'s event switch fired `case "cleared"` at `d.portal`
+  — the *entrance* portal, which never moves and is not the portal that just opened
+  (`d.completionPortal`). Every sibling milestone (`levelUp`, `bossSpawn`, `bossDown`,
+  `ultimate`) fires at `d.avatar` for the obvious reason: it is the one point guaranteed to
+  be on screen. Now it does too, at milestone scale.
+
+### Still unobserved: the elite-bar geometry
+
+The shipping commit is honest that defects 1 and 2 were confirmed in a real browser and the
+elite-bar fix was **hand-derived rather than watched** — the worst-case layout was re-derived
+on paper (tag + kills/elites + wave line ending at y=102, against the elite frame's new y=110
+start) because forcing a real kill quota with elites up through scripted input was judged too
+expensive for a fix that mechanical. That reasoning is defensible, but it leaves the one
+defect with a *geometric* failure mode as the one nothing has ever looked at. If this item is
+ever reopened, that is the gap — not the code.
+
+## 6. A map, and finding the last monster — MINIMAP LANDED, "the last monster" STILL OPEN
+
+**Half shipped 2026-09-10**, commit `bb2fab2` (branch `feat/floor-map`): the minimap and the
+low-monster-count indicator are live in `drawMinimap` (`src/ui/hud.ts`). **The last-monster
+half is still open** — read the second bullet below before building anything, because it asks
+for a *measurement* first and that measurement has not been made. Marked here 2026-09-10
+evening; the item had read as fully open since 08:39 and a session was briefed onto it.
 
 > "in game UI needs a map and some indicators when there is like 10 more monsters left. the
 > 'mapping/farming' aspect of the game feels slower than it should be because players spend
@@ -212,10 +256,15 @@ The biggest item on this list and the one most likely to change how the game fee
 
 Two distinct problems inside it:
 
-- **Wayfinding.** Floors are a graph of rooms and got ~20% bigger; the completion portal
-  spawns at a fresh spot when the quota is met. A minimap is the obvious answer and the
-  level is already a tile lattice, so the data is there.
-- **The last monster.** Note the owner's phrasing — "got stuck behind a wall or something."
+- **Wayfinding — LANDED (`bb2fab2`).** Floors are a graph of rooms and got ~20% bigger; the
+  completion portal spawns at a fresh spot when the quota is met. A minimap is the obvious
+  answer and the level is already a tile lattice, so the data is there. Built as
+  `drawMinimap`: the walkable grid rasterised once per floor (cached on `Level` identity),
+  the entrance dim, the completion portal marked once it exists, and the ≤10-remaining
+  monster pulse — which applies the *same* `fromWave` filter the objective does, so a blip
+  can never contradict the count above it. No wire change; every field it reads is already
+  on the client in co-op.
+- **The last monster — STILL OPEN.** Note the owner's phrasing — "got stuck behind a wall or something."
   That is worth taking literally before designing around it. Monsters that cannot see the
   player follow a flow field rebuilt four times a second; if a monster can end up somewhere
   the field never reaches, the fix is a pathing bug rather than a UI feature. **Measure
