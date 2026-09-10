@@ -274,10 +274,19 @@ export const RANGER_THE_LAST_HUNT: Ability = {
     { kind: "status", status: "quarry", chance: 1, to: "enemies" },
     { kind: "move", style: "blink", distance: 60, iframes: 0.3 },
     { kind: "status", status: "stealth", chance: 1, to: "self" },
+    // The §20 payback, and it is the owner's own suggestion — "just quadruple the archer's
+    // attack speed haste or whatever instead". Four times the baseline `hasted` window
+    // (2s → 8s at +25% attack speed, +18% move speed), not four times the attack speed
+    // itself, which would be a bigger number than the thing being removed. The trade is
+    // the point: the ultimate stops being a burst that deletes a healthy boss and becomes
+    // the opening of a hunt you then have to actually shoot your way through.
+    { kind: "status", status: "hasted", chance: 1, to: "self", durationMult: 4 },
     { kind: "delay", seconds: 0.3, effects: [
-      // Halved from 0.4: a boss is the one target in the game with enough health for
-      // "40% of missing health" to be a huge number on its own, which is what let one
-      // cast (or two, as the resource recharges from crits) delete a raid boss.
+      // Left at §8's halved 0.4 → 0.2 on purpose. §8's reason for halving it (it was a
+      // huge number against a boss) is now handled by THE EXECUTE RULE instead, so the
+      // coefficient could be argued back up — but the owner asked for an honest sustained
+      // payback rather than "a resized version of the thing that was wrong", and that is
+      // the haste above. Restoring 0.4 is the option we did not take; see docs/execute-threshold.md.
       { kind: "damage", damage: { base: 3.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.2 }, to: "enemies" },
     ] },
   ],

@@ -38,7 +38,17 @@ export interface DamageTemplate {
   type: DamageType;
   channel?: DamageChannel;
   canCrit?: boolean;
-  /** Fraction of the target's *missing* health added on top — an execute rider. */
+  /**
+   * An execute rider: extra damage that grows as the target approaches death.
+   *
+   * **There is no threshold field here on purpose.** The threshold is a property of the
+   * mechanic, not of an ability, and it lives at the one site that evaluates this —
+   * `executeBonus` / `EXECUTE_THRESHOLD` in `combat/damage.ts`. Read THE EXECUTE RULE
+   * there before tuning a coefficient: the rider pays its full authored value at 0 HP
+   * and exactly nothing at or above the threshold, so this number is "how hard does
+   * this finish something", not "how much free damage does this do to a healthy boss".
+   * Docket §20 exists because the second reading was the implemented one.
+   */
   executeMissingHealth?: number;
   /**
    * Multiplier on the whole hit that grows with the *caster's* missing health:
