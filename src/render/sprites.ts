@@ -18,12 +18,13 @@ import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
-  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES,
+  HERO_STAGE_H, HERO_STAGE_W, cosmeticStageXY, heroStageOffset,
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice } from "./itemart";
-import { chooseSpriteArt, type SpriteArt } from "./spriteart";
+import { chooseHeroArt, chooseSpriteArt, type SpriteArt } from "./spriteart";
+import type { ClassId } from "../data/classes";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
@@ -326,10 +327,14 @@ function resolvePipelineLayer(id: string | null): ResolvedLayer | null | undefin
  * its baked-in hair — a real scope question left for the owner rather than guessed at
  * here; see the migration report for detail.
  */
-function composePipelineHero(appearance: Appearance): HTMLCanvasElement | null {
-  const heroId = SPRITE_OVERRIDES.hero;
-  const basePng = heroId ? atlasCanvas(heroId) : null;
-  if (!basePng) return null;
+function composePipelineHero(
+  appearance: Appearance, classId: ClassId | undefined,
+): { canvas: HTMLCanvasElement; art: SpriteArt } | null {
+  // The class's own hero, then the shared base — one decision, and it carries the scale
+  // and feet that go with whichever rung it landed on.
+  const art = chooseHeroArt(classId, isLoaded);
+  const basePng = art.atlasId ? atlasCanvas(art.atlasId) : null;
+  if (!basePng || !art.meta) return null;
 
   const back = resolvePipelineLayer(appearance.back);
   const face = resolvePipelineLayer(appearance.face);
@@ -337,18 +342,28 @@ function composePipelineHero(appearance: Appearance): HTMLCanvasElement | null {
   const hat = resolvePipelineLayer(appearance.hat);
   if (back === null || face === null || ears === null || hat === null) return null;
 
+  const heroW = art.meta.w, heroH = art.meta.h;
+  const { dx, dy } = heroStageOffset(heroW, heroH);
   const { canvas, ctx } = blank(HERO_STAGE_W, HERO_STAGE_H);
+  // Every layer is placed through `cosmeticStageXY`, which resolves its anchor against
+  // THIS hero's size. A layer that lands partly or wholly off the stage is clipped by the
+  // canvas — `drawImage` does not throw for that — so a hero whose body does not match
+  // what a layer was authored against degrades to a badly-placed hat, never to a hole or
+  // an exception. Placing it *well* on a hero of a different height is the cosmetic
+  // rework the owner has parked; not crashing is this function's job and it does it.
   if (back) {
+    const at = cosmeticStageXY(ATLAS_COSMETICS[back.cosmetic.art!]!, heroW, heroH);
     const recolored = recoloredCosmetic(back.png, `cosmetic:${appearance.back}`, back.cosmetic.colors);
-    ctx.drawImage(recolored, back.dx, back.dy);
+    ctx.drawImage(recolored, at.dx, at.dy);
   }
-  ctx.drawImage(basePng, HERO_STAGE_DX, HERO_STAGE_DY);
+  ctx.drawImage(basePng, dx, dy);
   for (const layer of [face, ears, hat]) {
     if (!layer) continue;
+    const at = cosmeticStageXY(ATLAS_COSMETICS[layer.cosmetic.art!]!, heroW, heroH);
     const recolored = recoloredCosmetic(layer.png, `cosmetic:${layer.cosmetic.id}`, layer.cosmetic.colors);
-    ctx.drawImage(recolored, layer.dx, layer.dy);
+    ctx.drawImage(recolored, at.dx, at.dy);
   }
-  return canvas;
+  return { canvas, art };
 }
 
 // --- characters -----------------------------------------------------------
@@ -426,7 +441,7 @@ export interface HeroSprite {
 /** The procedural composed character's draw params (matches `drawSprite`'s old defaults). */
 const PROC_HERO: Omit<HeroSprite, "canvas"> = { scale: 1.2, feet: 0.22, bodyHeight: BODY_H };
 
-const pipelineHeroCache = new Map<string, HTMLCanvasElement | null>();
+const pipelineHeroCache = new Map<string, { canvas: HTMLCanvasElement; art: SpriteArt } | null>();
 
 /**
  * The player's body, composed and cached. An appearance only changes in town, so this
@@ -438,19 +453,24 @@ const pipelineHeroCache = new Map<string, HTMLCanvasElement | null>();
  * worn slot isn't migrated yet, the whole character falls back to the old procedural
  * stack, consistent with itself rather than mixing two art styles on one body.
  */
-export function heroSprite(appearance: Appearance): HeroSprite {
-  const key = appearanceKey(appearance);
-  let pipeline: HTMLCanvasElement | null;
+export function heroSprite(appearance: Appearance, classId?: ClassId): HeroSprite {
+  // The class is part of the identity: two classes wearing the same appearance are two
+  // different pictures once either has its own art.
+  const key = `${classId ?? "-"}|${appearanceKey(appearance)}`;
+  let pipeline: { canvas: HTMLCanvasElement; art: SpriteArt } | null;
   if (pipelineHeroCache.has(key)) {
     pipeline = pipelineHeroCache.get(key)!;
   } else {
-    pipeline = composePipelineHero(appearance);
+    pipeline = composePipelineHero(appearance, classId);
     if (pipelineHeroCache.size > 64) pipelineHeroCache.clear();
     pipelineHeroCache.set(key, pipeline);
   }
   if (pipeline) {
-    const id = SPRITE_OVERRIDES.hero;
-    const meta = id ? ATLAS[id] : undefined;
+    // `pipeline.art`, not a second `ATLAS` lookup. The composite was built from a specific
+    // rung of the hero ladder and its scale has to come off that same rung — asking
+    // `SPRITE_OVERRIDES.hero` here would hand a class hero's canvas the *base* hero's
+    // scale, which is the P0 bug this codebase has already paid for once.
+    const meta = pipeline.art.meta;
     // `feet` is a fraction of the sprite's own canvas height; the stage canvas is taller
     // than the bare hero PNG (headroom for a hat, side margin for wings), so the same
     // absolute below-feet sliver is a smaller fraction of it. `worldScale` is unaffected
@@ -458,8 +478,8 @@ export function heroSprite(appearance: Appearance): HeroSprite {
     // `HERO_STAGE_*` in the manifest).
     const feet = meta ? (meta.feet * meta.h) / HERO_STAGE_H : PROC_HERO.feet;
     return {
-      canvas: pipeline,
-      scale: meta?.worldScale ?? PROC_HERO.scale,
+      canvas: pipeline.canvas,
+      scale: pipeline.art.worldScale ?? PROC_HERO.scale,
       feet,
       bodyHeight: meta?.h ?? PIPELINE_BODY_H,
     };

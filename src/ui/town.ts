@@ -3898,7 +3898,7 @@ export class TownUI {
     const p = this.state.player;
     const cls = p.heroClass;
     const a = this.state.appearance;
-    const hero = heroSprite(a);
+    const hero = heroSprite(a, this.state.activeClassId);
     const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, HERO_PORTRAIT_BODY_PX);
     const xpPct = p.xpNeeded > 0 ? Math.max(0, Math.min(100, (p.xp / p.xpNeeded) * 100)) : 0;
 
@@ -4594,7 +4594,7 @@ export class TownUI {
 
     const a = this.state.appearance;
     const held = this.state.player.equipment.weapon;
-    const hero = heroSprite(a);
+    const hero = heroSprite(a, this.state.activeClassId);
     const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, STYLE_PORTRAIT_BODY_PX);
     const weapon = pixelImageFit(
       weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null), 72);

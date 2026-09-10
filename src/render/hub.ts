@@ -35,6 +35,7 @@ import {
 import type { Wall } from "../game/level";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import { heroSprite } from "./sprites";
+import type { ClassId } from "../data/classes";
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
@@ -150,7 +151,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 }
 
 export function renderHub(
-  ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, settings: Settings,
+  ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, classId: ClassId, settings: Settings,
   viewW: number, viewH: number,
 ): void {
   const pad = 40;
@@ -186,7 +187,7 @@ export function renderHub(
     drawMate(ctx, mate);
   }
 
-  const body = heroSprite(appearance);
+  const body = heroSprite(appearance, classId);
   const bscale = figureScale(body.canvas);
   deckShadow(ctx, hub.x, hub.y, body.canvas.width * bscale * 0.5);
   drawSprite(ctx, body.canvas, hub.x, hub.y, Math.cos(hub.facing) < 0, bscale, body.feet);
@@ -250,6 +251,10 @@ function drawMate(ctx: CanvasRenderingContext2D, mate: HubMate): void {
   if (mate.appearance) {
     ctx.save();
     ctx.globalAlpha = 0.95;
+    // A mate draws the shared base: `HubMate` carries an appearance but not a class, and
+    // the class is not on the wire. That is the ladder degrading exactly as designed
+    // rather than a hole — putting a `ClassId` on `HubMate` is a one-field wire change
+    // whenever the party is meant to show each other's class hero.
     const mb = heroSprite(mate.appearance);
     const ms = figureScale(mb.canvas);
     deckShadow(ctx, mate.x, mate.y, mb.canvas.width * ms * 0.5);

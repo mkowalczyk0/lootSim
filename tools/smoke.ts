@@ -67,7 +67,8 @@ import {
 } from "../src/render/pixels";
 import { FLOOR_GRADE, gradeSheet, hexToRgb, luminance, tileLuminance } from "../src/render/grade";
 import {
-  ATLAS, ATLAS_COSMETICS, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
+  ATLAS, ATLAS_COSMETICS, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
+  cosmeticStageXY, heroStageOffset,
   MONSTER_SETS,
 } from "../src/render/atlas/manifest";
 import { STATION_PROP } from "../src/game/deck";
@@ -2869,15 +2870,20 @@ console.log("\n=== hero portraits (§12 — one size, either composer) ===");
     }
     return -1;
   };
+  // `heroStageOffset` now COMPUTES this rather than a constant happening to satisfy it,
+  // which is what lets a per-class hero of any height paste correctly.
+  const heroAt = heroStageOffset(heroMeta.w, heroMeta.h);
   check("the pipeline hero stands on the bottom row of its stage",
-    HERO_STAGE_DY + opaqueBottom(heroPng) === HERO_STAGE_H - 1,
-    `hero ends at y${HERO_STAGE_DY + opaqueBottom(heroPng)} of ${HERO_STAGE_H - 1}`);
+    heroAt.dy + opaqueBottom(heroPng) === HERO_STAGE_H - 1,
+    `hero ends at y${heroAt.dy + opaqueBottom(heroPng)} of ${HERO_STAGE_H - 1}`);
 
   // 2. Nothing the stage holds is clipped by it. The stage's headroom is not slack — a
   //    migrated witch hat uses almost all of it — so an oversized new layer would be
   //    silently cropped rather than fail.
-  const clipped = Object.entries(ATLAS_COSMETICS).filter(([, c]) =>
-    c.dx < 0 || c.dy < 0 || c.dx + c.w > HERO_STAGE_W || c.dy + c.h > HERO_STAGE_H);
+  const clipped = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
+    const at = cosmeticStageXY(c, heroMeta.w, heroMeta.h);
+    return at.dx < 0 || at.dy < 0 || at.dx + c.w > HERO_STAGE_W || at.dy + c.h > HERO_STAGE_H;
+  });
   check("every migrated cosmetic fits inside the hero stage", clipped.length === 0,
     clipped.map(([k]) => k).join(", "));
   const wrongSize = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
