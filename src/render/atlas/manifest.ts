@@ -161,7 +161,41 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // --- bosses (§11) --- worldScale lands the art on the full old grid extent
   // (26 × spriteScale from data/bosses.ts): warden 100, choir 92, colossus 134,
   // herald 110, nameless 112. feet ≈ 0 — trimmed, standing on the bottom row.
-  "boss.warden":              { id: "boss.warden",              w: 57, h: 89, worldScale: 1.12, feet: 0.03 },
+  // Animated: `w`/`h` are ONE FRAME. The FIRST boss on either ladder to be animated —
+  // every other animated sprite is a raid, so until this landed a player climbing the
+  // Delve or the Tower had never seen a boss move (`npm run animcoverage`, and the
+  // coverage section in docs/animation.md). The Warden is `BOSSES[0]`, the depth-5
+  // encounter, so it is the first boss anybody fights and the one they fight most.
+  //
+  // `h` 124 against an 89px character and `worldScale` UNCHANGED — the padded-canvas
+  // arrangement, see `boss.war-queen` before "fixing" it. The extra 35px are transparent
+  // headroom the greatsword rises into. Measured unmoved to six decimals: top -96.689600
+  // -> -96.689636, bottom 2.990400 -> 2.990364, left/right exactly 0.000000. `feet` is a
+  // FRACTION of `h` and had to be re-derived (2.67px of ground offset over 124px, not 89).
+  //
+  // No STRIKE yet — this shipped as stage one of two on purpose, because the Warden had
+  // no animation at all and a boss that winds up beats a boss that does nothing. The
+  // fallback ladder makes that a supported state, not a backlog entry: with no `strike`,
+  // `StrikeLatch` draws nothing after a cast and the boss returns to idle exactly as it
+  // did before. When the blow lands, note the budget is unusually generous here — the
+  // Warden's fastest phase leaves 1.10-1.18s between casts at depths 5-9, against the
+  // Ferryman's 0.60s release. Author to the 1.10s figure.
+  //
+  // Its accent is FOUR pixels (`#33ffb8`, two 2-px eyes painted on by
+  // art/bosses/warden-accent.py) — the same pixel count that makes
+  // `boss.labyrinth-minotaur` a permanent hold. It survives generation anyway, at 80-90
+  // chroma in every frame, and the reason is in docs/animation.md: thin accents fail when
+  // they are also DIM, and this one has 2.3x headroom over the bar where the Minotaur had
+  // 1.3x. It needed no `target-accent.py` rescue at all.
+  "boss.warden":              { id: "boss.warden",              w: 57, h: 124, worldScale: 1.12, feet: 0.021532,
+    anim: { cols: 10, tags: { idle: { from: 0, to: 4, seconds: 0.24, loop: true },
+                              // Ends at its EXTREME, which took choosing rather than
+                              // pinning: the pinned run overshot the target and settled
+                              // back, so the tag is the run's own monotonic build
+                              // (travel 279 -> 519 -> 861 -> 1342 -> 1485) and its
+                              // drift frames are dropped. `seconds` is unread for a
+                              // progress-keyed tag (see anim.ts#frameAtProgress).
+                              cast: { from: 5, to: 9, seconds: 0.09, loop: false } } } },
   "boss.corrupted-saint":     { id: "boss.corrupted-saint",     w: 76, h: 92, worldScale: 1.09, feet: 0.03 },
   "boss.gravebound-colossus": { id: "boss.gravebound-colossus", w: 84, h: 87, worldScale: 1.54, feet: 0.03 },
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },

@@ -655,15 +655,25 @@ diagnosed before a single frame was generated:
 2. the boss is deliberately unanimated — a ruling, not a bug
 3. the art exists and does not reach the screen — **the only bug, and nobody had looked**
 
-**Cause 3 does not exist. The answer is cause 1, and the shape of it is the finding:**
+**Cause 3 does not exist. The answer is cause 1, and the shape of it is the finding.**
+As first measured, before `boss.warden` was animated:
 
     3 of 35 encounters resolve to an animated sprite.
     The other 32 draw a single static frame — wind-up and release alike.
+    Every animated sprite belonged to a RAID, reached only from the War Table.
+    Every boss on the Delve, the Tower and the Proving was static.
 
-and, more pointedly:
+**Animating one sprite — `boss.warden` — moved that to 10 of 35**, because the Proving
+borrows the Delve templates and six class Provings borrow this one. That leverage is the
+whole argument for animating the shallow Delve bosses before anything else:
 
-    every animated sprite belongs to a RAID, reached only from the War Table.
-    every boss on the Delve, the Tower and the Proving is static.
+    Delve     1 of  5 animated
+    Proving   6 of 21 animated
+    Tower     0 of  5 animated   <- no animated boss on this ladder
+    raid      3 of  4 animated
+
+**Do not read those four lines as fixed.** They are printed by `npm run animcoverage`,
+derived per run — see "the sentence that became a lie" below.
 
 `boss.ferryman`, `boss.war-queen` and `boss.exiled-tyrant` are the three, and each is used
 by exactly one raid encounter. The five hand-authored Delve bosses (Warden, Corrupted
@@ -702,8 +712,23 @@ aggression", and 1.85s is the value at depth 1 only. That is the *"a constant th
 correct for one rung"* shape CLAUDE.md already names three times (the atlas scale, the
 biome tint, the snapshot size); add the boss action gap to that list.
 
-If a future release is ever authored longer than ~0.5s, check it against this table rather
-than against `BOSS_ACTION_GAP`.
+**THE RULE, for anyone authoring a release: check its length against the depth table
+above, not against `BOSS_ACTION_GAP`.** The constant is 1.85s; the number that actually
+governs whether your animation reaches the player is
+
+    BOSS_ACTION_GAP * phase.haste * profile.aggression * buffHasteMult
+      * crescendoHaste * raidThreatRate(players)
+
+and on a deep floor that is a third of the constant. `npm run animcoverage` prints it per
+encounter. Two consequences worth knowing before you start rather than after:
+
+- **A shallow boss has far more room than a deep one.** `boss.warden` is the depth-5
+  encounter and its fastest phase leaves **1.10-1.18s** between casts at depths 5-9 —
+  nearly double the Ferryman's 0.60s release. A Delve boss near the top of the ladder can
+  afford a longer, more legible blow than a raid boss can.
+- **Measure it for the encounter you are animating.** The gap depends on that spec's
+  fastest `phase.haste`, which ranges from 1.0 down to 0.5 across the roster, so two
+  bosses at the same depth do not get the same budget.
 
 #### A methodological note, because the first run of this tool was wrong
 
@@ -725,6 +750,97 @@ the reason is structural rather than lucky: `cast` is **progress-keyed**
 coverage. The shortest window available is `MIN_CAST` (0.45s), which is 50-56 ms/frame
 across the three animated bosses. The section exists so that claim is measured rather than
 asserted.
+
+### The Warden, and what a 4-pixel accent actually needs
+
+`boss.warden` is the **first boss on either ladder** to be animated (2026-09-10) — every
+sprite animated before it was a raid. It shipped as **stage one of two**: `idle` + `cast`,
+no `strike` yet, on the ruling that a boss which winds up beats a boss that does nothing
+and that the fallback ladder makes "animated but no release" a supported state rather than
+a backlog entry.
+
+It cost **3 generations** (idle, harvest, pinned wind-up) and no re-rolls.
+
+#### Redundancy is not the whole rule: headroom is the other half
+
+This document said a thin accent dies under generation, and pointed at
+`boss.labyrinth-minotaur` — 4 px, one per eye — as the permanent hold. The Warden's accent
+is **also 4 px** (`#33ffb8`, two 2-px eyes, painted on by `art/bosses/warden-accent.py`),
+so by pixel count alone it should have been the second permanent hold.
+
+It survives generation completely: **80.0-90.2 chroma in every frame of every run**, and it
+needed no `target-accent.py` rescue at all. The distinction is chroma headroom over the
+hero's 35.3 bar:
+
+    boss.labyrinth-minotaur   45.5  ->  1.3x headroom  ->  dies (27.8 in 4 of 5 frames)
+    boss.warden               80.0  ->  2.3x headroom  ->  holds (80.0-90.2, every frame)
+
+Both drift by a similar *proportion*; only one of them has room to. So the rule is not
+"thin accents fail" but **"thin accents fail when they are also dim"** — two variables, not
+one, and the pixel count is the cheaper but weaker predictor.
+
+This was treated as a hypothesis, not a rule: the idle was generated FIRST as a one-generation
+probe of exactly this question, before spending anything on the wind-up. If it had come back
+dim, the Warden would have joined the Minotaur for a stated reason instead of a guessed one.
+**Do that probe before animating any sprite whose accent is under ~6 px** — it is one
+generation against a whole boss's worth.
+
+It does not rehabilitate the Minotaur, whose measured problem was never pixel count alone.
+
+#### A pinned wind-up can overshoot its own target, and the fix is to choose, not re-roll
+
+The pinned run (rest -> apex, 8 frames) landed its pin cleanly — 7 opaque pixels off, canary
+0/0/0 — but the *motion* was wrong: distance-to-target ran 1022, 1003, 999, 651, 798, 941,
+1002, 924, 7. The generator raised the sword ABOVE the pinned apex around f4-f5 and settled
+back onto it. A wind-up that peaks in the middle and retreats is exactly what
+`windup-check.py` exists to reject.
+
+The cheap fix is not another generation. **The run's own f0-f5 is a clean monotonic build**
+— travel 279, 519, 861, 1342, 1485 — and its f5 is the true extreme, higher than the pose
+that was pinned. So the tag is that subsequence and the drift frames are dropped, and f5
+becomes the apex the blow will start from in stage two.
+
+Generalising: with a pinned run you get a *trajectory*, not just an endpoint. If the
+trajectory overshoots, the extreme it reached is usually a better target than the one you
+supplied — take it, rather than paying to generate the same motion again.
+
+#### The generator returns dirty transparency, and it broke two tools quietly
+
+The Warden's frames are the first in this repo to come back with **transparent pixels
+carrying stale non-zero RGB** — 2,323 per frame. Invisible (alpha is 0), and every
+generation before this one came back clean, which is why it had never been seen. It broke
+two things in opposite directions:
+
+- **`art/pixellab-upload.py` refused perfectly good art.** Its round-trip assertion compared
+  whole RGBA tuples, and the tight-palette conversion necessarily zeroes RGB under
+  transparency, so it reported "round trip changed pixels — refusing to send altered art"
+  about a change that cannot be seen. Fixed by normalising alpha-0 pixels to `(0,0,0,0)`
+  *before* the comparison, which keeps the assertion strict rather than loosening it.
+- **The canary read as a catastrophic failure.** `frames[0] == input` came back with 2,323
+  differing pixels, which by this document's own table looks like a corrupted upload. It was
+  not: opaque **lost 0, gained 0, recoloured 0**. So the canary must compare *opaque* pixels,
+  not raw tuples — the exact inverse of the lesson already recorded here, that an assertion
+  about pixel colour is not an assertion about pixel presence. Both halves matter: presence,
+  and colour *where it is visible*.
+
+`art/anim/strip.py` was already correct — its `alpha_box` reads the alpha channel precisely
+because `getbbox()` would be fooled — and this is that documented latent hazard going live
+for the first time. It now also **scrubs** the RGB as it loads, so the committed strip is
+canonical and a future reader reaching for `getbbox()` is not silently handed the whole
+canvas.
+
+#### The sentence that became a lie
+
+`tools/animcoverage.ts` originally printed, as fixed prose, *"every animated one is a RAID …
+every boss on the Delve, the Tower and the Proving is static."* True the hour it was written.
+**Animating the Warden made it false, and the tool went on printing it**, green, in the same
+run that proved it wrong.
+
+That is CLAUDE.md's fourth lesson exactly — a claim whose scope came from the thing under
+test — and it is worth recording because the tool was written *by* the session that had just
+finished writing that lesson up. The fix is to derive the breakdown per ladder from the
+roster on every run, so the output cannot outlive the fact. **A diagnostic's prose is as
+capable of going stale as a check's bound.**
 
 ## The manifest tables
 
