@@ -641,3 +641,54 @@ that is now documented in `docs/animation.md`: it correctly rejected a too-small
 against a 1485 bar, and passed a deformed blob at 1735-1745 with the accent intact, because a
 deformation *is* a large distance. Both failure modes live at opposite ends of one number, so
 no threshold on it can separate them. **The acceptance test for a blow is an eye.**
+
+---
+
+*Added 2026-09-10, late, from the owner playing raids. **This is the highest-priority item on
+the list**: it is a second report of an ability already "fixed" once, which means the first
+fix answered the wrong question.*
+
+## 20. The Ranger's execute must not fire at any HP — rework the mechanic, not the number
+
+> "I don't think that ultimate should execute at any HP. Like, it's just insta killing
+> bosses, and I'm seeing it at, like, eighty percent health. Like, I'm pushing raids. I
+> should not be pushing. So let's just rework that... come up with something else or
+> completely remove that... just quadruple the archer's attack speed haste or whatever
+> instead."
+
+**§8 sized this and left its shape intact, and the shape is what is wrong.**
+`executeMissingHealth` scales with the health a target has *already lost*, with no
+threshold, so it contributes at every health value — including 80%, where nothing about
+"executing the wounded" applies. Halving the coefficient 0.4 → 0.2 made it weaker everywhere
+and still let it fire at full health. That is why the same report came back.
+
+**This supersedes §8's written instruction "Do not remove the execute; size it."** That was a
+reasonable reading then; the owner has now overruled it in their own words and put removal on
+the table explicitly.
+
+Three things govern whatever gets built:
+
+- **An execute needs a health threshold below which it does anything at all**, and nothing
+  above it. A threshold is what makes "wounded" mean something — it preserves the class's
+  identity (marking quarry, executing the wounded) *better* than a smaller coefficient does,
+  because the coefficient version executes the healthy too.
+- **Compensate the class, don't just subtract.** The owner offered attack speed and said "or
+  whatever" — take that as direction, not as a literal 4×: they would rather the Ranger trade
+  a broken burst mechanic for an honest sustained one than keep a resized version of the
+  thing that was wrong. Removing the ultimate's punch without giving the class anything back
+  is a gutting, and §8's own constraint against that still stands.
+- **Measure it where the complaint happened: a RAID boss.** §8's A/B measured a Delve boss at
+  a contested depth, which is a good instrument for the wrong floor — a missing-health
+  execute is strongest against the single largest health pool in the game, and the owner was
+  pushing raids. An A/B run only where the last one ran can come back green while the
+  reported problem is untouched. `docs/ranger-last-hunt-nerf.md` has the method and the
+  harness; the floor is what changes.
+
+**§9 is no longer clearly a non-request, and needs the owner's word.** It records two
+abilities with the identical shape — **Reaper's "Death Comes Due"** at `executeMissingHealth:
+0.8` (four times the Ranger's current term, unbounded) and an **Assassin** ultimate at 0.4.
+The previous ruling to leave them alone rested on "nobody has complained." The owner has now
+complained about the *mechanic* rather than about one ability's tuning, and the Reaper's
+version is strictly worse than the thing they are reporting. **Ask; do not pre-emptively
+sweep.** But this is no longer a symmetrical judgement call — a player who takes the Reaper
+into a raid produces this exact report a third time.
