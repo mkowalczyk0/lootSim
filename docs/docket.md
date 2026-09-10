@@ -68,6 +68,18 @@ host measured it close to its worst case.** *"The buffer made the client measura
 worse"* is safe and is why the revert stands. *"By this much"* is not, and **the buffer's
 cost on a healthy host was never measured at all.**
 
+**Determinism under load was measured afterwards, and it passed — but read what it
+clears.** Two floor-playing stages were re-run under a deliberate 2x load swing
+(7.10 -> 13.83) and came back byte-identical, so contention costs wall-clock and not
+correctness. That retroactively clears every *seeded, byte-comparable* number in the
+batch, including the ones the orphaned probe overlapped. **It does not clear the readings
+in this section.** A human saying "monsters are stuttering" is a judgement about wall
+clock, which is exactly the quantity contention does move, and it is not seeded, not
+byte-comparable and not re-runnable. The determinism result and the load correction are
+about different kinds of measurement and neither substitutes for the other — do not let
+"contention doesn't affect correctness" be read as "the owner's readings were fine after
+all."
+
 What the load does **not** touch is the reason for the revert, which is code-level and
 load-independent: a starved machine cannot invent an 80ms fixed re-arm that is not in the
 source, a `netClock` clocked off the sim tick, or a spiral guard that discards time. Those
@@ -79,6 +91,16 @@ seeds, sample sizes, bounds and scope, and completely silent about the machine �
 measuring the one system whose host *is* the simulation. **Treat every co-op number taken
 before 2026-09-10 as having an unknown machine attached to it.** That is not an instrument
 being blind; it is the room the instrument was standing in.
+
+**Second standing rule, and it is the same finding from the polluter's side: on a shared
+machine, load is somebody's data until you know otherwise.** The rule above says *record
+the machine*; this one says *the machine may be someone else's independent variable, and
+you cannot tell by looking*. Both halves turned up within three hours on 2026-09-10 — an
+orphaned probe nobody knew about, and then a near-miss with the roles reversed, when six
+detached spin loops turned out to be a determinism check deliberately holding load
+constant. An unannounced `npm test` there would not have added noise to a measurement; it
+would have **changed the quantity being measured**. Ask before starting anything heavy, and
+assume unexplained load is deliberate until someone says it isn't.
 
 **Standing rule: audit load by CPU, never by expected command name.**
 `ps aux | awk '$3 > 15'` finds a runaway probe from three hours ago; `grep smoke` finds
