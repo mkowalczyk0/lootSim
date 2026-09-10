@@ -84,7 +84,35 @@ The line that has been proposed and not yet ruled on: **gems buy choice, never q
 Cap the number of purchases per period; let gems change *what is on offer*, never *how much
 a player may take*.
 
-## 3. More gem sinks
+## 3. More gem sinks — SHORTLIST WRITTEN, AWAITING AN OWNER CALL
+
+**2026-09-10: `docs/gem-sinks.md` is the shortlist §3 asks for** — six candidates with
+gem prices, a pay-to-win verdict and a build cost each, plus one recommendation. Nothing
+built. Three things in it are worth knowing without opening it:
+
+- **The safety test is structural, so the "is this only a small advantage?" argument never
+  has to be had.** A gem sink is safe iff what it buys is **never read by `game/`** — the
+  same property that makes the wardrobe and the Trophy Hall powerless, and the same
+  byte-identical-sheet assertion `tools/smoke.ts` already runs for both. It rules out
+  stash tabs, extra daily attempts, relic slots and currency conversion mechanically. It
+  is *necessary, not sufficient*: charging for appearance re-rolls passes it and is still
+  wrong, because pricing something currently free is a takeaway rather than a sink.
+- **The supply side is measured** rather than assumed: ~45–65 gems per Delve floor in the
+  reachable band, ~180–400 per full Avarice Rift, against existing sinks at 40/160/600
+  (capsules) and 2,775 (all six trophy cases).
+- **The recommendation is "Standards"** — an earned badge you fly, free, with gems buying
+  only the cloth it is rendered in — and it rests on a finding about the entry below:
+  **the Trophy Hall is the right pattern on the wrong surface.** Gems buying display works,
+  but it is a room only its owner can enter, and there is no visiting; §4 deliberately did
+  not build profile pages. The badge dataset is already per-class, already on the co-op
+  wire via `playerToJSON`, and shown almost nowhere.
+
+**One item is recommended for outright refusal rather than deferral**: a gem-bought marker
+or ping that finds the last monster or the completion portal. It is §6 of this docket — the
+owner has already reported that as something to *fix*, and selling the repair is the worst
+available shape for a real-money sink.
+
+The brief below is kept for context; its candidate list is superseded by the shortlist.
 
 > "more use cases for gems, be creative - i really want to prevent pay to win but the long
 > term vision is to have gems be a paid currency along side like cosmetic packs and
