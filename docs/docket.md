@@ -547,7 +547,27 @@ because `cast` beats `strike` in a case nobody intended; or art that simply was 
 authored for that boss. Establish which bosses the owner is actually seeing this on, and
 which of the three causes each one has, before generating a single frame.
 
-## 18. Two more screens can fire a destructive action on a single click
+## 18. Two more screens can fire a destructive action on a single click — LANDED
+
+**Shipped 2026-09-10**, design record `docs/forge.md` ("The confirm button") and
+`docs/memories.md`. Both screens took the §15 shape: `data-altar-item` and
+`data-named-recipe` only ever select, and executing is the action strip.
+
+**The strip is now one control, not three copies** — `TownUI.renderActionBar`, whose
+button carries a single `data-confirm-action` handled once in the click delegate, and
+all it does is call `primary()`: the same per-tab dispatch the `confirm` key uses. A
+screen adopting the strip therefore cannot invent a second way to execute, which was the
+real risk in doing this a third time.
+
+One thing was extracted rather than copied, on the §10 precedent: `GameState`
+`memoryOpBlocker` (and `crystalliseComponents`), because a control that greys itself out
+needs the refusal rules and a second copy of them in `ui/` is the drift §10 spent a
+branch removing. `applyMemoryOp` calls it. `tools/memories.ts` asserts the two give the
+same verdict both ways, and the section documents how to falsify it — the obvious
+injection passes *because* the extraction made that direction impossible.
+
+Recall keeps `data-index` deliberately: its rows are rarity tiers, where click-to-fire is
+the intent. The brief below is kept for context.
 
 Found while fixing §15, and unlike §9 this one **is** actionable: it is the same defect the
 owner already reported, in two screens they have not happened to click yet.

@@ -1259,9 +1259,49 @@ export class GameState {
    *
    * Returns the resulting Memory, or null having spent nothing.
    */
+  /**
+   * Which Memories a Crystallise would melt: same rarity, never this one, cheapest first
+   * (fewest pairs), so the op never eats the good roll sitting next to the one being
+   * raised. `ascendComponents` is the same idea for items.
+   */
+  crystalliseComponents(memory: MemoryInstance): MemoryInstance[] {
+    return this.memories
+      .filter((m) => m.id !== memory.id && m.rarity === memory.rarity)
+      .sort((a, b) => a.burdens.length - b.burdens.length)
+      .slice(0, CRYSTALLISE_COMPONENTS);
+  }
+
+  /**
+   * Why an Altar op can't run on this Memory, or null when it can — shown verbatim on the
+   * Altar's confirm control, the way `forgeOpBlocker` is shown on the bench's.
+   *
+   * **Extracted rather than copied into the UI**, and `applyMemoryOp` below is its only
+   * other caller: a screen that disables a button needs to know the rules, and a second
+   * copy of them in `ui/` is exactly the drift docket §10 spent a branch removing. If this
+   * is wrong, the button and the op are wrong together.
+   */
+  memoryOpBlocker(id: string, op: MemoryOp): string | null {
+    const memory = this.memoryById(id);
+    if (!memory) return "That Memory is no longer in the Vault.";
+    if (op === "forget") return null;
+    if (op === "etch" && memory.burdens.length >= memoryPairs(memory.rarity)) {
+      return `A ${memory.rarity} Memory carries at most ${memoryPairs(memory.rarity)} pairs.`;
+    }
+    if (op === "crystallise" && this.crystalliseComponents(memory).length < CRYSTALLISE_COMPONENTS) {
+      return `Crystallising melts ${CRYSTALLISE_COMPONENTS} other ${memory.rarity} Memories from the Vault.`;
+    }
+    const cost = memoryOpCost(op, memory.rarity);
+    if (this.ash < cost.ash) return `Needs ${cost.ash} Ash — salvage something.`;
+    if (this.coins < cost.coins) return `Needs ${cost.coins} coins.`;
+    if (this.materials.physical < cost.scrap) return `Needs ${cost.scrap} Iron Scrap.`;
+    return null;
+  }
+
   applyMemoryOp(id: string, op: MemoryOp): MemoryInstance | null {
     const memory = this.memoryById(id);
     if (!memory) return null;
+    // One copy of the refusal rules, shared with the control that greys itself out.
+    if (this.memoryOpBlocker(id, op)) return null;
 
     if (op === "forget") {
       this.memories = this.memories.filter((m) => m.id !== id);
@@ -1269,21 +1309,8 @@ export class GameState {
       return memory;
     }
 
-    // Nothing to add: refuse before charging, rather than taking the price for a no-op.
-    if (op === "etch" && memory.burdens.length >= memoryPairs(memory.rarity)) return null;
-
     const cost = memoryOpCost(op, memory.rarity);
-    // Crystallising melts two other Memories of the same rarity, the way an ascension
-    // melts two stash items. They are picked cheapest-first — the ones carrying the fewest
-    // pairs — so the op never eats the good roll sitting next to the one being raised.
-    const components = op === "crystallise"
-      ? this.memories
-          .filter((m) => m.id !== id && m.rarity === memory.rarity)
-          .sort((a, b) => a.burdens.length - b.burdens.length)
-          .slice(0, CRYSTALLISE_COMPONENTS)
-      : [];
-    if (op === "crystallise" && components.length < CRYSTALLISE_COMPONENTS) return null;
-    if (this.ash < cost.ash || this.coins < cost.coins || this.materials.physical < cost.scrap) return null;
+    const components = op === "crystallise" ? this.crystalliseComponents(memory) : [];
 
     const next =
       op === "distort" ? distortMemory(memory, this.rng)

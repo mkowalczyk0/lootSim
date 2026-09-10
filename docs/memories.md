@@ -459,6 +459,23 @@ tier off a per-op base, coins are a multiple of `reforgeCoinCost`, scrap is
 **Ash is still the one crafting currency** (§27). The Altar adds no currency: making costs
 materials and coins, shaping costs Ash, exactly as the Forge does.
 
+**Clicking a Memory card selects it; it does not run the op** (docket §18). The Vault's
+rows carry `data-altar-item` rather than the generic `data-index`, whose handler both moves
+the cursor and calls `primary()` — which on the workbench spends Ash, and on `forget`
+destroys the Memory outright. A Memory card is precisely the thing you click to *read* its
+boons and burdens, which is what makes this the same defect the owner already reported on
+the Forge. Executing is the action strip below the list: `TownUI.renderActionBar`, the same
+control the Forge uses, not a copy of it. The Recall screen deliberately keeps `data-index`
+— its rows are rarity tiers, and there click-to-fire is the whole intent.
+
+`GameState.memoryOpBlocker` says why an op can't run, and the strip greys itself out from
+it. It was **extracted rather than reimplemented in the UI**: `applyMemoryOp` consults it as
+its first act, so the button and the op refuse for identical reasons by construction.
+`tools/memories.ts` asserts that equivalence in both directions and records how to falsify
+it — note that tightening the blocker leaves the check green, because that direction is
+impossible rather than untested; the two live injections are cutting the consult out of
+`applyMemoryOp`, and adding a refusal inside it the blocker knows nothing about.
+
 ### 7.4 Acquisition, and consumption
 
 Memories are **made, not found**. There is no `data/drops.ts` entry and no third registry

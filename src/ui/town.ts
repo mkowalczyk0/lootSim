@@ -588,8 +588,22 @@ export class TownUI {
       // Docket §15: a Forge card selects and does nothing else. The generic `[data-index]`
       // handler at the bottom of this delegate both selects *and* fires `primary()`,
       // which is right for a chest tier or a stash item and catastrophic here — it spends
-      // Ash on a one-way operation on a stray click. Executing is `[data-forge-confirm]`
+      // Ash on a one-way operation on a stray click. Executing is `[data-confirm-action]`
       // below, and nothing else on this screen does it.
+      // Docket §18: the same split, on the two other screens that browse a list and act
+      // on what you picked. Both only ever select; `[data-confirm-action]` executes.
+      const altarItemEl = target.closest<HTMLElement>("[data-altar-item]");
+      if (altarItemEl) {
+        this.cursor = Number(altarItemEl.dataset.altarItem);
+        this.render();
+        return;
+      }
+      const namedRecipeEl = target.closest<HTMLElement>("[data-named-recipe]");
+      if (namedRecipeEl) {
+        this.cursor = Number(namedRecipeEl.dataset.namedRecipe);
+        this.render();
+        return;
+      }
       const forgeItemEl = target.closest<HTMLElement>("[data-forge-item]");
       if (forgeItemEl) {
         this.cursor = Number(forgeItemEl.dataset.forgeItem);
@@ -599,9 +613,13 @@ export class TownUI {
         this.render();
         return;
       }
-      const forgeConfirmEl = target.closest<HTMLElement>("[data-forge-confirm]");
-      if (forgeConfirmEl) {
-        this.workbenchConfirm();
+      // The one execute path for every screen that separates picking from doing
+      // (docket §15, then §18). It calls `primary()` — the same per-tab dispatch the
+      // `confirm` key uses — so a screen adopting the action strip cannot invent a
+      // second way to run its operation.
+      const confirmEl = target.closest<HTMLElement>("[data-confirm-action]");
+      if (confirmEl) {
+        this.primary();
         this.render();
         return;
       }
@@ -3090,13 +3108,24 @@ export class TownUI {
       </div>`;
   }
 
-  /** One Memory as a list row — its rarity, the place it remembers and how deep it is. */
+  /**
+   * One Memory as a list row — its rarity, the place it remembers and how deep it is.
+   *
+   * `data-altar-item`, not `data-index` (docket §18). A Memory card is precisely the thing
+   * you click to read its boons and burdens, and the generic row handler both selects and
+   * calls `primary()` — which on the workbench spends Ash, and on `forget` destroys the
+   * Memory outright. Selecting is this; executing is the action strip below the list.
+   *
+   * The Recall screen deliberately keeps `data-index`: its rows are rarity tiers, where
+   * click-to-fire *is* the intent and the row has no second meaning. That is the line
+   * docket §18 draws, and it is the reason this is two screens rather than ten.
+   */
   private memoryRows(): string {
     if (this.state.memories.length === 0) {
       return `<div class="row"><div class="row-main"><span class="name muted">The Vault is empty. Recall one.</span></div></div>`;
     }
     return this.state.memories.map((m, i) => `
-        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+        <div class="row ${i === this.cursor ? "on" : ""}" data-altar-item="${i}">
           <div class="row-main">
             <span class="dot" style="background:${RARITY_COLORS[m.rarity]}"></span>
             <span class="name" style="color:${RARITY_COLORS[m.rarity]}">${escapeHtml(m.placeId)}</span>
@@ -3156,7 +3185,8 @@ export class TownUI {
           ${this.memoryModBlock(memory)}
           <p class="muted">Every operation rolls. None of them lets you choose — you push
           a Memory toward what you want, you do not write it.</p>
-        </aside>`;
+        </aside>
+        ${this.renderAltarActions(memory)}`;
     }
     return `${pane}
       <aside class="side">
@@ -3175,7 +3205,41 @@ export class TownUI {
         ${this.previewBlock(previewForRun(config))}
         <p class="muted">Spent the moment you walk into its portal. Dying in it does not
         give it back.</p>
-      </aside>`;
+      </aside>
+      ${this.renderAltarActions(memory)}`;
+  }
+
+  /**
+   * The Altar's action strip (docket §18) — the same control the workbench uses, not a
+   * third copy of the idea. Three screens with this architecture and three private confirm
+   * paths is how the owner reports it a fourth time.
+   *
+   * The Vault and the workbench ask different questions of the same Memory, so the button
+   * says which: in the Vault it opens a portal (a plan, spending nothing until you walk
+   * into it), on the workbench it runs the selected op — and `forget`, which destroys the
+   * Memory for Ash, is the one that turns the button red.
+   */
+  private renderAltarActions(memory: MemoryInstance): string {
+    if (this.altarMode !== "workbench") {
+      return this.renderActionBar({
+        label: "Open its portal",
+        target: `<span style="color:${RARITY_COLORS[memory.rarity]}">${rarityLabel(memory.rarity)} Memory of ${
+          escapeHtml(memory.placeId)}</span>`,
+        title: "Spawns the portal back at the Citadel. The Memory is spent when you walk into it, not now.",
+        standalone: true,
+      });
+    }
+    const info = MEMORY_OP_INFO[this.altarOp];
+    return this.renderActionBar({
+      label: info.label,
+      target: `<span style="color:${RARITY_COLORS[memory.rarity]}">${rarityLabel(memory.rarity)} Memory of ${
+        escapeHtml(memory.placeId)}</span>`,
+      // One copy of the refusal rules, on `GameState` beside the op that enforces them.
+      blocker: this.state.memoryOpBlocker(memory.id, this.altarOp),
+      danger: this.altarOp === "forget",
+      title: info.blurb,
+      standalone: true,
+    });
   }
 
   /** Recall: buy the tier, roll the character. */
@@ -3284,8 +3348,12 @@ export class TownUI {
     const defs = craftableNamed();
     const rows = defs.map((def, i) => {
       const afford = this.state.canAffordNamed(def.id);
+      // `data-named-recipe`, not `data-index` (docket §18). These rows have a full recipe
+      // panel beside them, so clicking one is how you *read* it — and the generic row
+      // handler would call `primary()`, which is `craftNamed`: it consumes stash item
+      // components (§24), and a generic line can eat a legendary you meant to inspect.
       return `
-        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
+        <div class="row ${i === this.cursor ? "on" : ""}" data-named-recipe="${i}">
           <div class="row-main">
             <span class="dot" style="background:${RARITY_COLORS[def.rarity]}"></span>
             <span class="name" style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</span>
@@ -3305,7 +3373,18 @@ export class TownUI {
         <table class="cmp">${bag}</table>
         <p class="muted">A named recipe is exact — no rarity dial, no essence, no gamble.
         What it lists is what it costs, and what it makes is what it says.</p>
-      </aside>`;
+      </aside>
+      ${def
+        ? this.renderActionBar({
+            label: "Forge it",
+            target: `<span style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</span>`,
+            // `canAffordNamed` is the same check `craftNamed` makes before it spends
+            // anything, so the button and the recipe can't disagree about the bill.
+            blocker: this.state.canAffordNamed(def.id) ? null : "The recipe asks for more than you have.",
+            title: "Consumes exactly what the bill lists — materials, coins, and the stash items named on it.",
+            standalone: true,
+          })
+        : ""}`;
   }
 
   /** One named recipe, priced line by line against what's in the bag. */
@@ -3597,44 +3676,71 @@ export class TownUI {
   }
 
   /**
-   * The action area (docket §15). One button, its own fixed strip at the bottom of the
-   * workbench, outside both the scrolling card grid and the reading panel — the third
-   * report in this family, and the direction behind it is settled: a control that spends
-   * something lives somewhere the player goes on purpose.
+   * **The** action strip — one control, shared by every screen where picking a row and
+   * running the op are two different acts (docket §15, then §18).
    *
-   * Selecting and executing are two acts now. A card click only ever selects; this is
-   * the only thing on the screen that spends Ash, and it is the same function the
-   * confirm key calls, so the two paths can't diverge.
+   * The direction behind it is settled after three owner reports: a control that spends
+   * something lives in its own fixed region, outside the scrolling grid and outside the
+   * reading panel. What §18 added is that there must be exactly *one* of it. The Forge,
+   * the Altar and the named-recipe screen share an architecture — a list you browse, a
+   * panel that describes what you picked, an operation that consumes something — and three
+   * private confirm paths is how this comes back a fourth time.
+   *
+   * The button is `data-confirm-action`, handled once in the click delegate, and all it
+   * does is call `primary()` — the same function the `confirm` key calls, dispatched per
+   * tab exactly as it always was. So the mouse path and the keyboard path are not merely
+   * consistent, they are the same code, and a screen adopting this strip does not get to
+   * invent a second way to execute.
+   */
+  private renderActionBar(spec: {
+    /** What the button says. Name the act, not the screen: "Reforge", "Forge it", "Recall". */
+    label: string;
+    /** The thing it would act on, already escaped/coloured by the caller. */
+    target: string;
+    /** Why it can't run, or null. A blocked strip disables the button and shows this. */
+    blocker?: string | null;
+    /** Red rather than accent — destructive, or an armed second press. */
+    danger?: boolean;
+    /** Hover text when nothing is blocking it. */
+    title?: string;
+    /** True when this strip is a direct child of `.body` rather than inside the workbench. */
+    standalone?: boolean;
+  }): string {
+    const blocked = !!spec.blocker;
+    return `<div class="wb-actions ${spec.standalone ? "standalone" : ""}">
+        <button class="wb-confirm ${spec.danger ? "danger" : ""} ${blocked ? "dim" : ""}" data-confirm-action="1"
+                ${blocked ? "disabled" : ""} title="${escapeHtml(spec.blocker ?? spec.title ?? spec.label)}">
+          ${escapeHtml(spec.label)}
+        </button>
+        <span class="wb-actions-target">
+          ${spec.target}
+          ${blocked ? `<span class="danger">${escapeHtml(spec.blocker!)}</span>` : ""}
+        </span>
+        <span class="wb-actions-hint">${k(this.state.settings, "confirm")}</span>
+      </div>`;
+  }
+
+  /**
+   * The workbench's strip (docket §15). Salvaging what you're wearing keeps its two-press
+   * gate — it runs through this button rather than a private path of its own, which is
+   * what the docket asked for. The first press arms, the second destroys.
    */
   private renderWorkbenchActions(item: Item, quote: ReturnType<GameState["forgeQuote"]>): string {
-    const s = this.state.settings;
     const info = FORGE_OP_INFO[this.forgeOp];
     const worn = this.wornItemIds().has(item.id);
     const armed = this.salvageArmed === item.id;
-    const blocked = !!quote?.blocker;
-    // Salvaging what you're wearing keeps its two-press gate — it just runs through this
-    // button now instead of a private path of its own, which is what the docket asked
-    // for. The first press arms, the second destroys.
     const arming = this.forgeOp === "salvage" && worn && !armed;
-    const label = blocked
-      ? info.label
-      : arming
-        ? `${info.label} — the one you're wearing?`
-        : armed
-          ? `${info.label} it anyway`
-          : info.label;
-    const danger = this.forgeOp === "salvage" || armed;
-    return `<div class="wb-actions">
-        <button class="wb-confirm ${danger ? "danger" : ""} ${blocked ? "dim" : ""}" data-forge-confirm="1"
-                ${blocked ? "disabled" : ""} title="${escapeHtml(quote?.blocker ?? info.blurb)}">
-          ${escapeHtml(label)}
-        </button>
-        <span class="wb-actions-target">
-          <span style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</span>
-          ${blocked ? `<span class="danger">${escapeHtml(quote!.blocker!)}</span>` : ""}
-        </span>
-        <span class="wb-actions-hint">${k(s, "confirm")}</span>
-      </div>`;
+    return this.renderActionBar({
+      label: quote?.blocker
+        ? info.label
+        : arming
+          ? `${info.label} — the one you're wearing?`
+          : armed ? `${info.label} it anyway` : info.label,
+      target: `<span style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.name)}</span>`,
+      blocker: quote?.blocker ?? null,
+      danger: this.forgeOp === "salvage" || armed,
+      title: info.blurb,
+    });
   }
 
   /** Confirm on the bench: run the selected op on the selected item and say what happened. */
