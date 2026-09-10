@@ -199,6 +199,15 @@ region, outside the scrolling card grid and outside the reading panel**, which i
 settled direction after three owner reports in this family. It calls `workbenchConfirm`,
 the same function the `confirm` key calls, so the mouse and keyboard paths cannot diverge.
 
+**One strip, three screens (docket §18).** The Altar and the named-recipe screen have the
+same architecture — a list you browse, a panel describing what you picked, an operation that
+consumes something — and they had the same latent one-click-executes hazard. Both now use
+`TownUI.renderActionBar`, the *same* control: one `data-confirm-action` attribute, handled
+once in the click delegate, calling `primary()`. Three private confirm paths is how this
+comes back a fourth time, so there is one. `.wb-actions.standalone` is the same strip on a
+screen with no workbench box to sit inside — it spans both of `.body`'s columns, which is
+what keeps it out of the list on its left and the reading panel on its right.
+
 **Salvage's two-press gate now runs through that button rather than a path of its own**,
 which is what the docket asked for: on a worn item the button reads "Salvage — the one
 you're wearing?", and only a second press on the same item destroys it. Blocked ops

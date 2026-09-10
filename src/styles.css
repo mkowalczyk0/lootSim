@@ -258,9 +258,11 @@ html, body {
   display: grid;
   grid-template-columns: 1fr 340px;
   /* Every tab lays out exactly two children (a main pane and the `.side` reading
-     panel) and fills row 1 — the auto second row only exists for Reforge, whose third
-     child (`.workbench-bar`) spans both columns and auto-flows into it. `1fr` keeps
-     the cards + sidebar flexible above it instead of the two rows splitting evenly. */
+     panel) and fills row 1 — the auto second row exists for the screens that separate
+     picking a row from acting on it, whose third child spans both columns and auto-flows
+     into it: Reforge's `.workbench-bar`, and the Altar's and named recipes' standalone
+     `.wb-actions` strip (docket §15, §18). `1fr` keeps the cards + sidebar flexible above
+     it instead of the two rows splitting evenly. */
   grid-template-rows: 1fr auto;
   gap: 16px;
   min-height: 0;
@@ -1364,6 +1366,21 @@ html, body {
   border-top: 1px solid var(--line);
   padding-top: 10px;
   flex: none;
+}
+
+/* The same strip on a screen that has no workbench box to sit inside — the Altar and the
+   named recipes (docket §18). It becomes its own panel spanning both of `.body`'s columns,
+   which is what keeps it out of the scrolling list on its left and the reading panel on
+   its right. Deliberately the same element and the same button: three screens with this
+   architecture and three private confirm controls is how the owner reports it a fourth
+   time. */
+.wb-actions.standalone {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px 18px;
 }
 
 .wb-confirm {

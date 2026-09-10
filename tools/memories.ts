@@ -889,6 +889,79 @@ console.log("\n=== a forced affix really is on every monster on the floor ===");
     `${plainQuota.elitesRequired} → ${hd.elitesRequired}`);
 }
 
+// --- the confirm control and the op refuse for the same reasons ----------------
+
+console.log("\n=== a greyed-out button and a refused op agree (docket §18) ===");
+{
+  // The Altar's action strip disables itself from `memoryOpBlocker`, and `applyMemoryOp`
+  // enforces the same rules — because it *calls* it. That extraction is the whole point:
+  // a second copy of the refusal rules living in `ui/town.ts` is exactly the drift docket
+  // §10 spent a branch removing from the Forge's preview, and a button that looks live and
+  // then says "it won't take that" is the visible half of the same defect.
+  //
+  // Asserted as an equivalence rather than one-sided containment: a blocker with no refusal
+  // behind it greys out a button that would have worked, and a refusal with no blocker is
+  // the dead button the owner would report. Both directions, at every rarity, for every op.
+  //
+  // **How to falsify this, because the obvious way doesn't work.** Tightening
+  // `memoryOpBlocker` (say, `cost.ash + 1`) leaves this green, and that is not a gap — it
+  // is the extraction doing its job: `applyMemoryOp` *calls* the blocker, so a stricter
+  // blocker refuses in both places by construction, and that direction is impossible
+  // rather than merely unobserved. A rule that cannot be violated beats a check that
+  // notices when it was. What this check actually guards is the two things that can still
+  // regress, and both were confirmed red before it was trusted: deleting the
+  // `memoryOpBlocker` consult from `applyMemoryOp` (→ "blocker …, op ran"), and adding a
+  // refusal inside `applyMemoryOp` that the blocker knows nothing about (→ "blocker none,
+  // op refused"). Falsify it those two ways, not by moving a threshold.
+  let agree = true;
+  let disagreement = "";
+  let blockedSeen = 0;
+  let allowedSeen = 0;
+
+  for (let seed = 0; seed < 60; seed++) {
+    // Accounts across the whole solvency range, so both verdicts are actually exercised:
+    // stone broke, exactly-ish affordable, and rich enough that only a structural rule
+    // (the pair ceiling, the crystallise components) can refuse.
+    const purse = [0, 400, 40_000, 100_000_000][seed % 4]!;
+    const state = new GameState(500 + seed);
+    state.recordDepth(MEMORY_UNLOCK_DEPTH, delveConfig(MEMORY_UNLOCK_DEPTH));
+    state.coins = purse;
+    state.ash = purse;
+    state.materials.physical = purse;
+
+    const rarity = MEMORY_RARITIES[seed % MEMORY_RARITIES.length]!;
+    const memory = rollMemory(rarity, 30, new Rng(seed), `blk${seed}`);
+    for (const op of MEMORY_OPS) {
+      // A fresh account per (memory, op): applying one op mutates the Vault, and the
+      // question is what the *button* and the *op* say about the same untouched state.
+      const probe = new GameState(900 + seed);
+      probe.recordDepth(MEMORY_UNLOCK_DEPTH, delveConfig(MEMORY_UNLOCK_DEPTH));
+      probe.coins = purse;
+      probe.ash = purse;
+      probe.materials.physical = purse;
+      probe.memories = [{ ...memory }];
+
+      const blocker = probe.memoryOpBlocker(memory.id, op);
+      const ran = probe.applyMemoryOp(memory.id, op) !== null;
+      if (blocker) blockedSeen++; else allowedSeen++;
+      if (!!blocker === ran) {
+        agree = false;
+        disagreement = `${rarity} ${op} at purse ${purse}: blocker ${
+          blocker ? `"${blocker}"` : "none"}, op ${ran ? "ran" : "refused"}`;
+      }
+    }
+  }
+
+  check("the button's reason and the op's refusal are the same verdict, both directions",
+    agree, agree ? `${blockedSeen} blocked, ${allowedSeen} allowed` : disagreement);
+  // A comparison that only ever saw one verdict would pass while proving nothing — the
+  // repo's standing lesson about checks whose scope has quietly emptied.
+  check("…and both verdicts were actually exercised", blockedSeen > 0 && allowedSeen > 0,
+    `${blockedSeen} blocked, ${allowedSeen} allowed`);
+  check("a Memory that isn't in the Vault is refused with a reason, not a crash",
+    new GameState(7).memoryOpBlocker("no-such-memory", "distort") !== null);
+}
+
 console.log(failures === 0
   ? "\nPurgatory remembered it exactly as asked.\n"
   : `\n${failures} problem(s).\n`);
