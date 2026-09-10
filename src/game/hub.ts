@@ -89,7 +89,7 @@ const INTERACT_RANGE = 34;
  * a terminal you walk up to, and the Delve and the two rifts are the widest because they
  * are the permanent doors the hall was built around.
  */
-const STATION_LABEL: Record<HubStationKind, string> = {
+export const STATION_LABEL: Record<HubStationKind, string> = {
   dive: "The Delve", abyss: "Abyssal Rift", hoard: "Avarice Rift",
   starmap: "Reliquary Gate", expedition: "Reliquary Portal",
   forge: "The Forge", quartermaster: "Quartermaster", comms: "Comms Relay",
@@ -99,7 +99,7 @@ const STATION_LABEL: Record<HubStationKind, string> = {
   training: "Training Dummy",
 };
 
-const STATION_RADIUS: Record<HubStationKind, number> = {
+export const STATION_RADIUS: Record<HubStationKind, number> = {
   dive: 24, abyss: 24, hoard: 24,
   starmap: 20, expedition: 22,
   forge: 20, quartermaster: 20, comms: 20,

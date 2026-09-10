@@ -216,13 +216,28 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // Collage-of-eras per the worldbuilding doc's Citadel section: ash/bone stone, ancient
   // weapons and statuary from every civilization, one weak-gold accent at most (Threshold
   // wards and Keeper sigils only — the palette table's "nothing else saturated").
-  "prop.citadel-forge":    { id: "prop.citadel-forge",    w: 68, h: 86, worldScale: 0.47, feet: 0.03 },
-  "prop.citadel-rack":     { id: "prop.citadel-rack",     w: 57, h: 72, worldScale: 0.53, feet: 0.03 },
-  "prop.citadel-shrine":   { id: "prop.citadel-shrine",   w: 48, h: 73, worldScale: 0.49, feet: 0.03 },
-  "prop.citadel-starmap":  { id: "prop.citadel-starmap",  w: 44, h: 70, worldScale: 0.49, feet: 0.03 },
-  "prop.citadel-wartable": { id: "prop.citadel-wartable", w: 78, h: 42, worldScale: 0.57, feet: 0.05 },
-  "prop.citadel-altar":    { id: "prop.citadel-altar",    w: 55, h: 75, worldScale: 0.45, feet: 0.05 },
-  "prop.citadel-dummy":    { id: "prop.citadel-dummy",    w: 27, h: 82, worldScale: 0.41, feet: 0.03 },
+  //
+  // 2026-09: the first cut here (worldScale ~0.41-0.57) was "the legacy grid's old width,
+  // nudged ~1.1x for legibility" — a guess made before the hall had ever been rendered.
+  // Seeing it, the owner's word was "a bit small and out of place": a station relic is a
+  // landmark you navigate by, not set dressing, and it should read as furniture a person
+  // could walk up to and use. These now target the hero's own drawn height on the deck
+  // (`HUB_FIGURE_H` in `render/hub.ts`, 74 world units) rather than the old grid math —
+  // roughly hero-height to a bit taller for five of the six standing relics. Two carry a
+  // deliberately smaller exception, both forced by the room rather than by taste: the
+  // training dummy's own annex only has two tiles of headroom over its anchor, and the
+  // rack is the one relic still crowded enough at its own spot (between the spawn tile's
+  // own interact-range exclusion and its row-mates) that nothing bigger than ~0.85x fits
+  // without touching a neighbor — see `tools/hub-layout.ts`, the geometry check this
+  // rearrangement was verified against and that brute-forced this one relic's legal cell
+  // once hand-placement ran out of room.
+  "prop.citadel-forge":    { id: "prop.citadel-forge",    w: 68, h: 86, worldScale: 1.02, feet: 0.03 },
+  "prop.citadel-rack":     { id: "prop.citadel-rack",     w: 57, h: 72, worldScale: 0.85, feet: 0.03 },
+  "prop.citadel-shrine":   { id: "prop.citadel-shrine",   w: 48, h: 73, worldScale: 1.15, feet: 0.03 },
+  "prop.citadel-starmap":  { id: "prop.citadel-starmap",  w: 44, h: 70, worldScale: 1.17, feet: 0.03 },
+  "prop.citadel-wartable": { id: "prop.citadel-wartable", w: 78, h: 42, worldScale: 1.18, feet: 0.05 },
+  "prop.citadel-altar":    { id: "prop.citadel-altar",    w: 55, h: 75, worldScale: 1.12, feet: 0.05 },
+  "prop.citadel-dummy":    { id: "prop.citadel-dummy",    w: 27, h: 82, worldScale: 0.55, feet: 0.03 },
   // Floor dressing (§17.7b) — same idiom as `DECK_DRESSING`'s brazier/rubble/statue/
   // pillar/banner glyphs: purely visual, placed blind on the text grid, wants an eye.
   "prop.citadel-brazier":  { id: "prop.citadel-brazier",  w: 22, h: 35, worldScale: 0.69, feet: 0.03 },

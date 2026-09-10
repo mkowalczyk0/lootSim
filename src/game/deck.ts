@@ -51,12 +51,33 @@ export type HubStationKind =
  * the painted masonry on every side; this is the first version of the deck where the
  * stone that stops you is the stone the picture shows.
  *
- * The stations keep the relative positions and the painted structures they had — the
- * Comms shrine on its plinth against the west wall, the Quartermaster's rack and the
- * Reliquary Gate along the east, the Forge on its furnace in the southeast corner, the
- * Abyss in the north archway — snapped onto the lattice. The three that were standing on
- * painted wall (the War Table, the Convergence and the Raid Portal, all added after the
- * deck was baked and placed by eye) moved onto floor.
+ * **Rearranged 2026-09 (owner review of the first render): the relics read "a bit small
+ * and out of place."** That first pass kept the painted image's old coordinates verbatim
+ * and had never been seen rendered — three station relics (the Avarice Rift portal, the
+ * Quartermaster's rack, the Reliquary Gate) were stacked two and three tiles apart, so
+ * the rack visually sat on top of "AVARICE RIFT" and "QUARTERMASTER"/"RELIQUARY GATE"
+ * ran into each other as text. Bumping every relic's `worldScale` (see `manifest.ts`) to
+ * read as furniture rather than set dressing made the packing worse, not better, so this
+ * pass re-spaces every station and dressing glyph rather than nudging the three named
+ * ones — `deckProblems()` and the smoke test still hold the grid to the same rules, and
+ * nothing about the hall's own walls moved.
+ *
+ * The stations no longer keep the painted image's original coordinates verbatim — that
+ * bake predates the relic art and was never checked against a render. The general
+ * geography survives (Comms near the west wall, the Quartermaster/Reliquary Gate/Forge
+ * toward the east and south, the Abyss in the north archway), just spaced far enough
+ * apart that a relic's own footprint and its neighbor's label never touch: six relics
+ * across two rows (row 6: Comms, the Altar, the Reliquary Gate; row 12: the War Table,
+ * the Quartermaster, the Forge), with the portals and floor dressing filling the gaps
+ * between and below. The Quartermaster's column (8, not directly between the War
+ * Table's and the Forge's) is load-bearing for an unrelated reason: `tools/smoke.ts`
+ * asserts the spawn tile is clear of every station's interact radius ("nothing is in
+ * interact range at spawn," so arriving on the deck never opens a station's screen
+ * unasked), and the rack's own footprint is the one relic prop still large enough that
+ * no other column at row 12 clears both that radius and its row-mates — see
+ * `tools/hub-layout.ts`, the geometry check this whole rearrangement was authored
+ * against, which brute-forces a station's legal cells the same way when hand-placement
+ * runs out of room.
  *
  * **The build-tester room is the first second room** — exactly the "a handful of rows"
  * the header above promised: a doorway punched through the hall's own east wall at row
@@ -69,16 +90,16 @@ const DECK: readonly string[] = [
   "##############################",
   "##############################",
   "#########.A###################",
-  "####T....p..p...##############",
-  "###.....L....H...#############",
-  "###.W............#############",
-  "###.s........Q..R#############",
-  "###C.............######..r...#",
-  "###.....E................P...#",
-  "###...D....M...G.######......#",
-  "###.n............#############",
-  "###.V...........F#############",
-  "####.rb.X..b....##############",
+  "####T..........H##############",
+  "###..............#############",
+  "###M.............#############",
+  "###...C..L...R..##############",
+  "###..............######......#",
+  "###.D..V...G...E..r.r.X......#",
+  "###..............######..P...#",
+  "###..............#############",
+  "###p...b.n.s...pb#############",
+  "####.W..Q....F..##############",
   "#########.@###################",
   "##############################",
 ];
