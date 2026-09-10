@@ -353,6 +353,49 @@ This is arguably the most expensive instance in the file to date, because it did
 cost a wrong number: it cost a wrong premise. "The machine is idle" was stated to two
 sessions as an observed fact for over two hours while a core sat pinned the whole time.
 
+## A different failure, and this document has no slot for it: seen and skipped, not unseen
+
+Every entry above is an instrument — human-built or otherwise — that could not see the thing it
+was asked about. Tonight also produced a failure of a different shape, and this document's own
+organizing question ("what couldn't be seen?") has no slot for it, which is itself the finding.
+
+The de-jitter buffer's own docket entry, `docs/docket.md` §1, already carried this as its third
+bullet, written and read before the buffer was built:
+
+> "The host's frame budget. The host runs the whole simulation AND renders. A host who is
+> themself dropping frames delivers late snapshots to everyone. Worth separating 'the client
+> stutters' from 'the host stutters and the client faithfully reproduces it' — those have
+> completely different fixes and only one of them is a networking bug."
+
+That is the current leading hypothesis for the underlying bug. It was correctly identified, in
+the exact document the work was scoped from, and a networking fix got built and shipped anyway
+— the buffer, and the harness that validated it (item 8 above), neither of which could ever have
+addressed a host that is itself dropping frames, because neither one asks the question that
+sentence already asked.
+
+**Nobody was blind here.** Every entry in this document up to this point describes an instrument
+that returned a plausible number because it structurally could not see the failure. This is the
+opposite: the failure was written down in plain language, in the right place, and the work
+proceeded as though it hadn't been. Better instruments do not reach this. `tools/mp-jitter.ts`
+could have been built with perfect rigor — an unmodelled real link, an independent author, an
+exact bound — and it still would not touch a bug whose actual location is the host's own frame
+budget, because the harness was built to answer a question about the network, and the docket had
+already named a more likely culprit that was never the network at all.
+
+**The structural point, and it is the reason this is its own section rather than a twelfth
+numbered instance:** a post-mortem organized around "what couldn't we see" has no slot for "what
+did we see and ignore." The eleven instances above are all findable by asking the catching
+question this document already teaches — *would this instrument's number be different if the
+defect were true?* That question does not find this one, because nothing about it was a
+measurement failure. A write-up of tonight that asked only "what were we blind to" would have
+told the flattering half of the story: eleven instances of not-seeing, and nothing about the one
+thing that was seen and built past anyway.
+
+**The rule to carry forward, as a check to run on any post-mortem, including this one:**
+
+> When a post-mortem is entirely about what couldn't be seen, check whether something *was* seen
+> and skipped. That half doesn't surface on its own.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
