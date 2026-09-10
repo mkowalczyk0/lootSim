@@ -6,6 +6,7 @@ import {
   delveConfig, MODES, modeUnlocked, riftConfig, trainingConfig, type RunConfig, type RunModeId,
 } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
+import { towerConfig } from "./data/tower";
 import { memoryConfig } from "./data/memories";
 import { dailyUnlocked } from "./data/daily";
 import { weeklyUnlocked } from "./data/weekly";
@@ -870,19 +871,22 @@ function start(state: GameState, who: AccountInfo): void {
     .catch((err) => console.error(err))
     .finally(() => {
       // Dev-only shortcut for art review: `?dive=8` drops straight onto a Delve floor
-      // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor, and
-      // `?rift=abyss&tier=2` (or `hoard`) onto a rift's first floor, instead of
-      // walking the hub.
+      // at that depth, `?planet=<id>&tier=2` onto a Reliquary sector floor,
+      // `?rift=abyss&tier=2` (or `hoard`) onto a rift's first floor, and `?tower=8` onto
+      // a Tower floor at that height, instead of walking the hub.
       const params = import.meta.env.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
       const devDive = params.get("dive");
       const devPlanet = params.get("planet");
       const devRift = params.get("rift");
+      const devTower = params.get("tower");
       if (devPlanet && PLANETS_BY_ID[devPlanet]) {
         const tier = Math.max(1, Number(params.get("tier")) || 1);
         enterDungeon(planetConfig(PLANETS_BY_ID[devPlanet]!, tier, 1, state.challengerTier));
       } else if (devRift && devRift in MODES && MODES[devRift as RunModeId].isRift) {
         const tier = Math.max(1, Number(params.get("tier")) || 1);
         enterDungeon(riftConfig(devRift as RunModeId, tier, 1, state.challengerTier));
+      } else if (devTower) {
+        enterDungeon(towerConfig(Math.max(1, Number(devTower) || 1), state.challengerTier));
       } else if (devDive) {
         enterDungeon(delveConfig(Math.max(1, Number(devDive) || 1), state.challengerTier));
       } else {
