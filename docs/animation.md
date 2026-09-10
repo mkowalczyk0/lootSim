@@ -842,6 +842,125 @@ finished writing that lesson up. The fix is to derive the breakdown per ladder f
 roster on every run, so the output cannot outlive the fact. **A diagnostic's prose is as
 capable of going stale as a check's bound.**
 
+### Stage B: the Warden's blow needs a hand-authored pose, and here is the evidence
+
+**Not built (2026-09-10), and this is a result rather than a gap.** `docs/animation.md`
+already said a real blow for `boss.war-queen` "needs a hand-authored pose, and that is an
+art task rather than a generation", and the natural reading was that it was about *that*
+sprite — 98x108, dense, wings and a plume. It is not. It reproduces on `boss.warden`,
+which is smaller, simpler, and animated cleanly through idle and a five-frame wind-up.
+
+Three generations, three distinct strategies, all from the same on-model apex:
+
+    "crashing straight down ... deep forward lunge"    -> loop returned to a rest pose
+    "drops into a deep kneeling lunge ... never
+     straightens up"                                   -> body deformed into a squat blob
+    (a quantized-source variant of the first)          -> void, see below
+
+Every attempt that achieves the silhouette change a strike needs achieves it by
+**deforming the body** — legs merging, helmet sinking into the shoulders, proportions
+collapsing — rather than by posing it. So the finding is now general enough to state as a
+rule: **this generator will interpolate and it will re-render, but it will not pose.** A
+strike's defining moment is a pose, so it must be authored.
+
+#### The impact-vs-rest comparison is necessary but NOT sufficient
+
+The Ferryman section above introduces a check: an impact pose must be further from rest
+than the apex is, or it cannot read as a strike. That check is right and it did its job
+here — it correctly rejected the first attempt, whose "impact" measured **1001** against
+rest where the apex measures 1485.
+
+**It also passed the deformed blob, enthusiastically:**
+
+    apex   vs rest   1485        <- the bar
+    blob   vs rest   1735-1745   <- clears it comfortably
+    blob   vs apex   1786-1866   <- and is monotonic all the way
+
+Green on every axis, accent intact at 76-84 chroma, and the art is a knight melted into a
+crouching lump. **A deformation scores extremely well on a distance metric, because a
+deformation IS a large distance.** The comparison rules out an *unwind*; nothing about it
+rules out a *deformation*, and the two failure modes sit at opposite ends of the same
+number.
+
+This belongs with the rest of this document's collection of instruments that ran, passed,
+and measured the wrong quantity — and it is the sharpest one yet, because the metric was
+introduced *by this same work, one boss earlier, for a good reason, and is still correct*.
+Use it as a **veto, never as an acceptance**: it can tell you a candidate is definitely
+wrong; it cannot tell you one is right. Look at the frames.
+
+#### A free-form run is a LOOP, so its last frames return to its first
+
+Worth stating plainly because it silently wasted a generation. `animate_image` without a
+pinned ending produces a *loop*, so the final frames curve back toward frame 0 by
+construction. The first blow harvest's last three frames measured **closer to rest than the
+apex was** for exactly that reason — they were the loop closing, not the motion arriving.
+
+**Harvest from the middle of a free-form run, not the end.** The Ferryman's usable impact
+pose was f6 of 8; both of the Warden's end frames were junk. Where the extreme actually
+falls is a thing to measure per run, not assume.
+
+#### The upload bug: re-pad the canvas, do NOT quantize
+
+`art/pixellab-upload.py` produced a payload the server would not decode — five attempts,
+three distinct byte streams (compress level 9, level 6, and via a `data:` URL), each one
+reporting **the exact correct byte count received** and then "broken data stream". So it is
+neither truncation nor the intermittent flake this document describes, and **the advice
+"retry, it is intermittent" is wrong for this case** — it costs five retries before anyone
+starts thinking.
+
+Ruled out: size (`boss.ferryman.png` uploads at 77,816 b64 chars), chunk structure, `+`/`/`
+density, and dimensions (`warden-rest-pad.png` at the same 57x125 went through fine).
+Not root-caused; it is content-specific and deterministic per payload.
+
+**The workaround is to change the byte stream without touching the art: add a few
+transparent rows to the top of the canvas and re-encode.** Costs nothing (the padding is
+trimmed by `strip.py` anyway) and preserves every pixel.
+
+**What NOT to do, learned the expensive way: quantizing the source.** Reducing the palette
+to 24 colours produced a payload that uploaded first time — and destroyed the sprite. The
+4-pixel teal accent has no weight in a median-cut palette, so it was merged away entirely;
+the returned frames' loudest colour was a skin tone, two frames sat *exactly* on the hero's
+35.3 bar, and the armour banded visibly.
+
+The quantization was *verified*, and that is the point: it asserted **0 opaque pixels lost,
+0 gained** — the presence check this document demands, after the incident where a
+hand-rolled encoder silently deleted 26% of a sprite. It passed, and it was still the wrong
+assertion. Presence was never the thing at risk this time; **colour** was.
+
+> So the pair is now complete, and both halves have cost a session:
+> an assertion about pixel **colour** is not an assertion about pixel **presence** — and an
+> assertion about pixel **presence** is not an assertion about pixel **colour**. Check both,
+> and on a sprite with a small accent check the accent *by name*.
+
+#### Reach is not one-per-sprite: check the borrow graph before choosing a target
+
+Animating `boss.warden` moved coverage 3/35 -> **10/35**, because `legendBossSpec` borrows
+Delve templates and six class Provings borrow this one. The Tyrant, by contrast, would have
+moved it 3 -> 4.
+
+**So the next animation target is chosen by the borrow graph, not by depth order.** Before
+picking one, run `npm run animcoverage` and read the "encounters sharing each animated
+sprite" table: a template that backs many Provings is worth several that back none. The
+depth at which a player meets it still matters — that is why the Warden beat the Nameless,
+which is the depth-25+ boss and past the reachable band — but reach and depth are two
+separate questions and both need asking.
+
+#### A diagnostic's prose is a check's bound
+
+`tools/animcoverage.ts` printed a fixed sentence about a countable set, that sentence went
+false the same day, and the tool went on printing it in the very run that disproved it.
+That is written up under the Warden above. The generalisation belongs here:
+
+**This repo now has two tools whose entire value is their printed claims — `npm run
+animcoverage` and `npm run windup` — and NEITHER is in `npm test`.** Nothing will ever go
+red when one of them starts lying. A gate at least fails loudly when its bound goes stale;
+a diagnostic just keeps printing.
+
+So: **any fixed sentence about a countable set is a candidate for the same defect.** If a
+tool prints "every X is Y", "only N of these", "all of them except", derive it from the
+data on every run instead of writing it down. Whoever hits the third instance of this: it
+is the third, not the first.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without

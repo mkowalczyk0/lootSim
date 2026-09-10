@@ -173,13 +173,24 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // -> -96.689636, bottom 2.990400 -> 2.990364, left/right exactly 0.000000. `feet` is a
   // FRACTION of `h` and had to be re-derived (2.67px of ground offset over 124px, not 89).
   //
-  // No STRIKE yet — this shipped as stage one of two on purpose, because the Warden had
-  // no animation at all and a boss that winds up beats a boss that does nothing. The
-  // fallback ladder makes that a supported state, not a backlog entry: with no `strike`,
-  // `StrikeLatch` draws nothing after a cast and the boss returns to idle exactly as it
-  // did before. When the blow lands, note the budget is unusually generous here — the
-  // Warden's fastest phase leaves 1.10-1.18s between casts at depths 5-9, against the
-  // Ferryman's 0.60s release. Author to the 1.10s figure.
+  // No STRIKE, and that is now a MEASURED conclusion rather than a staging decision.
+  // The fallback ladder makes it a supported state: with no `strike`, `StrikeLatch` draws
+  // nothing after a cast and the boss returns to idle exactly as it did before.
+  //
+  // Three generations, three prompt strategies, none usable — the generator will
+  // interpolate and re-render this sprite but it will not POSE it, and every attempt that
+  // achieved a strike's silhouette change did so by deforming the body. `boss.war-queen`
+  // said a real blow "needs a hand-authored pose"; that now reproduces on a smaller,
+  // simpler sprite, so it is a property of the tool rather than of that one boss. The
+  // attempts are kept in art/anim/raw/warden-blow-attempts/ and the analysis is in
+  // docs/animation.md "Stage B". **Do not spend a fourth generation re-prompting.**
+  //
+  // Two things for whoever authors it. The budget is unusually generous — the Warden's
+  // fastest phase leaves 1.10-1.18s between casts at depths 5-9, against the Ferryman's
+  // 0.60s release, so author to 1.10s and spend it on legibility. And check the impact
+  // pose against rest as a VETO only: impact-vs-rest must exceed apex-vs-rest (1485 here)
+  // or it reads as an unwind, but clearing that bar proves nothing — a deformed blob
+  // scored 1735-1745 on it. Look at the frames.
   //
   // Its accent is FOUR pixels (`#33ffb8`, two 2-px eyes painted on by
   // art/bosses/warden-accent.py) — the same pixel count that makes
