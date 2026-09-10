@@ -245,9 +245,30 @@ interface Candidate {
 }
 
 const CANDIDATES: readonly Candidate[] = [
-  { file: "A-cutink",    label: "A  cut the ink",     lever: "colour only",        worldHeight: 32 },
-  { file: "B-coarsetall", label: "B  coarse + tall",  lever: "world height only",  worldHeight: 58 },
-  { file: "C-both",      label: "C  both levers",     lever: "colour + height",    worldHeight: 52 },
+  // v7: the owner's direction changed — "go off the existing boss art instead for style",
+  // superseding docs/art_refs/. So the lever is no longer colour-vs-height at all: it is
+  // the GENERATION MODE. The v6 candidates were `standard` mode with `flat shading` +
+  // `low detail` explicitly on; every raid boss is 8-direction, style knobs unset, in the
+  // pro/v3 family that ignores them. The hero was being actively flattened and the bosses
+  // were not, which is the mechanical reason they do not look like each other.
+  //
+  // All three below drop the flat/low clamps. World height stays 32 for every one of them:
+  // the owner's brief fixes the footprint, and `worldScale` is what absorbs the extra rows.
+  { file: "A-bossmode-64",     label: "A  v3 @ 64",        lever: "boss mode, small",  worldHeight: 32 },
+  { file: "B-bossmode-96",     label: "B  v3 @ 96",        lever: "boss mode, large",  worldHeight: 32 },
+  { file: "C-ferryman-style",  label: "C  pro @ 112",      lever: "boss as style ref", worldHeight: 32 },
+  // Round 2. Round 1 established that **negative phrasing summons the thing it forbids**:
+  // "no wings" -> wings (B), "carrying nothing on his back" -> a backpack (D), and C came
+  // back holding a pole because the Ferryman holds one. Positive-only phrasing ("both
+  // hands empty and open at his sides") is what finally produced a clean figure.
+  //
+  // Props are not a cosmetic complaint here. `worldScale` is derived from the TRIMMED
+  // height, so a staff above the head sizes the STAFF to 32 world units and shrinks the
+  // character to fit under it — and the game already draws the held weapon as its own
+  // rotated sprite (`weaponSprite`), so a hero holding anything is drawn holding two.
+  { file: "D-emptyhands-64",   label: "D  v3 @ 64 r2",     lever: "positive-only prompt", worldHeight: 32 },
+  { file: "E-emptyhands-ferryman", label: "E  pro @ 112 r2", lever: "positive + style ref", worldHeight: 32 },
+  { file: "F-emptyhands-96",   label: "F  v3 @ 96 r2",     lever: "positive, aimed at band", worldHeight: 32 },
 ];
 
 /** The portrait band, re-derived here so the sheet carries it (see src/ui/portrait.ts). */
@@ -343,6 +364,34 @@ for (const name of MONSTERS) {
 
 console.log(`\n  legal hero ART-pixel heights (both town portraits within ${MAX_SPREAD * 100}%): ${legalBands()}`);
 console.log("  worldScale is NOT read by either portrait — drawn world height is free of them.");
+
+// --- the SECOND size constraint, which the band alone does not catch ---------
+//
+// Found the hard way shipping hero A: `portraitScale` rounds to a WHOLE factor and
+// magnifies the entire hero STAGE, not the figure standing on it. A 57-row hero hit its
+// target at x3 (81 x 3 = 243px); a 41-row hero needs x4 (81 x 4 = 324px) and overflowed
+// both pinned CSS box heights. So a height can sit squarely inside the legal band and
+// still blow the box — the band is necessary and not sufficient.
+//
+// The direction is counter-intuitive and worth stating out loud: **a TALLER hero is safer
+// here**, because it needs a smaller integer factor. A hero taller than the stage is a
+// different problem — the stage has to grow to hold it, and it still has to carry the hat
+// headroom the cosmetic layers are authored against.
+const CSS_DOLL = 348, CSS_HERO = 340;   // src/styles.css, as shipped
+const STAGE_H_NOW = 81, HAT_HEADROOM = 24;  // 81 - 57: the absolute headroom v4 was given
+console.log(`\n  stage + portrait box (CSS pins today: .doll-portrait ${CSS_DOLL}px, .portrait.hero ${CSS_HERO}px)`);
+console.log("  art h   stage rows   Hero xN -> px   Style xN -> px   clears both pins?");
+for (const { cand, img } of figuresFor) {
+  const stageRows = Math.max(STAGE_H_NOW, img.h + HAT_HEADROOM);
+  const hN = pScale(img.h, HERO_PORTRAIT_BODY_PX), sN = pScale(img.h, STYLE_PORTRAIT_BODY_PX);
+  const hPx = stageRows * hN, sPx = stageRows * sN;
+  const tallest = Math.max(hPx, sPx);
+  const clears = tallest + 24 <= CSS_DOLL && tallest + 16 <= CSS_HERO;
+  console.log(`  ${String(img.h).padEnd(7)} ${String(stageRows).padEnd(12)}`
+    + ` ${`x${hN} -> ${hPx}`.padEnd(15)} ${`x${sN} -> ${sPx}`.padEnd(16)}`
+    + ` ${clears ? "yes" : `NO — needs ${tallest + 24}/${tallest + 16}`}`
+    + (stageRows > STAGE_H_NOW ? `   (stage must grow ${STAGE_H_NOW} -> ${stageRows})` : ""));
+}
 
 // --- render ----------------------------------------------------------------
 
