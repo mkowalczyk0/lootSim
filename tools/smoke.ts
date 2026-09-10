@@ -3381,6 +3381,11 @@ console.log("\n=== gems and the wardrobe ===");
   // earned marks flies every one of them, in every bought cloth, and the sheet — and the
   // set of marks it's even allowed to fly — never moves.
   const flying = geared(20, 4247, 10);
+  // geared() grants no gems, and buyBannerStyle silently no-ops on an underfunded
+  // account (returns false, same as "already owned") — exactly the difference the
+  // checks below are trying to prove doesn't exist. Fund it for real, off the styles'
+  // own prices rather than a guessed constant, so every purchase below actually happens.
+  flying.gems = BANNER_STYLES.reduce((sum, s) => sum + s.price, 0);
   flying.player.legendComplete = true;
   flying.player.delveChallengerBadges[13] = 22;   // tier 14, "Death March IV · Delve 22"
   flying.player.towerChallengerBadges[4] = 18;     // tier 5
@@ -3390,7 +3395,18 @@ console.log("\n=== gems and the wardrobe ===");
   const marksBefore = JSON.stringify(
     standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort());
   const flyingSheetBefore = JSON.stringify(flying.player.mods);
-  for (const style of BANNER_STYLES) flying.buyBannerStyle(style.id);
+  // Asserted at the point of purchase, not just funded and trusted: buyBannerStyle
+  // returns false for "underfunded" and false for "already owned" alike, so an ignored
+  // return value here is indistinguishable from a real purchase — which is exactly what
+  // let an unfunded fixture run silently until the wear loop below threw twenty lines
+  // away from the actual cause. The free default (price 0) is skipped on purpose;
+  // buyBannerStyle refuses it by design (nothing to buy), which isn't a failure.
+  for (const style of BANNER_STYLES) {
+    if (style.price <= 0) continue;
+    if (!flying.buyBannerStyle(style.id)) {
+      throw new Error(`should have been able to buy ${style.id} for ${style.price} gems`);
+    }
+  }
   check("buying every banner style gains zero displayable marks",
     JSON.stringify(standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort())
       === marksBefore);
