@@ -506,7 +506,11 @@ section("11. live: the drop sites really ask the table, and a bank lands it");
     rng: Rng;
     killEnemy(e: Enemy, source: Hero, fromUltimate?: boolean): void;
     dropClearCache(): void;
-    collect(hero: Hero, p: Pickup): void;
+    // One argument since loot became shared: `collect` is not told who walked onto the
+    // drop, because it pays every hero in the run (`docs/shared-loot.md`). This is a cast,
+    // so the compiler cannot catch a stale arity here — the four red checks below are what
+    // caught it.
+    collect(p: Pickup): void;
   };
   const rig = (d: Dungeon) => {
     const priv = d as unknown as Priv;
@@ -548,7 +552,7 @@ section("11. live: the drop sites really ask the table, and a bank lands it");
 
     // Pick one up, bank the floor, own it. Then a re-roll skips what you own.
     const first = abyss.pickups.find((p) => p.kind === "relic")!;
-    priv.collect(abyss.localHero, first);
+    priv.collect(first);
     check("picking one up puts it in the run's unbanked loot", abyss.loot.relics.includes(first.defId!));
     check("...and announces it as a relic event", abyss.drainEvents().some((ev) => ev.kind === "relic" && ev.id === first.defId));
     abyss.bankLoot();

@@ -8,6 +8,7 @@ import { RELIC_BY_ID } from "../data/relics";
 import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
 import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
+import { pickupItem } from "../game/entities";
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
@@ -390,23 +391,19 @@ export class WorldRenderer {
       const bob = Math.sin((d.elapsed + p.life) * 6) * 2;
       const { canvas, scale } = pickupSprite(p);
       ctx.save();
-      // Someone else's drop. Every drop belongs to exactly one hero and only its owner can
-      // collect it, so a teammate's loot has to *read* as theirs — otherwise the fix looks
-      // like a bug, and you spend the floor walking onto items that refuse to be picked
-      // up. Faded and stripped of its glow: still legible as an object on the floor (you
-      // can see your friend got something good), plainly not yours to take. Solo never
-      // takes this branch — the only hero owns everything.
-      const mine = p.owner < 0 || p.owner === d.localHero.index;
-      if (!mine) ctx.globalAlpha = 0.4;
-      if (mine && p.rarity) {
+      // Every drop on the floor is the whole party's and draws at full strength for all of
+      // them. The brief ownership version faded a teammate's loot to 0.4 so you could see it
+      // was not yours to take; under the owner's ruling there is no such drop, and dimming
+      // one would be telling the player a lie about what they can pick up.
+      if (p.rarity) {
         ctx.shadowColor = RARITY_COLORS[p.rarity];
         ctx.shadowBlur = 12;
-      } else if (mine && p.kind === "gem") {
+      } else if (p.kind === "gem") {
         ctx.shadowColor = "#f0abfc";
         ctx.shadowBlur = 14;
       }
       // Weapons lie flat on the floor rather than standing on end.
-      const flat = p.kind === "item" && !!p.item?.family;
+      const flat = p.kind === "item" && !!pickupItem(p)?.family;
       if (flat) {
         ctx.translate(x, y + bob);
         ctx.rotate(-0.35);
@@ -1293,7 +1290,13 @@ function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
       return { canvas: art.canvas, scale: art.worldScale };
     }
     case "item": {
-      const item = p.item;
+      // Any hero's copy draws the same picture: the party's copies differ only in the
+      // magnitudes derived from each hero's level, never in rarity, type or family (see
+      // `Pickup.copies`), and those are all `itemSprite` reads. So the floor doesn't have to
+      // know who is looking at it. A client has no copies at all — the host forges them —
+      // and falls through to the capsule, which is what an item pickup has always drawn
+      // there.
+      const item = pickupItem(p);
       if (!item) return named("capsule");
       // What an item looks like is decided in exactly one place (`itemSprite`), so the
       // thing lying on this floor is the same picture the stash card, the chest reel, the

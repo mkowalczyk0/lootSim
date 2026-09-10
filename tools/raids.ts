@@ -47,6 +47,7 @@ import {
 import { RELICS, rollRelicDrops } from "../src/data/relics";
 import { rewardCurve } from "../src/data/rewards";
 import { Dungeon, type Hero } from "../src/game/dungeon";
+import { pickupItem } from "../src/game/entities";
 import { GameState } from "../src/game/state";
 import { auditSpec } from "./bossrules";
 
@@ -362,7 +363,8 @@ section("7. it pays out in a live dungeon");
   };
   const droppedIds = (d: Dungeon) => [
     ...d.pickups.filter((p) => p.kind === "relic").map((p) => p.defId!),
-    ...d.pickups.filter((p) => p.kind === "item" && p.item?.named).map((p) => p.item!.named!),
+    ...d.pickups.map((p) => (p.kind === "item" ? pickupItem(p) : null))
+      .filter((it) => !!it?.named).map((it) => it!.named!),
   ];
   const spawnBoss = (d: Dungeon) => { for (let t = 0; t < 900 && !d.boss; t++) d.update(1 / 60, IDLE); return d.boss; };
   const fresh = (seed: number) => {
