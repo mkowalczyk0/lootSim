@@ -550,9 +550,17 @@ export class Hud {
     // wave director's own monsters count toward the objective (chaff and shards can't
     // hold it open), so the same filter applies here — a blip that doesn't count toward
     // the number above it would be a lie on the map.
+    //
+    // The threshold is `d.burstSizeFor()` — one more wave's worth at this floor's own
+    // pressure curve — rather than a flat number (docket §6 review, PM lootsim-21,
+    // 2026-09-10): once what's left could no longer hide a whole extra burst behind it,
+    // there is no ambush left to spoil, only the tail end of a fight whose tension is
+    // already spent. A flat 10 reads as generous on a shallow floor (a handful of
+    // monsters total) and stingy on a deep one (bursts of up to 7 at once) — this scales
+    // with the same curve the floor's own pacing already does.
     if (!d.profile.isBoss) {
       const remaining = Math.max(0, d.killsRequired - d.killsSoFar);
-      if (remaining > 0 && remaining <= 10) {
+      if (remaining > 0 && remaining <= d.burstSizeFor()) {
         const pulse = 0.55 + 0.45 * Math.sin(d.elapsed * 6);
         for (const e of d.enemies) {
           if (e.boss || e.summoned || e.state === "spawning") continue;
