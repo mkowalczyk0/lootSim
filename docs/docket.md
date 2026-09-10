@@ -900,3 +900,32 @@ Three things to get right:
 
 `CLAUDE.md`'s per-class-save section describes the chest/craft half of this rule and should be
 extended to cover drops **in the same commit as the code**, not before it.
+
+## 24. A Reaper may not be able to charge its ultimate on a raid boss at all
+
+**Not owner-reported. Found while measuring §20, and deliberately not acted on** — recorded
+so it doesn't have to be rediscovered, exactly like §9 was.
+
+Measuring the execute threshold's effect at the fight level, the instrument could only see
+one of the three classes it was aimed at:
+
+- **Reaper's ultimate meter reads 0.000 across an entire Ferryman fight.** It charges only
+  from `execute`-tagged hits.
+- **Assassin's peaks at 0.103.**
+- Only the Ranger's numbers actually measured anything, which is why §20's fight-level A/B
+  speaks for the Ranger alone and the other two rest on the seed-free rider table.
+
+That is real game behaviour rather than a broken detector, and it raises a design question
+nobody has reported: **can a Reaper charge its ultimate on a raid boss at all?** A resource
+model that only fills from a tag the encounter rarely produces is a class whose ultimate is
+effectively absent from the content it was presumably meant for — and `CLAUDE.md` is explicit
+that how a class charges its resource *is* the design, not an implementation detail.
+
+**Do not fix this off the back of §20.** Nobody has complained, it is a live balance change
+to a shipped class's resource model, and the standing rule against pre-emptively rebalancing
+classes on our own initiative applies with full force — §9 is the worked precedent and the
+owner's answer there was reached by *asking*. Put it to them.
+
+Worth noting when it is raised: this is also the reason §20's Reaper compensation
+(`executeMissingHealth` 0.8 → 1.0) is **reasoned rather than measured**, and that label
+should survive into any future conversation about the Reaper's numbers.
