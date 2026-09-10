@@ -266,6 +266,33 @@ instance belongs in the file even though it arrived after the file was written: 
 same failure the other seven describe, priced in stutter a real player felt rather than in
 a docket item nearly closed.
 
+## A ninth instance, in the same family as the seventh: a wrapper's exit code answers the wrong question
+
+A background `npm test` gate was wrapped as `npm test > log 2>&1; echo GATE_EXIT=$?`, and the
+harness's own background-task notification reported it "completed, exit code 0." That was
+true and meant nothing: the run had been SIGKILL'd mid-`smoke` by an unrelated CPU-contention
+freeze, and the wrapper shell exiting cleanly afterward is a claim about the *shell*, not
+about the `npm test` process it launched. The `echo` that would have printed a `GATE_EXIT=`
+line into the log never ran, because the shell's own next statement never executed on a
+process that was already dead — the log's missing line was the tell, not the exit code the
+harness surfaced.
+
+This is item 7's question again, one layer up. Item 7 found that a `kill` call or a
+"job finished" report is a claim about a process tree the shell never actually inspected;
+this is the same gap at the other end of a run's lifecycle — a wrapper's own exit code
+answers "did my process reach its next statement," not "did the command inside it succeed,"
+and the two only agree when nothing kills the child out from under the wrapper. A gate that
+reports 0 because the shell reached its own `echo`, and a gate that reports 0 because the
+command actually passed, are indistinguishable from the caller's side unless the caller checks
+for the command's own terminal signal — here, the printed `GATE_EXIT=` line — rather than
+trusting the wrapper's.
+
+**How to apply:** a wrapper around a long-running command needs its own printed or written
+result (an exit-code line, a status file, a sentinel written only on the wrapped command's
+own exit) that the wrapper's *own* success cannot fake by simply reaching the next statement.
+The absence of that marker is the finding, not a shell-level exit code that only ever proves
+the shell kept running.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
