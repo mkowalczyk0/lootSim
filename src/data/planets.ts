@@ -314,6 +314,38 @@ export const PLANETS_BY_ID: Record<string, PlanetSpec> = Object.fromEntries(
 );
 
 /**
+ * The two sectors `docs/reliquary-reachability.md` found are not reachable by any gearing
+ * tested, whose materials (Rune Fragment, Heartwood Sap) then got a dedicated mythic recipe
+ * apiece — "The Unbound Ward" / "Rootbound Plate", this same commit's own two recipes —
+ * that nothing in the game can pay for. **Gilt Reliquary (sector 7, holy) is deliberately
+ * not included** — its own two recipes are a separate, older question the reachability
+ * finding did not reopen; this list is scoped to exactly the two recipes that came up dead
+ * on arrival.
+ *
+ * `dropClearCache` reads this to give a Memory that happens to recall one of these two
+ * places a second, independent route to the material — see `memoryMaterialSource`. It is
+ * additive only: neither sector's own ladder, unlock or difficulty curve moves, and the
+ * Reliquary sector stays the natural home — a Memory needs its own depth-30-and-height-30
+ * unlock plus a 1-in-`memoryPlaces().length` roll to land on the right place at all, so this
+ * is a longer, independent road in rather than a cheaper one.
+ */
+export const UNREACHABLE_MATERIAL_PLANETS: readonly PlanetSpec[] = [
+  PLANETS_BY_ID.runespire!, PLANETS_BY_ID.heartgrove!,
+];
+
+/**
+ * The `UNREACHABLE_MATERIAL_PLANETS` entry a Memory's rolled place names, or null.
+ *
+ * Takes the place's name rather than a `MemoryInstance` so this file never has to import
+ * from `data/memories.ts` on top of the reverse import that already exists (`memoryConfig`,
+ * above) — two pure data modules already reference each other by function, and this keeps
+ * the new dependency a one-way string comparison instead of a second cycle.
+ */
+export function memoryMaterialSource(placeName: string): PlanetSpec | null {
+  return UNREACHABLE_MATERIAL_PLANETS.find((p) => p.biome.name === placeName) ?? null;
+}
+
+/**
  * Whether a sector is open. The Wargrave always is; after that there are **two** routes,
  * and either one is enough.
  *
