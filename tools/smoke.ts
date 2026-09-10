@@ -3078,14 +3078,18 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
    * The Cinder Catacombs and The Veil were here and are fixed (Sept 2026, `docs/
    * ashen-wastes-infusion-fix.md`) — floor-only regenerations, wall pixel-anchored to
    * the original generation, verified against this exact gate before the pin came off.
-   * **Ashen Wastes stays pinned on purpose.** A floor-only fix was attempted and
-   * measured close (grunt one luminance point under the bar, every other archetype
-   * clear) but the owner's eye read the fix as not obviously better than the original —
-   * it is the first floor of the game, the fix is not free of judgement calls, and a
-   * number that's one point short is not grounds to override that. See the design
-   * record for the full attempt, the direction that actually worked, and why "darken
-   * the floor" (the rule that fixed the other two) made this one worse before
-   * "brighten it" was tried.
+   * **Ashen Wastes is pinned PERMANENTLY, by owner ruling (2026-09-10).** A floor-only
+   * fix was attempted and measured close (grunt one luminance point under the bar, every
+   * other archetype clear), but the owner looked at the shipped floor and answered
+   * "Ashen wastes looks fine" — so the original ships and there is no next attempt. This
+   * entry is therefore not a violation awaiting a fix; it is a deliberate exception, and
+   * a session that closes it is overturning the owner rather than finishing a job.
+   *
+   * The gate is untouched and still honest: a delta of 27 against a bar of 28 is the
+   * instrument working correctly and the answer still being "ship it." Do not reopen this
+   * on the strength of the number. See `docs/ashen-wastes-infusion-fix.md` for the full
+   * attempt, the direction that actually worked, and why "darken the floor" (the rule
+   * that fixed the other two) made this one worse before "brighten it" was tried.
    */
   const KNOWN_INFUSION_COLLISIONS: readonly string[] = [
     "Ashen Wastes", // tiles.delve-wrath, fire-on-fire — see docs/ashen-wastes-infusion-fix.md

@@ -185,6 +185,13 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // starting from a much brighter accent, both came back with the eyes dimmed below the
   // hero's own skin in several frames, which `npm run chroma` fails. A static boss is
   // exactly today's behaviour, so this is a hold rather than a regression.
+  //
+  // The obvious unblock was to redraw the eyes at 3+ pixels each so the accent survives
+  // generation (measured: 1px/eye holds accent in 0 of 8 frames, 2px/eye in 4 of 8). Put
+  // to the owner 2026-09-10, the answer was "Minotaurs eyes look fine" — so the SPRITE is
+  // not being redrawn, and the hold above is now permanent rather than pending. If this
+  // encounter is ever wanted animated, the accent has to survive some other way; it does
+  // not get there by making the eyes bigger, because that question has been asked.
   "boss.labyrinth-minotaur":  { id: "boss.labyrinth-minotaur",  w: 102, h: 106, worldScale: 1.2642, feet: 0.03 },
   // Animated. The set-trim is two columns narrower than the still (100 -> 98); height is
   // unchanged, and `worldScale` is world units per PIXEL, so the encounter's world height

@@ -54,7 +54,24 @@ it did for the other two. Ashen Wastes is also the first floor of the game, the 
 stakes surface in the repo to get wrong. Shipping art that doesn't clear its own gate, on
 that floor, on a rounded-up number, was the one combination worth refusing outright.
 
-## Where the next attempt should start
+## CLOSED (2026-09-10): the owner looked and the floor stays
+
+Asked directly, the owner's whole answer was **"Ashen wastes looks fine."**
+
+That settles it, and it settles it the way this file said it should be settled — by the
+picture, not the number. The shipped Ashen Wastes floor is the one the game keeps. There
+is no next attempt, the ember-floor regeneration is not coming back, and the pin in
+`tools/smoke.ts` is now **permanent by ruling** rather than a violation waiting on a fix.
+
+Nothing about the gate changes. The collision is real, the metric is honest, and the
+measurement below is worth keeping — a delta of 27 against a bar of 28 is exactly the kind
+of near-miss where the instrument is working and the answer is still "ship it." What
+changed is only that the question has been asked and answered, so a future session should
+not reopen it on the strength of the number alone.
+
+The section below is kept as the record of the attempts, not as a live plan.
+
+## Where the next attempt should start (superseded by the ruling above)
 
 - The working direction is brighter, not darker — confirmed twice (attempt 2 succeeded,
   attempt 1 failed going the other way).
