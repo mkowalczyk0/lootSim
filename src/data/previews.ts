@@ -278,7 +278,10 @@ function otherRewards(config: RunConfig): string[] {
     out.push(`named-item odds lifted ${pct(reward.dropChance)} by the danger here`);
   }
   if (reward.dropCount > 1) out.push(`${pct(reward.dropCount)} as many drops for the danger`);
-  if (reward.itemPower > 0) out.push(`drops roll +${reward.itemPower} item levels`);
+  // Docket §23: item power no longer lifts a drop's *level* — that now tracks the
+  // character wearing it, never the floor — only its magnitude (`powerIlvl`), so the
+  // copy must not promise "item levels" any more than the roll does.
+  if (reward.itemPower > 0) out.push("drops roll with more power for the danger here");
   if (reward.variantChance > 0) {
     out.push(`${pct(reward.variantChance)} of drops infused with the local element`);
   }

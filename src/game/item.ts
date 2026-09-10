@@ -97,6 +97,14 @@ export interface RollOptions {
   readonly rarity: Rarity;
   readonly type: ItemType;
   readonly ilvl: number;
+  /**
+   * Scales stats and affix magnitude off a different level than `ilvl` itself, without
+   * moving `requiredLevel` (`ilvl` minus one level of grace) — the reward curve's item
+   * power axis (UAT §16, docs/reward-curve.md) still has to make a drop hit harder, but
+   * must not push its equip requirement past what the earner can meet. Defaults to
+   * `ilvl`, so every caller that doesn't know about the split behaves exactly as before.
+   */
+  readonly powerIlvl?: number;
   readonly rng: Rng;
   /** Crafting only: weights the roll pool toward this element's damage/resist mod. */
   readonly favorElement?: Element;
@@ -134,12 +142,14 @@ export function levelScaleFor(ilvl: number): number {
   return 1 + (ilvl - 1) * 0.033;
 }
 
-export function rollItem({ rarity, type, ilvl, rng, favorElement, ensureMods }: RollOptions): Item {
+export function rollItem(
+  { rarity, type, ilvl, powerIlvl = ilvl, rng, favorElement, ensureMods }: RollOptions,
+): Item {
   const names = ITEM_NAMES[rarity][type];
   const baseName = rng.pick(names);
   const tier = rarityIndex(rarity);
   const mult = RARITY_MULTIPLIERS[rarity];
-  const levelScale = levelScaleFor(ilvl);
+  const levelScale = levelScaleFor(powerIlvl);
   // +/-15% variance so two copies of the same item are never identical.
   const variance = rng.range(0.85, 1.15);
 
@@ -190,15 +200,21 @@ export function baseStats(type: ItemType, mult: number, levelScale: number, vari
  * `trigger` are looked up live by id — a deliberate split, documented in
  * docs/named-items.md, so a retune of behaviour reaches every copy and a retune of
  * stats reaches only new ones.
+ *
+ * `powerIlvl` is the same split `rollItem` carries: item power (UAT §16) still lifts a
+ * named copy exactly as it lifts an ordinary drop, but only the magnitude, never
+ * `requiredLevel` (`ilvl` minus one level of grace) — a named item is not exempt from
+ * the "an item that drops for you is an item you can equip" promise. Defaults to `ilvl`.
  */
-export function forgeNamedItem(def: NamedItemDef, ilvl: number, rng: Rng): Item {
+export function forgeNamedItem(def: NamedItemDef, ilvl: number, rng: Rng, powerIlvl: number = ilvl): Item {
   const level = Math.max(1, Math.max(ilvl, def.minIlvl ?? 1));
+  const powerLevel = Math.max(1, Math.max(powerIlvl, def.minIlvl ?? 1));
   const mult = RARITY_MULTIPLIERS[def.rarity];
-  const levelScale = levelScaleFor(level);
+  const levelScale = levelScaleFor(powerLevel);
   const variance = rng.range(0.92, 1.08);
 
   const stats = baseStats(def.type, mult * (def.statScale ?? 1), levelScale, variance);
-  const mods = namedMods(def, level, rng);
+  const mods = namedMods(def, powerLevel, rng);
   const grant = def.grant ?? null;
   const trigger = def.trigger ?? null;
 
