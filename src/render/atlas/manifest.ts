@@ -178,7 +178,8 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // Animated: `w`/`h` are ONE FRAME. Height unchanged, so `worldScale` is unchanged and the
   // encounter's world height (110.0) is exactly where it was tuned.
   "boss.war-queen":           { id: "boss.war-queen",           w: 98,  h: 108, worldScale: 1.0185, feet: 0.03,
-    anim: { cols: 5, tags: { idle: { from: 0, to: 4, seconds: 0.24, loop: true } } } },
+    anim: { cols: 13, tags: { idle: { from: 0, to: 4,  seconds: 0.24, loop: true },
+                              cast: { from: 5, to: 12, seconds: 0.09, loop: false } } } },
   // NOT animated, deliberately — see docs/animation.md "A sprite whose accent is too small
   // to survive generation". Its violet eyes are two pixels; two attempts, the second
   // starting from a much brighter accent, both came back with the eyes dimmed below the
@@ -189,7 +190,8 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // unchanged, and `worldScale` is world units per PIXEL, so the encounter's world height
   // (100.3) does not move.
   "boss.exiled-tyrant":       { id: "boss.exiled-tyrant",       w: 98,  h: 103, worldScale: 0.9738, feet: 0.03,
-    anim: { cols: 5, tags: { idle: { from: 0, to: 4, seconds: 0.25, loop: true } } } },
+    anim: { cols: 14, tags: { idle: { from: 0, to: 4,  seconds: 0.25, loop: true },
+                              cast: { from: 5, to: 13, seconds: 0.09, loop: false } } } },
 
   // --- props (§4, §8) --- drawn through drawProps at `worldScale × p.scale`. Legacy
   // grids ~6–16 wide at the old fixed 1.25; worldScale ≈ old world width / new art width,

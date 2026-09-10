@@ -297,7 +297,15 @@ Two disjoint seeds of the same pinned call, distance from the target:
     seed B   43 43 38 31 23 12  4  9  0
 
 Both reach the pose, **retreat at the second-to-last frame**, then snap to it. Same index,
-two independent samples — systematic, not seed noise. In a progress-keyed wind-up that reads
+two independent samples — systematic, not seed noise. It reproduced again on the War Queen
+and the Minotaur, on different prompts and seeds: **four of five pinned runs**. The fifth (the
+Tyrant's second seed) was clean, so a re-roll can avoid it, but assume it and check.
+
+The Tyrant also showed that **landing on the pinned pose is not guaranteed**: its first seed
+finished 3.5% away, having reached 1% two frames earlier and drifted off. The Ferryman, the
+Queen and the Minotaur all landed to 0.1% or exactly 0. So pinning is reliable enough to build
+on and not so reliable that the check can be skipped — which is the whole reason the check
+takes a target. In a progress-keyed wind-up that reads
 as the boss committing, relaxing, and then snapping: a false tell inside the animation whose
 entire job is to be a true one. `strip.py` takes `:drop=<i>` so the treatment lives in the
 pipeline rather than in whoever remembers to do it.
@@ -454,13 +462,32 @@ any of it. Plan frames against legibility and generation cost, not bytes.
   target pose came out of one of the three rejected generations, which is the lesson worth
   carrying — **rejected art is a resource, not only a record.** Check a rejection's peak
   frame before paying 20-40 generations for `create_character_state`.
-- **The other three raid bosses have idles and no wind-up**, which is safe rather than
-  half-finished (see the fallback note below). Each needs: a target pose (try the rejected
-  `queen-cast` / `minotaur-cast` peaks first), `target-accent.py` on it, one pinned
-  generation, `:drop=` for the penultimate retreat, and the gate.
-- **`boss.labyrinth-minotaur` is still blocked, and now for a understood reason** rather than
-  an observed one — its two-pixel accent has no redundancy against the generator's splitting.
-  Enlarging that accent is the fix; see the section above.
+- **Three of the four raid bosses now have wind-ups** — the Ferryman, the War Queen and the
+  Exiled Tyrant. The remaining one is the Minotaur, below.
+- **A free-form generation is a POSE generator, and that is the cheap route to a target.**
+  It reliably returns a loop, which is useless as an animation and perfectly good as eight
+  poses. Prompt it for *amplitude* rather than for wind-up shape — it does the first well and
+  cannot do the second — then harvest the peak frame. Two generations a boss, against the
+  20-40 `create_character_state` costs.
+- **On a full canvas the amplitude lever is a TURN.** Measured three times: prompts that
+  coil or fold in place produced 17% and 21% from rest, below the 25% bar, while "pivots a
+  quarter turn to present one shoulder" produced 32% and 40% on the same bosses. Turning
+  side-on reorients the whole silhouette at once, which is the only large change available
+  when nothing can extend past the frame.
+- **`boss.labyrinth-minotaur` is still held, and the hold is now quantified.** Its accent is
+  **one pixel per eye** — the two `#b577eb` pixels are eleven apart, so neither eye has any
+  redundancy at all. Widening each eye to two pixels was built, measured and **reverted**,
+  because it helps without being enough:
+
+      1 px/eye   0 of 8 generated frames hold the accent   (22.4 in every one)
+      2 px/eye   4 of 8 hold it                            (45.5 alternating with 23-29)
+
+  Both numbers come from the same prompt and the same seed with only those two pixels
+  changed, so the direction is proven and the size is not. The wind-up's *shape* is fine —
+  40% from rest, lands on its pinned pose to 0.1% — so the accent is the only thing stopping
+  it. **The next step is three or more pixels per eye**, which is past "the minimum the gate
+  needs" and wants the owner rather than a session. `art/bosses/minotaur-accent.py` is
+  committed and applies cleanly; the shipped sprite is deliberately unchanged until then.
 - **The Minotaur has no idle** — see the section above. Enlarging its eyes on the source
   sprite (more pixels, not just brighter) is the cheapest thing to try next, but it is a
   change to shipped art and wants the owner's eye rather than a session's judgement.
