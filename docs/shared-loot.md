@@ -144,6 +144,36 @@ both, each banks their own copy, each copy is queued for its own browser, curren
 everybody in full, a departed player gets nothing, solo is unchanged, and the wire decodes
 identically in either party slot.
 
-**Falsified, not just passed** — see the commit message for which checks flip under which
-injection. Two injections, because the drop-time half (the copies) and the collect-time half
-(the crediting) are independent and one injection can only reach one of them.
+**Falsified, not just passed.** Two injections, because the drop-time half (the copies) and
+the collect-time half (the crediting) are independent claims and one injection can only reach
+one of them. Predictions were recorded before either was run; both matched exactly, with
+nothing spurious in either direction.
+
+| Injection | Predicted | Got |
+| --- | --- | --- |
+| **A** — `collect` credits only the nearest hero | 6 red | exactly those 6 |
+| **B** — every copy forged at hero 0's level | 2 red | exactly those 2 |
+
+Under **A**, every drop-time copy check stayed green, along with `any party member can pick up
+any drop` — because the *physical* half of collection is genuinely untouched by who gets
+credited. Under **B**, `both heroes get the same item` stayed green, which is B's whole
+purpose: it proves the identity check is not quietly carrying the level property, and that the
+two are orthogonal rather than one check wearing two hats.
+
+Three things the pair establishes that neither could alone:
+
+- **The real-floor check is the stronger statement of the rule and the weaker instrument.**
+  Under A it read `1 vs 4 items` and `81.0% apart` — emergent values that depend on who
+  happened to walk over what, so it can only fail *probabilistically*. The hand-placed block
+  read `collector +1, the hero across the floor +0`, deterministically. This is the opposite of
+  the intuition that a genuinely played floor is always the better test: **if only one of the
+  two could survive, keep the deterministic block.** Measured, not assumed.
+- **`a departed player is credited nothing` passes under A**, and correctly — it is a
+  departed-rule check, not a sharing check. Named here because its green in A's output could
+  be mistaken for sharing coverage it does not provide, and that mistake is how someone later
+  deletes the sharing checks on the grounds that "the departed one covers it".
+- **One fixed reference carried both injections, and neither half is derivable from the code
+  under test.** The level-20/50 gap is what makes B falsifiable; the 992-unit split is what
+  makes A falsifiable. Each instrument would have been a vacuous pass without the other
+  injection to prove it — which is why a falsification pass needs as many injections as the
+  suite has independent claims, not one per suite.
