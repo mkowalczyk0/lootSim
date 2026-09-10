@@ -122,6 +122,61 @@ unrelated change. **What must not happen is someone reading a green campaign che
 proof the promise holds** — read this paragraph instead, and if you need the answer, pay
 for the sweep on purpose.
 
+**A fourth lesson, and it is a whole family rather than one incident (2026-09-10)**: in a
+single day, four separate acceptance checks turned out to be measuring nothing. None was
+caught by reading it — every one looked correct — and there was no bad commit to blame for
+any of them. They are one rule:
+
+> **A check's bound, its scope, and its subject must all come from somewhere other than the
+> thing under test.**
+
+- **The bound.** "Every migrated cosmetic fits inside the hero stage" — but `heroStage`
+  derives its width from the widest cosmetic, so the bound grows to fit whatever it is
+  handed. It can only ever conclude that the widest layer is the widest layer. Eight layers
+  sat at 1.06×–4.31× the hero's width, green in `npm test`, and the 4.31× one is what
+  inflated the town portrait until the hero filled 23% of his own box.
+- **The scope.** Two tools proved the "named but undrawn" fallback ladder by pointing at
+  `MONSTER_SETS.tower` specifically. True while the Tower was the only undrawn set; a
+  zero-iteration loop and an always-null resolve the moment that art landed. A filter over
+  an empty table passes.
+- **The subject.** A pin in `tools/anim.ts` replayed the v4-era absolute cosmetic positions
+  against a 39×57 hero. That hero no longer exists and those layers have been re-authored,
+  so it was asserting that today's art lands where a dead sprite's art used to.
+
+The cheapest demonstration, one injection (400px-wide wings, height untouched, 16px hero),
+both checks watching:
+
+```
+ok    every migrated cosmetic fits inside the hero stage
+FAIL  every migrated cosmetic is in scale with the hero it hangs on — wingsAngel 25.00x wide
+```
+
+Same violation, same run, opposite verdicts. **Assert against a fixed reference the code
+under test cannot move**, and make a check print what it walked (`8 migrated layers`) so a
+scope that has silently emptied is visible in the output.
+
+Two adjacent failures from the same day, in the family but *not* this rule, worth naming so
+they are not mistaken for it:
+
+- **A correct check can be overruled by prose.** `art/anim/windup-check.py` implemented the
+  right property, the Ferryman failed it, and it shipped anyway because the tool's own
+  docstring argued that a different measurement was "strictly stronger." It wasn't —
+  distance-to-target measures the *generator*, argmax-of-distance-from-rest measures the
+  *animation*, and they are orthogonal. Landing on the pinned target byte-perfectly is
+  exactly what made everyone confident the reject was false. **A written argument is not
+  evidence; if you are talking a red check down, measure the thing the argument claims.**
+- **A correct instrument can answer a question nobody asked.** `npm run windup` reports the
+  boss `strike` tag as the best-travelling animation in the repo — and it is a recovery, not
+  a blow. The metric measures whether a pose *moves*, not whether it reads as a strike.
+  Green numbers, wrong picture, caught only by rendering a contact sheet and looking.
+
+And the positive counterpart, because two of the day's fixes were better than checks. A
+declared `SpriteName` without a procedural bake fails at *compile* time, because
+`buildSprites()` returns a fully-required `Record<SpriteName, …>`; and a weapon skin cannot
+lie about its reach because `worldScale` is *derived* (`family.w * family.worldScale /
+trimmedWidth`) rather than authored. **A rule that cannot be violated beats a check that
+notices when it was** — when the choice is available, spend the effort there instead.
+
 ## The game loop (this is the design; respect it)
 
 Pick a class → the ship → walk to a portal or a terminal → **dive** → fight waves of
