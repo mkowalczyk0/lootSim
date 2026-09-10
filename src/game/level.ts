@@ -1180,10 +1180,23 @@ export class FlowField {
     }
   }
 
-  /** Unit step toward the goal from (x, y), or null if there's no route from here. */
+  /**
+   * Unit step toward the goal from (x, y), or null if there's no route from here.
+   *
+   * `x, y` is snapped to the nearest OPEN cell first, the same `nearestOpen` rescue
+   * `update()` already applies to the goal. Without it, a body resolved flush against a
+   * wall — collision lets a circle's edge touch a wall face, so its floating-point
+   * centre can land a few units inside that wall's own 16-unit cell — reads `dist < 0`
+   * off a cell the BFS never explores (blocked cells are never queued), and this
+   * returned null immediately: no route, even though the room it's standing in is one
+   * cell away and fully explored. Measured via `tools/monster-pathing.ts`: exactly this
+   * shape, a monster motionless for 3+ seconds a few pixels off an open room's edge.
+   */
   direction(level: Level, x: number, y: number): { x: number; y: number } | null {
     const cols = level.cols;
-    const idx = cellIndexAt(level, x, y);
+    const grid = { cols, rows: level.rows, blocked: level.blocked };
+    const idx = nearestOpen(grid, cellIndexAt(level, x, y));
+    if (idx < 0) return null;
     const here = this.dist[idx];
     if (here === undefined || here < 0) return null;
 

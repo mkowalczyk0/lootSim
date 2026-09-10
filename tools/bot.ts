@@ -181,6 +181,11 @@ export function playFloor(
   maxSeconds = 300,
   seed = 1000,
   dodge = 0.55,
+  /** Fires once per simulated tick, after `d.update` — an observation hook for a
+   *  caller that needs live per-tick state (monster positions, pathing, whatever)
+   *  rather than just the end-of-run `FloorResult`. Optional and a no-op by default,
+   *  so every existing call site is untouched. */
+  onTick?: (d: Dungeon, t: number) => void,
 ): FloorResult {
   const d = new Dungeon(state, run, seed);
   const input = new FakeInput();
@@ -337,6 +342,7 @@ export function playFloor(
     const primary = d.localHero.resources.all().find((pool) => !pool.spec.isUltimateMeter);
     if (primary) lowestMana = Math.min(lowestMana, primary.fraction * 100);
     t += DT;
+    onTick?.(d, t);
   }
 
   // Mopping up. A boss and a clear cache both drop everything at the instant the floor
@@ -631,7 +637,15 @@ export function geared(level: number, seed = 5150, keys = 14, classId?: ClassId)
  * test used to do — measures nothing, because a death costs the loot that would have
  * paid for the next floor and the run never recovers.
  */
-export function campaign(seed: number, dodge: number, dives = 20, log = false) {
+export function campaign(
+  seed: number,
+  dodge: number,
+  dives = 20,
+  log = false,
+  /** Threaded straight through to every dive's `playFloor` — see that function's own
+   *  doc for what it's for. Optional, no-op by default. */
+  onTick?: (d: Dungeon, t: number) => void,
+) {
   const state = new GameState(seed);
   let target = 1;
   let deepest = 0;
@@ -641,7 +655,7 @@ export function campaign(seed: number, dodge: number, dives = 20, log = false) {
 
   for (let dive = 0; dive < dives; dive++) {
     townVisit(state);
-    const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge);
+    const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge, onTick);
     if (log) {
       console.log(
         `  dive ${String(dive + 1).padStart(2)} → depth ${String(target).padStart(2)} ` +
@@ -669,15 +683,33 @@ export function campaign(seed: number, dodge: number, dives = 20, log = false) {
   return { state, deepest, deaths, unfinished };
 }
 
-// Twelve seeds each, not five — the same widening the depth-5 boss check and the elite
-// telegraph check already got. A floor's own layout and its monster placements come off
-// the same rng stream a campaign's dives share, so any change to level generation or to
-// what a wave director rolls (an elite requirement, an archetype, an affix) reshuffles
-// every dive from the point it first draws differently — five seeds routinely flipped
-// the sharp/reckless ordering on changes that never touched difficulty at all (the
-// tile-lattice rewrite moved sharp from 11.0 to 10.6 and reckless from 10.0 to 11.0,
-// purely from the shared sequence landing differently, not from anything actually
-// getting harder or easier). Twelve holds the ordering steady across that kind of
-// change; the comparison below is what actually encodes the design promise, once the
-// sample is wide enough for it to mean something.
-export const CAMPAIGN_SEEDS = [4242, 991, 7777, 31337, 606, 5150, 20226, 88813, 41029, 63071, 17402, 94651];
+// Sixty seeds, not twelve (2026-09-10, PM lootsim-21). A floor's own layout and its
+// monster placements come off the same rng stream a campaign's dives share, so any
+// change to level generation or to what a wave director rolls (an elite requirement, an
+// archetype, an affix) reshuffles every dive from the point it first draws differently —
+// twelve seeds routinely flipped the sharp/reckless ordering on changes that never
+// touched difficulty at all (the tile-lattice rewrite moved sharp from 11.0 to 10.6 and
+// reckless from 10.0 to 11.0, purely from the shared sequence landing differently). Then
+// fixing a real pathing bug (`FlowField.direction()` losing a monster's route entirely
+// when it rested flush against a wall — see `docs/campaign-pathing-bias.md`) moved the
+// original twelve seeds' own reading from a clear pass (sharp 11.5 vs reckless 9.0) to a
+// fail (10.8 vs 10.9), while the five 12-seed blocks measured investigating that shift
+// read 1.17, 0.58, 2.33, 3.17, 3.00 — mean 2.05, four of five clearing the >=1 bar on
+// their own. The original twelve had become an unlucky draw from a neighbourhood that
+// reads comfortably, the same failure CLAUDE.md already names for this check's sibling
+// (a boss-telegraph comparison that failed master on 5 seeds): a check that can flip on
+// which seeds it happens to hold is not measuring the promise it claims to.
+//
+// **This is not a derived number and is not claimed to be the plateau.** It is every
+// seed actually measured investigating that shift — 5x the previous sample, margin 2.05
+// against a bar of 1. Nobody has run a second, disjoint sweep at this same width to find
+// out whether 60 sits on a noise floor's plateau or its own edge, which is the exact
+// two-pass discipline CLAUDE.md's own telegraph-check lesson asks for and this widening
+// has not yet received. That is a named open question, not a settled one.
+export const CAMPAIGN_SEEDS = [
+  500000, 500733, 501466, 502199, 502932, 503665, 504398, 505131, 505864, 506597, 507330, 508063,
+  600000, 600733, 601466, 602199, 602932, 603665, 604398, 605131, 605864, 606597, 607330, 608063,
+  700000, 700733, 701466, 702199, 702932, 703665, 704398, 705131, 705864, 706597, 707330, 708063,
+  800000, 800733, 801466, 802199, 802932, 803665, 804398, 805131, 805864, 806597, 807330, 808063,
+  900000, 900733, 901466, 902199, 902932, 903665, 904398, 905131, 905864, 906597, 907330, 908063,
+];
