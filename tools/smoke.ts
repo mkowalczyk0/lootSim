@@ -3021,8 +3021,16 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
    * cannot see the thing under test returns a plausible number instead of an error —
    * the blind-instrument failure in CLAUDE.md — so the Tower's sheets are wired into
    * both here, in the one list, rather than either gate growing its own third source.
+   *
+   * The four raid biomes (`RAIDS[].biome`) were the same gap, found the same way, by a
+   * different session (lootsim-56, `tools/raid-arena-contrast.ts`, 2026-09-10): each raid
+   * reuses a Delve tileset under its OWN tint, and that tint was never in this list, so a
+   * raid arena's floor/wall separation was graded under every Delve tint EXCEPT the one
+   * the raid actually renders with. Wired in for the same reason the Tower was.
    */
-  const ALL_BIOMES: BiomeStyle[] = [...BIOMES, ...PLANETS.map((p) => p.biome), ...TOWER_BIOMES];
+  const ALL_BIOMES: BiomeStyle[] = [
+    ...BIOMES, ...PLANETS.map((p) => p.biome), ...TOWER_BIOMES, ...RAIDS.map((r) => r.biome),
+  ];
   const tintsFor = (id: string): string[] => {
     const tints = ALL_BIOMES.filter((b) => b.tileset === id).map((b) => b.tint);
     // The Abyss overrides the biome tileset but keeps the depth biome's tint —
