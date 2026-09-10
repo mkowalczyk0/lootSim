@@ -86,8 +86,8 @@ import { MAX_TROPHY_CASES, trophyCaseCost } from "../src/data/trophies";
 import { STAT_KEYS } from "../src/data/mods";
 import { Rng } from "../src/core/rng";
 import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
-import { isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage, type Snapshot } from "../src/net/protocol";
-import { Party } from "../src/net/party";
+import { SNAPSHOT_HZ, isRoomCode, normalizeRoomCode, randomRoomCode, type HeroWire, type PartyMessage, type Snapshot } from "../src/net/protocol";
+import { Party, SNAPSHOT_BUFFER_MS } from "../src/net/party";
 import { MemorySaveStore, parseSaved, serializeSave, SAVE_VERSION } from "../src/core/save";
 import { createServer } from "node:http";
 import { hashPassword, openAccounts, verifyPassword } from "./accounts";
@@ -3849,6 +3849,67 @@ console.log("\n=== multiplayer ===");
     check("the host leaving ends the floor as an early extraction",
       client.ends[1]?.how === "hostLeft" && client.ends[1]?.early === true && !client.party.running);
 
+    // The de-jitter buffer (docket §1 stage 2). A client used to apply each snapshot the
+    // instant it arrived, so its smoothness was a direct function of the network's jitter:
+    // `advanceRemote` gives a body `LERP_SPAN` (60ms) to reach the last known position
+    // against a 50ms send interval, i.e. 10ms of tolerance, and past that everything
+    // remote freezes. `Party` now queues arrivals and plays them out on a steady cadence.
+    //
+    // **The assertion that matters is the one a CONSTANT DELAY would fail.** Holding each
+    // snapshot for a fixed 80ms and then applying it looks like a buffer, measures like a
+    // buffer, and does nothing at all — a constant delay shifts every arrival equally and
+    // so preserves the gaps between them, which is what jitter actually is. That version
+    // was built and measured as a total null (13.4% chop became 12.9%). So this feeds a
+    // BURST — four snapshots in one instant, the shape a jitter spike delivers — and
+    // requires that they come out one interval apart rather than all together.
+    {
+      const burstState = geared(14, 8809, 16, "lancer");
+      const burst = rig(burstState, "p3", false);
+      burst.net.peers = [{ id: "p1", name: "Host" }];
+      burst.net.onChange();
+      const bcfg = configToWire(delveConfig(2, 0, 2));
+      burst.net.onMessage("p1", { k: "start", seed: 3, config: bcfg,
+        heroes: [wire(hostState, "p1"), wire(burstState, "p3")] });
+      const bDungeon = new Dungeon(burstState, configFromWire(bcfg), {
+        seed: 3, role: "client",
+        heroes: [
+          { netId: "p1", name: "Host", player: hostState.player, appearance: hostState.appearance, potions: 3, local: false },
+          { netId: "p3", name: "Me", player: burstState.player, appearance: burstState.appearance, potions: 3, local: true },
+        ],
+      });
+      burst.party.attach(bDungeon);
+      const base = JSON.parse(JSON.stringify(encodeSnapshot(bDungeon))) as Snapshot;
+      for (let i = 1; i <= 4; i++) {
+        burst.net.onMessage("p1", { k: "snap", s: { ...base, kq: i } as Snapshot });
+      }
+      check("a burst of snapshots is not applied on arrival", bDungeon.killsSoFar === 0,
+        `killsSoFar ${bDungeon.killsSoFar}`);
+
+      const tickTo = (frames: number) => { for (let i = 0; i < frames; i++) burst.party.beforeSim(); };
+      // Fill the buffer, then one playout.
+      tickTo(Math.ceil((SNAPSHOT_BUFFER_MS / 1000) * 60) + 1);
+      const afterFill = bDungeon.killsSoFar;
+      check("…it starts playing out once the buffer has filled", afterFill === 1,
+        `killsSoFar ${afterFill} after ${SNAPSHOT_BUFFER_MS}ms`);
+      // ONE more frame. A constant-delay buffer would have released the whole burst by now.
+      tickTo(1);
+      check("…and the burst is RE-CLOCKED, not merely delayed — one frame later, still one",
+        bDungeon.killsSoFar === 1, `killsSoFar ${bDungeon.killsSoFar}`);
+      // A full snapshot interval later, exactly one more.
+      tickTo(Math.round(60 / SNAPSHOT_HZ));
+      check("…the next one lands a snapshot interval later", bDungeon.killsSoFar === 2,
+        `killsSoFar ${bDungeon.killsSoFar}`);
+      tickTo(Math.round(60 / SNAPSHOT_HZ) * 2);
+      check("…and the rest follow at that cadence", bDungeon.killsSoFar === 4,
+        `killsSoFar ${bDungeon.killsSoFar}`);
+      // A new floor must never inherit the last one's backlog.
+      burst.net.onMessage("p1", { k: "snap", s: { ...base, kq: 9 } as Snapshot });
+      burst.party.attach(bDungeon);
+      tickTo(Math.ceil((SNAPSHOT_BUFFER_MS / 1000) * 60) + 4);
+      check("attaching a new floor drops the old floor's queued snapshots",
+        bDungeon.killsSoFar === 4, `killsSoFar ${bDungeon.killsSoFar}`);
+    }
+
     // D1: the host picks the party's run by walking into a portal — any portal. The plan
     // crosses the wire as a config, that portal is everybody's ready spot, and the run
     // that starts is the one the host picked, sized to the party.
@@ -4261,7 +4322,21 @@ console.log("\n=== multiplayer ===");
     corrections.sort((a, b) => a - b);
     const median = corrections[Math.floor(corrections.length / 2)] ?? Infinity;
     const worst = corrections[corrections.length - 1] ?? Infinity;
-    check("a walking client is never tugged back by the host", median < 0.1 && worst < 1.5,
+    // **THIS CHECK RUNS AT A CONSTANT LAG WITH NO JITTER AND NO LOSS, AND IS THEREFORE
+    // BLIND TO THE FAILURE IT LOOKS LIKE IT COVERS.** `LAG` is a fixed number of ticks and
+    // every packet arrives, in order. Re-measured 2026-09-10 with a real link underneath
+    // (`npm run mpjitter`, the input-path section), the same rig breaks this very bar:
+    //
+    //     wifi, congested   median 0.02px   p95 0.03px   worst 2.00px   (bar is 1.5)
+    //     transatlantic     median 0.02px   p95 1.95px   worst 5.94px
+    //
+    // and 26-50% of host ticks arrive with no input at all. So a green here says
+    // reconciliation is correct, and says NOTHING about whether a client's movement holds
+    // up on a real connection. It is kept because the property it does check is real; do
+    // not cite it as evidence about live conditions. Same shape as the localhost tests
+    // that could not see the snapshot chop.
+    check("a walking client is never tugged back by the host (CONSTANT lag — see note above)",
+      median < 0.1 && worst < 1.5,
       `median ${median.toFixed(3)}px, worst ${worst.toFixed(2)}px over ${corrections.length} snapshots at ${LAG * 2} ticks RTT`);
     check("the client dashed the instant it pressed, and the host agreed", clientDashed && hostDashed);
     // The uncorrected baseline, for the record: how far ahead a client at this RTT
