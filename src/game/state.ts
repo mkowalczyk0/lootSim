@@ -526,6 +526,14 @@ export class GameState {
     return this.trophyItems[index] ?? null;
   }
 
+  /** Every case slot, in order, read through {@link trophyItem} — the one array the
+   *  world renderer walks to draw what's on display (`render/hub.ts`). A fixed
+   *  `MAX_TROPHY_CASES` long regardless of `trophyCasesUnlocked`, so a locked or empty
+   *  slot is simply `null` rather than a length the renderer has to track separately. */
+  get trophyDisplay(): readonly (Item | null)[] {
+    return Array.from({ length: MAX_TROPHY_CASES }, (_, i) => this.trophyItem(i));
+  }
+
   /** Buys the next locked case — always the first one not yet owned, since a case is a
    *  fixed spot in the room and there is nothing to choose between them. */
   buyTrophyCase(): boolean {

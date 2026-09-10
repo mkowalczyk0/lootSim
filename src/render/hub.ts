@@ -23,10 +23,12 @@
 
 import type { Appearance } from "../data/cosmetics";
 import { DEFAULT_KEYBINDS, keyLabel, type Settings } from "../data/settings";
+import { RARITY_COLORS } from "../data/rarity";
 import { drawPortalGlyph, drawSprite } from "./draw";
 import {
   HUB_HEIGHT, HUB_WIDTH, stationLore, type Hub, type HubMate, type HubStation, type HubStationKind,
 } from "../game/hub";
+import type { Item } from "../game/item";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
 import { ATLAS } from "./atlas/manifest";
 import {
@@ -34,7 +36,7 @@ import {
 } from "../game/deck";
 import type { Wall } from "../game/level";
 import { gradedTileset, paintTilemap } from "./tilemap";
-import { heroSprite } from "./sprites";
+import { heroSprite, itemSprite } from "./sprites";
 import type { ClassId } from "../data/classes";
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -122,6 +124,60 @@ function drawDeckProp(ctx: CanvasRenderingContext2D, id: string, x: number, y: n
 function drawDeckDressing(ctx: CanvasRenderingContext2D): void {
   for (const p of DECK_PROPS) drawDeckProp(ctx, p.art, p.x, p.y);
 }
+
+/**
+ * Where each of the six display cases sits, relative to the Trophy Hall's own anchor tile
+ * — a flanking row either side of the station itself (which draws its own terminal/prop at
+ * offset 0), rather than above or below it, because the room the hall shares with the
+ * training dummy leaves only a couple of tiles of clearance in those two directions and the
+ * station's own label is drawn just below its anchor. Fixed offsets, not derived from the
+ * room's geometry: `docs/trophy-hall.md` calls this out as exactly that ("draw itemSprite
+ * at a fixed offset per case"), the same idiom the dungeon uses for pickups scattered near
+ * a chest.
+ */
+const TROPHY_OFFSETS: readonly number[] = [-90, -60, -30, 30, 60, 90];
+
+/** A case's item shrunk a little further than a dropped pickup would be — six of them
+ *  have to read as a shelf of curios, not six things that fell on the floor. */
+const TROPHY_ITEM_SCALE = 0.62;
+
+/**
+ * The Trophy Hall's actual payoff (`docs/trophy-hall.md`): what's on display, standing in
+ * the room rather than only visible from the management screen. Purely decorative — this
+ * reads `GameState.trophyDisplay` (itself just `trophyItem(i)` in a fixed-length array) and
+ * draws with the exact art `itemSprite` gives every other surface, but nothing here is ever
+ * read back by the simulation. An empty or locked slot draws nothing at all; a case is
+ * furniture holding *something*, not a slot worth drawing when it's holding nothing.
+ */
+function drawTrophyCases(
+  ctx: CanvasRenderingContext2D, x: number, y: number, items: readonly (Item | null)[],
+): void {
+  items.forEach((item, i) => {
+    if (!item) return;
+    const dx = TROPHY_OFFSETS[i];
+    if (dx === undefined) return;
+    const ix = x + dx;
+    const { canvas, worldScale } = itemSprite(item);
+    const scale = worldScale * TROPHY_ITEM_SCALE;
+    ctx.save();
+    deckShadow(ctx, ix, y, canvas.width * scale * 0.32);
+    // The same rarity-glow a dropped item gets on the dungeon floor (`drawPickups` in
+    // `render/draw.ts`) — a case holding a mythic should look like it from across the room.
+    ctx.shadowColor = RARITY_COLORS[item.rarity];
+    ctx.shadowBlur = 10;
+    const flat = !!item.family;
+    if (flat) {
+      // Weapons lie flat in a case exactly as they lie flat on a dungeon floor — standing
+      // a sword on its pommel reads as wrong the same way it would there.
+      ctx.translate(ix, y);
+      ctx.rotate(-0.35);
+      drawSprite(ctx, canvas, 0, 0, false, scale);
+    } else {
+      drawSprite(ctx, canvas, ix, y, false, scale);
+    }
+    ctx.restore();
+  });
+}
 const PARTY_COLOR = "#22d3ee";
 
 /** A person's drawn height on the deck, in hub units — cosmetic and local to this scene.
@@ -155,7 +211,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 
 export function renderHub(
   ctx: CanvasRenderingContext2D, hub: Hub, appearance: Appearance, classId: ClassId, settings: Settings,
-  viewW: number, viewH: number,
+  viewW: number, viewH: number, trophyDisplay: readonly (Item | null)[] = [],
 ): void {
   const pad = 40;
   const scale = Math.max(0.3, Math.min((viewW - pad * 2) / HUB_WIDTH, (viewH - pad * 2) / HUB_HEIGHT));
@@ -178,7 +234,12 @@ export function renderHub(
   // Dressing first: it is scenery, and a station or a person standing in front of a
   // brazier should occlude it rather than the other way round.
   drawDeckDressing(ctx);
-  for (const s of hub.stations) drawStation(ctx, s, time, s.kind === near?.kind, look);
+  for (const s of hub.stations) {
+    drawStation(ctx, s, time, s.kind === near?.kind, look);
+    // The hall's own payoff: what's on display, standing in the room rather than only
+    // visible from the management screen (`docs/trophy-hall.md`).
+    if (s.kind === "trophyHall") drawTrophyCases(ctx, s.x, s.y, trophyDisplay);
+  }
   // The party's portal (UAT §1 D1): whichever one the host picked gets a wide pulsing
   // ring, so "everyone walk into it" has an obvious "it".
   const target = hub.partyStation;
