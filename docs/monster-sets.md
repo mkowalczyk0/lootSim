@@ -28,7 +28,9 @@ game's roster, and there was no way to say otherwise.**
 ## 2. The seam
 
 `BiomeStyle.monsterSet` names a set; `MONSTER_SETS` maps a set's archetypes to atlas ids;
-`monsterSprite(name, set)` resolves one. Three sets are named today:
+`chooseSpriteArt(name, set, loaded)` resolves one — pure and DOM-free in
+`render/spriteart.ts`, with `resolveSprite(name, set)` in `render/sprites.ts` as the
+canvas-owning half. Three sets are named today:
 
 | Set | Realm | State |
 | --- | --- | --- |

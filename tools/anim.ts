@@ -29,10 +29,11 @@
 
 import { readFileSync } from "node:fs";
 import { decodePng } from "./png";
-import { ATLAS, type AtlasSprite } from "../src/render/atlas/manifest";
+import { ATLAS, MONSTER_SETS, SPRITE_OVERRIDES, type AtlasSprite } from "../src/render/atlas/manifest";
+import { chooseSpriteArt } from "../src/render/spriteart";
 import {
   CAST_TAG, FALLBACK_TAG, STATIC_FRAME, castFrame, frameAt, frameAtProgress, frameRect,
-  resolveTag, stripWidth,
+  fitsManifest, resolveTag, stripWidth,
 } from "../src/render/anim";
 
 let failures = 0;
@@ -92,6 +93,125 @@ for (const meta of animated) {
   check(`${meta.id}: the ${meta.anim!.cols} frame rects tile the strip exactly`,
     tiles && last.sx + last.sw === stripWidth(meta),
     `last rect ends at ${last.sx + last.sw}, strip is ${stripWidth(meta)}`);
+}
+
+// --- the loader accepts what the manifest describes ------------------------
+//
+// **This is the check whose absence shipped the bug, and it is not about animation — it
+// is about the SIZE CONTRACT the loader enforces.** `atlas/index.ts` rejects a decoded
+// image whose dimensions disagree with the manifest, which is right: a silent size drift
+// puts every hitbox in that sprite's world footprint slightly wrong. But it measured the
+// file against `spr.w`, and for an animated row `w` is ONE FRAME by design. So the first
+// three animated bosses (375x107 and 490x108 against a manifest reading 75 and 98) were
+// rejected on every boot, permanently, and fell back to their ~26px procedural bakes.
+//
+// Nothing was red. The block above checked the PNG against `stripWidth` and passed; the
+// loader checked it against `spr.w` and failed; no check compared the loader to either.
+// That is the blind-instrument rule in CLAUDE.md from the other side — the gate ran, and
+// it was measuring a different thing from the one that breaks.
+//
+// So this runs over EVERY `ATLAS` row, animated or not, and asserts the committed PNG is
+// exactly the size `loadAtlas` will accept. Both sides now read `stripWidth`, which is
+// what makes this one contract rather than two that happen to agree today.
+console.log("\nanimation — the size contract loadAtlas enforces\n");
+{
+  let checked = 0, worst = "";
+  for (const meta of Object.values(ATLAS)) {
+    let png: { width: number; height: number } | null = null;
+    try { png = decodePng(readFileSync(`src/render/atlas/${dirFor(meta.id)}/${meta.id}.png`)); }
+    catch { /* smoke.ts owns "is it committed at all"; this owns "is it the right size" */ }
+    if (!png) continue;
+    checked++;
+    // `fitsManifest` — the literal call `loadAtlas` makes on the decoded image — rather
+    // than a comparison of our own, so this cannot drift away from the loader again.
+    if (!fitsManifest(meta, png.width, png.height)) {
+      // Reported from the row rather than from `stripWidth`, so the message stays true
+      // even when it is the contract itself that has been broken.
+      worst = `loadAtlas refuses ${meta.id}: file is ${png.width}x${png.height}, `
+        + `row is w=${meta.w} h=${meta.h} cols=${meta.anim?.cols ?? 1}`;
+    }
+  }
+  check(`every committed ATLAS PNG (${checked}) is the size loadAtlas will accept`,
+    worst === "", worst);
+}
+
+// --- a scale and a canvas are one decision ---------------------------------
+//
+// The second half of the same incident. `spriteAt` fell back to the procedural grid when
+// a PNG was not loaded; `spriteWorldScale` read `ATLAS[id].worldScale` with no load check
+// at all. `drawEnemy` took one from each, so a boss whose PNG had not landed drew a ~26px
+// grid at a scale tuned for 75px art — about a third size, in the old low-detail style,
+// with no frames. Fixing the loader hides that hazard again rather than removing it, and
+// it would come back the next time a PNG grew, so `render/spriteart.ts` now makes the
+// mismatch inexpressible: `worldScale` is non-null exactly when `atlasId` is.
+//
+// Asserted against a HOSTILE load predicate rather than against whatever is committed:
+// "nothing loaded" is precisely the state the browser was in, and it is a state no
+// headless run reaches by accident.
+console.log("\nanimation — a scale and a canvas come from one decision\n");
+{
+  const names = [
+    ...Object.keys(SPRITE_OVERRIDES),
+    ...Object.values(MONSTER_SETS).flatMap((set) => Object.keys(set)),
+  ];
+  const sets = [undefined, ...Object.keys(MONSTER_SETS)];
+
+  // The load state a caller can be in, including the two that actually bit: nothing
+  // decoded yet, and every id declared but only some decoded.
+  const worlds: [string, (id: string) => boolean][] = [
+    ["nothing loaded", () => false],
+    ["everything loaded", () => true],
+    ["only non-boss art loaded", (id) => !id.startsWith("boss.")],
+    ["only the sets' own art loaded", (id) => id.includes(".monster.")],
+  ];
+
+  let broken = "";
+  let procedural = 0, atlas = 0;
+  for (const [world, loaded] of worlds) {
+    for (const name of names) {
+      for (const set of sets) {
+        const art = chooseSpriteArt(name, set, loaded);
+        // The biconditional. Either every atlas-derived field is present, or none is.
+        const all = art.atlasId !== null && art.meta !== undefined
+          && art.worldScale !== null && art.feet !== null;
+        const none = art.atlasId === null && art.meta === undefined
+          && art.worldScale === null && art.feet === null;
+        if (!(all || none)) broken ||= `${world}: ${name}/${set ?? "-"} is half-resolved`;
+        // And it never names art the predicate says is not there — the failure that put a
+        // procedural canvas under an atlas scale in the first place.
+        if (art.atlasId !== null && !loaded(art.atlasId)) {
+          broken ||= `${world}: ${name}/${set ?? "-"} named unloaded ${art.atlasId}`;
+        }
+        if (art.atlasId === null) procedural++; else atlas++;
+      }
+    }
+  }
+  check("a resolved sprite is all-atlas or all-procedural, never half of each", broken === "", broken);
+  // Power, not a bound: a check that only ever saw loaded art would pass without
+  // exercising the fallback that broke, so say out loud that both sides were reached.
+  check(`both rungs were actually exercised (${atlas} atlas, ${procedural} procedural)`,
+    atlas > 0 && procedural > 0, `${atlas}/${procedural}`);
+
+  // The ladder itself: a realm's set wins over the game-wide default, and a set that is
+  // named but undrawn falls through rather than blanking the monster.
+  const drawn = (id: string) => !!ATLAS[id];
+  const towerGrunt = chooseSpriteArt("grunt", "tower", drawn);
+  check("a named-but-undrawn set falls through to the game-wide default, not to nothing",
+    towerGrunt.atlasId === SPRITE_OVERRIDES.grunt, `${towerGrunt.atlasId}`);
+  // And a set entry that IS drawn is the one that resolves. Today every committed set
+  // names the same ids as `SPRITE_OVERRIDES` (the Delve and the Reliquary share one
+  // roster on purpose), so this coincides with the default rather than diverging from it
+  // — it starts biting the day the Tower's PNGs land, which is exactly when it should.
+  let wrongSet = "";
+  for (const [setName, entries] of Object.entries(MONSTER_SETS)) {
+    for (const [name, id] of Object.entries(entries)) {
+      if (!ATLAS[id]) continue;
+      const got = chooseSpriteArt(name, setName, drawn);
+      if (got.atlasId !== id) wrongSet ||= `${setName}/${name} resolved ${got.atlasId}, not ${id}`;
+    }
+  }
+  check("a drawn set entry is the one that resolves, ahead of the game-wide default",
+    wrongSet === "", wrongSet);
 }
 
 console.log("\nanimation — the design promises\n");

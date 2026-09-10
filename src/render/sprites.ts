@@ -18,11 +18,12 @@ import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
-  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, MONSTER_SETS, SPRITE_OVERRIDES,
+  HERO_STAGE_DX, HERO_STAGE_DY, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES,
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice } from "./itemart";
+import { chooseSpriteArt, type SpriteArt } from "./spriteart";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
@@ -128,118 +129,108 @@ export async function preloadArt(): Promise<void> {
   await loadAtlas();
 }
 
+/** Whether an atlas id's PNG is really decoded — the one fact `spriteart.ts` can't know. */
+const isLoaded = (id: string): boolean => atlasCanvas(id) !== null;
+
 /**
- * The atlas id an archetype draws in a given realm, or null to use the global default.
+ * A sprite resolved to **one** rung of the art ladder: the sheet it draws from, the world
+ * scale that sheet is measured in, its feet anchor and its animation table, all from the
+ * same decision.
  *
- * The ladder, in order, and every rung is a *fallback* rather than an error: the named
- * set's entry for this archetype → nothing. A set that doesn't exist, doesn't list this
- * archetype, or lists one whose PNG isn't committed all come out the same way, which is
- * what lets `MONSTER_SETS` name a realm's roster before anybody has drawn it.
+ * Read {@link SpriteArt}'s doc in `render/spriteart.ts` for why this is a type rather than
+ * a pair of getters. The short version: `worldScale` is non-null exactly when `sheet` is
+ * an atlas PNG, so drawing a procedural grid at an atlas scale — which shipped three raid
+ * bosses at a third of their size — is no longer expressible.
+ *
+ * Build one with {@link resolveSprite}. Never assemble one by hand.
  */
-function monsterSetId(set: string | undefined, name: SpriteName): string | null {
-  if (!set) return null;
-  const id = MONSTER_SETS[set]?.[name];
-  if (!id) return null;
-  // Listed but not committed: `atlasCanvas` is the honest test, because a manifest row is
-  // a statement of intent and a loaded canvas is a fact.
-  return atlasCanvas(id) ? id : null;
+export interface DrawableSprite extends SpriteArt {
+  /** The picture, or the whole strip for an animated sprite. Never null. */
+  readonly sheet: HTMLCanvasElement;
 }
 
 /**
- * One monster's picture, for the realm it is standing in.
+ * The art a sprite draws right now: the realm's set, then the game-wide default, then the
+ * procedural bake — see `chooseSpriteArt`, which owns the ladder and is checked headlessly.
  *
- * `set` comes from `BiomeStyle.monsterSet`. Passing nothing is exactly today's behaviour,
- * which is why every existing call site kept working unchanged.
+ * `set` comes from `BiomeStyle.monsterSet`. Passing nothing is the game-wide default,
+ * which every non-monster sprite and every boss want.
  */
-export function monsterSprite(name: SpriteName, set?: string): {
-  canvas: HTMLCanvasElement; worldScale: number | null; feet: number | null;
-} {
-  const id = monsterSetId(set, name);
-  if (id) {
-    const png = atlasCanvas(id);
-    if (png) return { canvas: png, worldScale: ATLAS[id]?.worldScale ?? null, feet: ATLAS[id]?.feet ?? null };
-  }
-  return { canvas: sprite(name), worldScale: spriteWorldScale(name), feet: spriteFeet(name) };
+export function resolveSprite(name: SpriteName, set?: string): DrawableSprite {
+  if (!atlas) throw new Error("buildSprites() must run before rendering");
+  const art = chooseSpriteArt(name, set, isLoaded);
+  // `chooseSpriteArt` only ever names an id `isLoaded` agreed on, so the `??` is an
+  // invariant rather than a branch — but a draw path never throws, so it degrades. Note
+  // that it degrades to the procedural sheet *and* would need the procedural scale; that
+  // pairing is why this lookup lives here, where both are still in hand, instead of at a
+  // call site holding only one of them.
+  const png = art.atlasId ? atlasCanvas(art.atlasId) : null;
+  if (art.atlasId && !png) return { ...art, atlasId: null, meta: undefined, worldScale: null, feet: null, sheet: atlas[name] };
+  return { ...art, sheet: png ?? atlas[name] };
 }
 
 /**
  * One frame cut out of an animated strip, cached. A sprite with no `anim` table has no
- * strip to cut, so it hands back the whole canvas and costs nothing.
+ * strip to cut, so it hands back the whole sheet and costs nothing.
  *
  * Cached against the sprite id and frame index rather than rebuilt per draw: a boss is
  * drawn every frame of every tick of a two-minute fight.
  */
 const frameCache = new Map<string, HTMLCanvasElement>();
 
-function sliceFrame(id: string, png: HTMLCanvasElement, index: number): HTMLCanvasElement {
-  const meta = ATLAS[id];
-  if (!meta?.anim || meta.anim.cols <= 1) return png;
-  const key = `${id}#${index}`;
+/** Which cell of the strip a frame index means, clamped into range. Never throws. */
+function frameIndex(s: DrawableSprite, frame: number): number {
+  const cols = s.meta?.anim?.cols ?? 1;
+  return Math.min(Math.max(0, Math.floor(frame) || 0), cols - 1);
+}
+
+/** A resolved sprite's cache identity, which must include which rung it landed on. */
+function artKey(s: DrawableSprite, frame: number): string {
+  return `${s.atlasId ?? s.name}#${frameIndex(s, frame)}`;
+}
+
+/** A resolved sprite's picture at an animation frame. Out-of-range indices are clamped. */
+export function spriteFrame(s: DrawableSprite, frame: number): HTMLCanvasElement {
+  const meta = s.meta;
+  if (!s.atlasId || !meta?.anim || meta.anim.cols <= 1) return s.sheet;
+  const key = artKey(s, frame);
   const hit = frameCache.get(key);
   if (hit) return hit;
   const { canvas, ctx } = blank(meta.w, meta.h);
-  ctx.drawImage(png, index * meta.w, 0, meta.w, meta.h, 0, 0, meta.w, meta.h);
+  ctx.drawImage(s.sheet, frameIndex(s, frame) * meta.w, 0, meta.w, meta.h, 0, 0, meta.w, meta.h);
   if (frameCache.size > 256) frameCache.clear();
   frameCache.set(key, canvas);
   return canvas;
 }
 
-/**
- * A sprite's picture. **Always the first frame** for an animated sprite — see
- * {@link spriteAt} for a live one.
- *
- * That default is deliberate and it is what makes animating a sprite safe: `art/anim/strip.py`
- * builds a strip whose frame 0 is the sprite that shipped before it, so any call site that
- * has not opted into animation keeps drawing pixel-identically to what it drew before. A
- * missed call site is not a bug, it is just a still picture.
- */
-export function sprite(name: SpriteName): HTMLCanvasElement {
-  return spriteAt(name, 0);
-}
-
-/** A sprite at a given animation frame. Out-of-range indices are clamped, never thrown. */
-export function spriteAt(name: SpriteName, frame: number): HTMLCanvasElement {
-  if (!atlas) throw new Error("buildSprites() must run before rendering");
-  const overrideId = SPRITE_OVERRIDES[name];
-  if (overrideId) {
-    const png = atlasCanvas(overrideId);
-    if (png) {
-      const cols = ATLAS[overrideId]?.anim?.cols ?? 1;
-      const i = Math.min(Math.max(0, Math.floor(frame) || 0), cols - 1);
-      return sliceFrame(overrideId, png, i);
-    }
-  }
-  return atlas[name];
-}
-
-/** Tinted copy of one animation frame. Keyed per frame so frames can't share a cache entry. */
-export function tintedAt(
-  name: SpriteName, frame: number, color: string, strength = 0.6,
+/** Tinted copy of one animation frame. Keyed per frame so frames can't share an entry. */
+export function spriteFrameTinted(
+  s: DrawableSprite, frame: number, color: string, strength = 0.6,
 ): HTMLCanvasElement {
-  return tintedCanvas(spriteAt(name, frame), `${name}#${frame}`, color, strength);
+  return tintedCanvas(spriteFrame(s, frame), artKey(s, frame), color, strength);
 }
 
 /** Silhouette of one animation frame. */
-export function silhouetteAt(
-  name: SpriteName, frame: number, color = "#ffffff",
+export function spriteFrameSilhouette(
+  s: DrawableSprite, frame: number, color = "#ffffff",
 ): HTMLCanvasElement {
-  return silhouetteCanvas(spriteAt(name, frame), `${name}#${frame}`, color);
+  return silhouetteCanvas(spriteFrame(s, frame), artKey(s, frame), color);
 }
 
 /**
- * World units per art pixel for a pipeline sprite, or null if `name` is still procedural.
- * `render/draw.ts` uses this in place of the global `SPRITE_SCALE` / boss `spriteScale`
- * so an atlas sprite keeps its predecessor's world footprint at a higher art resolution.
+ * A sprite's picture, **always the first frame** for an animated one — for the UI surfaces
+ * (the HUD, the town screens) that draw at their own pixel sizes and never ask for a world
+ * scale, so the pairing this module is built around cannot come apart for them.
+ *
+ * Frame 0 being the default is deliberate and it is what makes animating a sprite safe:
+ * `art/anim/strip.py` builds a strip whose frame 0 is the sprite that shipped before it,
+ * so any call site that has not opted into animation keeps drawing pixel-identically to
+ * what it drew before. A missed call site is not a bug, it is just a still picture.
+ *
+ * **Anything drawn in world units wants {@link resolveSprite} instead.**
  */
-export function spriteWorldScale(name: SpriteName): number | null {
-  const id = SPRITE_OVERRIDES[name];
-  return id ? ATLAS[id]?.worldScale ?? null : null;
-}
-
-/** Fraction of an atlas sprite's height that sits below the feet anchor, or null. */
-export function spriteFeet(name: SpriteName): number | null {
-  const id = SPRITE_OVERRIDES[name];
-  return id ? ATLAS[id]?.feet ?? null : null;
+export function sprite(name: SpriteName): HTMLCanvasElement {
+  return spriteFrame(resolveSprite(name), 0);
 }
 
 // --- pipeline cosmetic layers -----------------------------------------------
@@ -670,9 +661,13 @@ function executeArtChoice(choice: ItemArtChoice): ItemSprite | null {
       };
     case "icon": {
       const name = choice.sprite as SpriteName;
+      // One decision: the picture and the scale it is measured in come from the same
+      // `resolveSprite`, so a procedural icon rides the legacy 1.4 and an atlas one rides
+      // its own row. Taking these from two calls is the bug this module now prevents.
+      const art = resolveSprite(name);
       return {
-        canvas: tintedCanvas(sprite(name), `itemIcon:${name}`, RARITY_COLORS[choice.rarity], choice.wash),
-        worldScale: spriteWorldScale(name) ?? 1.4,
+        canvas: tintedCanvas(art.sheet, `itemIcon:${name}`, RARITY_COLORS[choice.rarity], choice.wash),
+        worldScale: art.worldScale ?? 1.4,
       };
     }
   }

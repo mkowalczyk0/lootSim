@@ -110,7 +110,9 @@ true as data:
   as you descend, which is backwards from where it is most needed.
 - **`sprite()` returns FRAME 0 of a strip, asserted pixel-identical to what shipped before.**
   Every un-migrated call site keeps drawing what it drew; a missed call site is a still
-  picture, not a bug. `spriteAt`/`tintedAt`/`silhouetteAt` are the opt-in.
+  picture, not a bug. `resolveSprite(name, set)` plus `spriteFrame`/`spriteFrameTinted`/
+  `spriteFrameSilhouette` are the opt-in — and the only way to get a world scale, because
+  a scale and a canvas are one decision (see `render/spriteart.ts`).
 - Three of four raid bosses idle: Ferryman, War Queen, Exiled Tyrant.
 
 ### Two new art gates
@@ -123,6 +125,47 @@ true as data:
   separation from the graded floor.
 
 ---
+
+## The animation roadmap (owner-queued, 2026-09-09)
+
+The owner wants the animation work rolling once the current round lands. **The order below
+is deliberate — each step is blocked by the one above it, so taking them out of order
+wastes generations.**
+
+0. **The atlas scale/canvas mismatch (P0, in flight).** Nothing else in this list is worth
+   doing until it lands, because it is the thing making animated bosses draw as tiny
+   procedural stand-ins. It is also plausibly a *ceiling* on strip size — if big PNGs are
+   failing to load rather than merely arriving late, that caps how many frames a sprite can
+   carry, and every plan below depends on the answer.
+1. **The wind-up pipeline.** The blocker, and the one that matters most for the game rather
+   than for looks: a cast animation *is* part of the telegraph's readability. Needs a target
+   pose per boss fed to `last_frame_base64` so the generator interpolates between two poses
+   instead of animating open-endedly. Evidence, numbers and `art/anim/windup-check.py` are
+   already in the repo — **do not re-run the open-ended call, it has been falsified three
+   times.**
+2. **Cast wind-ups for the four raid bosses**, once (1) works. Then their remaining idles.
+3. **The Minotaur.** Still static, and it is a *hold* rather than an oversight: its accent is
+   two pixels and the generator loses it (measured 39% dimming), so `npm run chroma` fails
+   every attempt. The next thing to try is **enlarging its eyes on the source sprite** —
+   more pixels, not merely brighter — which is a change to shipped art and **wants the
+   owner's approval before anyone spends a generation on it.**
+4. **The ordinary boss roster.** Idles at minimum. Cheap once (1) exists, and it is where the
+   "bosses are a main attraction" payoff scales past four encounters.
+5. **The hero — blocked on the owner's pick, and deliberately last of the characters.**
+   Animating v4 is wasted work while a redraw is live. Once a candidate is chosen, the hero
+   needs more tags than a boss does (idle, walk, dash, attack, cast, hurt, death) and is the
+   single most-seen sprite in the game, so it is the biggest single animation job.
+6. **Monsters — explicitly deferred by the owner** ("we can leave monsters for now"). Do not
+   start these without being asked.
+
+**Method is written down; follow it rather than rediscovering it.** `docs/animation.md`
+carries the pick-up-and-go sequence in order: measure the accent with headroom (near 50)
+BEFORE animating, convert with `art/pixellab-upload.py` and why, generate with
+`no_background: true` (passing false flattens transparency onto white), run
+`windup-check.py` before stripping, assemble with `art/anim/strip.py`, then `npm test`.
+Accents are fixed on the **source sprite before generating**, never repaired on a finished
+strip — the feature moves between frames, so post-hoc repair is per-frame coordinate work
+that invalidates on every regeneration.
 
 ## Open items, in the order I would take them
 
