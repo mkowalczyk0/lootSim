@@ -1,6 +1,9 @@
 import { combatHints, Input, skillKeys, townHints } from "../core/input";
 import { clamp, formatNumber } from "../core/math";
 import { challengerMultiplier, challengerName, MAX_CHALLENGER_TIER } from "../data/challenger";
+import {
+  BANNER_STYLES, bannerStyle, standardLabel, standardsFor, styleOwned, type StandardMark,
+} from "../data/standards";
 import { CHEST_CATEGORIES, CHESTS, CHEST_TIERS, chestName } from "../data/chests";
 import { msUntilShopReset, SHOP_TIERS, SHOP_TIER_IDS, type ShopTierId } from "../data/shop";
 import { RecordsClient, type LeaderboardRow, type RecentRow } from "../net/recordsClient";
@@ -121,8 +124,8 @@ const AUGMENT_SLOTS: readonly (AugmentAxis | null)[] = [null, ...AUGMENT_AXES];
 const AUGMENT_CATEGORY = CHEST_CATEGORIES.length;
 
 const CYCLE_TABS = [
-  "Chests", "Shop", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
-  "Records", "Leaderboards", "Settings",
+  "Chests", "Shop", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style",
+  "Standards", "Capsules", "Codex", "Records", "Leaderboards", "Settings",
 ] as const;
 const STATION_TABS = [
   "Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Altar", "Party", "Vigil",
@@ -280,6 +283,7 @@ function tabHelp(
     case "Universal": return `${sel} walk a path · ${adj} switch path · ${e} spend a point · ${q} refund it all — shared by every class`;
     case "Path": return `${sel} choose a class · ${e} commit to it`;
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
+    case "Standards": return `${sel} choose a mark or a cloth · ${e} fly it, wear it or buy it`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
     case "Codex": return `${sel} browse the class roster · ${adj} switch view — the full 21-class design; play one from the Path tab`;
     case "Records": return "Nothing to do here — just numbers.";
@@ -1043,6 +1047,7 @@ export class TownUI {
       case "Universal": return UNIVERSAL_PATH_DEPTH + 1;
       case "Path": return CLASS_IDS.length;
       case "Style": return STYLE_ROWS.length;
+      case "Standards": return standardsFor(this.state.player, this.state.activeClassId).length + BANNER_STYLES.length;
       case "Capsules": return CAPSULE_TIERS.length;
       case "Codex": return ALL_CLASSES.length;
       case "Records": return 0;
@@ -1936,6 +1941,10 @@ export class TownUI {
         this.cycleStyle(this.cursor, 1);
         break;
       }
+      case "Standards": {
+        this.standardsAction();
+        break;
+      }
       case "Capsules": {
         const tier = CAPSULE_TIERS[this.cursor]!;
         const want = this.bulk ? 10 : 1;
@@ -2406,6 +2415,7 @@ export class TownUI {
       case "Universal": return this.renderUniversal();
       case "Path": return this.renderPath();
       case "Style": return this.renderStyle();
+      case "Standards": return this.renderStandards();
       case "Capsules": return this.renderCapsules();
       case "Codex": return this.renderCodex();
       case "Records": return this.renderRecords();
@@ -2505,13 +2515,93 @@ export class TownUI {
           : `<span class="name muted">Empty</span><div class="row-side">${k(this.state.settings, "confirm")} to place something</div>`;
       return `<div class="row ${on}" data-index="${i}"><div class="row-main">${body}</div></div>`;
     }).join("");
+    const flownMark = standardLabel(this.state.player, this.state.activeClassId, this.state.player.flownStandard);
+    const flownStyle = bannerStyle(this.state.player.flownBannerStyle);
+    const standard = flownMark
+      ? `<p class="muted" style="color:${flownStyle.color};border-left:3px solid ${flownStyle.border};padding-left:8px">
+           Hanging here: ${escapeHtml(flownMark)}</p>`
+      : `<p class="muted">Nothing flying yet — the Standards screen picks one.</p>`;
     return `
       <p class="muted">Display cases, bought with gems. What's in one is a copy — the real
         item never leaves the stash, and nothing here changes your sheet.</p>
+      ${standard}
       <div class="stash-grid">${rows}</div>
       <aside class="side">
         <p class="muted">Gems: ${this.state.gems}</p>
         <p class="muted">${k(this.state.settings, "confirm")} buy, place or clear a case.</p>
+      </aside>`;
+  }
+
+  /**
+   * Standards (`docs/gem-sinks.md` §4A). Rows are marks first (earned, free — confirm
+   * flies or lowers one), then banner styles (confirm wears an owned one or buys an
+   * unowned one). One flat list rather than two screens, the same shape the Trophy Hall
+   * already uses for "locked vs filled" in a single `data-index` grid.
+   */
+  private standardsAction(): void {
+    const marks = standardsFor(this.state.player, this.state.activeClassId);
+    if (this.cursor < marks.length) {
+      const mark = marks[this.cursor]!;
+      const flying = this.state.player.flownStandard === mark.id;
+      this.state.setFlownStandard(flying ? null : mark.id);
+      this.notify(flying ? "Standard lowered." : `Now flying: ${mark.label}`, "#f0abfc");
+      return;
+    }
+    const style = BANNER_STYLES[this.cursor - marks.length];
+    if (!style) return;
+    if (styleOwned(style, this.state.ownedBannerStyles)) {
+      this.state.setFlownBannerStyle(style.id);
+      this.notify(`Cloth: ${style.name}`, style.color);
+      return;
+    }
+    if (this.state.gems < style.price) {
+      this.notify(`Need ${style.price} gems for ${style.name}.`, "#ef4444");
+      return;
+    }
+    this.state.buyBannerStyle(style.id);
+    this.state.setFlownBannerStyle(style.id);
+    this.notify(`Bought and flying: ${style.name}`, style.color);
+  }
+
+  private renderStandards(): string {
+    const marks = standardsFor(this.state.player, this.state.activeClassId);
+    const currentStyle = bannerStyle(this.state.player.flownBannerStyle);
+    const markRows = marks.map((m: StandardMark, i: number) => {
+      const on = i === this.cursor ? "on" : "";
+      const flying = this.state.player.flownStandard === m.id;
+      return `
+        <div class="row ${on}" data-index="${i}">
+          <div class="row-main">
+            <span class="name" style="color:${currentStyle.color}">${escapeHtml(m.label)}</span>
+            ${flying ? '<span class="badge">FLYING</span>' : ""}
+          </div>
+          <div class="row-side">${flying
+            ? `${k(this.state.settings, "confirm")} to lower`
+            : `${k(this.state.settings, "confirm")} to fly`}</div>
+        </div>`;
+    }).join("");
+    const styleRows = BANNER_STYLES.map((s, i) => {
+      const idx = marks.length + i;
+      const on = idx === this.cursor ? "on" : "";
+      const owned = styleOwned(s, this.state.ownedBannerStyles);
+      const worn = this.state.player.flownBannerStyle === s.id;
+      const body = owned
+        ? `<span class="name" style="color:${s.color}">${escapeHtml(s.name)}</span>
+           <div class="row-side">${worn ? "worn" : `${k(this.state.settings, "confirm")} to wear`}</div>`
+        : `<span class="name muted">${escapeHtml(s.name)}</span>
+           <div class="row-side">${s.price} gems</div>`;
+      return `<div class="row ${on}" data-index="${idx}"><div class="row-main">${body}</div></div>`;
+    }).join("");
+    return `
+      <p class="muted">Every mark below is something this class actually did — flying one
+        costs nothing. Gems buy only the cloth it flies in.</p>
+      <div class="stash-grid">${markRows
+        || '<div class="stash-none">Nothing earned yet. Bank a hard clear and come back.</div>'}</div>
+      <p class="muted">Cloth</p>
+      <div class="stash-grid">${styleRows}</div>
+      <aside class="side">
+        <p class="muted">Gems: ${this.state.gems}</p>
+        <p class="muted">${k(this.state.settings, "confirm")} fly a mark, wear or buy a style.</p>
       </aside>`;
   }
 
@@ -2681,12 +2771,20 @@ export class TownUI {
           const remote = p.members.find((m) => m.id === member?.id);
           const ready = member?.id === p.net.id ? false : remote?.ready ?? false;
           const you = member?.id === p.net.id;
+          // Only "you" can show a Standard here — the relay is deliberately dumb (id and
+          // name only, see `net/protocol.ts`'s `PeerInfo`), so a party member's flown
+          // mark isn't known to this client until a dive actually starts and the full
+          // co-op wire (`HeroWire.player`) is syncing; the in-run nameplate covers that
+          // case live. This reads the local account only.
+          const mark = you ? standardLabel(this.state.player, this.state.activeClassId, this.state.player.flownStandard) : null;
+          const style = you ? bannerStyle(this.state.player.flownBannerStyle) : null;
           rows.push(`
             <div class="row ${on}" data-index="${i}">
               <div class="row-main">
                 <span class="name">${escapeHtml(member?.name ?? "…")}</span>
                 ${you ? '<span class="badge">YOU</span>' : ""}
               </div>
+              ${mark ? `<div class="row-side" style="color:${style!.color}">${escapeHtml(mark)}</div>` : ""}
               <div class="row-side ${you || !ready ? "warn" : ""}">
                 ${you
                   ? "at the relay — you only count as ready while you're standing in the portal"

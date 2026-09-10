@@ -4,10 +4,26 @@
 > term vision is to have gems be a paid currency along side like cosmetic packs and
 > whatnot." — the owner, `docs/docket.md` §3
 
-A shortlist with prices and an owner call to make. **Nothing here is built.** Docket §3's
-first entry (the Trophy Hall) has already landed; this is the design for what comes after
-it, written the way §3 asks — say what each sink is, what it costs, why it cannot become
-pay-to-win once gems are bought with money, and what it costs to build.
+A shortlist with prices and an owner call to make. Docket §3's first entry (the Trophy
+Hall) has already landed; this is the design for what comes after it, written the way §3
+asks — say what each sink is, what it costs, why it cannot become pay-to-win once gems
+are bought with money, and what it costs to build.
+
+**2026-09-10: the owner approved both A (Standards) and the wardrobe baseline — not
+either/or.** Built on `feat/gem-sinks-standards`, `src/data/standards.ts`, SAVE_VERSION
+34. §4A shipped close to as designed: the earned/free split, the three render sites
+(lobby, in-run nameplate, Trophy Hall), and both structural safety proofs (`tools/smoke.ts`
+— dressed sheet byte-identical, and buying every banner style gains zero displayable
+marks, falsified both ways). One deliberate scope cut from the doc's price table: the
+**8-slot escalating Trophy Hall "standard mount" ladder is not built** — the Hall shows
+whichever Standard the class is flying (one, live, free) rather than an independent set of
+purchasable permanent mounts. That is a real, clearly-scoped follow-on (it needs its own
+`GameState` array the same shape `trophyItems` has), not an oversight; see the branch's
+own commit for the reasoning. B (Titles) is still a strict subset of A and still not worth
+building separately. The wardrobe got two new cosmetics on each of the cheapest slots
+(a hat, an ears item, two auras — recolors of existing kinds, the same pattern `hatCrown`/
+`hatUnspoken` already use) rather than a new weapon skin, which the owner's standing rule
+still prices as its own authored weapon.
 
 ---
 
