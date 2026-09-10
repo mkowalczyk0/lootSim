@@ -1,30 +1,40 @@
 /**
- * `npm run windup` — does a boss wind-up actually travel?
+ * `npm run windup` — a printed instrument for how a boss wind-up is paced. **It asserts
+ * nothing about the art, and that is deliberate. Do not turn it into a gate.**
  *
- * **Deliberately NOT in `npm test`, and this comment is its exit route.** It is red right
- * now on all three animated strips in the repo — `boss.ferryman`, `boss.war-queen` and
- * `boss.exiled-tyrant`, each failing on both metrics, six rows. That is the check working:
- * the art is what is wrong, and the owner reported it independently ("the animation seems
- * to be like halfway done") before this tool existed. Folding a red check into the chain
- * would break `npm test` for the owner and every other session, none of whom asked for it,
- * so it follows the `npm run builds` precedent and sits outside.
+ * ## Read this before "fixing" the three sprites it reports on
  *
- * **The commit that lands regenerated art folds this into the `npm test` chain in that same
- * commit — not as a follow-up.** That is the whole condition on which it was allowed to sit
- * outside. `npm run builds` is the cautionary tale: a check parked outside the chain is a
- * check nobody runs, and it has been red and unwatched long enough that CLAUDE.md now has to
- * tell people not to "fix" it. This one is carried as an open item on the handoff so it
- * cannot quietly become permanent. If regeneration stalls, that is a reason to come back and
- * re-decide, not a reason to leave this parked.
+ * All three animated strips — `boss.ferryman`, `boss.war-queen`, `boss.exiled-tyrant` —
+ * report as early-arriving: each one's travel curve peaks on its PENULTIMATE frame and
+ * retreats slightly, and each does the large majority of its travel in its first half.
+ * That measurement is correct and reproducible.
  *
- * ## What it asserts
+ * **The owner has looked at these wind-ups and approved them.** Verbatim, 2026-09-10: "the
+ * wind ups look really good." So the property this file measures is true, and the person
+ * who decides does not hold it. There is nothing here to repair.
  *
- * A wind-up's travel curve — every frame's distance from the wind-up's FIRST frame — has to
- * peak on its LAST frame and nowhere earlier. A wind-up is anticipation; anticipation that
- * peaks early and then backs off is the shape of the complaint.
+ * This tool briefly WAS a gate, red on all three, on a misreading worth recording. The
+ * owner's report was that the animations looked "halfway done", which was taken as a
+ * complaint about the frames. It was not. It meant the animation stops at the wind-up and
+ * no ATTACK follows — a MISSING animation, not a broken one: "the windups last frame stops
+ * right before the attack... i was expecting an attack but it seems like that wasnt the
+ * intention here." The fix is a `strike` tag, not better wind-ups.
  *
- * There is no threshold in that, on purpose: it is a rank statistic, so it cannot be
- * softened to let art through. The art is the only thing that can move.
+ * That is why this file no longer fails. A red check here would send some future session to
+ * regenerate three sprites nobody thinks are broken, which is a more expensive mistake than
+ * having no check at all — the measurement is real, the verdict was never the owner's.
+ *
+ * ## What it still earns its place for
+ *
+ * The pacing numbers are a genuine diagnostic for a NEW wind-up, where nobody has yet formed
+ * a view: if a freshly generated strip arrives 40% in and coasts, this says so before it
+ * ships. Use it as evidence in a judgement, never as a bar.
+ *
+ * The controls below DO assert, and they are about the instrument rather than the art: three
+ * genuine single motions built by translating a real sprite's own frame 0 must be reported as
+ * travelling, and one that arrives 40% in and holds must be reported as not travelling. If a
+ * future edit breaks the measurement so it cannot tell those apart, this goes red and says
+ * so. That is the one thing here worth failing over.
  *
  * ## Why it is a rank statistic, which cost a rewrite to learn
  *
@@ -38,13 +48,12 @@
  * not a metric space with usable triangle geometry. Once two frames stop overlapping much,
  * the distance saturates at "both silhouettes added together", so every path looks equally
  * straight. Any statistic that reasons about distances BETWEEN interior frames inherits
- * that. Only the ordering survives, so only the ordering is asserted. See
+ * that. Only the ordering survives, so only the ordering is measured. See
  * docs/animation.md, "The obvious instrument is wrong".
  *
  * A thresholded changed-pixel count — the obvious first metric — fails differently: it
  * saturates outright, reading 99.9% of the Ferryman's opaque pixels "changed" by frame 10,
- * unable to measure travel past it at all. Hence the two metrics below, neither of which is
- * a count.
+ * unable to measure travel past it at all. Hence the two metrics below, neither a count.
  */
 
 import { readFileSync } from "node:fs";
@@ -72,7 +81,7 @@ function dirFor(id: string): string {
 
 const animated = Object.values(ATLAS).filter((m) => m.anim);
 
-console.log("\nanimation — a wind-up travels\n");
+console.log("\nwind-up pacing — diagnostic, not a gate\n");
 
 type Frame = { readonly data: Uint8Array; readonly w: number; readonly h: number };
 
@@ -160,10 +169,11 @@ for (const meta of animated) {
 
     for (const [mName, fn] of METRICS) {
       const t = travel(seq, fn);
-      check(`${meta.id} "${name}": ${mName} travel peaks on the last frame, not before`,
-        t.argmax === seq.length - 1,
-        `peaks at frame ${tag.from + t.argmax} of ${tag.from}..${tag.to}`
-        + ` then retreats to ${(100 * t.finalOverMax).toFixed(1)}% of it`);
+      const lands = t.argmax === seq.length - 1;
+      console.log(`      ${meta.id} "${name}": ${mName} travel peaks at frame `
+        + `${tag.from + t.argmax} of ${tag.from}..${tag.to}`
+        + (lands ? " — its last frame, so it travels to its end"
+                 : `, then retreats to ${(100 * t.finalOverMax).toFixed(1)}% of it`));
     }
 
     // Diagnostic, not asserted — see the note below the loop.
@@ -219,8 +229,8 @@ for (const meta of animated) {
       for (const [mName, fn] of METRICS) {
         const travels = travel(seq, fn).argmax === seq.length - 1;
         check(shouldTravel
-          ? `control: a single motion (${name}) passes the same ${mName} property`
-          : `control: a motion that ${name} is CAUGHT by the same ${mName} property`,
+          ? `instrument: a single motion (${name}) is reported as travelling (${mName})`
+          : `instrument: a motion that ${name} is reported as NOT travelling (${mName})`,
           travels === shouldTravel);
       }
     }
@@ -244,5 +254,8 @@ for (const meta of animated) {
 // check that passes vacuously. When the art is regenerated, re-measure the spread and
 // assert it then, with the margin known rather than assumed.
 
-console.log(failures === 0 ? "\nwind-up travel: all checks passed\n" : `\nwind-up travel: ${failures} FAILED — see the header, this is expected until the art is regenerated\n`);
+console.log(failures === 0
+  ? "\nwind-up pacing: instrument verified. Everything above about a shipped strip is a\n"
+    + "DIAGNOSTIC, not a defect — the owner has approved these wind-ups. See the header.\n"
+  : `\nwind-up pacing: ${failures} FAILED — the INSTRUMENT is broken, not the art. See the header.\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -304,9 +304,9 @@ third is the one that matters most:
    "did it get there" can be asked directly instead of inferred from distance-from-rest.
    `windup-check.py` takes an optional target and asserts exactly that.
 
-   > **CORRECTED 2026-09-10 — this passage used to say the open-ended rule "WILL false-reject
-   > a good pinned run", and that was the reasoning that let a bad wind-up ship.** What stood
-   > here claimed that distance-to-target reaching zero is a *strictly stronger* claim than
+   > **CORRECTED 2026-09-10.** What stood here claimed the open-ended rule "WILL false-reject
+   > a good pinned run", on the grounds that distance-to-target reaching zero is a *strictly
+   > stronger* claim than
    > `argmax(distance from rest) == last frame`, so the latter could be waived whenever a
    > target was supplied. It is not stronger. It is **orthogonal**, and the difference is the
    > whole bug:
@@ -317,21 +317,22 @@ third is the one that matters most:
    >   statement about the animation.
    >
    > A run can land on its pinned pose byte-for-byte while the path to it plateaus early and
-   > wobbles, and that is exactly what shipped. The evidence was already in this document,
-   > read as success: the pinned Ferryman's distance-from-target sequence is
+   > wobbles, and that is exactly what shipped. Read the pinned Ferryman's
+   > distance-from-target sequence, recorded in this document as a success:
    > `43.0 40.7 35.7 29.8 25.6 19.5 2.1 10.8 0.0` — it effectively **arrives at frame 6**
    > (2.1% away), backs off to 10.8%, then snaps to 0.0%. Frames 7 and 8 are a wobble around
    > an endpoint already reached, not two more frames of a motion. The `2.1` is the tell.
    >
-   > The owner's report, independently and before any of this was re-measured: the wind-ups
-   > "look incomplete... the animation seems to be like halfway done". They are right, and
-   > landing on the target perfectly is what made everyone confident they were not.
+   > The "1-point gap is an intermediate frame wandering" reading is also wrong on its own
+   > terms: `npm run windup` measures the same signature on **all three** animated strips, on
+   > two independent metrics, always peaking on the penultimate frame. Systematic across
+   > three sprites and two metrics is not wandering.
    >
-   > So the argmax rule was never a false-reject on this art — **it was a true reject that was
-   > explained away**, and the "1-point gap is an intermediate frame wandering" reading is
-   > wrong twice over: `npm run windup` now measures the same signature on **all three**
-   > animated strips, on two independent metrics, always peaking on the penultimate frame.
-   > Systematic across three sprites and two metrics is not wandering.
+   > **None of which means the art is bad — and this correction is not a licence to go
+   > regenerate it.** The owner reviewed these wind-ups on 2026-09-10 and approved them
+   > ("the wind ups look really good"). The measurement is true; the verdict is the owner's
+   > and they do not hold it. `npm run windup` is a printed diagnostic for exactly this
+   > reason and must not become a gate — see its header.
    >
    > Both questions have to be asked, and neither substitutes for the other. Pinning a target
    > buys control of the frame shown at the instant of the hit (consequence 2 below), which is
@@ -341,7 +342,7 @@ third is the one that matters most:
 3. **With a pinned ending there are TWO source sprites, and step 1 of the method below
    applies to both.** It was written when there was only ever one.
 
-### The targets are not timid — it is the path that fails
+### The targets are not timid — the motion front-loads instead
 
 Measured 2026-09-10, before spending any generation budget, to split the problem: if the
 pinned target poses were themselves too close to rest, no amount of path control would help
@@ -355,7 +356,7 @@ All three clear the bar comfortably. **And the shipped strips reach that amplitu
 wind-up's last frame sits 43% / 33% / 32% from its own first frame, matching its target, and
 lands on the pinned pose to 0.0%. So neither the target nor the endpoint is the problem.
 
-What fails is the **distribution along the way**. The same strips, each frame's silhouette
+What varies is the **distribution along the way**. The same strips, each frame's silhouette
 change from the wind-up's first frame:
 
     ferryman   0% 11% 24% 34% 36% 40% 44% 43%
@@ -363,7 +364,12 @@ change from the wind-up's first frame:
     tyrant     0%  6% 17% 28% 30% 31% 31% 32% 32%
 
 The Tyrant is at 28 of its eventual 32 points by frame 3 of 8 and spends five more frames
-gaining four. That is the owner's "halfway done", in the repo's own numbers.
+gaining four.
+
+> This was briefly read as the explanation for the owner's "halfway done" report. **It was
+> not.** See "What 'halfway done' actually meant" below: the report was about a missing
+> strike animation, not about these frames, and the owner has since approved the wind-ups
+> as they stand. These numbers are a pacing diagnostic for *new* art, nothing more.
 
 ### The generator arrives two frames early, reliably
 
@@ -398,6 +404,38 @@ Two consequences that are easy to get wrong:
 > measurements, and per the section below, silhouette distance has no usable triangle
 > geometry — you cannot infer one from the other by arithmetic, and a number that looks
 > derived that way is not.
+
+### What "halfway done" actually meant — and the cost of assuming
+
+The owner's first report on the shipped wind-ups was that they looked "incomplete... the
+animation seems to be like halfway done". That was read as a complaint about the FRAMES, and
+a good deal of measurement followed from it: the travel gate, the timidity test, the plan to
+regenerate. All of the measurement is sound and is kept above. **The reading was wrong.**
+
+The clarification, 2026-09-10:
+
+> "the windups last frame stops right before the attack. it looks good, my comment was that
+> i was expecting an attack but it seems like that wasnt the intention here. **the wind ups
+> look really good.** thats what i mean by 'halfway'."
+
+"Halfway" meant the animation stops at the wind-up and **no attack follows** — a MISSING
+animation, not a broken one. The boss coils, the shape resolves, and the sprite snaps
+straight back to idle with no release and no follow-through. The wind-ups themselves are
+approved.
+
+Three things worth keeping from how this went wrong:
+
+- **A measurement can be correct and its verdict still not be yours to make.** The strips
+  genuinely do arrive early and retreat on the penultimate frame; two independent metrics and
+  a set of controls say so. None of that entitles anyone to call the art defective. The gate
+  built on it was demoted to a printed diagnostic the same day — see `tools/windup.ts`.
+- **A vivid phrase from a report is not a specification.** "Halfway done" was concrete enough
+  to feel like a diagnosis and vague enough to fit a theory that was already forming. The
+  cheap move — ask what it referred to — was skipped because the numbers seemed to confirm it.
+- **The generation budget was never spent**, because the plan was to check the seam and the
+  approach before generating. That is the only reason this cost measurement rather than art.
+
+The actual gap is a `strike` tag: the release the wind-up is promising.
 
 ### The obvious instrument is wrong: straightness does not work on sprites
 

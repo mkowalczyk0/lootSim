@@ -4,6 +4,10 @@ Run before spending generation budget on a wind-up. It splits the question clean
 target means no amount of path control helps and the answer is authoring a more committed
 apex; a committed target means the generator's path is what to go after.
 
+NOTE: the owner reviewed and APPROVED the three shipped wind-ups on 2026-09-10 ("the wind
+ups look really good"). Nothing below is a defect list — it is a pacing diagnostic for NEW
+art. See docs/animation.md, "What 'halfway done' actually meant".
+
 Measured 2026-09-10 the answer was PATH — all three shipped targets clear the amplitude bar
 (43.0%, 32.7%, 30.7% against 25%) and all three strips reach that amplitude, while the motion
 along the way front-loads and coasts. The second half of the output is why: in four of five

@@ -54,18 +54,21 @@ no tolerance at all, while the monotonic-build test next to it already needed 2 
 
 CORRECTED 2026-09-10. This used to read: "Distance-to-target reaching zero is a strictly
 stronger claim than argmax-of-distance-from-rest, and it is asserted only when a target is
-supplied." **That is wrong, and it is the reasoning that let a plateaued wind-up ship.**
+supplied." **That is wrong as stated.**
 The two are orthogonal, not ordered. Distance-to-target says the generator reproduced the
 endpoint we handed it; argmax-of-distance-from-rest says the sequence travels. A run can do
 the first perfectly while the second fails — which is what happened. Read the pinned run
 above again: it reaches 2.1% from target at frame 6, backs off to 10.8%, then snaps to 0.0%.
 It ARRIVES AT FRAME 6. Frames 7 and 8 are a wobble around an endpoint already reached.
 
-The owner's report on the shipped art, independent of any of this: the wind-ups "look
-incomplete... the animation seems to be like halfway done". `npm run windup` now measures
-the same peaks-on-the-penultimate-frame signature on all three animated strips, on two
-independent metrics. Systematic across three sprites and two metrics is not noise, so the
-UNUSABLE verdict below was a TRUE reject that got explained away.
+`npm run windup` measures the same peaks-on-the-penultimate-frame signature on all three
+animated strips, on two independent metrics, so the "intermediate frame wandering" reading
+below does not hold either — systematic across three sprites and two metrics is not noise.
+
+**But do not read any of that as "the art is bad."** The owner reviewed these wind-ups on
+2026-09-10 and approved them ("the wind ups look really good"). The measurement is true and
+the verdict is not ours. Treat the numbers as a pacing diagnostic for NEW art and never as a
+bar; see docs/animation.md, "What 'halfway done' actually meant".
 
 Ask both questions. Landing on the target is still worth having — it buys control of the
 frame the player reads at the instant of the hit — it just never bought the travel. See
