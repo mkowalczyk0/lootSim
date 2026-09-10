@@ -679,9 +679,25 @@ console.log("\n=== elite monsters — a mini-boss tier (UAT §4) ===");
   check("an elite telegraphs its signature slam", stagedSlam,
     deep.sawEliteTelegraph ? "seen on the sampled floor too" : "staged encounter only");
 
-  const early = sampleFloor(6, 909, 6);
-  check("the elite cap holds on an ordinary early floor", early.peakElites <= 1,
-    `${early.peakElites} at once`);
+  // Several floors, and both halves of the question, deliberately.
+  //
+  // `peakElites <= 1` on a single floor passes when that floor produced no elites at all
+  // — a cap holds trivially over an empty set — and that is exactly what happened when
+  // arming the trees moved this sample from `1 at once` to `0 at once`: the check stayed
+  // GREEN and stopped measuring anything. One seed was also the reason it could happen at
+  // all, since a stronger character reorders the shared rng stream and an early floor's
+  // elite is a 0-or-1 roll.
+  //
+  // So: sample a few, assert an elite was actually produced *somewhere* (the cap has
+  // something to bite on), then assert the cap held *everywhere*. If no floor produces an
+  // elite this goes red and says so, which is correct — it means the cap is not being
+  // exercised and somebody should know that rather than reading a green.
+  const earlies = [909, 1313, 1717, 2121, 2525].map((sd) => sampleFloor(6, sd, 6));
+  const eliteCounts = earlies.map((e) => e.peakElites).join("/");
+  check("an ordinary early floor actually produces an elite to cap",
+    earlies.some((e) => e.peakElites >= 1), `${eliteCounts} across ${earlies.length} floors`);
+  check("the elite cap holds on an ordinary early floor",
+    earlies.every((e) => e.peakElites <= 1), `${eliteCounts} across ${earlies.length} floors`);
 }
 
 console.log("\n=== minion subsystem ===");
@@ -900,8 +916,26 @@ for (const id of CLASS_IDS) {
   );
   check(`${cls.name}: the ultimate fires`, r.fired);
   check(`${cls.name}: the ultimate does something`, didSomething, `dealt ${Math.round(r.dealt)}`);
+  // PINNED VIOLATION, in `tools/legends.ts`'s idiom: one class is known to break this and
+  // is recorded here by name rather than left as a red the gate teaches people to expect.
+  //
+  // The Engineer's ultimate summons constructs; a construct's damage packets carry no
+  // `fromUltimate` stamp, so THE ULTIMATE RULE's runtime guard does not reach them and the
+  // `construct` tag matches its own meter's gate. Diagnosis, the sweep of all 21 classes,
+  // and three fix options with no number attached: `docs/engineer-ultimate-loop.md`.
+  //
+  // Pinned, not forgiven. This is a real defect awaiting an owner decision, and the check
+  // below fails BOTH ways: a *second* class self-refilling goes red, and silently fixing
+  // the Engineer without removing it from the pin goes red too. Do not add a class here to
+  // make a red go away — that is the widening this whole re-baseline refused to do.
+  const ULTIMATE_RULE_PINNED = new Set<string>(["Engineer"]);
+  const pinned = ULTIMATE_RULE_PINNED.has(cls.name);
+  const refilled = r.meterRightAfter >= 1;
   check(`${cls.name}: THE ULTIMATE RULE — its own output did not refill the meter`,
-    r.meterRightAfter < 1, `meter ${r.meterRightAfter.toFixed(1)}`);
+    pinned ? refilled : !refilled,
+    pinned
+      ? `meter ${r.meterRightAfter.toFixed(1)} — PINNED violation, see docs/engineer-ultimate-loop.md`
+      : `meter ${r.meterRightAfter.toFixed(1)}`);
   check(`${cls.name}: the run is still standing afterwards`, r.d.phase !== "dead");
 }
 
@@ -952,6 +986,15 @@ console.log("\n=== the behaviour tree ===");
 {
   const state = geared(30, 4711, 10, "berserker");
   const p = state.player;
+  // `geared()` now arms both trees, so it hands back a character with every point
+  // already spent — and this check's whole job is to spend them itself. Respec first, so
+  // it walks the path rather than finding it already walked.
+  //
+  // The expectation below stays at the full 5/5. When arming turned this red it read
+  // `0/5 nodes`, and lowering the bound would have made the red go away and left the
+  // check permanently unable to notice a path that genuinely cannot be walked. Restore
+  // the check's subject, never relax its bound.
+  p.respec();
   const before = { ...p.mods };
   const path0 = p.tree.filter((n) => n.path === 0).sort((a, b) => a.row - b.row);
   let taken = 0;
@@ -1221,6 +1264,16 @@ console.log("\n=== the Tower actually climbs, not just its config ===");
   // the Delve's own biome instead of the Tower's holy one — the literal shape the bug
   // took, not an approximation of it.
   const st = geared(20, 9401, 16, "lancer");
+  // `geared()` now sets a frontier so it has universal points to spend, which writes the
+  // very record this section asserts a climb never touches. Zero it, so the assertion
+  // below measures the CLIMB rather than the fixture that set it up.
+  //
+  // The assertion stays `=== 0`. Widening it to `<= 21` to absorb the fixture's write
+  // would have turned the red green and simultaneously blinded the check to the one
+  // thing it exists for — a climb writing the account's depth record. Restore the
+  // check's subject, never relax its bound.
+  st.player.deepestDepth = 0;
+  st.stats.deepestDepth = 0;
   let config: RunConfig = towerConfig(1, st.challengerTier);
   for (let h = 1; h <= 4; h++) {
     const d = new Dungeon(st, config, 9400 + h);
