@@ -136,6 +136,17 @@ export interface Enemy extends Body {
   trapCooldown: number;
   /** Rises while a wall is in the way; drives the sidestep that gets it unstuck. */
   stuckTimer: number;
+  /**
+   * Docket §22's backstop, distinct from `stuckTimer` above: that one rises on any
+   * ordinary wall-slide (chasing you around a corner presses against a wall constantly
+   * and is not a bug); this one only rises while the body is genuinely *embedded*
+   * (`circleEmbeddedInWall`), which every known cause of that is now fixed at the
+   * source for (docs/stuck-in-walls.md) — this exists for whatever the fixes didn't
+   * anticipate. `UNSTICK_SECONDS` of sustained embedding clips it to the nearest open
+   * tile; never removes it, so the wave director's own kill quota (`fromWave`) can't
+   * stall.
+   */
+  embedTimer: number;
   /** Which way this one sidesteps when blocked, so a crowd splits around a pillar. */
   dodgeDir: number;
   /** Cadence clock for an archetype's special behaviour (UAT §2) — a charger's next
@@ -235,6 +246,8 @@ export interface Minion extends Body {
   /** Sidestep bookkeeping when a wall is between it and its target. */
   stuckTimer: number;
   dodgeDir: number;
+  /** Docket §22's backstop — see `Enemy.embedTimer`, the same idea for a summon. */
+  embedTimer: number;
 }
 
 /**
@@ -424,4 +437,8 @@ export interface Pickup extends Body {
   vy: number;
   life: number;
   magnet: boolean;
+  /** Docket §22's backstop — see `Enemy.embedTimer`. A dropped item has no AI to path
+   *  it out on its own, so this is the only way one ever recovers from landing on a
+   *  body that was itself embedded at the moment it died. */
+  embedTimer: number;
 }

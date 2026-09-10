@@ -4162,7 +4162,7 @@ console.log("\n=== multiplayer ===");
       health: 30, maxHealth: 40, damage: 5, attackCooldown: 1, attackTimer: 0, attackRange: 20,
       windup: 0.3, speed: 100, element: "void", facing: 1, hitFlash: 0, knockX: 0, knockY: 0,
       remaining: 20, behavior: "follow", commandTargetId: null, guardX: 300, guardY: 300,
-      sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1,
+      sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1, embedTimer: 0,
     });
     h.corpsePile.push({ id: 1, x: 220, y: 240, remaining: 6 });
     applySnapshot(c, snap(h));

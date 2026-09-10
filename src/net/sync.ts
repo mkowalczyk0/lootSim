@@ -508,7 +508,7 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         health: hp!, maxHealth: maxHp!, damage: 0, speed: 0,
         attackTimer: 0, windup: 0, state: "active", spawnTimer: 0, hitFlash: 0,
         knockX: 0, knockY: 0, elite: eliteRarity, facing: facing!,
-        trapCooldown: 0, stuckTimer: 0, dodgeDir: 1,
+        trapCooldown: 0, stuckTimer: 0, embedTimer: 0, dodgeDir: 1,
         behaviorTimer: 0, chargeVx: 0, chargeVy: 0,
         element, resists: {} as Enemy["resists"],
         sc: new StatusContainer(1_000_000 + id!),
@@ -583,7 +583,7 @@ function applyMinions(d: Dungeon, s: Snapshot): void {
         health: hp!, maxHealth: maxHp!, damage: 0, attackCooldown: 1, attackTimer: 0, attackRange: 0,
         windup: windup!, speed: 0, element, facing: facing!, hitFlash: hitFlash!, knockX: 0, knockY: 0,
         remaining: Infinity, behavior: "follow", commandTargetId: null, guardX: x!, guardY: y!,
-        sc: new StatusContainer(2_000_000 + id!), stuckTimer: 0, dodgeDir: 1,
+        sc: new StatusContainer(2_000_000 + id!), stuckTimer: 0, dodgeDir: 1, embedTimer: 0,
       };
       d.minions.push(m);
       d.netLerp.set(m, { x: x!, y: y!, t: 0 });
@@ -637,7 +637,7 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
       rarity: rarityIndex! >= 0 ? RARITIES[rarityIndex!] ?? null : null,
       element: elementIndex! >= 0 ? ELEMENTS[elementIndex!] ?? null : null,
       defId: registry && defIndex !== undefined && defIndex >= 0 ? registry[defIndex]?.id ?? null : null,
-      vx: 0, vy: 0, life: 1, magnet: false,
+      vx: 0, vy: 0, life: 1, magnet: false, embedTimer: 0,
     });
   }
 
