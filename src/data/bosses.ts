@@ -309,7 +309,8 @@ export interface BossSpec {
   readonly element: Element;
   readonly sprite:
     | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
-    | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant";
+    | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant"
+    | "towerBossCherub" | "towerBossVirtue" | "towerBossPower" | "towerBossThrone" | "towerBossNameless";
   /** Multiples of the floor's baseline enemy stats. */
   readonly health: number;
   readonly damage: number;

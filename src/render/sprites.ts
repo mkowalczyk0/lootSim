@@ -77,6 +77,7 @@ export type SpriteName =
   | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster"
   | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
   | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant"
+  | "towerBossCherub" | "towerBossVirtue" | "towerBossPower" | "towerBossThrone" | "towerBossNameless"
   | "coin" | "key" | "potion" | "gem" | "capsule" | "chest"
   | "torch" | "bones" | "mushroom" | "crystal" | "rock"
   | "armor" | "shield" | "ring" | "gloves" | "necklace";
@@ -103,6 +104,15 @@ export function buildSprites(): void {
     bossWarQueen: bake(BOSS_GRIDS.bossWarQueen!, P.warQueen),
     bossLabyrinth: bake(BOSS_GRIDS.bossLabyrinth!, P.labyrinth),
     bossTyrant: bake(BOSS_GRIDS.bossTyrant!, P.tyrant),
+    // Procedural fallbacks only — `towerBossSpec` always has its own atlas PNG committed
+    // (`art/bosses/finish-tower.ts`), so these never actually draw. They exist because
+    // `SpriteName` is closed and this Record must be fully populated; reusing the
+    // borrowed template's own grid costs nothing and needs no new pixel art.
+    towerBossCherub: bake(BOSS_GRIDS.boss!, P.warden),
+    towerBossVirtue: bake(BOSS_GRIDS.bossChoir!, P.choir),
+    towerBossPower: bake(BOSS_GRIDS.bossColossus!, P.colossus),
+    towerBossThrone: bake(BOSS_GRIDS.bossHerald!, P.herald),
+    towerBossNameless: bake(BOSS_GRIDS.bossNameless!, P.nameless),
     coin: bake(ICON_COIN, P.coin),
     key: bake(ICON_KEY, P.key),
     potion: bake(ICON_POTION, P.potion),

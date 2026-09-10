@@ -259,7 +259,9 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
     monsterIds.map((id) => decodePng(readFileSync(`src/render/atlas/monsters/${id}.png`))),
     3, true, 12,
   );
-  const bossIds = Object.keys(ATLAS).filter((id) => id.startsWith("boss.")).sort();
+  const bossIds = Object.keys(ATLAS)
+    .filter((id) => id.startsWith("boss.") || id.startsWith("tower.boss."))
+    .sort();
   stripPng(bossIds.map((id) => frameZero(id, `bosses/${id}.png`)), 2, true, 14);
 }
 
