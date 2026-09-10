@@ -209,6 +209,14 @@ function muteRivalHue(
  * Preserving them is why the scales look arbitrary: telegraph radii, arena sizing and
  * camera framing are all tuned against these numbers elsewhere, and none of them may move
  * because a sprite got redrawn.
+ *
+ * **The `h * worldScale` arithmetic in each comment is HISTORY and does not recompute.**
+ * Two of those borrowed rows have since been animated on padded canvases — `boss.warden`
+ * is 124px tall now, not 89, and `boss.corrupted-saint` 122, not 92 — because a raised arm
+ * needs headroom the resting pose does not. `worldScale` is world units per PIXEL and stays
+ * put through that (see `art/anim/strip.py`), so the drawn character never moved and these
+ * constants are still the right ones; but multiplying today's `h` by today's `worldScale`
+ * will not reproduce them, and is not supposed to.
  */
 const BOSSES: Array<{
   id: string; world: number; borrowed: string;
