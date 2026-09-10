@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 .venv
 art-sheet.png
+tower-contact-sheet.png
 
 # Accounts and saves live here (tools/accounts.ts); LOOTSIM_DB moves it. Anchored to the
 # repo root on purpose — an unanchored `data/` also matches `src/data/`, which silently
