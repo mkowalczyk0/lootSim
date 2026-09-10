@@ -108,3 +108,64 @@ of `tools/` is refused.
   looking, and it is the thing people check before a merge. Docs-only work is not an
   exception — a docs branch sitting in the shared tree looks identical to a code branch to
   anyone glancing at it.
+
+## The fix, observed rather than described
+
+While this branch was waiting to land, two smoke runs happened to be alive on the machine
+at once — same tool, two minutes apart, differing in exactly the variable this change
+touches. lootsim-26 read them off `ps`:
+
+```
+PID 38477  98.5%   node node_modules/.cache/smoke.mjs                        started 16:32:02
+PID 60556  99.9%   node /var/folders/81/…/T/lootsim-tool-pzRJnI/smoke.mjs    started 16:34:14
+```
+
+Before this change those two paths were **the same file**, and the second process would
+have overwritten the bundle the first was two minutes into executing.
+
+It is worth being precise about why this is admissible, on a night when several numbers
+turned out to have come from instruments entangled with their own subject: **nothing
+about it was produced by the thing under test.** It was read off the process table by a
+session that did not write the fix. An accidental controlled comparison beats a designed
+one that shares an author with what it validates.
+
+## What this does and does not isolate
+
+The obvious reading of the fault is "the cache path was shared", which invites the
+obvious caveat: a worktree whose `node_modules` is a symlink to another checkout resolves
+`node_modules/.cache/` to the shared cache regardless of which directory it runs from, so
+it would land straight back on the collision path. That caveat is worth stating precisely
+because it is **not** what happens here, and the reason is worth keeping:
+
+- **The bundle path never touches `node_modules` at all.** `run-tool.mjs` builds into
+  `mkdtempSync(join(tmpdir(), "lootsim-tool-"))` — the OS temp dir, unconditionally, with
+  no path under the repo and nothing derived from `node_modules`. PID 60556 above is that
+  path. So a symlinked `node_modules` **cannot** reintroduce a bundle collision: there is
+  no configuration of links under which two runs pick the same output file. This is the
+  "make the symlink irrelevant" version, not the "unique name inside the shared cache"
+  version.
+- **A symlinked `node_modules` is refused outright anyway**, by `nodeModulesHome()` in
+  `tools/check-scripts.mjs`, which is step 2 of `npm test`. Demonstrated in both
+  directions rather than read off the source: a scratch checkout with `node_modules`
+  symlinked to the shared one exits **1** with `node_modules is not its own (elsewhere)`;
+  a worktree that owns its install exits **0**. So this is a rule that stops you, not a
+  caveat you have to remember.
+
+The honest residual is narrower than "collisions can come back", and it is the one the
+check's own message already states: **the bundle paths are safe unconditionally;
+everything else two checkouts share through one `node_modules` is not** — an install
+mutated mid-run, a differing dependency tree, a postinstall artifact. That is why the
+rule is a real `npm install` per worktree rather than a tolerated shortcut.
+
+### Landing this turns several worktrees' gates red, on purpose
+
+Counted at the time of writing, **11 of the worktrees on this machine have `node_modules`
+symlinked** to the shared checkout (one of them chained through a second worktree), and
+four more have none at all. Every one of those fails `npm test` at step 2 the moment this
+lands, with the `rm node_modules && npm install` message.
+
+**That is the fix working, not the fix breaking them** — those worktrees could never have
+produced a trustworthy green — but it will arrive looking like one change reddening a
+dozen unrelated branches, so it is written down here to be pointed at. Any session whose
+gate goes red at the `harness` step should run a real install and re-gate, and should
+treat anything it certified green from that worktree earlier as unproven.
