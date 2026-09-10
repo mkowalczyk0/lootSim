@@ -8,7 +8,20 @@ import { RARITY_COLORS } from "../data/rarity";
 import { RELIC_BY_ID, RELIC_TIER_INFO } from "../data/relics";
 import { DEFAULT_KEYBINDS, keyLabel, type RebindableAction, type Settings } from "../data/settings";
 import { getStatusSpec } from "../combat/status";
+import type { ResourcePool } from "../combat/resources";
 import { REVIVE_TIME, type Dungeon } from "../game/dungeon";
+
+/**
+ * The class's real casting resource — Momentum, Rage, Chi, whatever it calls itself —
+ * never `Player.mana`. `canCast` (`game/dungeon.ts`) gates every ability off
+ * `hero.resources`, not `Player.mana`, for every class; `mana`/`maxMana` are legacy,
+ * kept alive only for potions and mana-on-kill (CLAUDE.md's own note). Showing a "mana"
+ * bar on a class that never spends mana to cast is the bug — the HUD has to read the
+ * pool the class actually declared, labelled the way that class names it.
+ */
+function primaryResource(d: Dungeon): ResourcePool | undefined {
+  return d.localHero.resources.all().find((p) => p.spec.ui !== "hidden" && !p.spec.isUltimateMeter);
+}
 
 /** A status colour: its damage element when it has one, otherwise a plain readout tint. */
 function statusColor(id: string): string {
@@ -31,13 +44,19 @@ export class Hud {
 
     this.drawVitals(ctx, d);
     if (d.isParty) this.drawParty(ctx, d);
-    this.drawFloorInfo(ctx, d, w);
+    // `drawFloorInfo` hands back the lowest y it actually drew to — a boss floor's
+    // one-line info panel and a wave floor's four-line one (title, layer, mode tag,
+    // kills/wave) end at very different heights, and the boss/elite frame below has to
+    // start clear of whichever one is live rather than a constant tuned against the
+    // shorter case. That constant is exactly what let elite bars overlap the floor
+    // readout on any floor with a mode tag.
+    const floorInfoBottom = this.drawFloorInfo(ctx, d, w);
     this.drawLoot(ctx, d, w);
     this.drawSkills(ctx, d, w, h);
     this.drawControls(ctx, h, d);
     if (d.settings.combatStats) this.drawCombatStats(ctx, d, h);
-    if (d.boss) this.drawBossFrame(ctx, d, w);
-    else this.drawEliteBars(ctx, d, w);
+    if (d.boss) this.drawBossFrame(ctx, d, w, floorInfoBottom);
+    else this.drawEliteBars(ctx, d, w, floorInfoBottom);
 
     if (d.phase !== "dead" && d.localHero.downed) this.drawDownedPrompt(ctx, w, h);
     if (d.phase !== "dead") this.drawPortalPrompt(ctx, d, w, h);
@@ -131,15 +150,28 @@ export class Hud {
       x + w / 2, y + 4,
     );
 
-    // Mana
-    const manaPct = clamp(p.mana / Math.max(1, p.maxMana), 0, 1);
+    // The class's own resource — see `primaryResource`. Falls back to legacy mana only
+    // if a hero somehow has no resolved resource pool at all (no live class today does).
+    const resource = primaryResource(d);
     ctx.fillStyle = "#1a1d26";
     ctx.fillRect(x, y + 22, w, 12);
-    ctx.fillStyle = "#3b82f6";
-    ctx.fillRect(x, y + 22, w * manaPct, 12);
-    ctx.font = `bold 9px ${MONO}`;
-    ctx.fillStyle = "#cfe0ff";
-    ctx.fillText(`${Math.floor(p.mana)} / ${p.maxMana} mana`, x + w / 2, y + 24);
+    if (resource) {
+      ctx.fillStyle = p.heroClass.color;
+      ctx.fillRect(x, y + 22, w * resource.fraction, 12);
+      ctx.font = `bold 9px ${MONO}`;
+      ctx.fillStyle = "#cfe0ff";
+      ctx.fillText(
+        `${Math.floor(resource.value)} / ${resource.max} ${resource.spec.label.toLowerCase()}`,
+        x + w / 2, y + 24,
+      );
+    } else {
+      const manaPct = clamp(p.mana / Math.max(1, p.maxMana), 0, 1);
+      ctx.fillStyle = "#3b82f6";
+      ctx.fillRect(x, y + 22, w * manaPct, 12);
+      ctx.font = `bold 9px ${MONO}`;
+      ctx.fillStyle = "#cfe0ff";
+      ctx.fillText(`${Math.floor(p.mana)} / ${p.maxMana} mana`, x + w / 2, y + 24);
+    }
 
     // XP
     const xpPct = clamp(p.xp / p.xpNeeded, 0, 1);
@@ -165,11 +197,14 @@ export class Hud {
     const ultName = p.ultimateAbility?.name ?? "Ultimate";
     ctx.fillStyle = charged ? "#ff1493" : "#9aa4b2";
     ctx.fillText(
-      charged ? `${ultName.toUpperCase()}  [;]` : ultName.toLowerCase(),
+      charged ? `${ultName.toUpperCase()}  [${k(d.settings, "special")}]` : ultName.toLowerCase(),
       x + 120, y + 60,
     );
     ctx.fillStyle = "#4ade80";
-    ctx.fillText(`Potions ${"◆".repeat(Math.min(6, d.potionCount))} (${d.potionCount})  [L]`, x, y + 76);
+    ctx.fillText(
+      `Potions ${"◆".repeat(Math.min(6, d.potionCount))} (${d.potionCount})  [${k(d.settings, "potion")}]`,
+      x, y + 76,
+    );
 
     // Whatever is currently on you — a burn, a chill, a buff.
     let bx = x;
@@ -259,14 +294,14 @@ export class Hud {
    * boundary, and a cast bar naming what is about to happen. Everything a raid frame
    * needs and nothing it doesn't.
    */
-  private drawBossFrame(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
+  private drawBossFrame(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, minY: number): void {
     const e = d.boss;
     if (!e || !e.boss) return;
     const spec = e.boss.spec;
 
     const bw = Math.min(620, w - 80);
     const bx = (w - bw) / 2;
-    const by = 72;
+    const by = Math.max(72, minY + 8);
     const bh = 66;
     panel(ctx, bx, by, bw, bh);
 
@@ -335,7 +370,7 @@ export class Hud {
    * stacked below where the boss frame would sit. Up to three — a fourth on screen is
    * already a different kind of problem.
    */
-  private drawEliteBars(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
+  private drawEliteBars(ctx: CanvasRenderingContext2D, d: Dungeon, w: number, minY: number): void {
     const elites = d.enemies
       .filter((e) => e.elite && !e.summoned && e.state !== "spawning")
       .slice(0, 3);
@@ -343,7 +378,7 @@ export class Hud {
 
     const bw = Math.min(380, w - 80);
     const bx = (w - bw) / 2;
-    let by = 74;
+    let by = Math.max(74, minY + 8);
     for (const e of elites) {
       const col = RARITY_COLORS[e.elite!];
       const bh = 34;
@@ -372,7 +407,9 @@ export class Hud {
     ctx.textAlign = "left";
   }
 
-  private drawFloorInfo(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
+  /** Returns the lowest y it actually drew to, so the boss/elite frame below knows
+   * where it's safe to start — see the call site's own comment for why that matters. */
+  private drawFloorInfo(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): number {
     ctx.textAlign = "center";
     const cx = w / 2;
 
@@ -402,15 +439,16 @@ export class Hud {
       ctx.font = `bold 12px ${MONO}`;
       ctx.fillStyle = "#7dd3fc";
       ctx.fillText("FLOOR CLEARED — completion portal open", cx, y);
-      return;
+      return y + 18;
     }
     if (d.profile.isBoss) {
       if (!d.profile.tag) {
         ctx.font = `11px ${MONO}`;
         ctx.fillStyle = "#9aa4b2";
         ctx.fillText("Kill it. That's the floor.", cx, 56);
+        return 56 + 15;
       }
-      return;
+      return y;
     }
     ctx.font = `bold 12px ${MONO}`;
     ctx.fillStyle = "#e2e8f0";
@@ -423,6 +461,7 @@ export class Hud {
     ctx.font = `10px ${MONO}`;
     ctx.fillStyle = "#6b7480";
     ctx.fillText(`WAVE ${Math.min(d.wave, d.profile.waves)} / ${d.profile.waves}`, cx, y);
+    return y + 14;
   }
 
   private drawLoot(ctx: CanvasRenderingContext2D, d: Dungeon, w: number): void {
