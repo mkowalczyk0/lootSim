@@ -637,7 +637,15 @@ export function geared(level: number, seed = 5150, keys = 14, classId?: ClassId)
  * test used to do — measures nothing, because a death costs the loot that would have
  * paid for the next floor and the run never recovers.
  */
-export function campaign(seed: number, dodge: number, dives = 20, log = false) {
+export function campaign(
+  seed: number,
+  dodge: number,
+  dives = 20,
+  log = false,
+  /** Threaded straight through to every dive's `playFloor` — see that function's own
+   *  doc for what it's for. Optional, no-op by default. */
+  onTick?: (d: Dungeon, t: number) => void,
+) {
   const state = new GameState(seed);
   let target = 1;
   let deepest = 0;
@@ -647,7 +655,7 @@ export function campaign(seed: number, dodge: number, dives = 20, log = false) {
 
   for (let dive = 0; dive < dives; dive++) {
     townVisit(state);
-    const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge);
+    const { d, seconds } = playFloor(state, target, 300, seed + dive * 37 + target, dodge, onTick);
     if (log) {
       console.log(
         `  dive ${String(dive + 1).padStart(2)} → depth ${String(target).padStart(2)} ` +
