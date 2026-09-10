@@ -331,11 +331,15 @@ console.log("\n=== the power bonus never outruns the level that can wear it ==="
    * is why it is measured against the same drop without the bonus rather than against the
    * floor's recommended level.
    *
-   * (Worth knowing separately, and not caused here: `recommendedLevel` is now floored at
-   * `depth + itemPower - 1`, which is exactly `requiredLevel` of the floor's own drops, so
-   * the advice can always wear what the floor pays out. This test pins that §16's power
-   * bonus doesn't widen the gap between a drop's `requiredLevel` and its no-bonus
-   * counterpart by more than the capped amount.)
+   * (Worth knowing separately, and not caused here: `recommendedLevel` no longer floors
+   * at `depth + itemPower - 1` — docket §25 removed that term once docket §23 repealed
+   * the premise it was defending, an *equip floor* from when loot rolled at
+   * `ilvl = depth + itemPower`. A drop now rolls at the receiving hero's own level, so no
+   * floor can pay out gear its earner cannot equip regardless of what `recommendedLevel`
+   * advises. This test pins that §16's power bonus doesn't widen the gap between a
+   * drop's `requiredLevel` and its no-bonus counterpart by more than the capped amount —
+   * unrelated to `recommendedLevel`, which is why removing that term here changed
+   * nothing this test checks.)
    */
   const cost: number[] = [];
   for (const depth of [1, 5, 10, 15, 20, 25, 30]) {

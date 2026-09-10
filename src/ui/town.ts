@@ -337,6 +337,20 @@ function formatLbValue(board: string, value: number, tier: number, meta: Readonl
   return value > 0 ? challengerName(value) : "Challenger off";
 }
 
+/**
+ * The recommended-level figure every commit screen shows (docket §25) — one function, so
+ * the two-number reading can never fork into a second copy of the comparison at a call
+ * site that forgets it. Reads the same as before (`lv 18`) whenever the Challenger dial
+ * hasn't moved anything; once it has, shows the floor's own advice alongside what the
+ * dial actually asks of you right now (`lv 18 → 22`), so a player can tell how much of
+ * the number in front of them is the depth and how much is a knob they turned themselves.
+ */
+function levelLabel(p: { recommendedLevel: number; baseRecommendedLevel: number }): string {
+  return p.baseRecommendedLevel === p.recommendedLevel
+    ? `lv ${p.recommendedLevel}`
+    : `lv ${p.baseRecommendedLevel} → ${p.recommendedLevel}`;
+}
+
 function lbBoardLabel(board: string): string {
   return LEADERBOARD_BOARDS.find((b) => b.id === board)?.label ?? board;
 }
@@ -2658,7 +2672,7 @@ export class TownUI {
                 <span class="muted">${escapeHtml(profile.name)}</span>
                 ${profile.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
               </div>
-              <div class="row-side">req. lv ${profile.recommendedLevel} · everyone stands in that portal</div>
+              <div class="row-side">req. ${levelLabel(profile)} · everyone stands in that portal</div>
             </div>`);
           break;
         }
@@ -2778,7 +2792,7 @@ export class TownUI {
             ${p.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
           </div>
           <div class="row-side ${under ? "warn" : ""}">
-            req. lv ${p.recommendedLevel} · ${p.waves} waves · ×${p.coinMultiplier.toFixed(1)} loot
+            req. ${levelLabel(p)} · ${p.waves} waves · ×${p.coinMultiplier.toFixed(1)} loot
           </div>
         </div>`);
     }
@@ -2847,7 +2861,7 @@ export class TownUI {
             ${p.isBoss ? '<span class="badge boss">BOSS</span>' : ""}
           </div>
           <div class="row-side ${under ? "warn" : ""}">
-            req. lv ${p.recommendedLevel} · ${p.waves} waves · ×${p.coinMultiplier.toFixed(1)} loot
+            req. ${levelLabel(p)} · ${p.waves} waves · ×${p.coinMultiplier.toFixed(1)} loot
           </div>
         </div>`);
     }
@@ -2910,7 +2924,7 @@ export class TownUI {
             ${best ? '<span class="badge boss">NEW</span>' : ""}
           </div>
           <div class="row-side ${under ? "warn" : ""}">
-            req. lv ${p.recommendedLevel} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
+            req. ${levelLabel(p)} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
           </div>
         </div>`);
     }
@@ -2983,7 +2997,7 @@ export class TownUI {
             ${best ? '<span class="badge boss">NEW</span>' : ""}
           </div>
           <div class="row-side ${under ? "warn" : ""}">
-            req. lv ${p.recommendedLevel} · ${planet.floors} floors · danger ×${config.danger.toFixed(2)}
+            req. ${levelLabel(p)} · ${planet.floors} floors · danger ×${config.danger.toFixed(2)}
           </div>
         </div>`);
     }
@@ -3056,7 +3070,7 @@ export class TownUI {
             ${best ? '<span class="badge boss">NEW</span>' : ""}
           </div>
           <div class="row-side ${under ? "warn" : ""}">
-            req. lv ${p.recommendedLevel} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
+            req. ${levelLabel(p)} · depth ${config.depth} · danger ×${config.danger.toFixed(2)}
           </div>
         </div>`);
     }
@@ -3234,7 +3248,7 @@ export class TownUI {
         <table class="cmp">
           <tr><td>Depth</td><td>${memory.depth} → ${memory.depth + MODES.memory.floors - 1}</td></tr>
           <tr><td>Floors</td><td>${MODES.memory.floors}, the last one the encounter</td></tr>
-          <tr><td>Recommended</td><td>level ${profile.recommendedLevel}</td></tr>
+          <tr><td>Recommended</td><td>${levelLabel(profile)}</td></tr>
         </table>
         ${this.memoryModBlock(memory)}
         ${memoryRarityAllowance(memory) > MEMORY_RARITY_CAP
@@ -3852,7 +3866,7 @@ export class TownUI {
           ${cleared
             ? `next Vigil in ${countdown}`
             : unlocked
-              ? `req. lv ${profile.recommendedLevel} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
+              ? `req. ${levelLabel(profile)} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
               : `reach depth ${DAILY_UNLOCK_DEPTH} in the delve`}
         </div>
       </div>`;
@@ -3917,7 +3931,7 @@ export class TownUI {
           ${cleared
             ? `next Convergence in ${countdown}`
             : unlocked
-              ? `req. lv ${profile.recommendedLevel} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
+              ? `req. ${levelLabel(profile)} · ${escapeHtml(profile.name)} · danger ×${config.danger.toFixed(2)}`
               : `reach depth ${WEEKLY_UNLOCK_DEPTH} in the delve`}
         </div>
       </div>`;

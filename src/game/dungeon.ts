@@ -906,8 +906,14 @@ export class Dungeon implements CombatHost, RuleHost {
    * Bigger, chunkier bursts the deeper — and the more dangerous — the floor gets, and
    * bigger again on a floor's later waves (UAT §8): a floor should ramp toward its own
    * peak pressure by the last wave, not field the same trickle from start to finish.
+   *
+   * Also read by `Hud.drawMinimap` (docket §6) as the size of "one more wave's worth" —
+   * the low-monster-count reveal fires once the remaining kill count could no longer
+   * hide a whole extra burst behind it, so the threshold scales with the same pressure
+   * curve the floor itself does instead of a flat number that reads as generous on a
+   * depth-40 floor and stingy on a depth-2 one. Public for that reason.
    */
-  private burstSizeFor(): number {
+  burstSizeFor(): number {
     const waveRamp = this.wave > 1 ? (this.wave - 1) / Math.max(1, this.profile.waves - 1) : 0;
     return clamp(
       Math.round(2 + this.profile.depth * 0.1 + (this.profile.crowd - 1) * 3 + waveRamp * 1.5),
