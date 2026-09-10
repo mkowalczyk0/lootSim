@@ -57,6 +57,26 @@ from PIL import Image
 # candidate that snapped (14.2%). See the docstring for the full table.
 WRAP_LIMIT = 10.0
 
+# Sprites the OWNER has looked at and approved over the bar. Keyed by the spec passed in.
+#
+# **This is not a widened limit and must never become one.** `WRAP_LIMIT` stays where the
+# measurement put it; an entry here says "a person looked at this one and said ship", which
+# is a different claim from "we measured this as fine" and has to stay distinguishable from
+# it three months from now. A constant quietly raised to admit the thing it rejected is how
+# a check stops meaning anything — and the next candidate that lands at 11.8% deserves the
+# same eye rather than inheriting this one's verdict.
+#
+# Add an entry only with a real approval and name it. Never to make your own art pass.
+OWNER_APPROVED: dict[str, tuple[float, str]] = {
+    "art/anim/raw/colossus-idle-2": (
+        11.8,
+        "2026-09-10: owner reviewed the batch and said the idle looks good. Its seam is "
+        "proportionally fine (1.04x its largest ordinary step, same as the shipped "
+        "ferryman idle); it is over the line only on the absolute measure, in the 7.6-14.2% "
+        "band where this limit has no evidence either way.",
+    ),
+}
+
 
 def frames_from(spec: str):
     """A directory of frames, or `<strip.png>:<frame width>:<from>-<to>`."""
@@ -116,6 +136,16 @@ def main() -> None:
           f"{wrap / max(steps):.2f}x the largest ordinary step")
 
     if pct(wrap) > WRAP_LIMIT:
+        allowed = OWNER_APPROVED.get(sys.argv[1].rstrip("/"))
+        if allowed is not None:
+            print(f"  OVER THE BAR AT {pct(wrap):.1f}%, ALLOWED BY OWNER OVERRIDE — approved "
+                  f"by eye, NOT by measurement.\n    {allowed[1]}")
+            if abs(pct(wrap) - allowed[0]) > 0.5:
+                raise SystemExit(
+                    f"  but the override records {allowed[0]}% and this measures "
+                    f"{pct(wrap):.1f}% — the art changed since it was approved, so the "
+                    "approval no longer covers it. Re-check with the owner.")
+            return
         raise SystemExit(
             f"  POPS: the seam is {pct(wrap):.1f}% of the body against a {WRAP_LIMIT}% limit. "
             "The last frame does not come back to the first, so this jerks once per cycle "

@@ -137,3 +137,114 @@ No relay code, no encoding format and no interpolation code changed. What this d
 adds is where the search narrows to next: not the simulation, not the client's own render
 loop, but the network path between two real machines that this investigation had no way
 to put a browser on both ends of.
+
+---
+
+# Stage 2 (2026-09-10): the real two-machine report, the cause, and the fix
+
+Stage 1 above ended by naming the one suspect it could not put a browser in front of — a
+real internet path. **That input arrived**: the owner played co-op with a second person on
+a separate machine, the first time this game has ever run off localhost.
+
+> *"So I was hosting, felt perfectly fine on my end. maybe it wasn't as smooth, but very
+> playable, very good. And, yeah, no. We were both on Wi-Fi, and it was bad immediately."*
+
+Five facts, all confirmed: the owner hosted; **the host felt fine**; both ends on wifi; bad
+immediately rather than degrading; and movement felt laggy as well as attacks.
+
+Host-fine-client-bad rules out the frame budget on its own — the host waits for nothing.
+
+## The cause: a 10ms jitter tolerance
+
+A client never simulates. `Dungeon.advanceRemote` slides every remote body toward the
+position the newest snapshot gave it over `LERP_SPAN` (`1.2 / SNAPSHOT_HZ` = **60ms**), then:
+
+```ts
+if (target.t <= 0) { body.x = target.x; body.y = target.y; continue; }   // stops dead
+```
+
+Snapshots are sent every **50ms**. **The slack before every monster, ally and minion freezes
+in place is 60 − 50 = 10ms.** On wifi, ordinary jitter exceeds that constantly.
+
+**Why nothing caught it, and this is the part worth generalising:** every check in this repo
+runs over loopback, where the inter-arrival gap never exceeds 60ms — so the failure mode is
+not merely untested, it is **structurally unreachable**. A harness with no network in it
+cannot fail the way this bug fails. Stage 1's own two-browser rig, at a clean 60fps on both
+ends, was measuring a machine talking to itself.
+
+## The instrument: `tools/mp-jitter.ts` (`npm run mpjitter`)
+
+A real host `Dungeon` and a real client `Dungeon` with a **modelled link** between them —
+latency, jitter, loss, and TCP's in-order delivery (a retransmit delays everything queued
+behind it). Its first act is a calibration that must read **exactly 0%** on a perfect link,
+and it refuses to print anything else if that fails.
+
+Chop, as % of client render ticks with no snapshot inside the interpolation window:
+
+| profile | before | after (80ms buffer) |
+| --- | --- | --- |
+| LAN | 0.0% | 0.0% |
+| same city | 0.0% | 0.0% |
+| cross-country | 1.6% | 0.0% |
+| **wifi, congested** | **13.4%** | **0.0%** |
+| transatlantic | 10.0% | 0.6% |
+
+## The fix, and the wrong version that measured convincingly
+
+`Party.drainSnapshots` queues arriving snapshots and plays them out on a **steady cadence**.
+`SNAPSHOT_BUFFER_MS = 80` is a measured knee; the sweep, the assumption it holds under
+(one-way jitter to ~±40ms) and the cost live in the constant's own doc comment.
+
+**The first implementation held each snapshot a fixed 80ms and applied it, and measured as a
+total null — 13.4% chop became 12.9%.** The reason is worth carrying: *a constant delay
+shifts every arrival equally and therefore preserves the gaps between them*, and jitter is
+variance in those gaps. It was nearly reported as "a jitter buffer doesn't help". The smoke
+check is written to fail that exact wrong version — it feeds four snapshots in one burst and
+requires them to come out one interval apart.
+
+**The cost, plainly:** the world a client draws goes from ~33ms stale to ~129ms, paid on
+every link including the LAN players who had no problem. An adaptive window was built to
+avoid that and **rejected** — worse than fixed 80ms on three of four profiles.
+
+## The input path, and why the transport should NOT be swapped
+
+`tools/smoke.ts`'s *"a walking client is never tugged back by the host"* runs at a constant
+lag with zero jitter and zero loss. Re-measured with a real link, **it breaks its own bar**
+(wifi worst 2.00px against a 1.5 bar; transatlantic p95 1.95px, worst 5.94px) and 26–50% of
+host ticks arrive with no input at all. The check is annotated in place; a green there says
+nothing about live conditions.
+
+**And UDP is much worse than TCP for inputs:**
+
+| profile | TCP median / worst | UDP median / worst |
+| --- | --- | --- |
+| wifi, congested | 0.02px / 2.00px | 1.99px / 11.12px |
+| transatlantic | 0.02px / 5.94px | 1.97px / 8.40px |
+
+> **A dropped snapshot is superseded by the next one; a dropped INPUT is a button press that
+> never happened on the host.** The client predicted forward assuming it applied, the host
+> never learned it, and the divergence is permanent until a correction yanks it back. TCP's
+> retransmit — the thing head-of-line blocking is the price of — is what keeps prediction
+> honest.
+
+Snapshots measured TCP ≈ UDP for chop (11.7 vs 12.1, 28.0 vs 29.0, 24.9 vs 24.4). **So
+neither channel favours a WebRTC swap**: it would have to run unreliable for snapshots and
+reliable for inputs merely to break even, or carry redundant input history so drops
+self-heal. Large job, measured upside currently zero.
+
+## What is still open
+
+Corrections of 2–6px are real but small — ~30ms of travel, a micro-jitter, not "near
+unplayable". The likeliest reading of *"movement felt laggy"* is that **movement feels laggy
+because everything around it is chopping**: when monsters freeze and jerk, your own motion
+relative to them reads as lag even though your avatar responds instantly.
+
+**That predicts the buffer fixes the perceived movement lag too, and testing it costs
+nothing — it needs the owner to re-play, not another measurement.** If movement still feels
+wrong afterwards, the remaining suspect is that **attacks are not predicted at all**
+(`predictLocal` covers movement, facing and dash and nothing else), so a client waits a full
+round trip to see its own swing. That is a real correctness risk to change and should not be
+built on inference.
+
+Still not known: the actual ping and jitter of the owner's link, and whether it was LAN or
+internet.
