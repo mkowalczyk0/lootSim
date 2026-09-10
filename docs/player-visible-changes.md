@@ -30,6 +30,21 @@ different when you play."
   rather than a coat of paint on yours — a scythe whose cutting edge is coming apart into
   nothing. It draws whenever you are holding a scythe. Thirteen more are coming, one per
   weapon type.
+- **The Seamless Sword.** The second one, and Heaven's answer to the Abyssal Scythe: a
+  blade with no join, no forge mark and no wear anywhere on it, held in a heavy gold
+  collar. It draws whenever you are holding a sword.
+- **Your wardrobe now remembers a skin for each weapon type, not one skin overall.** This
+  is the change that makes the drawn skins actually usable. Before, the Weapon Skin slot
+  held a single choice — so owning both of the above meant picking one and seeing nothing
+  when you carried the other. Now you set a look per weapon type and the right one appears
+  for whatever is in your hand. The Style screen's Weapon Skin row tells you which weapon
+  it is choosing for, and only offers skins that fit it.
+- **Nothing you already own was taken away.** The seven original skins — Bonecarved,
+  Confection, Frostbound, Neon Signal, Petalfall, Abyssal and Starforged — were painted
+  over any weapon rather than drawn as one, so they still go on every weapon type, exactly
+  as before. If you had one equipped, it comes back equipped everywhere.
+- **A skin now shows its real picture in the wardrobe.** The Abyssal Scythe used to
+  preview as a *sword* wearing its colours, which is not a thing you can hold.
 
 ## The Tower
 

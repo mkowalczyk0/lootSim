@@ -177,6 +177,14 @@
 // (`GameState.shop`).
 // 31 (2026-09-10): `Player.lifetimeMaxHit`, for the leaderboards' "highest recorded max
 // damage" board (`docs/leaderboards.md`).
+// 32 (2026-09-10): `Appearance.weapons`, a per-family weapon-skin map replacing the
+// single `Appearance.weapon` slot. A skin is one family's weapon (see the "may never
+// lie" rule in `data/cosmetics.ts`), so one slot meant owning two skins and seeing one.
+// The migration is version-agnostic, the `normalizeAppearance` house style: it reads
+// whichever shape is there. A pre-32 save's single id is restored on EVERY family if it
+// is one of the seven original palette skins — they belong to no family and that is
+// exactly the reach they had — and only on its own family if it is an authored one,
+// because restoring it elsewhere would claim something the player will never see.
 //
 // --- CLAIMED, NOT YET MERGED ------------------------------------------------
 // Bumping the version? Add your number to this list in the SAME commit that starts the
@@ -186,12 +194,9 @@
 // that counts, and it is here rather than in a doc because this is the line you have to
 // edit anyway.
 //
-//   32 — `Appearance.weapons`, a per-family weapon-skin map replacing the single
-//        `Appearance.weapon` slot (the authored weapon-skin stream).
-//
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.
-export const SAVE_VERSION = 31;
+export const SAVE_VERSION = 32;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to
