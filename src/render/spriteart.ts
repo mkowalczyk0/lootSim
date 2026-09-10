@@ -30,7 +30,8 @@
  * property this quiet is the kind that comes back the next time a PNG grows.
  */
 
-import { ATLAS, type AtlasSprite, MONSTER_SETS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import { ATLAS, type AtlasSprite, CLASS_HEROES, MONSTER_SETS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import type { ClassId } from "../data/classes";
 
 /**
  * One resolved sprite: the atlas row backing it, or the procedural bake.
@@ -72,8 +73,32 @@ export interface SpriteArt {
 export function chooseSpriteArt(
   name: string, set: string | undefined, loaded: (id: string) => boolean,
 ): SpriteArt {
-  const fromSet = set ? MONSTER_SETS[set]?.[name] : undefined;
-  for (const id of [fromSet, SPRITE_OVERRIDES[name]]) {
+  return firstDrawn(name, [set ? MONSTER_SETS[set]?.[name] : undefined, SPRITE_OVERRIDES[name]], loaded);
+}
+
+/**
+ * The hero a class draws: **its own sprite, then the shared base, then the procedural
+ * composite.** The same ladder shape as `chooseSpriteArt`, and deliberately the same
+ * function underneath, because "one realm's monsters" and "one class's hero" are the same
+ * problem — a roster that can be named before it is drawn.
+ *
+ * A class with no art (`CLASS_HEROES[id] === null`), or one whose id is declared but whose
+ * PNG is not committed, gets the base. So do a missing `classId` and an unknown one: a
+ * town screen or a co-op mate that does not know which class it is looking at draws the
+ * base rather than nothing.
+ */
+export function chooseHeroArt(
+  classId: ClassId | undefined, loaded: (id: string) => boolean,
+): SpriteArt {
+  const own = classId ? CLASS_HEROES[classId] : null;
+  return firstDrawn("hero", [own ?? undefined, SPRITE_OVERRIDES.hero], loaded);
+}
+
+/** The first id in the ladder that is both declared in `ATLAS` and actually decoded. */
+function firstDrawn(
+  name: string, ids: readonly (string | undefined)[], loaded: (id: string) => boolean,
+): SpriteArt {
+  for (const id of ids) {
     if (!id) continue;
     const meta = ATLAS[id];
     if (!meta || !loaded(id)) continue;

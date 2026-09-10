@@ -1,3 +1,5 @@
+import type { ClassId } from "../../data/classes";
+
 /**
  * The atlas manifest — one row per pipeline-authored sprite (Aseprite / PixelLab PNGs
  * under `src/render/atlas/`), describing how it sits in the world.
@@ -101,22 +103,34 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // character meant to be calm. At 28px wide the face was ~7px and could not hold
   // anything better.
   //
-  // v4 answers all three: one unified charcoal/ash mass, no bright note anywhere, and a
-  // plain calm face with small dark eyes. The extra 9 rows of height are what make that
-  // face drawable at all (§17.1's "author larger, for clarity").
+  // v4 answered all three: one unified charcoal/ash mass, no bright note anywhere, and a
+  // plain calm face with small dark eyes. **It was still rejected** — "too realistic", and
+  // it did not sit in the tilesets' visual language. The three defects above are the ones
+  // that stay true whatever gets drawn next; the v4 sprite itself is history.
   //
-  // 57 is not the tallest the Hero/Style portrait-spread bound in `tools/smoke.ts` permits;
-  // it is one of a set of legal heights. `portraitScale` rounds to a *whole* factor, so the
-  // spread oscillates instead of growing with height — the bound is a set of windows, not a
-  // maximum, and 59-77 is a dead zone. Don't copy the window list into a comment: `npm run
-  // smoke` derives it and prints it next to the portrait sizes.
+  // **Shipped now: hero v6 candidate A ("cut the ink"), the owner's pick** — "the best of
+  // the 3 — we'll probably revisit this again at some point — this is acceptable for now."
+  // Lever: colour only. 40 colours down to 27, and the §1.4c head/body luminance gap closed
+  // from 2.1x to 1.17x, so the head stops being the brightest, most colour-dense region.
+  // Max accent chroma 35.3 (#e1a687, skin) — under every monster's, which `npm run chroma`
+  // asserts one by one.
   //
-  // Footprint unchanged: 57 * 0.5614 = 32, the same height as v1/v2/v3, so no hitbox /
-  // telegraph / camera moves. `feet` stays 0.03 because the sliver it describes is
-  // `feet * h * worldScale` = `feet * 32` — invariant under a height change. The hub
-  // draws it larger through its own figure-height rule (render/hub.ts) — cosmetic and
-  // local to the hub scene.
-  "hero.legend-base": { id: "hero.legend-base", w: 39, h: 57, worldScale: 0.5614, feet: 0.03 },
+  // **This is the BASE rung, not "the hero"** (see `CLASS_HEROES`): one hero per class is
+  // coming, and this is what a class draws until it has its own. It is also explicitly
+  // provisional — the owner has since asked for an iteration in the *boss art's* style.
+  //
+  // The world footprint does not move: `worldScale` is world units per authored pixel, so
+  // 32/41 keeps the hero exactly 32 units tall as 39x57 at 0.5614 did. No hitbox, camera or
+  // telegraph geometry is measured in art pixels, so none of them notice. `feet` stays 0.03
+  // because the sliver it describes is `feet * h * worldScale` = `feet * 32` — invariant
+  // under a height change.
+  //
+  // h is a *band*, not a maximum: the town portraits scale off the hero's ART-pixel height,
+  // never off `worldScale`, and `portraitScale` rounds to a whole factor, so the Hero/Style
+  // spread oscillates with height instead of growing. 41 is inside the lowest window. Don't
+  // copy the window list into a comment — `npm run smoke` derives it and prints it next to
+  // the portrait sizes, which is the copy that cannot go stale.
+  "hero.legend-base": { id: "hero.legend-base", w: 16, h: 41, worldScale: 0.7805, feet: 0.03 },
 
   // --- monsters (§10) --- worldScale ≈ predecessor grid height × SPRITE_SCALE (1.2),
   // then ~1.13× for legibility (the rot-scuttler precedent). Legacy grids: imp/ranger
@@ -625,9 +639,42 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
  */
 export const HERO_STAGE_W = 79;
 export const HERO_STAGE_H = 81;
-/** Where `hero.legend-base` itself is pasted into the stage. */
-export const HERO_STAGE_DX = 20;
-export const HERO_STAGE_DY = 24;
+
+/**
+ * Where a hero PNG is pasted into the stage — **derived from its own size, never a
+ * constant**, because there is about to be one hero per class and they will not all be
+ * the same shape.
+ *
+ * The rule is the one the shipped hero already obeys: **centred, standing on the stage
+ * floor.** For the 39x57 base that is `(20, 24)`, which is exactly the pair that used to
+ * be hardcoded here — and `tools/smoke.ts` already asserts the second half of it (the
+ * hero's last opaque row is the stage's last row), so this makes an existing invariant
+ * into the thing that computes the answer instead of a number that happens to satisfy it.
+ */
+export function heroStageOffset(w: number, h: number): { dx: number; dy: number } {
+  return { dx: Math.round((HERO_STAGE_W - w) / 2), dy: HERO_STAGE_H - h };
+}
+
+/**
+ * **One hero sprite per class** — the id a class draws instead of the shared base, or
+ * `null` where nobody has drawn one yet.
+ *
+ * `Record<ClassId, ...>`, so a new class cannot exist without an answer here, the same
+ * reason `STATION_GLYPH` is keyed on `HubStationKind`. Two ways to say "not yet", and
+ * both resolve to the base rather than to a hole: `null` is *undeclared*, and an id whose
+ * PNG is not committed is *declared but undrawn* — the `MONSTER_SETS` precedent, where a
+ * manifest row is a statement of intent and a loaded canvas is a fact.
+ *
+ * The ladder is `chooseHeroArt` in `render/spriteart.ts`: this table, then
+ * `SPRITE_OVERRIDES.hero`, then the procedural composite. Every rung is a fallback and
+ * none of them throws.
+ */
+export const CLASS_HEROES: Record<ClassId, string | null> = {
+  lancer: null, berserker: null, swordsman: null, magician: null, shaman: null,
+  ranger: null, juggernaut: null, duelist: null, warlock: null, monk: null,
+  necromancer: null, corsair: null, trickster: null, reaper: null, stormcaller: null,
+  paladin: null, bard: null, alchemist: null, engineer: null, assassin: null, warden: null,
+};
 
 /**
  * The three reserved marker colours a cosmetic-layer PNG is quantized onto in place of
@@ -661,7 +708,39 @@ export interface AtlasCosmetic {
   readonly w: number;
   readonly h: number;
   readonly dx: number;
+  /**
+   * Vertical offset **from `anchor`**, not from the top of the stage.
+   *
+   * It used to be an absolute stage row, which silently bound every layer to the exact
+   * height of the one hero it was tuned against: move to a hero 16px shorter and a witch
+   * hat floats in the air well above the head it belongs on. With one hero that was
+   * invisible. With one hero per class it is the first thing that breaks.
+   */
   readonly dy: number;
+  /**
+   * Which part of the hero this layer hangs from. A hat, ears and glasses follow the
+   * **head**; a cape and wings hang off the body and reach the ground, so they follow the
+   * **feet**, which is the stage floor for every hero.
+   *
+   * This is a re-expression of the numbers that already shipped, not a retune:
+   * `cosmeticStageXY` reproduces the previous absolute pair exactly for the 39x57 hero,
+   * and `npm run heroes` asserts that as a comparison rather than trusting it.
+   */
+  readonly anchor: "head" | "feet";
+}
+
+/**
+ * Where a cosmetic layer actually lands, for a hero of a given size.
+ *
+ * `feet`-anchored layers do not move at all (every hero stands on the stage floor);
+ * `head`-anchored ones move with the top of the hero's head, which is where the hero's
+ * own height enters the picture.
+ */
+export function cosmeticStageXY(
+  c: AtlasCosmetic, heroW: number, heroH: number,
+): { dx: number; dy: number } {
+  const { dy: headTop } = heroStageOffset(heroW, heroH);
+  return { dx: c.dx, dy: c.anchor === "head" ? headTop + c.dy : HERO_STAGE_H + c.dy };
 }
 
 /**
@@ -679,15 +758,22 @@ export interface AtlasCosmetic {
  * base needing its own separate back-item layer.
  */
 export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
-  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 20, dy: 2 },
+  // `dy` is measured from the layer's `anchor`, and every pair below is the shipped
+  // absolute row minus the anchor it belongs to (head-top 24, stage floor 81 for the
+  // 39x57 hero) — arithmetic on the numbers that already shipped, not a retune.
+  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 20, dy: -22, anchor: "head" },
   // Shared by hatCrown (legendary) and hatUnspoken (divine, same grid in pixels.ts too).
-  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 27, dy: 12 },
-  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 31, dy: 18 },
-  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 29, dy: 23 },
-  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 29, dy: 31 },
-  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 29, dy: 31 },
-  // `Cosmetic.art` id for backCape.
-  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 10, dy: 35 },
+  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 27, dy: -12, anchor: "head" },
+  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 31, dy: -6, anchor: "head" },
+  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 29, dy: -1, anchor: "head" },
+  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 29, dy: 7, anchor: "head" },
+  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 29, dy: 7, anchor: "head" },
+  // Back items hang off the body and reach the ground, so they are anchored to the stage
+  // floor: the hem stays on the ground for any hero. **This is the least-wrong of the two
+  // anchors, not a fix** — a cape is authored at one body's LENGTH (41px for a 57px hero),
+  // so on a materially shorter hero it will still read wrong however it is anchored, and
+  // that wants the cosmetic rework the owner has parked rather than a number nudged here.
+  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 10, dy: -46, anchor: "feet" },
   // `Cosmetic.art` id for backAngel.
-  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 5, dy: 30 },
+  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 5, dy: -51, anchor: "feet" },
 };

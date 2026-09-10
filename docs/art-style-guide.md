@@ -740,7 +740,17 @@ is mapped and loaded, and fall back to the procedural bake otherwise. Ported and
   lands each on its predecessor's world footprint; `data/bosses.ts` `spriteScale` stays
   as the fallback for the procedural grids the smoke test still walks. 8 rotations per
   monster archived under `art/monsters/rotations/`.
-- `hero.legend-base` → the composed player. **v4 redraw (Sept 2026), 39×57.** Playtest
+- `hero.legend-base` → the composed player. **Currently hero v6 candidate A, 16×41,
+  `worldScale` 0.7805** — the owner's pick ("the best of the 3 … this is acceptable for
+  now"), shipped as the **base rung** that a class draws until it has its own sprite
+  (`CLASS_HEROES`), and explicitly provisional: the owner has since asked for an iteration
+  in the *boss art's* style rather than the `docs/art_refs/` direction that produced A.
+  Its lever was colour alone — 40 hues down to 27, and the §1.4c head/body luminance gap
+  closed from 2.1× to 1.17× — at the same 32-unit world height every version has had.
+  The history below is the v4 redraw it replaces, kept because its three diagnosed defects
+  still govern whatever gets drawn next.
+
+- *(history)* `hero.legend-base` v4 redraw (Sept 2026), 39×57. Playtest
   feedback on the shipped hero was that he was *"really hard to look at and ugly, didn't
   really fit in with the game"* — a verdict on the execution, not on §1.3's plain-calm
   direction, which stands. Three defects, all in the art:

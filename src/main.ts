@@ -834,7 +834,7 @@ function start(state: GameState, who: AccountInfo): void {
     if (scene === "hub") {
       ctx.fillStyle = "#07080c";
       ctx.fillRect(0, 0, viewW, viewH);
-      renderHub(ctx, hub, state.appearance, state.settings, viewW, viewH);
+      renderHub(ctx, hub, state.appearance, state.activeClassId, state.settings, viewW, viewH);
       return;
     }
     if (scene !== "dive" || !dungeon) return;

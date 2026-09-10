@@ -562,17 +562,28 @@ html, body {
  * The character portrait is bottom-aligned and pinned, not hugging its image. Whether a
  * character composes from the art pipeline or falls back to the procedural stack depends
  * on what it's wearing (see `heroSprite`), and the two canvases carry different amounts of
- * hat-headroom above the same-sized body — 243px tall against 182px here. Pinning the
- * taller of the two keeps the aside below from jumping when a migrated hat goes on; the
- * body stands on the box floor either way, because both canvases put the feet on their
- * own bottom row.
+ * hat-headroom above the same-sized body. Pinning the taller of the two keeps the aside
+ * below from jumping when a migrated hat goes on; the body stands on the box floor either
+ * way, because both canvases put the feet on their own bottom row.
  *
- * The pipeline figure grew from 204px to 243px with the v4 hero redraw (a 57-row hero on
- * an 81-row stage, drawn x3 here), so this pin grew with it — `tools/smoke.ts` reads the
- * number straight out of this file and fails if it stops clearing the taller canvas.
+ * **A SHORTER hero makes this box TALLER, which is not a typo.** `portraitScale` rounds to
+ * a whole factor so pixel art is never resampled fractionally, and the whole 81-row stage
+ * is magnified by that factor, not just the hero on it. The v4 hero (57 rows) hit its
+ * target body size at x3, so the stage drew 243px. Hero v6 (41 rows) needs x4 to land
+ * within the 12% Hero-vs-Style spread the smoke test enforces, and 81 x 4 = 324px. The
+ * hero got smaller; the canvas around it got bigger.
+ *
+ * That also means the figure now occupies about half its box (41 of 81 rows) where v4
+ * filled 70%, so the portrait reads emptier. Sizing the stage to the hero would fix that
+ * properly and is deliberately NOT done here: the stage still has to hold a 39px-wide
+ * witch hat authored for the old body, and the cosmetic rework that would resolve it is
+ * parked by the owner.
+ *
+ * `tools/smoke.ts` reads these numbers straight out of this file and fails if either stops
+ * clearing its taller canvas.
  */
 .portrait.hero {
-  height: 264px;
+  height: 340px;
 }
 
 .portrait.weapon {
@@ -1474,7 +1485,9 @@ html, body {
   align-items: flex-end;
   justify-content: center;
   padding: 14px 22px 10px;
-  height: 296px;
+  /* Clears the 324px pipeline stage (81 rows x4) plus this box's 24px of vertical
+     padding — see the note above `.portrait.hero` for why x4 and not x3. */
+  height: 348px;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 8px;

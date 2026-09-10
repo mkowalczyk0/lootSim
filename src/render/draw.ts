@@ -501,7 +501,7 @@ export class WorldRenderer {
   private drawHero(ctx: CanvasRenderingContext2D, d: Dungeon, hero: Hero, x: number, y: number): void {
     const a = hero.avatar;
     const classColor = hero.player.heroClass.color;
-    const hs = heroSprite(hero.appearance);
+    const hs = heroSprite(hero.appearance, hero.player.classId);
     blob(ctx, x, y, 9);
 
     // Somebody whose browser left the room: a ghost of a body and no revive meter, since

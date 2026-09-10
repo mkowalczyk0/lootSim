@@ -29,8 +29,12 @@
 
 import { readFileSync } from "node:fs";
 import { decodePng } from "./png";
-import { ATLAS, MONSTER_SETS, SPRITE_OVERRIDES, type AtlasSprite } from "../src/render/atlas/manifest";
-import { chooseSpriteArt } from "../src/render/spriteart";
+import {
+  ATLAS, ATLAS_COSMETICS, CLASS_HEROES, HERO_STAGE_H, HERO_STAGE_W, MONSTER_SETS,
+  SPRITE_OVERRIDES, cosmeticStageXY, heroStageOffset, type AtlasSprite,
+} from "../src/render/atlas/manifest";
+import { CLASS_IDS } from "../src/data/classes";
+import { chooseHeroArt, chooseSpriteArt } from "../src/render/spriteart";
 import {
   CAST_TAG, FALLBACK_TAG, STATIC_FRAME, castFrame, frameAt, frameAtProgress, frameRect,
   fitsManifest, resolveTag, stripWidth,
@@ -212,6 +216,85 @@ console.log("\nanimation — a scale and a canvas come from one decision\n");
   }
   check("a drawn set entry is the one that resolves, ahead of the game-wide default",
     wrongSet === "", wrongSet);
+}
+
+// --- one hero per class, and the ladder under it ---------------------------
+//
+// The same fallback shape as `MONSTER_SETS`, for the same reason: 21 class heroes are
+// coming and the roster has to be nameable before it is drawn. Checked here rather than
+// in a tool of its own because it is the same `firstDrawn` ladder `chooseSpriteArt` walks.
+console.log("\nheroes — a class's own sprite, then the base, then the bake\n");
+{
+  const base = SPRITE_OVERRIDES.hero!;
+  const drawn = (id: string) => !!ATLAS[id];
+
+  check(`every class has a CLASS_HEROES answer (${CLASS_IDS.length} classes)`,
+    CLASS_IDS.every((id) => id in CLASS_HEROES),
+    CLASS_IDS.filter((id) => !(id in CLASS_HEROES)).join(", "));
+
+  // Undeclared and declared-but-undrawn are different states that must reach the same
+  // place: the base. Neither may resolve to nothing, and neither may throw.
+  let bad = "";
+  for (const id of CLASS_IDS) {
+    const got = chooseHeroArt(id, drawn);
+    if (got.atlasId !== (CLASS_HEROES[id] && ATLAS[CLASS_HEROES[id]!] ? CLASS_HEROES[id] : base)) {
+      bad ||= `${id} resolved ${got.atlasId}`;
+    }
+  }
+  check("a class with no art of its own draws the base, never nothing", bad === "", bad);
+  check("an unknown or missing class draws the base too",
+    chooseHeroArt(undefined, drawn).atlasId === base);
+  check("with nothing loaded at all, a class hero falls to the procedural bake",
+    chooseHeroArt(CLASS_IDS[0], () => false).atlasId === null
+      && chooseHeroArt(CLASS_IDS[0], () => false).worldScale === null);
+
+  // The "a declared class hero wins" rung is NOT asserted here, deliberately: no class has
+  // art yet, so any check of it would pass vacuously — and this repo has already paid for
+  // a green check that proved nothing. It is covered where it can actually bite:
+  // `chooseHeroArt` and `chooseSpriteArt` share one `firstDrawn`, and the monster-set
+  // block above asserts precedence on that same function against real committed art.
+  const declared = Object.entries(CLASS_HEROES).filter(([, v]) => v !== null);
+  console.log(`  --    ${declared.length} of ${CLASS_IDS.length} classes declare their own hero id`
+    + (declared.length === 0 ? " — none drawn yet, every class is on the base" : ""));
+
+  // --- the stage places a hero of ANY height, and the anchors are a no-op for this one ---
+  const heroMeta = ATLAS[base]!;
+  const at = heroStageOffset(heroMeta.w, heroMeta.h);
+  check("the hero is centred on the stage and stands on its floor",
+    at.dx === Math.round((HERO_STAGE_W - heroMeta.w) / 2) && at.dy + heroMeta.h === HERO_STAGE_H,
+    `${at.dx},${at.dy}`);
+
+  // The rewrite from absolute stage rows to anchor-relative ones must move NOTHING for the
+  // hero that is actually shipped. Asserted as a comparison against the numbers that were
+  // in the file before, rather than trusted — the pairs below are the shipped values.
+  const SHIPPED: Record<string, [number, number]> = {
+    hatWitch: [20, 2], hatCrown: [27, 12], earsCat: [31, 18], earsHorn: [29, 23],
+    faceGlasses: [29, 31], faceVisor: [29, 31], cape: [10, 35], wingsAngel: [5, 30],
+  };
+  let moved = "";
+  for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
+    const want = SHIPPED[k];
+    if (!want) { moved ||= `${k} has no shipped pair to compare against`; continue; }
+    const got = cosmeticStageXY(c, 39, 57);
+    if (got.dx !== want[0] || got.dy !== want[1]) moved ||= `${k}: ${got.dx},${got.dy} != ${want[0]},${want[1]}`;
+  }
+  check("anchoring reproduces every shipped cosmetic position exactly for the 39x57 hero",
+    moved === "", moved);
+
+  // And it degrades rather than breaking for a hero of a different height: head-anchored
+  // layers follow the head, feet-anchored ones do not move, and nothing lands off-canvas
+  // in a way that would clip a layer out of existence entirely.
+  let vanished = "";
+  for (const h of [16, 41, 43, 57, 80]) {
+    const top = heroStageOffset(16, h).dy;
+    for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
+      const got = cosmeticStageXY(c, 16, h);
+      if (c.anchor === "head" && got.dy !== top + c.dy) vanished ||= `${k}@${h} did not follow the head`;
+      if (c.anchor === "feet" && got.dy !== HERO_STAGE_H + c.dy) vanished ||= `${k}@${h} moved off the floor`;
+      if (got.dy + c.h <= 0 || got.dy >= HERO_STAGE_H) vanished ||= `${k}@${h} is entirely off the stage`;
+    }
+  }
+  check("every layer still lands on the stage for hero heights 16..80", vanished === "", vanished);
 }
 
 console.log("\nanimation — the design promises\n");
