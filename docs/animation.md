@@ -642,6 +642,90 @@ sweep, 1 sweep, 1 recovery, plus the harvest's second seed. **No canvas change a
 a canvas that was already padded for the rise. The strip grew by one frame (24 -> 25
 cols). The rise frames and the whole `cast` are byte-identical to what shipped.
 
+### Coverage: which bosses are animated at all, and what "not coming through" meant
+
+**Measured 2026-09-10**, tool `npm run animcoverage` (`tools/animcoverage.ts`, a printed
+diagnostic and deliberately not a gate, for the same reason `npm run windup` is not one).
+
+The owner reported *"some boss animations are not coming through"* while playing. That
+sentence has three causes and **only one of them is a bug**, which is why this was
+diagnosed before a single frame was generated:
+
+1. the boss has no `strike` art yet — the backlog, not a bug
+2. the boss is deliberately unanimated — a ruling, not a bug
+3. the art exists and does not reach the screen — **the only bug, and nobody had looked**
+
+**Cause 3 does not exist. The answer is cause 1, and the shape of it is the finding:**
+
+    3 of 35 encounters resolve to an animated sprite.
+    The other 32 draw a single static frame — wind-up and release alike.
+
+and, more pointedly:
+
+    every animated sprite belongs to a RAID, reached only from the War Table.
+    every boss on the Delve, the Tower and the Proving is static.
+
+`boss.ferryman`, `boss.war-queen` and `boss.exiled-tyrant` are the three, and each is used
+by exactly one raid encounter. The five hand-authored Delve bosses (Warden, Corrupted
+Saint, Gravebound Colossus, Herald of the Unspoken, Nameless), all five Tower bosses and
+the Minotaur are static — and the Proving borrows the Delve templates, so all 21 class
+Provings are static too.
+
+So a player climbing the two ladders the game is actually built around **has never seen a
+boss animation**. That is the whole report, and it is not a defect in anything shipped.
+
+**The prioritisation consequence is worth stating because it is counter-intuitive:** the
+next blow authored has more reach on a *Delve* boss than on the second and third raid
+bosses. Animating the Nameless alone covers depth 25+ on the Delve *and* every Proving
+that borrows it. This is a call for the owner, not a session, but the numbers should be in
+front of whoever makes it.
+
+#### The one real defect found, and it is mild
+
+`cast` beats `strike` unconditionally and on purpose, so a release only reaches the player
+if the post-cast gap is at least as long as the release. That gap is not a constant:
+
+    actionTimer = BOSS_ACTION_GAP * phase.haste * profile.aggression
+                  * buffHasteMult * crescendoHaste * raidThreatRate(players)
+
+`aggression` alone falls from 1.0 to a floor of 0.4 as you descend. Measured on the floors
+raids **actually** run on, solo (raids are solo in v1):
+
+    boss.ferryman        strike 0.60s   tier 1 full · tier 4 full · tier 8 cut at 93%
+    boss.war-queen       strike 0.60s   tier 1 full · tier 4 100%  · tier 8 cut at 80%
+    boss.exiled-tyrant   strike 0.50s   tier 1 full · tier 4 90%   · tier 8 cut at 74%
+
+So the tail of the recovery is trimmed at high tiers and nothing else. Not worth a fix,
+and **not** the owner's report. Recorded because the reasoning that shipped with it was
+subtly wrong: the manifest says the strike is "inside `BOSS_ACTION_GAP` (1.85s) at ordinary
+aggression", and 1.85s is the value at depth 1 only. That is the *"a constant that was
+correct for one rung"* shape CLAUDE.md already names three times (the atlas scale, the
+biome tint, the snapshot size); add the boss action gap to that list.
+
+If a future release is ever authored longer than ~0.5s, check it against this table rather
+than against `BOSS_ACTION_GAP`.
+
+#### A methodological note, because the first run of this tool was wrong
+
+The first version measured raid bosses at Delve depths 5/15/30/45 and at 1 *and* 4 players,
+and reported cuts down to **28%** — alarming, and an artifact. Raids set their own depth
+(`baseDepth + depthPerTier * (tier - 1)`) and are solo in v1, so those rows described
+floors that do not exist and a party that cannot be assembled. Measuring each encounter on
+the floor it actually runs on moved the worst case from 28% to 74%.
+
+**A proxy for the thing under test is not the thing under test**, and the failure mode is
+the usual one: it ran, it produced confident numbers, and nothing was red. Same family as
+the boss-floor A/B that never reached phase two.
+
+#### And the question that turned out to have no bug in it
+
+Section 4 of the tool checks whether a wind-up can be too short to play. It cannot, and
+the reason is structural rather than lucky: `cast` is **progress-keyed**
+(`frameAtProgress`), so the window's length changes the frame *rate* and never the
+coverage. The shortest window available is `MIN_CAST` (0.45s), which is 50-56 ms/frame
+across the three animated bosses. The section exists so that claim is measured rather than
+asserted.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without

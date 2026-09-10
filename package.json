@@ -26,6 +26,7 @@
     "previews": "esbuild tools/previews.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/previews.mjs --log-level=error && node node_modules/.cache/previews.mjs",
     "anim": "esbuild tools/anim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/anim.mjs --log-level=error && node node_modules/.cache/anim.mjs",
     "windup": "esbuild tools/windup.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/windup.mjs --log-level=error && node node_modules/.cache/windup.mjs",
+    "animcoverage": "esbuild tools/animcoverage.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/animcoverage.mjs --log-level=error && node node_modules/.cache/animcoverage.mjs",
     "weaponskins": "esbuild tools/weaponskins.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/weaponskins.mjs --log-level=error && node node_modules/.cache/weaponskins.mjs",
     "relics": "esbuild tools/relics.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relics.mjs --log-level=error && node node_modules/.cache/relics.mjs",
     "legends": "esbuild tools/legends.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/legends.mjs --log-level=error && node node_modules/.cache/legends.mjs",
