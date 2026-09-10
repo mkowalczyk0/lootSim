@@ -45,7 +45,10 @@ import { NAMED_ITEMS } from "../src/data/named";
 import { RELICS } from "../src/data/relics";
 import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
 import { ATLAS_WEAPON_WASH, RARITY_WASH } from "../src/render/itemart";
-import { ATLAS, ATLAS_WEAPONS, TILESETS } from "../src/render/atlas/manifest";
+import {
+  ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
+  SPRITE_OVERRIDES, TILESETS, cosmeticStageXY, heroStage,
+} from "../src/render/atlas/manifest";
 import { BIOMES } from "../src/data/biomes";
 import { TOWER_BIOMES } from "../src/data/tower";
 import { PLANETS } from "../src/data/planets";
@@ -62,7 +65,7 @@ const W = 1180;
  * exactly this way. Raised, and the cursor is asserted against it at the end rather than
  * trusted.
  */
-const H = 4800;
+const H = 6000;
 const SCALE = 5;
 const BG: readonly [number, number, number] = [22, 18, 30];
 
@@ -164,6 +167,26 @@ if (SHOW_PARKED_COSMETICS) {
  * what lets the sheet finally show what the game actually draws for a migrated sprite,
  * rather than the procedural predecessor it replaced (§17.5's documented gap).
  */
+/**
+ * The first frame of an atlas row, cropped to the size the **manifest** declares.
+ *
+ * An animated row's PNG is a horizontal strip of frames, so the file's own width is the
+ * whole animation — `boss.exiled-tyrant` is 1372px of 98px frames. Reading the file's
+ * dimensions instead of the manifest's therefore draws all fourteen poses in a row, which
+ * on this sheet looked exactly like the same boss stamped fourteen times. The manifest row
+ * is the frame; the file is the strip. `render/anim.ts` resolves frame 0 the same way.
+ */
+function frameZero(id: string, path: string): DecodedPng {
+  const png = decodePng(readFileSync(`src/render/atlas/${path}`));
+  const meta = ATLAS[id];
+  if (!meta || (png.width === meta.w && png.height === meta.h)) return png;
+  const out = new Uint8Array(meta.w * meta.h * 4);
+  for (let row = 0; row < meta.h; row++) {
+    out.set(png.rgba.subarray(row * png.width * 4, (row * png.width + meta.w) * 4), row * meta.w * 4);
+  }
+  return { width: meta.w, height: meta.h, rgba: out };
+}
+
 function blitPng(png: DecodedPng, ox: number, oy: number, s: number): void {
   for (let y = 0; y < png.height; y++) {
     for (let x = 0; x < png.width; x++) {
@@ -215,16 +238,45 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
   y += tallest + gap + 10;
 }
 
-strip([
-  [MOB_CRAWLER, PALETTES.crawler], [MOB_IMP, PALETTES.imp], [MOB_RANGER, PALETTES.ranger],
-  [MOB_BRUTE, PALETTES.brute], [MOB_CASTER, PALETTES.caster],
-], true);
+// --- monsters and bosses: the real art ------------------------------------
+//
+// These were two strips of procedural grids, for the same reason the weapon rows below
+// were and with the same consequence. `SPRITE_OVERRIDES` gives all five archetypes and all
+// five floor bosses a committed PNG, and that is **rung 2** of `chooseSpriteArt` — the
+// game-wide default, taken by every realm that has no set of its own. So the procedural
+// bake is not "the live fallback whenever a realm's pipeline PNG isn't committed"; the
+// only thing that reaches it is a PNG failing to decode.
+//
+// The boss row is the one that mattered most. Nine boss PNGs are committed — the five
+// floor bosses and the four raid bosses — and **not one of them had ever appeared on this
+// sheet**, on a project where the owner judges art by eye and has said the bosses are one
+// of the main attractions.
+{
+  const monsterIds = ["grunt", "archer", "brute", "caster", "swarmer"]
+    .map((n) => SPRITE_OVERRIDES[n]!);
+  stripPng(
+    monsterIds.map((id) => decodePng(readFileSync(`src/render/atlas/monsters/${id}.png`))),
+    3, true, 12,
+  );
+  const bossIds = Object.keys(ATLAS).filter((id) => id.startsWith("boss.")).sort();
+  stripPng(bossIds.map((id) => frameZero(id, `bosses/${id}.png`)), 2, true, 14);
+}
 
-strip([
-  [BOSS_GRIDS.boss!, PALETTES.warden], [BOSS_GRIDS.bossChoir!, PALETTES.choir],
-  [BOSS_GRIDS.bossColossus!, PALETTES.colossus], [BOSS_GRIDS.bossHerald!, PALETTES.herald],
-  [BOSS_GRIDS.bossNameless!, PALETTES.nameless],
-], true);
+// The procedural monster/boss grids stay reachable behind one flag rather than being
+// deleted: they are still the decode-failure fallback, and `render/pixels.ts` still owns
+// them, but showing them by default is what kept the real art off the sheet.
+const SHOW_LEGACY_MOBS = false;
+if (SHOW_LEGACY_MOBS) {
+  strip([
+    [MOB_CRAWLER, PALETTES.crawler], [MOB_IMP, PALETTES.imp], [MOB_RANGER, PALETTES.ranger],
+    [MOB_BRUTE, PALETTES.brute], [MOB_CASTER, PALETTES.caster],
+  ], true);
+  strip([
+    [BOSS_GRIDS.boss!, PALETTES.warden], [BOSS_GRIDS.bossChoir!, PALETTES.choir],
+    [BOSS_GRIDS.bossColossus!, PALETTES.colossus], [BOSS_GRIDS.bossHerald!, PALETTES.herald],
+    [BOSS_GRIDS.bossNameless!, PALETTES.nameless],
+  ], true);
+}
 
 // --- weapons: the real art, then the one case that is still procedural ---
 //
@@ -263,6 +315,72 @@ strip([
 // exactly what a player with a skin equipped sees, and it belongs on the sheet.
 const starforged = COSMETICS_BY_ID.skinStar!.weapon!;
 strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(starforged)] as const), false, 14);
+
+// --- cosmetics: the migrated layers, composed on the hero as the game composes them ---
+//
+// The owner reversed the 2026-09 cosmetics park ("I cant get rid of cosmetics ever") and
+// asked for the wardrobe back on this sheet, so it is here — but as the *real* thing.
+// `SHOW_PARKED_COSMETICS` below still guards the procedural strip, which is genuinely live
+// for the sixteen layers that have not migrated yet (`composePipelineHero` drops the whole
+// character to the procedural stack if any worn slot is unmigrated, rather than mixing two
+// art styles on one body). This row is the eight that have.
+//
+// Composed through `heroStage`/`cosmeticStageXY` rather than at hand-placed offsets, so
+// what the sheet shows is what the composer produces — including the marker swap
+// (`COSMETIC_MARK_*` -> the cosmetic's own `colors`), which is the step that turns the
+// authored magenta/green/cyan into the item's real palette.
+{
+  const heroMeta = ATLAS[SPRITE_OVERRIDES.hero!]!;
+  const heroPng = decodePng(readFileSync(`src/render/atlas/characters/${heroMeta.id}.png`));
+  const stage = heroStage(heroMeta.w, heroMeta.h);
+  const byArt = new Map(
+    Object.values(COSMETICS_BY_ID).filter((c) => c.art).map((c) => [c.art!, c]),
+  );
+  const rgb = (h: string): [number, number, number] => {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  /** `recoloredCosmetic`'s exact-match marker swap; the ink outline is never touched. */
+  const recolored = (png: DecodedPng, colors: readonly string[]): DecodedPng => {
+    const out = { width: png.width, height: png.height, rgba: new Uint8Array(png.rgba) };
+    const map = [COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3].map((m, i) =>
+      [rgb(m), rgb(colors[Math.min(i, colors.length - 1)]!)] as const);
+    for (let i = 0; i < out.rgba.length; i += 4) {
+      if (out.rgba[i + 3]! === 0) continue;
+      for (const [from, to] of map) {
+        if (out.rgba[i] === from[0] && out.rgba[i + 1] === from[1] && out.rgba[i + 2] === from[2]) {
+          out.rgba[i] = to[0]; out.rgba[i + 1] = to[1]; out.rgba[i + 2] = to[2];
+          break;
+        }
+      }
+    }
+    return out;
+  };
+
+  const S = 3;
+  const entries = Object.entries(ATLAS_COSMETICS);
+  let x = 16;
+  let tallest = 0;
+  // The bare hero first, so every layer is read against the body it hangs on.
+  for (const entry of [null, ...entries] as (readonly [string, typeof entries[number][1]] | null)[]) {
+    const cellW = stage.w * S;
+    if (x + cellW > W - 16) { x = 16; y += tallest + 12; tallest = 0; }
+    frame(x - 3, y - 3, cellW + 6, stage.h * S + 6);
+    const layer = entry
+      ? { c: entry[1], png: recolored(
+          decodePng(readFileSync(`src/render/atlas/cosmetics/${entry[1].id}.png`)),
+          byArt.get(entry[0])!.colors) }
+      : null;
+    const at = layer ? cosmeticStageXY(layer.c, heroMeta.w, heroMeta.h) : null;
+    // Back items go behind the hero; everything else in front — the composer's order.
+    if (layer && at && layer.c.anchor === "feet") blitPng(layer.png, x + at.dx * S, y + at.dy * S, S);
+    blitPng(heroPng, x + stage.dx * S, y + stage.dy * S, S);
+    if (layer && at && layer.c.anchor === "head") blitPng(layer.png, x + at.dx * S, y + at.dy * S, S);
+    x += cellW + 12;
+    tallest = Math.max(tallest, stage.h * S);
+  }
+  y += tallest + 12 + 10;
+}
 
 // 2026-09: this used to be one strip of the procedural coin/key/potion/gem/capsule,
 // armor/shield/ring/gloves/necklace and chest/torch/bones/mushroom/crystal/rock grids —
