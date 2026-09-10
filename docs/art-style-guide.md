@@ -929,6 +929,22 @@ hand-arted 16px stone.
   carry value; colour-family words like "ash grey" or "bone-grey" often don't carry enough
   of it on their own. If a sheet fails the gate, check whether the prompt asked for two
   different-looking colours or two different-*valued* ones before reaching for a reroll.
+- **Which of floor and wall carries the light is a property of the biome family — check
+  before choosing a direction.** Most committed sheets put the dark terrain on the floor
+  and the light one on the wall (Citadel, Ossuary, Spire, Orchard among them), which is
+  where "invert the roles to get a dark floor," above, comes from. It is not universal.
+  Ashen Wastes, Cinder Catacombs and The Veil are the opposite: the wall is already
+  near-black (committed rock luminance 5–22) and the floor is the *lighter* terrain by
+  design — an ember-lit ash bed, a glowing catacomb floor, an unsettling pale-violet
+  stone. This was found the hard way fixing a floor/infusion collision (§17.7's other
+  gate, below): "darken the floor" — the fix that worked for Ossuary/Spire/Orchard — made
+  all three of these worse, because it fights the family's own floor/wall relationship
+  instead of using it. The fix that actually opened separation was *brightening* the
+  floor further in its own native direction. The lesson generalizes past that one gate:
+  when a sheet needs more separation from something, "increase separation" is the rule,
+  "darken the floor" is only how one family of biomes gets there. Check which terrain is
+  already the light one on the committed sheet before picking a direction to push in.
+  Full write-up: `docs/ashen-wastes-infusion-fix.md`.
 - **Every sheet goes through the floor grade** (`render/grade.ts`, applied by
   `gradedTileset` in `render/tilemap.ts` before stamping): each pixel is flattened toward
   its terrain's mean colour (55%), desaturated by half, blended 30% toward the biome's
