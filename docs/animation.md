@@ -341,6 +341,64 @@ third is the one that matters most:
 3. **With a pinned ending there are TWO source sprites, and step 1 of the method below
    applies to both.** It was written when there was only ever one.
 
+### The targets are not timid — it is the path that fails
+
+Measured 2026-09-10, before spending any generation budget, to split the problem: if the
+pinned target poses were themselves too close to rest, no amount of path control would help
+and the answer would be authoring a more committed apex. They are not. In `windup-check.py`'s
+own metric, against its own `MOVES_AT_LEAST = 0.25` bar for "this reads as a fidget":
+
+    pinned target vs the committed idle frame 0
+      ferryman   43.0%      war-queen  32.7%      tyrant  30.7%
+
+All three clear the bar comfortably. **And the shipped strips reach that amplitude** — each
+wind-up's last frame sits 43% / 33% / 32% from its own first frame, matching its target, and
+lands on the pinned pose to 0.0%. So neither the target nor the endpoint is the problem.
+
+What fails is the **distribution along the way**. The same strips, each frame's silhouette
+change from the wind-up's first frame:
+
+    ferryman   0% 11% 24% 34% 36% 40% 44% 43%
+    war-queen  0%  3% 13% 20% 21% 25% 33% 33%
+    tyrant     0%  6% 17% 28% 30% 31% 31% 32% 32%
+
+The Tyrant is at 28 of its eventual 32 points by frame 3 of 8 and spends five more frames
+gaining four. That is the owner's "halfway done", in the repo's own numbers.
+
+### The generator arrives two frames early, reliably
+
+Distance to the pinned target, per frame, across every pinned run kept in `art/anim/raw/`:
+
+    ferryman        43.0 40.6 35.7 29.8 25.5 19.2  2.0 10.5 0.0
+    ferryman probe  43.0 40.7 35.7 29.8 25.6 19.5  2.1 10.8 0.0
+    ferryman seedB  43.0 43.4 38.2 31.1 23.0 12.0  3.5  8.8 0.0
+    war-queen       32.7 33.9 27.7 23.7 21.8 16.3  0.7  6.8 0.0
+    minotaur        39.9 38.4 28.7 21.9 17.4 13.0  0.0  6.3 0.1
+    tyrant seedB    31.6 27.7 18.6 10.0  5.6  5.1  3.5  3.8 0.1
+
+Four of the five follow one signature exactly: gradual for five steps, then a single step
+that closes 26–48% of the entire distance and lands **within 0–3.5% of the target at frame
+6 of 8**, then a retreat of 6–9 points at frame 7, then frame 8 — which is our own pinned
+file, so it is exact by construction. **The generated motion is over at frame 6.** Frames 7
+and 8 are a wobble and a supplied endpoint.
+
+Two consequences that are easy to get wrong:
+
+- **`drop=` treats the symptom.** Dropping the retreating frame is right, but the retreat is
+  not the disease — arriving early is. The Ferryman ships with its retreat dropped and still
+  peaks on its penultimate frame, which is why `npm run windup` is red on it.
+- **This does NOT argue for buying more frames.** The loiter-then-snap pattern is real, but
+  the snap lands *at* the target with frames to spare, so more frames extend the loiter or
+  the wobble, not the arc — unless the arrival point itself moves. The one natural experiment
+  available went the wrong way: the Tyrant has the most cast frames and stalls hardest, and
+  its own failure is a different one (it closes 82% of the distance by frame 4 and then
+  crawls). Do not buy frames on this theory without a run that tests it directly.
+
+> Do not blend these two tables. Distance-to-target and distance-from-rest are different
+> measurements, and per the section below, silhouette distance has no usable triangle
+> geometry — you cannot infer one from the other by arithmetic, and a number that looks
+> derived that way is not.
+
 ### The obvious instrument is wrong: straightness does not work on sprites
 
 Anyone measuring "does this animation go somewhere" reaches for **straightness** — net
