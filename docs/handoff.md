@@ -141,12 +141,21 @@ true as data:
    per boss, which is a different pipeline. `art/anim/windup-check.py` rejects any candidate
    that does not build monotonically and end at its extreme. **Run it before stripping.**
 
-3. **Two shipped tilesets fail the new floor/element gate** — Ashen Wastes + Cinder Catacombs
-   (fire on fire) and The Veil (void on void). Pinned, not touched. This is a playability
-   defect, not a taste one: infused monsters are camouflaged against the ground they stand
-   on, and at depth that is most of the room. **A before/after sheet with infused monsters
-   composited on both floors is being prepared for the owner** — the Ashen Wastes is the
-   first floor of the game, so the change is theirs to approve. **Do not unpin without it.**
+3. **The Ashen Wastes still hides its own monsters, and is deliberately held.** The Cinder
+   Catacombs and The Veil were fixed and unpinned (e7f9047); the Wastes was not. Its best
+   candidate reached Δ27 against a bar of 28, and — more decisively — the before/after
+   picture does not clearly favour it either: the shipped blue-grey floor separates red
+   monsters reasonably well, while the candidate's dark ember floor sits *closer* to the
+   dark red grunt. It is also the first floor of the game. Four attempts, all numbers, and
+   where a fifth should start are in `docs/ashen-wastes-infusion-fix.md` — **start there, not
+   from scratch**. The owner has the before/after sheet and it is their call whether to move
+   it at all. **Do not unpin without them.**
+
+   A rule from this that generalises past the one gate, now in `art-style-guide.md` §17.7:
+   **which of floor and wall carries the light is a property of the biome family.** The PM
+   issued "element on the wall, dark neutral floor" as if universal; it is not, and the first
+   attempt applying it made all three floors *worse*. "Increase separation" is the
+   instruction; darkening the floor is only how one family gets there.
 
 4. **The Minotaur will not hold its accent through animation, and it is a hold, not a bug.**
    Two attempts, the second starting from #a855f7 at 63.5 on the source per the headroom
