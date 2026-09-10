@@ -197,6 +197,14 @@ interface TowerBoss {
    * As many drops as signature entries: this is not the Tower getting harder.
    */
   readonly kit: VariantKit;
+  /**
+   * The Tower's own sprite for this rank (`art/bosses/finish-tower.ts`), overriding the
+   * borrowed template's. Before this field existed `towerBossSpec` never touched `sprite`
+   * at all, so every Tower boss drew whichever Delve encounter it borrowed phases from —
+   * Heaven furnished by Hell's own art, the same defect the monster roster had before
+   * `art/monsters/finish-tower.ts`.
+   */
+  readonly sprite: BossSpec["sprite"];
 }
 
 const TOWER_BOSSES: readonly TowerBoss[] = [
@@ -205,6 +213,7 @@ const TOWER_BOSSES: readonly TowerBoss[] = [
     title: "It has been watching this door since before the door.",
     // A gate guard fires down the approach rather than flailing at it.
     kit: { signature: ["starLance", "volley"], drop: ["windmill", "enrage"] },
+    sprite: "towerBossCherub",
   },
   {
     templateId: "choir", name: "Virtue of the Second Ascent",
@@ -214,6 +223,7 @@ const TOWER_BOSSES: readonly TowerBoss[] = [
     // place of a volley took this floor 40.8% up in damage taken across sixteen seeds,
     // which is a difficulty change to shipped content and not this pass's to make.
     kit: { signature: ["judgment", "windmill"], drop: ["volley", "summon"] },
+    sprite: "towerBossVirtue",
   },
   {
     templateId: "colossus", name: "Power of the Third Rampart",
@@ -222,12 +232,14 @@ const TOWER_BOSSES: readonly TowerBoss[] = [
     // masonry stays. Dropping `meteor` as well as `corruption` took this floor from 9/16
     // wins to 15/16 in the A/B, so only the rot goes.
     kit: { signature: ["wall", "windmill"], drop: ["corruption", "charge"] },
+    sprite: "towerBossPower",
   },
   {
     templateId: "herald", name: "Throne of the Fourth Judgment",
     title: "The law, standing up.",
     // The law does not fire a spread and it does not call for help.
     kit: { signature: ["starLance", "backlash"], drop: ["volley", "summon"] },
+    sprite: "towerBossThrone",
   },
   {
     templateId: "nameless", name: "What Sits Above the Orders",
@@ -236,6 +248,7 @@ const TOWER_BOSSES: readonly TowerBoss[] = [
     // refuses to do: it does not run at anybody. See `PLANETS`' deep sectors for the
     // same constraint and the two other cards put down to satisfy it.
     kit: { signature: ["cleave"], drop: ["charge"] },
+    sprite: "towerBossNameless",
   },
 ];
 
@@ -256,6 +269,7 @@ export function towerBossSpec(height: number): BossSpec {
     name: entry.name,
     title: entry.title,
     element: "holy",
+    sprite: entry.sprite,
     // See `TowerBoss.kit`. Without this the climb was the descent with a new name plate.
     phases: variantPhases(template, entry.kit),
   };

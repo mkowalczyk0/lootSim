@@ -125,10 +125,9 @@ check("the shipped hero PNG exists and decodes", !!heroMeta);
 
 section("the cast it has to read next to");
 
-const MONSTER_IDS = Object.keys(ATLAS).filter(
-  (id) => id.startsWith("boss.") || /\.monster\./.test(id),
-);
-const dirFor = (id: string): string => (id.startsWith("boss.") ? "bosses" : "monsters");
+const isBoss = (id: string): boolean => id.startsWith("boss.") || id.startsWith("tower.boss.");
+const MONSTER_IDS = Object.keys(ATLAS).filter((id) => isBoss(id) || /\.monster\./.test(id));
+const dirFor = (id: string): string => (isBoss(id) ? "bosses" : "monsters");
 
 const monsters: { id: string; max: number; hex: string }[] = [];
 const undrawn: string[] = [];
@@ -251,7 +250,7 @@ const HUE_TOLERANCE = 45;
 
 {
   const animated = Object.values(ATLAS).filter((m) => m.anim && m.anim.cols > 1
-    && (m.id.startsWith("boss.") || /\.monster\./.test(m.id)));
+    && (isBoss(m.id) || /\.monster\./.test(m.id)));
   if (animated.length === 0) {
     console.log("  (no animated monster/boss sprites yet — nothing to measure per frame)");
   }

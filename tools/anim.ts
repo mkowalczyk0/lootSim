@@ -48,7 +48,7 @@ function check(what: string, ok: boolean, detail = ""): void {
 
 /** Mirrors the directory layout `render/atlas/index.ts` globs and smoke.ts walks. */
 function dirFor(id: string): string {
-  if (id.startsWith("boss.")) return "bosses";
+  if (id.startsWith("boss.") || id.startsWith("tower.boss.")) return "bosses";
   if (id.startsWith("hero.")) return "characters";
   if (id.startsWith("prop.")) return "props";
   if (id.startsWith("named.")) return "items";
@@ -165,7 +165,7 @@ console.log("\nanimation — a scale and a canvas come from one decision\n");
   const worlds: [string, (id: string) => boolean][] = [
     ["nothing loaded", () => false],
     ["everything loaded", () => true],
-    ["only non-boss art loaded", (id) => !id.startsWith("boss.")],
+    ["only non-boss art loaded", (id) => !id.startsWith("boss.") && !id.startsWith("tower.boss.")],
     ["only the sets' own art loaded", (id) => id.includes(".monster.")],
   ];
 

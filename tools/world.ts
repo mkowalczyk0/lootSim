@@ -349,14 +349,28 @@ const towerSpecs = [5, 10, 15, 20, 25, 30, 60].map((h) => towerBossSpec(h));
 // Reference identity happened to enforce both, and enforcing the second one is what made
 // all five Tower bosses byte-identical fights to the five Delve encounters.
 //
-// So it is split into the two things it was actually standing for. The body and the stat
-// line are still borrowed whole — nothing here is authored from scratch — and the phase
+// So it is split into the two things it was actually standing for. The stat line is
+// still borrowed whole — nothing here is authored from scratch — and the phase
 // *structure* is still the template's, meaning the climb has no difficulty curve of its
-// own. What a Tower boss is now allowed to differ in is which cards it holds.
-check("every Tower encounter borrows a real encounter's body and stat line",
+// own. What a Tower boss is now allowed to differ in is which cards it holds, and (as of
+// `art/bosses/finish-tower.ts`) which sprite it draws — `sprite` dropped out of this
+// comparison deliberately, the whole point of that batch. Before it, `towerBossSpec`
+// never touched `sprite` at all, so it was silently part of "the borrowed body" here;
+// that was always the defect, not a promise worth re-enforcing on the numbers.
+check("every Tower encounter borrows a real encounter's stat line",
   towerSpecs.every((spec) => BOSSES.some((b) =>
     b.health === spec.health && b.damage === spec.damage && b.speed === spec.speed
-    && b.radius === spec.radius && b.sprite === spec.sprite && b.spriteScale === spec.spriteScale)));
+    && b.radius === spec.radius && b.spriteScale === spec.spriteScale)));
+// The art is the Tower's own now, never the template's — the direct converse of the
+// stat-line check above, so a future accidental revert (spreading `sprite` back off the
+// template) fails loudly here rather than silently reopening the defect this batch fixed.
+check("every Tower encounter draws its own sprite, never the borrowed template's",
+  towerSpecs.every((spec) => {
+    const template = BOSSES.find((b) =>
+      b.health === spec.health && b.damage === spec.damage && b.speed === spec.speed
+      && b.radius === spec.radius && b.spriteScale === spec.spriteScale);
+    return template !== undefined && template.sprite !== spec.sprite;
+  }));
 check("no Tower encounter has a difficulty curve of its own — the phase shape is the template's",
   towerSpecs.every((spec) => BOSSES.some((b) =>
     b.phases.length === spec.phases.length

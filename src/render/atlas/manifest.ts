@@ -167,6 +167,17 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "boss.herald-unspoken":     { id: "boss.herald-unspoken",     w: 76, h: 94, worldScale: 1.17, feet: 0.02 },
   "boss.nameless":            { id: "boss.nameless",            w: 73, h: 87, worldScale: 1.29, feet: 0.03 },
 
+  // --- Tower bosses (`art/bosses/finish-tower.ts`) --- five sprites of their own, where
+  // `towerBossSpec` used to draw the borrowed Delve template unchanged. worldScale
+  // preserves each template's own world height exactly (see the boss block above):
+  // cherub 99.68 (warden), virtue 100.28 (choir), power 133.98 (colossus),
+  // throne 109.98 (herald), nameless 112.23 (nameless).
+  "tower.boss.cherub":   { id: "tower.boss.cherub",   w: 40, h: 96,  worldScale: 1.0383, feet: 0.03 },
+  "tower.boss.virtue":   { id: "tower.boss.virtue",   w: 45, h: 125, worldScale: 0.8022, feet: 0.03 },
+  "tower.boss.power":    { id: "tower.boss.power",    w: 45, h: 94,  worldScale: 1.4253, feet: 0.03 },
+  "tower.boss.throne":   { id: "tower.boss.throne",   w: 41, h: 103, worldScale: 1.0678, feet: 0.03 },
+  "tower.boss.nameless": { id: "tower.boss.nameless", w: 37, h: 97,  worldScale: 1.1570, feet: 0.03 },
+
   // --- raid bosses (docs/art-manifest.md §2.1) --- Raids shipped reusing a floor boss's
   // PNG wholesale, so the headline encounter of a whole layer was pixel-identical to an
   // ordinary depth-16 fight and only the name plate told you otherwise. `RaidSpec.sprite`
@@ -428,6 +439,11 @@ export const SPRITE_OVERRIDES: Record<string, string> = {
   bossColossus: "boss.gravebound-colossus",
   bossHerald: "boss.herald-unspoken",
   bossNameless: "boss.nameless",
+  towerBossCherub: "tower.boss.cherub",
+  towerBossVirtue: "tower.boss.virtue",
+  towerBossPower: "tower.boss.power",
+  towerBossThrone: "tower.boss.throne",
+  towerBossNameless: "tower.boss.nameless",
   torch: "prop.torch",
   bones: "prop.bones",
   mushroom: "prop.mushroom",
