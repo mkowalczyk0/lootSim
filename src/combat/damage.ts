@@ -221,6 +221,68 @@ export function isUltimateSourced(packet: DamagePacket): boolean {
   return packet.channel === "ultimate" || packet.source.fromUltimate === true;
 }
 
+// --- THE EXECUTE RULE -------------------------------------------------------
+
+/**
+ * The health fraction at or above which an execute rider contributes **nothing**.
+ *
+ * An execute is supposed to mean "finish the wounded". The vocabulary's rider
+ * (`DamageTemplate.executeMissingHealth`) read the victim's *missing* health with no
+ * threshold at all, so it paid out at every health value — including a boss at 80%,
+ * where nothing about the word "execute" applies. The owner reported it twice: docket
+ * §8 halved the Ranger's coefficient, which made the rider weaker everywhere and still
+ * let it fire at full health, and §20 is the same report coming back. **The shape was
+ * the bug and §8 sized the number.**
+ *
+ * This is a threshold restored rather than invented. The Reaper's "Death Comes Due"
+ * has always described itself as freezing "everything below a health threshold", and
+ * its Mythic's mutation note has always claimed to raise that threshold — both were
+ * authored in the fiction and never in the code.
+ */
+export const EXECUTE_THRESHOLD = 0.5;
+
+/**
+ * The bonus damage an execute rider adds, and the **only** place the rider is ever
+ * evaluated — `runEffect`'s `damage` step calls this and nothing else does.
+ *
+ * That singularity is the point of putting it here. `executeMissingHealth` is not three
+ * abilities: it is authored on fourteen damage packets across eight classes, and
+ * seventeen tree nodes, mutations and one relic *add* it to packets that carry none.
+ * A per-ability threshold field would have to be authored ~31 times, could be filled in
+ * with `1.0` — today's bug, spelled out — and would sit one keystroke away from being
+ * omitted by the next ability anyone writes. There is no field to omit here, so a rider
+ * added tomorrow, by any route, is gated for free. A rule that cannot be violated beats
+ * a check that notices when it was.
+ *
+ * **It is a normalized ramp inside the band, not the old term with a gate bolted on**,
+ * and the difference is load-bearing:
+ *
+ *   - at `health = 0` this returns `maxHealth * coeff`, which is exactly what the
+ *     un-thresholded term returned. The finisher is undiminished at the moment it
+ *     finishes, which is what the ability was for.
+ *   - at or above `EXECUTE_THRESHOLD` it returns 0, which is precisely the reported
+ *     complaint: free damage against a healthy target.
+ *   - in between it ramps, with no cliff at the boundary.
+ *
+ * **The alternative, and the honest trade.** Keeping `(maxHealth - health) * coeff` and
+ * simply skipping it above the threshold is identical to the old term *everywhere below*
+ * the threshold, so it would disturb the twenty-eight unreported riders even less than
+ * this does. It was rejected for one reason: it steps from 0 to `(1 - T) * maxHealth *
+ * coeff` at the boundary — at the Reaper's coefficient against a Ferryman, ~43,000 damage
+ * materialising the instant the boss crosses half health. That is the owner's "it just
+ * insta kills bosses" relocated rather than fixed. So the ramp is the deliberate choice
+ * to accept a bounded reduction inside the band in every rider, in exchange for a
+ * mechanic with no cliff in it. `tools/execute.ts` pins both halves of that trade: the
+ * ramp is never stronger than the old term anywhere, equal to it at 0, and continuous.
+ */
+export function executeBonus(coeff: number, health: number, maxHealth: number): number {
+  if (coeff <= 0) return 0;
+  const max = Math.max(1, maxHealth);
+  const frac = Math.max(0, health) / max;
+  if (frac >= EXECUTE_THRESHOLD) return 0;
+  return max * (1 - frac / EXECUTE_THRESHOLD) * coeff;
+}
+
 // --- helpers ---------------------------------------------------------------
 
 function dedupe<T>(list: readonly T[]): T[] {

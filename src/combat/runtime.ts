@@ -19,7 +19,7 @@ import {
   type EffectStep,
   type EffectTargetSel,
 } from "./ability";
-import { makeDamagePacket, type DamagePacket, type DamageSource, type DamageType } from "./damage";
+import { executeBonus, makeDamagePacket, type DamagePacket, type DamageSource, type DamageType } from "./damage";
 import type { CombatHost, HostActor } from "./host";
 import type { ResourceEvent } from "./resources";
 import { resolveTargets, type TargetContext, type TargetResult } from "./targeting";
@@ -523,7 +523,10 @@ export function runEffect(
         if (!victim) continue;
         let amount = scaledAmount(dt.base, dt.scale, ctx.input);
         if (dt.executeMissingHealth) {
-          amount += (victim.maxHealth - victim.health) * dt.executeMissingHealth;
+          // THE EXECUTE RULE lives in `combat/damage.ts` — the threshold is there, not
+          // here and not on the ability, because this is the one site that ever reads
+          // the rider (docket §20).
+          amount += executeBonus(dt.executeMissingHealth, victim.health, victim.maxHealth);
         }
         if (dt.casterMissingHealth) {
           const c = host.actor(ctx.casterId);

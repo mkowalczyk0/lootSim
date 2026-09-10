@@ -40,7 +40,7 @@
     "universal": "esbuild tools/universal.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/universal.mjs --log-level=error && node node_modules/.cache/universal.mjs",
     "badges": "esbuild tools/badges.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/badges.mjs --log-level=error && node node_modules/.cache/badges.mjs",
     "leaderboards": "esbuild tools/leaderboards.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/leaderboards.mjs --log-level=error && node node_modules/.cache/leaderboards.mjs",
-"test": "npm run markers && npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run rules && npm run universal && npm run named && npm run shop && npm run leaderboards && npm run legends && npm run bossvariety && npm run forge && npm run previews && npm run world && npm run itemart && npm run relics && npm run weaponskins && npm run raids && npm run rewards && npm run memories && npm run badges && npm run augments && npm run abilityfx && npm run monstersets && npm run anim && npm run chroma && npm run pathing && npm run deadpaths && npm run smoke",
+    "test": "npm run markers && npm run check && npm run vocab && npm run prog && npm run classes && npm run roster && npm run rules && npm run universal && npm run named && npm run shop && npm run leaderboards && npm run legends && npm run bossvariety && npm run forge && npm run previews && npm run world && npm run itemart && npm run relics && npm run execute && npm run weaponskins && npm run raids && npm run rewards && npm run memories && npm run badges && npm run augments && npm run abilityfx && npm run monstersets && npm run anim && npm run chroma && npm run pathing && npm run deadpaths && npm run smoke",
     "arena": "esbuild tools/arena.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/arena.mjs --log-level=error && node node_modules/.cache/arena.mjs",
     "inworld": "esbuild tools/inworld.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/inworld.mjs --log-level=error && node node_modules/.cache/inworld.mjs",
     "art": "esbuild tools/artsheet.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/artsheet.mjs --log-level=error && node node_modules/.cache/artsheet.mjs",
@@ -52,7 +52,8 @@
     "deadpaths": "esbuild tools/deadpaths.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/deadpaths.mjs --log-level=error && node node_modules/.cache/deadpaths.mjs",
     "raids": "esbuild tools/raids.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/raids.mjs --log-level=error && node node_modules/.cache/raids.mjs",
     "bossvariety": "esbuild tools/bossvariety.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/bossvariety.mjs --log-level=error && node node_modules/.cache/bossvariety.mjs",
-    "hublayout": "esbuild tools/hub-layout.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/hub-layout.mjs --log-level=error && node node_modules/.cache/hub-layout.mjs"
+    "hublayout": "esbuild tools/hub-layout.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/hub-layout.mjs --log-level=error && node node_modules/.cache/hub-layout.mjs",
+    "execute": "esbuild tools/execute.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/execute.mjs --log-level=error && node node_modules/.cache/execute.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

@@ -648,7 +648,35 @@ no threshold on it can separate them. **The acceptance test for a blow is an eye
 the list**: it is a second report of an ability already "fixed" once, which means the first
 fix answered the wrong question.*
 
-## 20. The Ranger's execute must not fire at any HP — rework the mechanic, not the number
+## 20. The Ranger's execute must not fire at any HP — LANDED
+
+**Shipped 2026-09-10**, design record `docs/execute-threshold.md`, harness
+`tools/execute-ab.ts`. The threshold is **one constant and one function** in
+`src/combat/damage.ts` (THE EXECUTE RULE), called from the single site in `runEffect` that
+has ever evaluated the rider — so there is no per-ability field to omit and a rider added
+tomorrow by any route is gated for free.
+
+**The scope was thirty-one sites, not three.** `executeMissingHealth` is authored on 14
+packets across 8 classes, and 17 tree nodes, mutations and one relic *add* it via
+`addExecuteMissingHealth`. That is what ruled out a required companion field: it would have
+meant authoring ~31 thresholds, 28 on classes nobody reported, and could be satisfied with
+`1.0` anyway.
+
+The rider is a **normalized ramp inside the band** rather than the old term with a gate
+bolted on: unchanged at 0 HP, exactly zero at and above the threshold. That is what let the
+other 28 riders be reached without being retuned — they keep their coefficients and their
+payoff at the kill, and lose only their contribution against healthy targets.
+
+Measured on a **raid** boss, per the brief. Two of the three could not be exercised in a
+fight at all — the Reaper's ultimate meter reads 0.000 across a whole Ferryman fight under
+bot play, because it charges only from `execute`-tagged hits — so the primary evidence is a
+seed-free rider table and the fight A/B speaks for the Ranger. One cast of Death Comes Due
+was handing over **16,871 free damage at 80% boss health**, 16% of the bar. Compensations:
+Ranger an 8s haste (the owner's own suggestion), Reaper 0.8 → 1.0 (the coefficient's
+*meaning* changed), Assassin +base on the finishing blow (bounded by the player's gear, so
+it structurally cannot recreate the bug). The brief below is kept for context.
+
+## 20 (brief). The Ranger's execute must not fire at any HP — rework the mechanic, not the number
 
 > "I don't think that ultimate should execute at any HP. Like, it's just insta killing
 > bosses, and I'm seeing it at, like, eighty percent health. Like, I'm pushing raids. I

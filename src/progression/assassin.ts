@@ -263,7 +263,14 @@ export const ASSASSIN_CONTRACT_FULFILLED: Ability = {
     { kind: "status", status: "contract", chance: 1, to: "target" },
     { kind: "damage", damage: { base: 1.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate" }, to: "target" },
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true, channel: "ultimate" }, to: "target" },
-    { kind: "damage", damage: { base: 2.6, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.4 }, to: "target" },
+    // The §20 payback, and deliberately NOT the Reaper's. The Assassin's ultimate is three
+    // precise blows on one marked target, so what it lost is paid back as **base**
+    // damage on the finishing blow (2.6 → 3.4) rather than as a bigger execute
+    // coefficient. That distinction is the whole safety property: base damage scales with
+    // the Assassin's attack, so it is bounded by the player's own gear and cannot grow
+    // with the victim's health bar. A coefficient scales with the target, which is exactly
+    // how a rider turns into "it deletes raid bosses". The execute term stays at 0.4.
+    { kind: "damage", damage: { base: 3.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.4 }, to: "target" },
   ],
   mutationHooks: [{ id: "contract_fulfilled.followup", kind: "followUp", note: "The Perfect Contract chains to the next priority target on a kill." }],
 };

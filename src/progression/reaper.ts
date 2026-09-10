@@ -237,7 +237,16 @@ export const REAPER_DEATH_COMES_DUE: Ability = {
     { kind: "fx", fx: "reaper.time_freeze" },
     { kind: "status", status: "freeze", chance: 1, to: "enemies" },
     { kind: "delay", seconds: 0.4, effects: [
-      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.8 }, to: "enemies" },
+      // 0.8 → 1.0 is the §20 payback, and it is a consequence of the rule rather than a
+      // top-up. Under the un-thresholded term this number meant "fraction of missing
+      // health at *any* health", so it had to stay small — it was being paid out against
+      // healthy targets. Under THE EXECUTE RULE it means "fraction of max health at the
+      // moment of death", and 1.0 is that scale's natural ceiling: at 0 HP the rider is
+      // exactly the target's whole bar. For an ability named "Death Comes Due", collecting
+      // the entire bill is the definition, not an escalation. Measured against master this
+      // is still far weaker in the band that matters (at 35% health on a Ferryman: 54,830
+      // → 31,633) and exactly zero above the threshold, where the complaint came from.
+      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 1.0 }, to: "enemies" },
     ] },
   ],
   mutationHooks: [{ id: "death_comes_due.packet", kind: "damagePacket", note: "The Final Harvest raises the threshold and pays out Souls per kill." }],
