@@ -143,6 +143,41 @@ against everything else.
 > a reproducible script. **This is a prompting rule, not a claim about what is committed** —
 > check the PNGs for that.
 
+### 1.4d Clamp the SUBJECT with positives too — a negative summons what it forbids
+
+§1.4's pipeline notes already say to clamp the *palette* with positive words (*matte,
+blackened, soot-stained*) rather than by forbidding things. Measured on the v7 hero round,
+**the same rule governs the subject, and breaking it fails every time**:
+
+| asked for | came back with |
+| --- | --- |
+| "no wings" | wings |
+| "no hood, no helmet" (with a hooded boss as the style reference) | its pole, in the hero's hand |
+| "carrying nothing on his back" | a backpack |
+
+Three for three. Rewriting with positives only — *"both hands empty and open at his sides"*
+— produced clean figures immediately, at both sizes and in both modes.
+
+**This matters most for the 21 per-class heroes**, because "do something creative for each
+class" is an open invitation to write "no staff" twenty-one times and get twenty-one
+staves. Describe the pose and the empty hands; never list what the character must not hold.
+
+### 1.4e A hero sprite is empty-handed, and that is mechanical rather than taste
+
+Two independent reasons, both of which bite every class hero:
+
+1. **`worldScale` is derived from the sprite's TRIMMED height.** A staff held above the head
+   is inside the trim, so the *staff* gets sized to the hero's world height and the
+   character shrinks to fit underneath it. The v7 candidate that came back holding a pole
+   measured 67x107 with the character occupying maybe 90 of those rows — it would have
+   stood a fifth shorter than intended, for a reason invisible on a contact sheet.
+2. **The game already draws the held weapon as its own sprite.** `weaponSprite` rotates the
+   equipped weapon along the swing actually resolved (see §"Weapons are their own sprites"),
+   so a hero sprite holding anything is drawn holding two things at once.
+
+Anything a character carries — a weapon, a pack, a slung shield — belongs in the weapon or
+cosmetic layer, never baked into the body sprite.
+
 ### 1.4b Value and saturation are different levers — reach for value
 
 Twice in two days a fix on this project was found by separating **value** (how light a

@@ -18,7 +18,7 @@ import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
-  HERO_STAGE_H, HERO_STAGE_W, cosmeticStageXY, heroStageOffset,
+  cosmeticStageXY, heroStage,
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
@@ -316,7 +316,7 @@ function resolvePipelineLayer(id: string | null): ResolvedLayer | null | undefin
  * wardrobe never mixes two art styles on one character.
  *
  * Layer order mirrors the procedural stack: back item behind everything (the hero's own
- * silhouette is narrower than `HERO_STAGE_W`, so wings/a cape/a tail peek out at the
+ * silhouette is narrower than the stage, so wings/a cape/a tail peek out at the
  * sides exactly as the procedural `CHAR_W` margin lets them), then the hero body itself,
  * then face, ears and hat on top. The hero body already carries its own baked hair, so
  * hair is not a separate layer here — see the note below.
@@ -343,8 +343,10 @@ function composePipelineHero(
   if (back === null || face === null || ears === null || hat === null) return null;
 
   const heroW = art.meta.w, heroH = art.meta.h;
-  const { dx, dy } = heroStageOffset(heroW, heroH);
-  const { canvas, ctx } = blank(HERO_STAGE_W, HERO_STAGE_H);
+  // The stage is sized to THIS hero, so a class hero of any height gets a canvas with its
+  // own proportional headroom instead of floating inside one cut for a different sprite.
+  const stage = heroStage(heroW, heroH);
+  const { canvas, ctx } = blank(stage.w, stage.h);
   // Every layer is placed through `cosmeticStageXY`, which resolves its anchor against
   // THIS hero's size. A layer that lands partly or wholly off the stage is clipped by the
   // canvas — `drawImage` does not throw for that — so a hero whose body does not match
@@ -356,7 +358,7 @@ function composePipelineHero(
     const recolored = recoloredCosmetic(back.png, `cosmetic:${appearance.back}`, back.cosmetic.colors);
     ctx.drawImage(recolored, at.dx, at.dy);
   }
-  ctx.drawImage(basePng, dx, dy);
+  ctx.drawImage(basePng, stage.dx, stage.dy);
   for (const layer of [face, ears, hat]) {
     if (!layer) continue;
     const at = cosmeticStageXY(ATLAS_COSMETICS[layer.cosmetic.art!]!, heroW, heroH);
@@ -476,7 +478,7 @@ export function heroSprite(appearance: Appearance, classId?: ClassId): HeroSprit
     // absolute below-feet sliver is a smaller fraction of it. `worldScale` is unaffected
     // — it's world units per authored pixel, so padding the canvas costs nothing (see
     // `HERO_STAGE_*` in the manifest).
-    const feet = meta ? (meta.feet * meta.h) / HERO_STAGE_H : PROC_HERO.feet;
+    const feet = meta ? (meta.feet * meta.h) / heroStage(meta.w, meta.h).h : PROC_HERO.feet;
     return {
       canvas: pipeline.canvas,
       scale: pipeline.art.worldScale ?? PROC_HERO.scale,
