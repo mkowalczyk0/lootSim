@@ -932,6 +932,86 @@ assertion. Presence was never the thing at risk this time; **colour** was.
 > assertion about pixel **presence** is not an assertion about pixel **colour**. Check both,
 > and on a sprite with a small accent check the accent *by name*.
 
+#### Stage C: two more routes to the blow are closed, and what is left is measured
+
+Attempted 2026-09-10 against docket §19, artifacts and the full write-up in
+`art/anim/raw/warden-blow-attempts/authored/`. §19's premise was *"the generator interpolates
+and re-renders. It does not pose."* True, and **not the whole constraint** — neither does any
+transform of the pixels that already exist.
+
+**Route 2, rigid rotation of (arms + weapon) about the shoulder.** An overhead swing genuinely
+is a rotation of a closed arms-plus-weapon loop about the chest; the sword separates cleanly
+from the body by region; a nearest-neighbour rotation invents no colours. Every output is
+unusable — arms come out as horizontal tubes, the blade points sideways.
+
+> **A front-facing sprite's limbs are not rigid bodies.** Their pixels encode foreshortening,
+> shading and occlusion for the one position they were drawn in. An arm reaching *up* is not
+> an arm reaching *down* rotated — it is a different drawing. Affine transforms move pixels;
+> they cannot re-render what those pixels depict.
+
+That is the same wall the generator hits, reached from the opposite side.
+
+**Route 3, compositing the pose out of other frames.** Better premise — take the arms-down
+anatomy the artist already drew (the rest frame), move the sword to centre-front, compress
+into a crouch. Nothing rotated, nothing invented. At thumbnail size the results look like the
+Warden; at authoring zoom the left arm is missing, no hand meets the grip, and the crouch is a
+vertical shear that doubles the tassets. Then the veto agrees with the eye:
+
+    apex vs rest       1485
+    best composite      754     VETOED at 0.51x — nearer rest than the WIND-UP is
+
+Worse than the rejected seed-37 generation (1001-1044), and it is not bad luck in the offsets:
+
+> **A composite blow is biased toward rest by construction.** The only frame containing
+> arms-down, weapon-down anatomy IS the rest frame, so any pose assembled out of it inherits
+> rest's silhouette — and the veto measures distance from rest. Compositing can only ever
+> build the pose it is least allowed to build.
+
+**The size of what is left, measured against the Ferryman — the one existence proof:** its
+impact frame differs from the nearest of the 19 frames that existed before it by **43.1% of
+the body**. The best Warden composite reached 30.6%, and it was the wrong 30.6% — silhouette
+spent on moving a sword rather than on the lean, the lunge and the extended arms that a blow
+is actually made of. **A blow is roughly half the sprite drawn new.**
+
+Two things that would otherwise get re-litigated: a different release is **not** available for
+this boss (the war-queen got a rise-and-open because her kit arrives from the sky; the
+Warden's is cleave/slam/quake/windmill/ringOut, swings every one), and the impact effect does
+**not** belong in the sprite (`render/fx.ts` already draws impact stars — the sprite owes only
+the pose).
+
+#### Stage D: §19's wall is TWO failures, and only one of them is about detail
+
+Run on `boss.gravebound-colossus` — chosen as the **least detailed sprite in the roster** (31
+colours), because its wind-up had just come back with on-model overhead arms where the
+war-queen's came back as detached tubes. If a generated blow was going to work anywhere it
+was going to work here. Raws and numbers in `art/anim/raw/colossus-blow/`.
+
+**The detail failure did not reproduce.** Every frame on-model — legs distinct, chains
+intact, no merged limbs. So the war-queen/Warden deformation is a property of *dense* sprites,
+and "the generator cannot pose" is too strong as written.
+
+**The pose failure reproduced completely, and it is the one that matters.** The arms come down
+— to the *sides*, which is the rest pose. Against the veto (bar: apex-vs-rest 2571), the
+arms-down frames measure 1424–1671. Nothing passes; the run does not arrive at an impact, it
+returns to rest, which is the definition of an unwind.
+
+> **An arms-down pose is near rest by definition, because rest IS arms-down.** On any boss
+> that rests with its hands or weapon low — most of them — a downward blow terminates on a
+> rest-shaped silhouette and is vetoed however well it is drawn. This is the same wall the
+> Ferryman hit, and its fix was not a better prompt: differentiate the impact on **body** —
+> stance, lean, trailing cloth — so the pose is far from rest for a reason other than where
+> the weapon is.
+
+The generator cannot supply that. It is a loop generator, and prompting for an ending does not
+override the prior — here the prior *is* the failure, because the loop's natural return and
+the blow's wrong answer are the same pose.
+
+**Route status after Stages B, C and D**, so nobody re-opens a closed one: free-form
+generation is closed (four attempts across two bosses, including the most favourable sprite in
+the game); rigid transform of existing pixels is closed; compositing from other frames is
+closed. **A pinned, hand-authored impact frame is the only route not yet eliminated** — which
+is exactly what §19 said, now with the alternatives ruled out rather than assumed.
+
 #### Reach is not one-per-sprite: check the borrow graph before choosing a target
 
 Animating `boss.warden` moved coverage 3/35 -> **10/35**, because `legendBossSpec` borrows
