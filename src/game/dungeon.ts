@@ -3016,7 +3016,7 @@ export class Dungeon implements CombatHost, RuleHost {
     for (let i = 0; i < rolls; i++) {
       const boost = (e.elite ? rarityIndex(e.elite) * 2 : 0) + (e.boss ? 5 : 0);
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + boost, bias));
-      const item = this.rollDrop(rarity, source.player.heroClass.affinity);
+      const item = this.rollDrop(rarity, source.player.heroClass.affinity, source);
       this.dropPickup(e.x, e.y, { kind: "item", item, rarity });
     }
 
@@ -3046,23 +3046,32 @@ export class Dungeon implements CombatHost, RuleHost {
 
   /**
    * Rolls every drop table for one event and drops whatever hit. Named items forge at
-   * this floor's depth; relics drop as themselves. `danger` (rift tier × Challenger)
-   * lifts the odds — UAT §16's "harder pays better" — through the one helper in
-   * `data/drops.ts`. Recorded in the account's records only for the local hero's drops,
-   * since every browser keeps its own save.
+   * `levelHero`'s own level (docket §23), never this floor's depth; relics drop as
+   * themselves. `danger` (rift tier × Challenger) lifts the odds — UAT §16's "harder pays
+   * better" — through the one helper in `data/drops.ts`. Recorded in the account's
+   * records only for the local hero's drops, since every browser keeps its own save.
    *
    * The relic roll skips what the local account already owns or is carrying unbanked, so
    * the chase never hands you a duplicate. For a remote hero the host can't see the
    * collection and rolls blind; a duplicate that reaches their save is a counter, never
    * power (`GameState.bankRelics`).
+   *
+   * `source` decides that ownership/notification bookkeeping (the codex entry, the relic
+   * dedup set below) — it stays whichever hero the caller already had in hand (the kill's
+   * credited hero, or `localHero` for a shared clear cache, unchanged). `levelHero` is a
+   * separate parameter on purpose: a clear cache is one physical pile with several
+   * named/relic queries fired against it, and the docket §23 rule ("a drop's level comes
+   * from the hero receiving it") governs the second question, not the first — rotating
+   * who a codex credit lands on is a different, unasked change.
    */
-  private dropFromTables(x: number, y: number, q: DropQuery, source: Hero): void {
+  private dropFromTables(x: number, y: number, q: DropQuery, source: Hero, levelHero: Hero = source): void {
     for (const def of rollNamedDrops(q, this.rng, this.config.danger)) {
-      // Item power (UAT §16) lifts a named copy exactly as it lifts an ordinary drop — a
-      // named item that ignored the axis would be the one piece of loot in the game that
-      // got no stronger for the difficulty it came out of. `minIlvl` on the definition
-      // still floors it from below.
-      const item = forgeNamedItem(def, this.profile.depth + this.profile.itemPower, this.rng);
+      // Item level tracks levelHero's own level (docket §23), same rule as an ordinary
+      // drop; item power (UAT §16) still lifts a named copy exactly as it lifts an
+      // ordinary one, but only the magnitude — see `rollDrop`. `minIlvl` on the
+      // definition still floors both from below.
+      const namedIlvl = Math.max(1, levelHero.player.level);
+      const item = forgeNamedItem(def, namedIlvl, this.rng, namedIlvl + this.profile.itemPower);
       if (source.local) this.state.noteNamed(def.id);
       this.dropPickup(x, y, { kind: "item", item, rarity: item.rarity });
     }
@@ -3099,20 +3108,30 @@ export class Dungeon implements CombatHost, RuleHost {
    * Both drop sites — a monster's gear and the clear cache — go through here so the two
    * axes difficulty adds can't apply to one and not the other:
    *
-   *  - **item power**: `profile.itemPower` lifts the item level, so the Challenger dial
-   *    (which deliberately never touches depth) still pays in power. It also raises
-   *    `requiredLevel`, which is why `rewardCurve` caps it hard.
+   *  - **item level** tracks the *receiving hero's own level* (`Math.max(1, level)`), the
+   *    same rule chests and crafting already follow (`GameState.openChests`/`craftItem`) —
+   *    an owner ruling (docket §23) that a character earns gear they can equip, not gear
+   *    keyed to whatever depth or Memory produced it. `hero` is deliberately a parameter
+   *    rather than `this.localHero`: co-op loot is per-hero, so a level 20 and a level 50
+   *    in the same party each roll off their own level.
+   *  - **item power**: `profile.itemPower` still lifts the roll for the Challenger dial
+   *    (which deliberately never touches depth) — but only the *magnitude* (`powerIlvl`),
+   *    never the level the returned `Item.ilvl` reports. `requiredLevel` (`ilvl` minus one
+   *    level of grace) is derived from `ilvl` alone, so item power can never price a drop
+   *    above what the hero who earned it can wear. See docs/reward-curve.md.
    *  - **special variants**: with `profile.variantChance`, the roll leans toward the
    *    floor's own element via `favorElement` — the same knob a crafting essence uses.
    *    Same rarity, same affix count; what changes is which element it rolls, which is
    *    the thing a themed build is actually farming for.
    */
-  private rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[]): Item {
+  private rollDrop(rarity: Rarity, affinity: readonly WeaponFamily[], hero: Hero): Item {
     const infused = this.profile.variantChance > 0 && this.rng.chance(this.profile.variantChance);
+    const ilvl = Math.max(1, hero.player.level);
     return rollItem({
       rarity,
       type: randomItemType(this.rng, affinity),
-      ilvl: this.profile.depth + this.profile.itemPower,
+      ilvl,
+      powerIlvl: ilvl + this.profile.itemPower,
       rng: this.rng,
       favorElement: infused ? this.profile.variantElement : undefined,
     });
@@ -3131,29 +3150,40 @@ export class Dungeon implements CombatHost, RuleHost {
     // The last floor of a rift pays for the whole rift, which is what makes bailing
     // out of one at floor three hurt.
     const finale = this.config.lastFloor ? 2.4 : 1;
+    // The cache is one physical pile, but item level is per-hero (docket §23) — a level
+    // 20 and a level 50 in the same party should each find something they can wear, not
+    // just whichever gear `localHero` would have earned. Cycle the party round-robin
+    // across every item the pile rolls; solo has one hero, so this is a no-op there.
+    const party = this.heroes.filter((h) => !h.departed);
+    const recipients = party.length > 0 ? party : [this.localHero];
+    let recipientCursor = 0;
+    const nextRecipient = (): Hero => recipients[recipientCursor++ % recipients.length]!;
 
     const coins = Math.round(coinDropFor(this.profile) * 9 * quantity * finale * this.rng.range(0.9, 1.15));
     this.dropPickup(x, y, { kind: "coin", value: coins });
 
     const drops = Math.max(1, Math.round(quantity * finale));
     for (let i = 0; i < drops; i++) {
+      const hero = nextRecipient();
       const rarity = this.rng.weighted(depthWeights(this.profile.depth + 2, this.profile.rarityBias));
-      const item = this.rollDrop(rarity, this.player.heroClass.affinity);
+      const item = this.rollDrop(rarity, hero.player.heroClass.affinity, hero);
       this.dropPickup(x, y, { kind: "item", item, rarity });
     }
     // The clear cache has its own named table (UAT §28): a reward that, like the rest of
-    // the cache, only exists for finishing the floor.
+    // the cache, only exists for finishing the floor. Bookkeeping (the codex, relic dedup)
+    // stays on `localHero` as before; only the item level the query forges at follows the
+    // rotation above.
     this.dropFromTables(x, y, {
       kind: "clearCache", depth: this.profile.depth, mode: this.config.mode.id,
       tier: this.config.tier, lastFloor: this.config.lastFloor,
-    }, this.localHero);
+    }, this.localHero, nextRecipient());
     // ...and the ascent's cache emits its own kind on top of that (UAT §21). A `tower`
     // query carries the **height**, not the effective depth, even though the two are the
     // same number today: the height is what the source means, and the one place the
     // ascent's rewards get addressed by the descent's number is the place the §21 rule
     // would start leaking. `recordHeight` keeps the same distinction on the save side.
     if (this.config.tower) {
-      this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero);
+      this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero, nextRecipient());
     }
     // ...and so does the cache that closes a raid (UAT §15). The raid's floor *is* its
     // boss floor, so this is the second half of the same payout and the same query the
@@ -3161,7 +3191,7 @@ export class Dungeon implements CombatHost, RuleHost {
     if (this.config.raid) {
       this.dropFromTables(x, y, {
         kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
-      }, this.localHero);
+      }, this.localHero, nextRecipient());
     }
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);
@@ -3220,9 +3250,11 @@ export class Dungeon implements CombatHost, RuleHost {
       if (daily) this.dropAugment(x, y, daily.id);
       if (dailyGuaranteesItem(this.config.challengerTier)) {
         const rarity = challengerGuaranteedRarity(DAILY_GUARANTEED_RARITY, this.config.challengerTier);
+        // The Vigil is solo-only (UAT §17 v1), so `this.player` (localHero) is the whole
+        // party — item level tracks it exactly like a chest does (docket §23).
         const item = rollItem({
           rarity, type: randomItemType(this.rng, this.player.heroClass.affinity),
-          ilvl: this.profile.depth, rng: this.rng,
+          ilvl: Math.max(1, this.player.level), rng: this.rng,
         });
         this.dropPickup(x, y, { kind: "item", item, rarity });
       }
@@ -3239,10 +3271,11 @@ export class Dungeon implements CombatHost, RuleHost {
       const weekly = pickAugment(augmentsUpTo(WEEKLY_AUGMENT_CAP), this.rng.next());
       if (weekly) this.dropAugment(x, y, weekly.id);
       const rarity = challengerGuaranteedRarity(WEEKLY_GUARANTEED_RARITY, this.config.challengerTier);
+      // The Convergence is solo-only (UAT §17 v1) exactly like the Vigil above — same rule.
       const item = rollItem({
         rarity,
         type: randomItemType(this.rng, this.player.heroClass.affinity),
-        ilvl: this.profile.depth,
+        ilvl: Math.max(1, this.player.level),
         rng: this.rng,
       });
       this.dropPickup(x, y, { kind: "item", item, rarity });

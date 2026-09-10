@@ -115,25 +115,34 @@ volume is the Avarice Rift's pitch and this shouldn't out-shout it.
 
 ### Potential item power
 
-`rewardCurve.itemPower` adds whole item levels at the two drop sites, which now share one
+`rewardCurve.itemPower` lifts a drop's magnitude at the two drop sites, which share one
 private `Dungeon.rollDrop` so the axis can't apply to a monster's drop and not the clear
 cache. Named drops get it too — a named item that ignored the axis would be the one piece
 of loot in the game that got no stronger for the difficulty it came out of, and the
 definition's own `minIlvl` still floors it from below.
 
-**Capped hard at +3, and this is the interesting constraint:** item level feeds
-`requiredLevel` (`ilvl` minus one level of grace), so every point here also raises the
-level at which the drop can be *worn*. A generous version of this axis pays a Challenger
-player in gear they cannot equip, which is a worse reward than a smaller number.
-`tools/rewards.ts` measures the cost directly — the bonus is worth at most its own cap in
-wearable levels, and nothing at ordinary difficulty.
+**Capped hard at +3, and until docket §23 this raised a real hazard: item level fed
+`requiredLevel` (`ilvl` minus one level of grace)**, so every point here also raised the
+level at which the drop could be *worn* — a generous version of this axis would pay a
+Challenger player in gear they cannot equip. §23 removed the hazard at the root rather
+than continuing to just cap it: `rollItem` and `forgeNamedItem` now take an optional
+**`powerIlvl`**, a second, separate input that scales stats/mods without moving `ilvl` (or
+therefore `requiredLevel`) at all. `rollDrop` and `dropFromTables` compute `ilvl` from the
+*receiving hero's own* `Math.max(1, level)` — never `profile.depth` — and feed
+`profile.itemPower` into `powerIlvl` alone. So this axis still makes a harder floor's drops
+hit for more, exactly as before; it just never again prices one above what the character
+who earned it can equip, on any floor at any depth. `tools/rewards.ts` asserts both halves
+directly: `ilvl`/`requiredLevel` are identical with and without the bonus, and the boosted
+roll's stat total is strictly larger.
 
-*Noticed while writing that check:* a floor's drops used to need roughly one level more
-than the floor recommended bringing, because `recommendedLevel` was `depth * 0.9` while
-`requiredLevel` is `ilvl - 1`. `recommendedLevel` is now floored at `depth + itemPower - 1`
-— exactly the floor's own `requiredLevel` — so the advice can always equip what the floor
-pays out. The test still pins that §16's power bonus doesn't widen a drop's own
-`requiredLevel` gap by more than the capped amount.
+*Stale as of §23, kept for history:* `recommendedLevel` is floored at
+`depth + itemPower - 1`, which used to be exactly a floor's own drops' `requiredLevel` (back
+when `ilvl` was `depth + itemPower`), so the advice could always equip what the floor paid
+out. That coincidence is gone now that `ilvl` tracks the character instead of the floor —
+`recommendedLevel` still stands as reasonable survivability advice on its own merits, but
+no longer as a promise about what a drop will cost to wear. Left alone rather than retuned,
+since "how strong should you be to survive this depth" is a different question than the one
+§23 was asked to fix, and retuning player-facing level advice is its own balance call.
 
 ### Special variants
 

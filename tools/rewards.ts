@@ -242,13 +242,20 @@ console.log("\n=== §16's two missing axes actually reach the loot ===");
   // Both sides have to have actually produced loot, or these pass by measuring nothing.
   check("the harvest collected drops on both sides", plainDrops.length >= 3 && hardDrops.length >= 3,
     `${plainDrops.length} plain, ${hardDrops.length} hard`);
-  check("item power reaches the drop: a harder floor rolls above its depth",
-    hardDrops.length > 0 && hardDrops.every((i) => i.ilvl >= depth + profileHard.itemPower),
-    `hard ilvl ${[...new Set(hardDrops.map((i) => i.ilvl))].join("/")} vs depth ${depth}` +
-    ` (+${profileHard.itemPower})`);
-  check("…and an ordinary floor still rolls exactly at its depth",
-    plainDrops.length > 0 && plainDrops.every((i) => i.ilvl === depth),
-    [...new Set(plainDrops.map((i) => i.ilvl))].join("/"));
+  // Docket §23: item level now tracks the *receiving character's own level*
+  // (`Math.max(1, level)`), never the floor — the same rule chests and crafting already
+  // followed. This character is level 60 regardless of which side rolled the drop or how
+  // deep the floor is (depth 12 here), so both harvests must land on exactly that ilvl.
+  check("item level tracks the character, not the floor, on both sides",
+    plainDrops.length > 0 && hardDrops.length > 0
+      && plainDrops.every((i) => i.ilvl === 60) && hardDrops.every((i) => i.ilvl === 60),
+    `plain ${[...new Set(plainDrops.map((i) => i.ilvl))].join("/")}, ` +
+    `hard ${[...new Set(hardDrops.map((i) => i.ilvl))].join("/")} (level 60, depth ${depth})`);
+  // The headline promise, stated directly: an item that drops for this character is one
+  // this character can equip, on the harder floor exactly as much as the ordinary one.
+  check("…so requiredLevel never exceeds the earner's own level, on either side",
+    [...plainDrops, ...hardDrops].every((i) => requiredLevel(i) <= 60),
+    `worst requiredLevel ${Math.max(...[...plainDrops, ...hardDrops].map((i) => requiredLevel(i)))} vs level 60`);
   check("the drop count axis is on the profile every roll site already reads",
     profileHard.quantity > profilePlain.quantity,
     `${profilePlain.quantity.toFixed(2)} → ${profileHard.quantity.toFixed(2)}`);
@@ -345,6 +352,25 @@ console.log("\n=== the power bonus never outruns the level that can wear it ==="
     worst <= REWARD_CAPS.itemPower, `worst case +${worst} levels to equip`);
   check("…and costs nothing at all at ordinary difficulty",
     [1, 5, 10, 15, 20, 25, 30].every((d) => profileFor(d, delveConfig(d, 0)).itemPower === 0));
+
+  /**
+   * Docket §23 changed *how* `Dungeon` spends this axis: `rollDrop`/`forgeNamedItem` no
+   * longer bump `ilvl` itself (that now tracks the receiving character's own level, never
+   * the floor) — they bump `powerIlvl`, a second `rollItem` input that scales stats/mods
+   * without moving `ilvl` or `requiredLevel` at all. The block above still tests the raw
+   * `rollItem({ ilvl })` contract, which is unchanged and still worth pinning; this proves
+   * the split those call sites actually rely on, same rng seed both sides so only
+   * `powerIlvl` differs.
+   */
+  const sumStats = (stats: Record<string, number>) =>
+    Object.values(stats).reduce((a, b) => a + b, 0);
+  const base = rollItem({ rarity: "legendary", type: "sword", ilvl: 20, powerIlvl: 20, rng: new Rng(555) });
+  const boosted = rollItem({ rarity: "legendary", type: "sword", ilvl: 20, powerIlvl: 23, rng: new Rng(555) });
+  check("item power (`powerIlvl`) raises a drop's magnitude without moving its ilvl or requiredLevel",
+    boosted.ilvl === base.ilvl && requiredLevel(boosted) === requiredLevel(base)
+      && sumStats(boosted.stats) > sumStats(base.stats),
+    `ilvl ${base.ilvl}→${boosted.ilvl}, requiredLevel ${requiredLevel(base)}→${requiredLevel(boosted)}, ` +
+    `stat total ${sumStats(base.stats)}→${sumStats(boosted.stats)}`);
 }
 
 console.log("\n=== the day's weather doesn't pay; the dial does ===");

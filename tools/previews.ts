@@ -344,11 +344,11 @@ console.log("\n=== the preview says something worth reading ===");
   // `rewardCurve` rather than from a second copy of the numbers.
   const deep = previewForRun(riftConfig("abyss", 14, MODES.abyss.floors)).other.join(" · ");
   check("a deep tier advertises what its danger is worth",
-    /drops for the danger/.test(deep) && /item levels/.test(deep)
+    /drops for the danger/.test(deep) && /more power for the danger/.test(deep)
       && /infused/.test(deep) && /named-item odds/.test(deep), deep);
   const shallowTier = previewForRun(riftConfig("abyss", 1, MODES.abyss.floors)).other.join(" · ");
   check("…and a first tier, being ordinary danger, claims none of it",
-    !/drops for the danger/.test(shallowTier) && !/item levels/.test(shallowTier),
+    !/drops for the danger/.test(shallowTier) && !/more power for the danger/.test(shallowTier),
     shallowTier);
 
   // A plain delve floor at tier zero has nothing special to say, and says that.

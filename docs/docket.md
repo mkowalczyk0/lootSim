@@ -854,7 +854,44 @@ Two constraints:
 Any change to `level.ts` geometry or spawn sequencing perturbs the shared rng for every
 floor. Run the full `npm run smoke`, not just a targeted check.
 
-## 23. Item level follows the character everywhere — dropped items are still keyed on depth
+## 23. Item level follows the character everywhere — dropped items are still keyed on depth — LANDED
+
+**Shipped 2026-09-10.** The three sites this entry named, plus a fourth found while fixing
+them (`forgeNamedItem`'s call inside `Dungeon.dropFromTables` — named items forged from the
+clear cache, the Tower's cache and a raid's cache were rolling at `depth + itemPower` too,
+same bug), now all roll `ilvl` off `Math.max(1, hero.player.level)` — the receiving hero's
+own level, never `profile.depth`. Co-op made "receiving hero" a real question: a kill's drop
+rolls off whichever hero's hit killed it (`killEnemy`'s `source`), and the clear cache — one
+physical pile the whole party can pick from — assigns each item it rolls to a different
+party member round-robin (`dropClearCache`), so a level 20 and a level 50 each find
+something wearable rather than everything keying off `localHero`.
+
+§16's `itemPower` axis is kept, not deleted, via a new split: `rollItem` and
+`forgeNamedItem` take an optional `powerIlvl`, separate from `ilvl` — `itemPower` feeds
+`powerIlvl` alone, scaling a drop's stats/affix magnitude exactly as before, while `ilvl`
+(and therefore `requiredLevel`) tracks only the earner's level. Harder content still pays
+better; it just never again prices a drop above what the character who earned it can wear.
+`docs/reward-curve.md` and the drop-preview copy (`src/data/previews.ts`, which used to
+promise "drops roll +N item levels") are both updated to match — the preview must not
+advertise an axis the roll no longer expresses.
+
+Verified directly: forcing a level-30 character's clear cache at depth 45 rolled ilvl 45
+(`requiredLevel` 44, unequippable) on master, ilvl 30 (`requiredLevel` 29, equippable) on
+the fix. `npm run test` green. A/B'd against master in a throwaway worktree on the repo's
+own widened 60-seed `CAMPAIGN_SEEDS` (`npm run smoke`, both sides): sharp campaign average
+deepest depth unchanged (11.7 → 11.7), reckless nudged up slightly (9.6 → 9.8), the boss
+telegraph read/ignore comparison byte-identical (76%/34% eaten, 32.9/14.4 dmg/s, 6.5/2.7
+potions/min both sides). The shift is real but small and in the direction the owner asked
+for — gear that used to be rolled-but-unequipped (blocked by `requiredLevel`) is now usable,
+and a character farming a shallower floor than their own level now gets gear that matches
+their level rather than the floor's, the same thing chests already did.
+
+**Deliberately not touched:** `recommendedLevel`'s `depth + itemPower - 1` floor
+(`data/depth.ts`) — it used to coincide with a floor's own drops' `requiredLevel`, and that
+coincidence is gone now that `ilvl` tracks the character instead. `recommendedLevel` still
+stands as reasonable survivability advice on its own terms; retuning player-facing level
+advice is a separate balance call from the one this entry asked for, and is flagged, not
+made. The paragraphs below are the original brief, kept for context.
 
 > "I did change the logic for the item drops that come out of chests and monster drops
 > etcetera, and crafting too... it's based off of the player level, not the depth... So could

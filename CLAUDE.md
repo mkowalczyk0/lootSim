@@ -808,6 +808,23 @@ pays out gear far beneath what the character can equip. A fresh alt's first ches
 purchase must not roll gear at whatever depth (or level) the main reached, and now
 doesn't either way.
 
+Dropped loot follows the same rule (docket §23): a monster kill's drop, the clear cache,
+and every named/relic table `Dungeon.dropFromTables` reads item level off the receiving
+hero's own `Math.max(1, level)`, never `profile.depth` — a level-30 character clearing a
+depth-45 Memory gets gear at their own level, not the Memory's. Co-op makes "receiving
+hero" a real question rather than a synonym for `localHero`: a kill's drop rolls off
+whichever hero's hit is credited (`killEnemy`'s `source`), and the clear cache — one
+physical pile the whole party can pick from — assigns each item it rolls to a different
+party member round-robin, so a level 20 and a level 50 in the same party each find
+something they can wear.
+
+This can't just delete `rewardCurve.itemPower` (§16's "harder content pays better")
+without repealing it. `rollItem` and `forgeNamedItem` both take an optional `powerIlvl`,
+separate from the `ilvl` that sets `requiredLevel` — `itemPower` (the Challenger dial's
+only route to item power, since Challenger deliberately never touches depth) feeds
+`powerIlvl` alone, so it still scales a drop's stats and affix magnitude up exactly as
+before, but can never move the level a drop requires to wear.
+
 ### Weapons decide what your attack button does
 
 `src/data/weapons.ts` — currently 14 families (sword, axe, spear, daggers, staff,
