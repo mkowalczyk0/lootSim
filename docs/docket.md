@@ -627,20 +627,29 @@ and that is now a structural check rather than a one-time read: every static row
 PNG is decoded and compared against the single frame its manifest row declares
 (`w`×`h`); a mismatch fails the tool. Falsified by shaving 1px off `boss.herald-unspoken`'s
 declared width — 5 encounters correctly flip to cause 1 and the tool exits red, then clean
-again once reverted, so this isn't a check that could only ever read green.
+again once reverted, so this isn't a check that could only ever read green. **That
+falsification is what makes "zero" a finding rather than a hope** — the same discipline
+that separates a real "we found zero" from a check that could silently never see the
+failure, which the project hit four separate ways in one day (see CLAUDE.md's fourth
+lesson). Classifying against §2's full 35-encounter `specs` list rather than a narrower
+filter matters for the same reason: a filter over an empty table passes.
 
 **Cause 2 (a tag that exists but gets cut short at runtime) is exactly the 3 raid bosses
 `docs/animation.md` already found and the docket's §7 reorder already named**: `cast`
 beats `strike` unconditionally, so a release only plays out in full if the post-cast gap
-outlasts it, and that gap shrinks with `aggression` as depth/tier climbs. Re-measured,
-unchanged from that entry — tyrant CUT at 90%/74%, ferryman CUT at 93%, war-queen CUT at
-100%/80%, only at their harder tiers, only the tail. **Deliberately not touched**: the
-"fix" is either `BOSS_ACTION_GAP` (a shared cadence constant read by every boss in the
-game, so a change here is a difficulty change to the whole roster, not an animation fix —
-see CLAUDE.md "Boss difficulty is cadence, not card count") or a per-encounter timing
-table that doesn't exist yet ("the table" `docs/animation.md` calls for). Either is a
-design call, not a cheap manifest edit, and `docs/animation.md` already ruled it "not
-worth a fix, and not the owner's report."
+outlasts it, and that gap shrinks with `aggression` as depth/tier climbs. Re-measured on a
+second, independently-built instrument and **unchanged from `docs/animation.md`'s existing
+numbers** — tyrant CUT at 90%/74%, ferryman CUT at 93%, war-queen CUT at 100%/80%, only at
+their harder tiers, only the tail. Two instruments agreeing is worth recording on its own:
+it means the tail-trim is a stable measurement, not one that would move if re-run.
+**Deliberately not touched**: the "fix" is either `BOSS_ACTION_GAP` (a shared cadence
+constant read by every boss in the game, so a change here is a difficulty change to the
+whole roster, not an animation fix — see CLAUDE.md "Boss difficulty is cadence, not card
+count," which makes this one of the most load-bearing numbers in the combat design) or a
+per-encounter timing table that doesn't exist yet ("the table" `docs/animation.md` calls
+for). Either is a design call for the **owner**, alongside §19, not something a diagnosis
+commit gets to decide — and `docs/animation.md` already ruled it "not worth a fix, and not
+the owner's report."
 
 **Cause 3 (never authored) is the other 32 of 35**, and none of it is a wiring gap — every
 static/no-release sprite's manifest row carries its own reason (backlog budget for Warden/
