@@ -64,6 +64,18 @@ section("the two tables agree");
   check("every authored skin's family matches its atlas row", disagree.length === 0,
     disagree.map((c) => `${c.id}: data says ${c.family}, atlas says ${ATLAS_WEAPON_SKINS[c.id]?.family ?? "(no row)"}`).join("; "));
 
+  // The same agreement walked from the OTHER table, and it is not redundant. The check
+  // above starts from `authored`, which is `family !== null` — so a drawn skin whose
+  // cosmetic quietly loses its family drops out of the set being checked and the check
+  // goes green over a smaller world. That is the "a filter over an empty table passes"
+  // failure this repo has shipped twice. `ATLAS_WEAPON_SKINS` is the fixed reference here:
+  // editing game data cannot shrink it.
+  const nullFamily = Object.entries(ATLAS_WEAPON_SKINS)
+    .map(([id, row]) => ({ id, row, c: COSMETICS.find((x) => x.id === id) }))
+    .filter(({ row, c }) => c !== undefined && c.family !== row.family);
+  check("every drawn skin's cosmetic declares the family its art is for", nullFamily.length === 0,
+    nullFamily.map(({ id, row, c }) => `${id}: art is a ${row.family}, cosmetic says ${c!.family ?? "no family (a palette)"}`).join("; "));
+
   const orphan = Object.keys(ATLAS_WEAPON_SKINS)
     .filter((id) => !COSMETICS.some((c) => c.id === id) && !NAMED_ITEMS.some((d) => d.id === id));
   check("every atlas skin row is a cosmetic or a named item", orphan.length === 0, orphan.join("; "));
