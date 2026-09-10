@@ -215,6 +215,143 @@ cancelled**. Without it, a corpse would freeze mid-wind-up in a pose for a hit t
 coming. Killing a boss through its wind-up is a real and rewarded play, so this case
 actually happens.
 
+## The strike: the release, and why it needs a memory
+
+A wind-up used to end with the sprite snapping straight back to idle. The boss coiled, the
+shape resolved, and nothing followed — no release, no follow-through, no moment where the
+body did the thing it had spent a second and a half promising. That is what the owner meant
+by "halfway" (see below), and the answer is a `strike` tag.
+
+**The wind-up and the strike have different jobs, so they have different clocks.** A wind-up
+is progress-keyed because it *is* the telegraph: its length carries information the player
+has to read, `DepthProfile.telegraph` squeezes it as you descend, and the pose landing
+exactly when the shape fills is the whole promise. A strike carries no information at all —
+the hit has already landed, the decision is already made, the player has already dashed or
+not. It is consequence, not warning. **So it must not track a clock**, and it runs for the
+fixed `seconds` on its own tag like any other free-running animation. That it *also* cannot
+get a clock on a client is a convenience, not the argument; the reason is that a strike is
+not a telegraph.
+
+**Priority is cast > strike > idle, always.** A boss hasted enough to begin its next wind-up
+before the release has finished abandons the release mid-flourish. Never the reverse, never
+a delay, never a queue: the readable thing must never be blocked by the decorative thing.
+Getting this backwards is the one mistake here that could actually hurt a fight.
+
+The tag chain is `[ability, "strike", "idle"]`, mirroring the cast chain for the same
+reason — one release per boss covers every ability it has, and a per-ability release starts
+resolving the day someone draws one.
+
+The fallback ladder deliberately stops one rung short of `idle` for a strike, and that is
+what makes this a superset rather than a change to shipped art: `resolveTag` falls through
+to `idle`, which is right for a wind-up but wrong for a release, because a boss with no
+strike art would otherwise play its own breathing as a flourish after every cast. Today
+that is every boss in the game. `npm run anim` asserts it directly.
+
+### `actionTimer` is not post-cast state
+
+**If you go looking for "when did this boss's ability land", `actionTimer` is what you will
+find, and it is wrong twice over.** It is written at `boss.ts:375` when an ability resolves
+and counted down, which is exactly the shape wanted — but:
+
+- **It has two writers.** `boss.ts:177` also sets it (to 0.35) as a retry gap when an
+  ability cannot be used. "It is counting" does not mean "something just landed"; its
+  meaning is supplied by whichever writer touched it last.
+- **It is not on the wire.** `net/sync.ts` rebuilds client boss state with `actionTimer: 0`
+  hardcoded. Anything reading it animates perfectly on the host and does nothing whatsoever
+  on a client — a failure that is invisible in every test anyone would run solo.
+
+The state that *is* shared is `ability`, `castTimer` and `castTotal`, which the snapshot
+already carries. So a client sees the same `ability` non-null → null edge the host does, and
+remembering that edge is all a release needs. `StrikeLatch` in `render/anim.ts` does exactly
+that, and adds no field to anything in `game/` — the seam rule forbids a field on an
+`Enemy`, not memory inside the clock.
+
+### Key the latch on the Enemy, never on its id and never on its `boss`
+
+Both wrong keys fail the same way: perfectly on the host, silently on a client or a second
+floor.
+
+- **Not the id.** `nextEnemyId` restarts at 1 on every floor and a descend builds a new
+  `Dungeon`, so an id-keyed map hands the next floor's boss the last one's release. A reset
+  hook would paper over it, and a reset hook is precisely the line that gets forgotten.
+- **Not `e.boss`.** A client rebuilds that object from scratch on every snapshot, so the
+  latch would evaporate twenty times a second on a client.
+- **The `Enemy` itself is stable on both ends** — `net/sync.ts` reuses it via `byId` — and a
+  `WeakMap` keyed on it cannot leak across floors by construction and needs no reset hook at
+  all. `Dungeon.netLerp` is the existing precedent for object-keying this kind of state.
+
+A release is also cancelled by death, for the reason `castFrame` already refuses to hold a
+corpse in a cast pose: killing a boss through its wind-up is a real and rewarded play, and
+the ability it was winding up never happened.
+
+### An instrument can be right and still answer the wrong question
+
+`npm run windup` reports the War Queen's `strike` as **the best-travelling animation in the
+repo** — the only tag whose travel peaks on its last frame, where all three wind-ups peak on
+the penultimate one and retreat. That is true. The tag is also **not a strike**: it is the
+boss un-coiling and settling back to rest.
+
+The metric measures whether a pose MOVES. It cannot tell "unwinds to rest" from "strikes and
+recovers", because both travel monotonically from the apex to somewhere else. Nothing about
+the instrument is broken — it is calibrated, it has a positive and a negative control, and
+three of its rules were falsified by injection. It is answering a question nobody asked.
+
+    strike f13 -> nearest wind-up frame is cast f12
+    strike f14 -> cast f10
+    strike f15 -> cast f5
+    strike f16, f17, f18 -> cast f5
+
+The nearest wind-up frame walks back DOWN the wind-up, and no release frame ever leaves the
+wind-up's own path by more than 17% of its span. That measurement had to be *asked for*; the
+travel number could not volunteer it.
+
+**It was caught by rendering a contact sheet and looking at it.** That is the transferable
+part. This document already carries a family of findings about instruments that report
+plausible numbers while blind — a saturating pixel count, a straightness metric that ranked a
+closed loop above a straight line, a check overruled by prose. This one is the sharpest
+version: green numbers, correct method, wrong question. **Look at the art.**
+
+The structural reason the art came out this way is worth keeping too, because it kills a
+whole family of attempts: **interpolation between two endpoints can only produce poses
+BETWEEN them.** A strike's defining pose is the extension PAST the apex, away from both ends,
+so no two-point generation can ever contain it however the prompt is worded or how many
+frames it is given. A real blow needs a third, authored pose: apex -> impact -> rest.
+
+### Headroom is cheap: padding the canvas does not move the character
+
+**Recorded because the opposite was asserted first, by me, and it nearly priced a design
+decision out of reach.** The claim was that giving a boss room to swing into means a taller
+frame, which means `worldScale` changes, which means every telegraph radius and camera frame
+tuned against it moves too. That is wrong twice.
+
+First, **nothing outside `render/` reads `worldScale` at all.** Every consumer is in
+`draw.ts`, `spriteart.ts` or `hub.ts`. Telegraph radii and arena sizing are world-unit
+numbers in `data/bosses.ts` and have no relationship to it.
+
+Second, the draw is anchored bottom-centre — `drawImage(canvas, -w/2, -h + h*feet, w, h)` —
+so padding the canvas at the TOP with `worldScale` left alone moves nothing. Measured on
+`boss.war-queen`, +24px of top padding, `worldScale` kept at 1.0185 and `feet` re-derived:
+
+    char_top     -106.6981  ->  -106.6981   (0.000000)
+    char_bottom     3.2999  ->     3.2999   (0.000000)
+    char_h        109.9980  ->   109.9980   (0.000000)
+    char_w         99.8130  ->    99.8130   (0.000000)
+
+Exactly unchanged. What grows is transparent headroom above the character — 21.1 world units
+of room for a weapon to swing into. `npm run anim`, `npm run chroma` and `npm run smoke` all
+pass on the padded strip.
+
+Two things you MUST do, and the second is a live trap:
+
+- **Re-derive `feet`** as `feet * h_old / h_new`. It is a fraction of `h`, so padding changes
+  what it means; left at 0.03 the character sinks 0.73 world units into the floor.
+- **Do NOT paste `strip.py`'s printed `worldScale`.** It computes `targetWorldHeight / h` on
+  the assumption that the character fills the canvas. On a padded canvas that assumption is
+  false and its number shrinks the character by 18%. Keep the existing `worldScale`.
+
+So "the blow needs to reach" costs a re-export, a manifest `h` and a re-derived `feet`. It is
+not the expensive change it was first described as.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without
@@ -304,17 +441,185 @@ third is the one that matters most:
    "did it get there" can be asked directly instead of inferred from distance-from-rest.
    `windup-check.py` takes an optional target and asserts exactly that.
 
-   > **The open-ended rule is deliberately conservative and WILL false-reject a good pinned
-   > run — do not "fix" it.** Its test is `argmax(distance from rest) == last frame`, with no
-   > tolerance, which is the only thing available when there is no target to measure against.
-   > On the shipped Ferryman wind-up it reports UNUSABLE, because an intermediate frame sits
-   > one point further from rest than the final one — while the final frame *is* the target,
-   > to 0.0%. Passing the target is what tells the tool it may ask the stronger question. A
-   > check that is too strict on a path we no longer use is the safe direction to be wrong in.
+   > **CORRECTED 2026-09-10.** What stood here claimed the open-ended rule "WILL false-reject
+   > a good pinned run", on the grounds that distance-to-target reaching zero is a *strictly
+   > stronger* claim than
+   > `argmax(distance from rest) == last frame`, so the latter could be waived whenever a
+   > target was supplied. It is not stronger. It is **orthogonal**, and the difference is the
+   > whole bug:
+   >
+   > - Distance-to-target measures whether the generator **reproduced the endpoint we handed
+   >   it**. It is a statement about the generator's fidelity.
+   > - Argmax-of-distance-from-rest measures whether the **sequence travels**. It is a
+   >   statement about the animation.
+   >
+   > A run can land on its pinned pose byte-for-byte while the path to it plateaus early and
+   > wobbles, and that is exactly what shipped. Read the pinned Ferryman's
+   > distance-from-target sequence, recorded in this document as a success:
+   > `43.0 40.7 35.7 29.8 25.6 19.5 2.1 10.8 0.0` — it effectively **arrives at frame 6**
+   > (2.1% away), backs off to 10.8%, then snaps to 0.0%. Frames 7 and 8 are a wobble around
+   > an endpoint already reached, not two more frames of a motion. The `2.1` is the tell.
+   >
+   > The "1-point gap is an intermediate frame wandering" reading is also wrong on its own
+   > terms: `npm run windup` measures the same signature on **all three** animated strips, on
+   > two independent metrics, always peaking on the penultimate frame. Systematic across
+   > three sprites and two metrics is not wandering.
+   >
+   > **None of which means the art is bad — and this correction is not a licence to go
+   > regenerate it.** The owner reviewed these wind-ups on 2026-09-10 and approved them
+   > ("the wind ups look really good"). The measurement is true; the verdict is the owner's
+   > and they do not hold it. `npm run windup` is a printed diagnostic for exactly this
+   > reason and must not become a gate — see its header.
+   >
+   > Both questions have to be asked, and neither substitutes for the other. Pinning a target
+   > buys control of the frame shown at the instant of the hit (consequence 2 below), which is
+   > real and worth having — it just never bought the travel.
 2. **The frame the player reads at the instant of the hit is fully under our control**,
    because it is a file we supply rather than something the generator invents.
 3. **With a pinned ending there are TWO source sprites, and step 1 of the method below
    applies to both.** It was written when there was only ever one.
+
+### The targets are not timid — the motion front-loads instead
+
+Measured 2026-09-10, before spending any generation budget, to split the problem: if the
+pinned target poses were themselves too close to rest, no amount of path control would help
+and the answer would be authoring a more committed apex. They are not. In `windup-check.py`'s
+own metric, against its own `MOVES_AT_LEAST = 0.25` bar for "this reads as a fidget":
+
+    pinned target vs the committed idle frame 0
+      ferryman   43.0%      war-queen  32.7%      tyrant  30.7%
+
+All three clear the bar comfortably. **And the shipped strips reach that amplitude** — each
+wind-up's last frame sits 43% / 33% / 32% from its own first frame, matching its target, and
+lands on the pinned pose to 0.0%. So neither the target nor the endpoint is the problem.
+
+What varies is the **distribution along the way**. The same strips, each frame's silhouette
+change from the wind-up's first frame:
+
+    ferryman   0% 11% 24% 34% 36% 40% 44% 43%
+    war-queen  0%  3% 13% 20% 21% 25% 33% 33%
+    tyrant     0%  6% 17% 28% 30% 31% 31% 32% 32%
+
+The Tyrant is at 28 of its eventual 32 points by frame 3 of 8 and spends five more frames
+gaining four.
+
+> This was briefly read as the explanation for the owner's "halfway done" report. **It was
+> not.** See "What 'halfway done' actually meant" below: the report was about a missing
+> strike animation, not about these frames, and the owner has since approved the wind-ups
+> as they stand. These numbers are a pacing diagnostic for *new* art, nothing more.
+
+### The generator arrives two frames early, reliably
+
+Distance to the pinned target, per frame, across every pinned run kept in `art/anim/raw/`:
+
+    ferryman        43.0 40.6 35.7 29.8 25.5 19.2  2.0 10.5 0.0
+    ferryman probe  43.0 40.7 35.7 29.8 25.6 19.5  2.1 10.8 0.0
+    ferryman seedB  43.0 43.4 38.2 31.1 23.0 12.0  3.5  8.8 0.0
+    war-queen       32.7 33.9 27.7 23.7 21.8 16.3  0.7  6.8 0.0
+    minotaur        39.9 38.4 28.7 21.9 17.4 13.0  0.0  6.3 0.1
+    tyrant seedB    31.6 27.7 18.6 10.0  5.6  5.1  3.5  3.8 0.1
+
+Four of the five follow one signature exactly: gradual for five steps, then a single step
+that closes 26–48% of the entire distance and lands **within 0–3.5% of the target at frame
+6 of 8**, then a retreat of 6–9 points at frame 7, then frame 8 — which is our own pinned
+file, so it is exact by construction. **The generated motion is over at frame 6.** Frames 7
+and 8 are a wobble and a supplied endpoint.
+
+Two consequences that are easy to get wrong:
+
+- **`drop=` treats the symptom.** Dropping the retreating frame is right, but the retreat is
+  not the disease — arriving early is. The Ferryman ships with its retreat dropped and still
+  peaks on its penultimate frame, which is why `npm run windup` is red on it.
+- **This does NOT argue for buying more frames.** The loiter-then-snap pattern is real, but
+  the snap lands *at* the target with frames to spare, so more frames extend the loiter or
+  the wobble, not the arc — unless the arrival point itself moves. The one natural experiment
+  available went the wrong way: the Tyrant has the most cast frames and stalls hardest, and
+  its own failure is a different one (it closes 82% of the distance by frame 4 and then
+  crawls). Do not buy frames on this theory without a run that tests it directly.
+
+> Do not blend these two tables. Distance-to-target and distance-from-rest are different
+> measurements, and per the section below, silhouette distance has no usable triangle
+> geometry — you cannot infer one from the other by arithmetic, and a number that looks
+> derived that way is not.
+
+### What "halfway done" actually meant — and the cost of assuming
+
+The owner's first report on the shipped wind-ups was that they looked "incomplete... the
+animation seems to be like halfway done". That was read as a complaint about the FRAMES, and
+a good deal of measurement followed from it: the travel gate, the timidity test, the plan to
+regenerate. All of the measurement is sound and is kept above. **The reading was wrong.**
+
+The clarification, 2026-09-10:
+
+> "the windups last frame stops right before the attack. it looks good, my comment was that
+> i was expecting an attack but it seems like that wasnt the intention here. **the wind ups
+> look really good.** thats what i mean by 'halfway'."
+
+"Halfway" meant the animation stops at the wind-up and **no attack follows** — a MISSING
+animation, not a broken one. The boss coils, the shape resolves, and the sprite snaps
+straight back to idle with no release and no follow-through. The wind-ups themselves are
+approved.
+
+Three things worth keeping from how this went wrong:
+
+- **A measurement can be correct and its verdict still not be yours to make.** The strips
+  genuinely do arrive early and retreat on the penultimate frame; two independent metrics and
+  a set of controls say so. None of that entitles anyone to call the art defective. The gate
+  built on it was demoted to a printed diagnostic the same day — see `tools/windup.ts`.
+- **A vivid phrase from a report is not a specification.** "Halfway done" was concrete enough
+  to feel like a diagnosis and vague enough to fit a theory that was already forming. The
+  cheap move — ask what it referred to — was skipped because the numbers seemed to confirm it.
+- **The generation budget was never spent**, because the plan was to check the seam and the
+  approach before generating. That is the only reason this cost measurement rather than art.
+
+The actual gap is a `strike` tag: the release the wind-up is promising.
+
+### The obvious instrument is wrong: straightness does not work on sprites
+
+Anyone measuring "does this animation go somewhere" reaches for **straightness** — net
+displacement over path length. It is the textbook number, it reads beautifully on paper, and
+on these sprites it is worthless. This is recorded because the failure generalises to
+anything anyone measures on sprite frames in future, not just to wind-ups.
+
+Calibrated against controls (2026-09-10), on the committed strips:
+
+    boss.exiled-tyrant, silhouette metric
+      its own IDLE LOOP        0.725     <- a closed cycle. Must score ~0. Scored highest.
+      real wind-up             0.554
+      synthetic pure translate 0.740
+    boss.ferryman, appearance metric
+      its own idle loop        0.306
+      real wind-up             0.297
+      synthetic pure translate 0.348     <- an unambiguous single motion, barely above a loop
+
+A boss's own idle loop — a cycle that by construction returns to where it started — outscored
+every real wind-up, while a synthetic pure translation, the least ambiguous "one motion"
+there is, scored barely above noise. An instrument that ranks a closed loop above a straight
+line is not measuring travel.
+
+**The reason: pixel difference is not a metric space with usable triangle geometry.** Once
+two frames stop overlapping much, their distance saturates at "both silhouettes added
+together" regardless of how they are arranged, so every path looks equally straight. Any
+statistic that reasons about distances *between interior frames* — straightness, apex ratios,
+triangle inequalities — inherits that and reports plausible nonsense.
+
+Two corollaries worth carrying:
+
+- **Only the ordering survives**, which is why `npm run windup` asserts a rank statistic
+  (`argmax == last`) and nothing else. A rank statistic also has no threshold in it, so it
+  cannot be quietly softened to let art through.
+- **An apex ratio inverts the ranking.** "Is the apex far from the midpoint" rewards exactly
+  the pathology it is meant to catch: a strip that plateaus early has its midpoint frame
+  already sitting on the final pose, which makes the ratio large. Measured that way the
+  Exiled Tyrant ranked best of the three; measured by how much travel is left for the second
+  half, it is the **worst** (0.95 of its travel done by halfway, against 0.62 for the War
+  Queen). The Tyrant is also the one with nine wind-up frames instead of eight — so **more
+  frames did not buy an arc**, and buying frames on that theory would have been wasted.
+
+Also dead, for a simpler reason: a **thresholded changed-pixel count** saturates outright. It
+read 99.9% of the Ferryman's opaque pixels "changed" by frame 10 and could not measure travel
+past it at all. `npm run windup` uses two non-count metrics instead — silhouette XOR for pose,
+alpha-weighted magnitude for appearance — and asserts on both.
 
 ### The target pose is usually already in the repo
 
