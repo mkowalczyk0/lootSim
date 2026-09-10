@@ -324,6 +324,35 @@ itself saying so — and the mark ids printed alongside the count, so a future g
 family is visible in the output rather than requiring someone to re-derive which five marks a
 six-mark fixture actually produced.
 
+## An eleventh instance, and it priced the others: `ps | grep <name>` is a filter over a set that may not contain the thing you're looking for
+
+Every session running a gate tonight checked `ps` for contention before starting one —
+this document's own seventh and ninth entries are about exactly that discipline. All of
+them grepped for the shape of work they expected: `smoke`, `npm test`, the branch they
+knew was running. One of d8's own `tsx` probes had been pinning a core for **2h13m**,
+started before their session was even `/clear`ed, running straight through the owner's
+live co-op session — and nobody's `ps | grep` ever surfaced it, because nobody was
+grepping for a stray probe. It wasn't hidden; `ps aux` had the line the entire time. It
+just never matched anyone's pattern.
+
+This is the seventh/ninth entries' question turned on the *checking method itself*: `ps |
+grep <name>` doesn't answer "is the machine busy," it answers "is the machine busy with
+something I already thought to name." A grep is a filter, and a filter over a set that
+doesn't contain the thing you're looking for returns clean — the same shape as the
+seventh entry's `kill` reporting success it can't see, except here the blind spot is in
+the *auditor*, not the thing being audited. Every prior "ps first" in this document and
+in tonight's coordination was true and incomplete in the same way: it answered for the
+named suspects and never asked about the machine as a whole.
+
+**How to apply:** sweep by resource, not by name — `ps aux | awk '$3 > 15'` (CPU%) surfaces
+anything hot regardless of whether you expected it to exist. Attribute a surprising PID to
+a worktree with `lsof -a -p <pid> -d cwd`, not `ps` — `ps`'s own command-line field had
+already caused two sessions to attribute the same PIDs to two different worktrees earlier
+tonight, because a relative path or a shared alias reads the same from either checkout.
+This is arguably the most expensive instance in the file to date, because it didn't just
+cost a wrong number: it cost a wrong premise. "The machine is idle" was stated to two
+sessions as an observed fact for over two hours while a core sat pinned the whole time.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
