@@ -11,6 +11,14 @@
  *  - Casting locks the boss in place, so the wind-up is also your window to hit it.
  *  - Phases add abilities rather than replacing them, so the floor gets busier.
  *  - The boss ignores knockback. You are not going to stagger it with a sword.
+ *  - **No telegraph ever hits another enemy** (`hitsEnemies` is always `false` on every
+ *    `addTelegraph` call below, direct hit and the lingering ground zone it leaves both).
+ *    This used to be `true` at most sites — deliberately, per a comment that argued "a
+ *    boss's own adds are not immune to the floor it sets on fire" — until an owner bug
+ *    report (Sept 2026) called a boss's AoE killing its own summons out as unwanted, on
+ *    playtest, and that reading wins over the earlier reasoning. `mark`'s add-chasing
+ *    telegraph is untouched by this: that mechanic is about the shape riding the add so
+ *    the player has to stand away from it, never about the add taking damage from it.
  *
  * Simulation only — it never draws anything. Everything the renderer needs shows up as
  * a telegraph, a ground zone or a run event.
@@ -226,7 +234,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
       shape: "circle", x: e.x, y: e.y, angle: 0,
       radius: ability.radius, inner: 0, arc: 0, width: 0,
       total: cast, damage, element, color: ELEMENT_COLORS[element],
-      hitsPlayer: true, hitsEnemies: true, linger: 0, followId: e.id,
+      hitsPlayer: true, hitsEnemies: false, linger: 0, followId: e.id,
       holes: discs,
     });
     return;
@@ -240,7 +248,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
       shape: "circle", x: victim.x, y: victim.y, angle: 0,
       radius: ability.radius, inner: 0, arc: 0, width: 0,
       total: cast, damage, element, color: ELEMENT_COLORS[element],
-      hitsPlayer: true, hitsEnemies: true, linger: ability.linger, followId: null,
+      hitsPlayer: true, hitsEnemies: false, linger: ability.linger, followId: null,
       chaseId: d.nearestHeroIndex(e.x, e.y),
       chaseSpeed: HUNT_SPEED,
     });
@@ -258,12 +266,15 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
         shape: "circle", x: hero.avatar.x, y: hero.avatar.y, angle: 0,
         radius: ability.radius, inner: 0, arc: 0, width: 0,
         total: cast, damage, element, color: ELEMENT_COLORS[element],
-        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: null,
+        hitsPlayer: true, hitsEnemies: false, linger: 0, followId: null,
         chaseId: i, chaseSpeed: MARK_CHASE_SPEED,
       });
     }
     // The adds get marked too, which is what makes this a mechanic solo: a summoned body
-    // becomes something to stand away from rather than only something to kill.
+    // becomes something to stand away from rather than only something to kill. That's
+    // entirely about the shape riding the add (`followId: other.id`, below) so the
+    // player has to give it a wide berth — `hitsEnemies: false` doesn't touch it: the
+    // add was never meant to take the hit itself, only to carry the danger zone around.
     const nearby = d.enemies
       .filter((other) => !other.boss && other.state !== "spawning")
       .sort((a, b) => dist(a.x, a.y, victim.x, victim.y) - dist(b.x, b.y, victim.x, victim.y))
@@ -273,7 +284,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
         shape: "circle", x: other.x, y: other.y, angle: 0,
         radius: ability.radius, inner: 0, arc: 0, width: 0,
         total: cast, damage, element, color: ELEMENT_COLORS[element],
-        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: other.id,
+        hitsPlayer: true, hitsEnemies: false, linger: 0, followId: other.id,
       });
     }
     return;
@@ -289,7 +300,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
       shape: "circle", x: b.aimX, y: b.aimY, angle: heading,
       radius: ability.radius, inner: 0, arc: 0, width: 0,
       total: cast, damage, element, color: ELEMENT_COLORS[element],
-      hitsPlayer: true, hitsEnemies: true, linger: ability.linger, followId: null,
+      hitsPlayer: true, hitsEnemies: false, linger: ability.linger, followId: null,
       driftVx: Math.cos(heading) * DRIFT_SPEED,
       driftVy: Math.sin(heading) * DRIFT_SPEED,
     });
@@ -309,7 +320,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
         radius: ability.radius, inner: ability.inner, arc: ability.arc, width: ability.width,
         total: cast, damage, element, color: ELEMENT_COLORS[element],
         hitsPlayer: true,
-        hitsEnemies: ability.shape === "line",
+        hitsEnemies: false,
         linger: ability.linger,
         followId: ability.onSelf ? e.id : null,
       });
@@ -334,7 +345,7 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
         angle: 0,
         radius: ability.radius, inner: 0, arc: 0, width: 0,
         total: cast, damage, element, color: ELEMENT_COLORS[element],
-        hitsPlayer: true, hitsEnemies: true,
+        hitsPlayer: true, hitsEnemies: false,
         linger: ability.linger, followId: null,
       });
     }
@@ -354,8 +365,12 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
     element,
     color: ELEMENT_COLORS[element],
     hitsPlayer: true,
-    // A boss's own adds are not immune to the floor it sets on fire.
-    hitsEnemies: ability.shape === "circle" || ability.shape === "line",
+    // Used to be `ability.shape === "circle" || ability.shape === "line"`, on the
+    // reasoning that "a boss's own adds are not immune to the floor it sets on fire."
+    // That was flavour, not a mechanic, and it lost to an owner bug report (Sept 2026):
+    // a boss killing its own summons with its own AoE reads as broken on playtest, not
+    // as a bit of world texture. See the file header.
+    hitsEnemies: false,
     linger: ability.linger,
     // Anything centered on the boss tracks it; anything aimed at the ground does not.
     followId: ability.onSelf ? e.id : null,
@@ -464,7 +479,7 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
         radius: ability.radius, inner: 0, arc: 0, width: 0,
         total: second + JUDGMENT_BEAT_GAP,
         damage, element, color: ELEMENT_COLORS[element],
-        hitsPlayer: true, hitsEnemies: true, linger: 0, followId: null,
+        hitsPlayer: true, hitsEnemies: false, linger: 0, followId: null,
       });
       d.emit({ kind: "shake", amount: 8 });
       break;
@@ -518,7 +533,7 @@ function dropMeteor(d: Dungeon, e: Enemy): void {
     damage: e.damage * ability.damage * b.buffDamageMult,
     element: b.spec.element,
     color: ELEMENT_COLORS[b.spec.element],
-    hitsPlayer: true, hitsEnemies: true,
+    hitsPlayer: true, hitsEnemies: false,
     linger: ability.linger,
     followId: null,
   });
