@@ -62,7 +62,13 @@ one session's `esbuild` can overwrite the file mid-read by another session's alr
 one under test. This one sits underneath all five of the others: any of them could have
 been measured on a raced bundle and nobody would have been able to tell from the output
 alone. Independently reproduced twice the same day, by two sessions who hadn't compared
-notes.
+notes — and then a third time, by the session who wrote up the rule against it. Having
+just authored the broadcast explaining the exact mechanism, they symlinked `node_modules`
+into the worktree they were about to certify a merge in, inside the same hour. That is
+this document's own thesis proving itself rather than being argued for: the rule was
+correctly stated, understood, and broadcast, and it still didn't survive contact with the
+next worktree, because "I know this rule" and "I am actively holding it while I run this
+specific command" are different states and only the second one protects anything.
 
 ## Two near-misses, because they show the catching mechanism itself needs scrutiny
 
@@ -121,6 +127,15 @@ mind and start just reading its output.** A check written this morning is exactl
 inheritable as one written eight months ago; the only thing that matters is whether you
 re-derived its coverage before trusting this particular number, or reused the trust from
 last time.
+
+This is not a hypothetical refinement. The session who broadcast item 6's rule —
+having just written the mechanism up, in detail, for everyone else on the project —
+symlinked `node_modules` into the next worktree they touched, within the hour, while
+about to certify the merge that same worktree was for. Knowing the rule and holding it
+while running a specific command are different states, and only the second one
+protects anything. If a session can lose its own hour-old rule by the next `git
+worktree add`, "read the docs first" was never going to be the fix; the fix has to be a
+question asked at the moment of use, not knowledge held in general.
 
 ## The question that catches the seventh
 
