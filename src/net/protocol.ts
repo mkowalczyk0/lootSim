@@ -100,9 +100,12 @@ export interface RunConfigWire {
   readonly players: number;
   readonly planetId?: string;
   readonly planetTier?: number;
-  /** A raid (UAT §15) — which one, and at what tier. Solo in v1, so nothing sends these
-   *  today; carried anyway so a raid that ever does cross the wire is rebuilt by its own
-   *  builder rather than reassembled into a raid-shaped run with no raid in it. */
+  /** A raid (UAT §15) — which one, and at what tier. **Live since raids went co-op
+   *  (2026-09-10)**: `configToWire` populates these and `configFromWire` rebuilds through
+   *  `raidConfig`, so a raid crosses the wire as a raid rather than being reassembled into
+   *  a raid-shaped run with no raid in it. This comment used to say nothing sent them,
+   *  which outlived the decision by exactly as long as it took someone to read it and
+   *  conclude the wire half still needed building. */
   readonly raidId?: string;
   readonly raidTier?: number;
 }

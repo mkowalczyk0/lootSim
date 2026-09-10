@@ -238,6 +238,21 @@ export class Party {
     } else if (hub.expedition) {
       hub.clearExpedition();
     }
+    // A raid dives from the Raid Portal, which — like the expedition portal above — only
+    // exists once something has spawned it. The station that spawns it is the War Table,
+    // and only the machine whose player walked up to it runs that interaction, so without
+    // this the host's deck grew a portal and no client's did: the party could see the plan
+    // and had nowhere to stand. `RunConfigWire` already carries `raidId`/`raidTier` and
+    // `configFromWire` rebuilds through `raidConfig`, so the plan arriving here is already
+    // the raid — the only thing missing was mirroring it into everybody's hub.
+    const raid = this.plan?.config.raid;
+    if (raid) {
+      if (hub.raid?.raidId !== raid.spec.id || hub.raid.tier !== raid.tier) {
+        hub.setRaid(raid.spec.id, raid.tier);
+      }
+    } else if (hub.raid) {
+      hub.clearRaid();
+    }
 
     hub.mates = this.members.map((m) => ({
       id: m.id,
