@@ -304,17 +304,89 @@ third is the one that matters most:
    "did it get there" can be asked directly instead of inferred from distance-from-rest.
    `windup-check.py` takes an optional target and asserts exactly that.
 
-   > **The open-ended rule is deliberately conservative and WILL false-reject a good pinned
-   > run — do not "fix" it.** Its test is `argmax(distance from rest) == last frame`, with no
-   > tolerance, which is the only thing available when there is no target to measure against.
-   > On the shipped Ferryman wind-up it reports UNUSABLE, because an intermediate frame sits
-   > one point further from rest than the final one — while the final frame *is* the target,
-   > to 0.0%. Passing the target is what tells the tool it may ask the stronger question. A
-   > check that is too strict on a path we no longer use is the safe direction to be wrong in.
+   > **CORRECTED 2026-09-10 — this passage used to say the open-ended rule "WILL false-reject
+   > a good pinned run", and that was the reasoning that let a bad wind-up ship.** What stood
+   > here claimed that distance-to-target reaching zero is a *strictly stronger* claim than
+   > `argmax(distance from rest) == last frame`, so the latter could be waived whenever a
+   > target was supplied. It is not stronger. It is **orthogonal**, and the difference is the
+   > whole bug:
+   >
+   > - Distance-to-target measures whether the generator **reproduced the endpoint we handed
+   >   it**. It is a statement about the generator's fidelity.
+   > - Argmax-of-distance-from-rest measures whether the **sequence travels**. It is a
+   >   statement about the animation.
+   >
+   > A run can land on its pinned pose byte-for-byte while the path to it plateaus early and
+   > wobbles, and that is exactly what shipped. The evidence was already in this document,
+   > read as success: the pinned Ferryman's distance-from-target sequence is
+   > `43.0 40.7 35.7 29.8 25.6 19.5 2.1 10.8 0.0` — it effectively **arrives at frame 6**
+   > (2.1% away), backs off to 10.8%, then snaps to 0.0%. Frames 7 and 8 are a wobble around
+   > an endpoint already reached, not two more frames of a motion. The `2.1` is the tell.
+   >
+   > The owner's report, independently and before any of this was re-measured: the wind-ups
+   > "look incomplete... the animation seems to be like halfway done". They are right, and
+   > landing on the target perfectly is what made everyone confident they were not.
+   >
+   > So the argmax rule was never a false-reject on this art — **it was a true reject that was
+   > explained away**, and the "1-point gap is an intermediate frame wandering" reading is
+   > wrong twice over: `npm run windup` now measures the same signature on **all three**
+   > animated strips, on two independent metrics, always peaking on the penultimate frame.
+   > Systematic across three sprites and two metrics is not wandering.
+   >
+   > Both questions have to be asked, and neither substitutes for the other. Pinning a target
+   > buys control of the frame shown at the instant of the hit (consequence 2 below), which is
+   > real and worth having — it just never bought the travel.
 2. **The frame the player reads at the instant of the hit is fully under our control**,
    because it is a file we supply rather than something the generator invents.
 3. **With a pinned ending there are TWO source sprites, and step 1 of the method below
    applies to both.** It was written when there was only ever one.
+
+### The obvious instrument is wrong: straightness does not work on sprites
+
+Anyone measuring "does this animation go somewhere" reaches for **straightness** — net
+displacement over path length. It is the textbook number, it reads beautifully on paper, and
+on these sprites it is worthless. This is recorded because the failure generalises to
+anything anyone measures on sprite frames in future, not just to wind-ups.
+
+Calibrated against controls (2026-09-10), on the committed strips:
+
+    boss.exiled-tyrant, silhouette metric
+      its own IDLE LOOP        0.725     <- a closed cycle. Must score ~0. Scored highest.
+      real wind-up             0.554
+      synthetic pure translate 0.740
+    boss.ferryman, appearance metric
+      its own idle loop        0.306
+      real wind-up             0.297
+      synthetic pure translate 0.348     <- an unambiguous single motion, barely above a loop
+
+A boss's own idle loop — a cycle that by construction returns to where it started — outscored
+every real wind-up, while a synthetic pure translation, the least ambiguous "one motion"
+there is, scored barely above noise. An instrument that ranks a closed loop above a straight
+line is not measuring travel.
+
+**The reason: pixel difference is not a metric space with usable triangle geometry.** Once
+two frames stop overlapping much, their distance saturates at "both silhouettes added
+together" regardless of how they are arranged, so every path looks equally straight. Any
+statistic that reasons about distances *between interior frames* — straightness, apex ratios,
+triangle inequalities — inherits that and reports plausible nonsense.
+
+Two corollaries worth carrying:
+
+- **Only the ordering survives**, which is why `npm run windup` asserts a rank statistic
+  (`argmax == last`) and nothing else. A rank statistic also has no threshold in it, so it
+  cannot be quietly softened to let art through.
+- **An apex ratio inverts the ranking.** "Is the apex far from the midpoint" rewards exactly
+  the pathology it is meant to catch: a strip that plateaus early has its midpoint frame
+  already sitting on the final pose, which makes the ratio large. Measured that way the
+  Exiled Tyrant ranked best of the three; measured by how much travel is left for the second
+  half, it is the **worst** (0.95 of its travel done by halfway, against 0.62 for the War
+  Queen). The Tyrant is also the one with nine wind-up frames instead of eight — so **more
+  frames did not buy an arc**, and buying frames on that theory would have been wasted.
+
+Also dead, for a simpler reason: a **thresholded changed-pixel count** saturates outright. It
+read 99.9% of the Ferryman's opaque pixels "changed" by frame 10 and could not measure travel
+past it at all. `npm run windup` uses two non-count metrics instead — silhouette XOR for pose,
+alpha-weighted magnitude for appearance — and asserts on both.
 
 ### The target pose is usually already in the repo
 

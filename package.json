@@ -24,6 +24,7 @@
     "world": "esbuild tools/world.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/world.mjs --log-level=error && node node_modules/.cache/world.mjs",
     "previews": "esbuild tools/previews.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/previews.mjs --log-level=error && node node_modules/.cache/previews.mjs",
     "anim": "esbuild tools/anim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/anim.mjs --log-level=error && node node_modules/.cache/anim.mjs",
+    "windup": "esbuild tools/windup.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/windup.mjs --log-level=error && node node_modules/.cache/windup.mjs",
     "relics": "esbuild tools/relics.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/relics.mjs --log-level=error && node node_modules/.cache/relics.mjs",
     "legends": "esbuild tools/legends.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/legends.mjs --log-level=error && node node_modules/.cache/legends.mjs",
     "monstersets": "esbuild tools/monstersets.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/monstersets.mjs --log-level=error && node node_modules/.cache/monstersets.mjs",

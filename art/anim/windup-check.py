@@ -52,9 +52,25 @@ sits 43%. But frame 8 *is* the pinned pose, to 0.0%; the 1-point gap is an inter
 wandering slightly further from rest, not the animation unwinding. An exact-argmax test has
 no tolerance at all, while the monotonic-build test next to it already needed 2 points of it.
 
-So this is not a relaxation to fit the art. Distance-to-target reaching **zero** is a
-strictly stronger claim than argmax-of-distance-from-rest, and it is asserted only when a
-target is supplied. Passing one of the three rejected free-form runs its own peak frame as a
+CORRECTED 2026-09-10. This used to read: "Distance-to-target reaching zero is a strictly
+stronger claim than argmax-of-distance-from-rest, and it is asserted only when a target is
+supplied." **That is wrong, and it is the reasoning that let a plateaued wind-up ship.**
+The two are orthogonal, not ordered. Distance-to-target says the generator reproduced the
+endpoint we handed it; argmax-of-distance-from-rest says the sequence travels. A run can do
+the first perfectly while the second fails — which is what happened. Read the pinned run
+above again: it reaches 2.1% from target at frame 6, backs off to 10.8%, then snaps to 0.0%.
+It ARRIVES AT FRAME 6. Frames 7 and 8 are a wobble around an endpoint already reached.
+
+The owner's report on the shipped art, independent of any of this: the wind-ups "look
+incomplete... the animation seems to be like halfway done". `npm run windup` now measures
+the same peaks-on-the-penultimate-frame signature on all three animated strips, on two
+independent metrics. Systematic across three sprites and two metrics is not noise, so the
+UNUSABLE verdict below was a TRUE reject that got explained away.
+
+Ask both questions. Landing on the target is still worth having — it buys control of the
+frame the player reads at the instant of the hit — it just never bought the travel. See
+docs/animation.md, "The obvious instrument is wrong", for why any statistic built on
+distances BETWEEN interior frames (apex ratios included) reports plausible nonsense here. Passing one of the three rejected free-form runs its own peak frame as a
 pretend target still fails, by a wide margin — their last frames sit 19.5%, 12.0% and 10.4%
 away from their own peaks, against a 1% bar.
 
