@@ -11,14 +11,13 @@ import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entitie
 import type { Level, Trap } from "../game/level";
 import { Fx } from "./fx";
 import { atlasCanvas, atlasTileset } from "./atlas/index";
-import { ATLAS, SPRITE_OVERRIDES } from "./atlas/manifest";
+import { ATLAS } from "./atlas/manifest";
 import { castFrame, frameAt, frameAtProgress } from "./anim";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
-  heroKey, heroSprite, itemSprite, monsterSprite, silhouetteAt, silhouetteCanvas,
-  sprite, spriteAt, spriteFeet,
-  spriteWorldScale,
-  tinted, tintedAt, tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale,
+  heroKey, heroSprite, itemSprite, resolveSprite, silhouetteCanvas,
+  spriteFrame, spriteFrameSilhouette, spriteFrameTinted,
+  tintedCanvas, weaponGlow, weaponGrip, weaponSprite, weaponWorldScale,
   type SpriteName,
   augmentSprite,
   relicSprite,
@@ -80,6 +79,18 @@ export function drawSprite(
   ctx.drawImage(canvas, -w / 2, -h + h * feet, w, h);
   ctx.restore();
 }
+
+/**
+ * A resource node's size, preserved across the procedural→atlas move.
+ *
+ * The numbers this replaces were `1.4` live and `1.1` mined, hardcoded at the draw site.
+ * `1.4` was the *procedural* constant for a pickup-sized thing and props rode `1.25`, so
+ * the pair meant "a node is drawn a touch larger than scenery of the same art" — which is
+ * what `NODE_EMPHASIS` says instead, in a form that survives the art growing.
+ */
+const NODE_PROCEDURAL_SCALE = 1.4;
+const NODE_EMPHASIS = 1.4 / 1.25;
+const NODE_MINED_SHRINK = 1.1 / 1.4;
 
 const PROP_SPRITES: Record<PropKind, SpriteName> = {
   torch: "torch", bones: "bones", mushroom: "mushroom", crystal: "crystal", rock: "rock",
@@ -269,15 +280,17 @@ export class WorldRenderer {
       }
 
       const name = PROP_SPRITES[p.kind];
+      // One decision. A pipeline prop carries its own world scale and feet; a procedural
+      // one rides the old fixed 1.25 — and `art` is what says which, for the picture and
+      // the scale together rather than one each from two calls.
+      const art = resolveSprite(name);
       // Crystals and rubble take the biome's colors; the rest are authored as-is.
       const canvas =
-        p.kind === "crystal" ? tinted(name, level.biome.accent, 0.5)
-        : p.kind === "rock" ? tinted(name, level.biome.wall, 0.65)
-        : sprite(name);
-      // A pipeline prop carries its own world scale and feet; a procedural one rides the
-      // old fixed 1.25.
-      const scale = (spriteWorldScale(name) ?? 1.25) * p.scale;
-      const feet = spriteFeet(name) ?? 0.22;
+        p.kind === "crystal" ? spriteFrameTinted(art, 0, level.biome.accent, 0.5)
+        : p.kind === "rock" ? spriteFrameTinted(art, 0, level.biome.wall, 0.65)
+        : spriteFrame(art, 0);
+      const scale = (art.worldScale ?? 1.25) * p.scale;
+      const feet = art.feet ?? 0.22;
       ctx.save();
       ctx.globalAlpha = 0.9;
       if (p.kind === "torch" || p.kind === "brazier") {
@@ -299,6 +312,14 @@ export class WorldRenderer {
     const planet = d.config.planet?.spec;
     if (!planet) return;
     const color = ELEMENT_COLORS[planet.element];
+    // The picture and the scale it is measured in, from one decision. This site used to
+    // pair `tinted("crystal")` — which returns the atlas PNG once it has loaded — with a
+    // hardcoded 1.4, the *procedural* grid's constant, so a planet's nodes have been
+    // drawing at about three times their intended footprint for as long as
+    // `prop.crystal.png` has been committed.
+    const crystal = resolveSprite("crystal");
+    const live = crystal.worldScale === null
+      ? NODE_PROCEDURAL_SCALE : crystal.worldScale * NODE_EMPHASIS;
     for (const node of d.level.resourceNodes) {
       ctx.save();
       if (!node.depleted) {
@@ -310,10 +331,12 @@ export class WorldRenderer {
         ctx.arc(node.x, node.y, node.radius + 6 + Math.sin(d.elapsed * 3) * 2, 0, TAU);
         ctx.stroke();
         ctx.globalAlpha = 0.95;
-        drawSprite(ctx, tinted("crystal", color, 0.7), node.x, node.y, false, 1.4);
+        drawSprite(ctx, spriteFrameTinted(crystal, 0, color, 0.7),
+          node.x, node.y, false, live, crystal.feet ?? undefined);
       } else {
         ctx.globalAlpha = 0.45;
-        drawSprite(ctx, tinted("crystal", "#6b7480", 0.7), node.x, node.y, false, 1.1);
+        drawSprite(ctx, spriteFrameTinted(crystal, 0, "#6b7480", 0.7),
+          node.x, node.y, false, live * NODE_MINED_SHRINK, crystal.feet ?? undefined);
       }
       ctx.restore();
     }
@@ -663,9 +686,12 @@ export class WorldRenderer {
     // are excluded on purpose: a boss is an authored encounter with its own sprite, not an
     // archetype wearing a local face. Everything about the monster except the picture —
     // kind, stats, behaviour, hitbox — is untouched by this.
-    const art = monsterSprite(name, e.boss ? undefined : monsterSet);
+    const art = resolveSprite(name, e.boss ? undefined : monsterSet);
     // A pipeline sprite carries its own world scale and feet offset; a procedural one
-    // rides the global constant (or the boss's own tuned `spriteScale`).
+    // rides the global constant (or the boss's own tuned `spriteScale`). Both halves come
+    // off `art`: this site used to take the scale from one call and the picture from
+    // another, which drew a ~26px procedural boss at a scale tuned for 75px art the
+    // moment a PNG failed to load.
     const atlasScale = art.worldScale;
     // An elite is a mini-boss — draw its body noticeably larger so it reads as a threat
     // before the health bar or the aura do (UAT §4: "immediately recognizable").
@@ -689,7 +715,7 @@ export class WorldRenderer {
       ctx.arc(x, y, e.radius * (2.4 - t * 1.4), 0, TAU);
       ctx.stroke();
       ctx.globalAlpha = t * 0.6;
-      drawSprite(ctx, sprite(name), x, y, false, scale, feet);
+      drawSprite(ctx, spriteFrame(art, 0), x, y, false, scale, feet);
       ctx.restore();
       return;
     }
@@ -760,8 +786,10 @@ export class WorldRenderer {
     // depth; everything else free-runs, phase-shifted by entity id so a pack of the same
     // monster doesn't animate in lockstep. A sprite with no animation resolves to frame 0,
     // which is the picture it has always drawn.
-    const spriteId = SPRITE_OVERRIDES[name];
-    const animMeta = spriteId ? ATLAS[spriteId] : undefined;
+    // `art.meta`, not a second `ATLAS` lookup: the animation table has to come off the
+    // same rung as the picture, or a sprite drawing its procedural bake would still be
+    // asked for frame 3 of a strip it isn't using.
+    const animMeta = art.meta;
     const cast = castFrame(e.boss, e.health > 0);
     const frame = cast
       ? frameAtProgress(animMeta, cast.tag, cast.progress).index
@@ -774,21 +802,21 @@ export class WorldRenderer {
       // A boss is being hit constantly. A full white silhouette would strobe for the
       // entire fight and hide the thing you're supposed to be reading, so it only
       // brightens.
-      drawSprite(ctx, tintedAt(name, frame, "#ffffff", 0.4), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameTinted(art, frame, "#ffffff", 0.4), x, y, flip, scale, feet);
     } else if (e.hitFlash > 0) {
-      drawSprite(ctx, silhouetteAt(name, frame), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameSilhouette(art, frame), x, y, flip, scale, feet);
     } else if (casting) {
-      drawSprite(ctx, tintedAt(name, frame, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameTinted(art, frame, ELEMENT_COLORS[e.boss!.spec.element], 0.55), x, y, flip, scale, feet);
     } else if (e.windup > 0) {
       // Flash red while winding up — this is the player's cue to dash.
-      drawSprite(ctx, silhouetteAt(name, frame, "#ff8a5c"), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameSilhouette(art, frame, "#ff8a5c"), x, y, flip, scale, feet);
     } else if (e.elite) {
-      drawSprite(ctx, tintedAt(name, frame, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameTinted(art, frame, RARITY_COLORS[e.elite], 0.35), x, y, flip, scale, feet);
     } else if (e.element !== "physical") {
       // Infused monsters wear their element, so you can tell what is about to hit you.
-      drawSprite(ctx, tintedAt(name, frame, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrameTinted(art, frame, ELEMENT_COLORS[e.element], 0.28), x, y, flip, scale, feet);
     } else {
-      drawSprite(ctx, spriteAt(name, frame), x, y, flip, scale, feet);
+      drawSprite(ctx, spriteFrame(art, frame), x, y, flip, scale, feet);
     }
 
     // The boss's own health lives on the frame at the top of the screen, and so does an
@@ -1198,9 +1226,12 @@ function drawTrap(ctx: CanvasRenderingContext2D, t: Trap, time: number): void {
  * scale so a 69px atlas sword doesn't land three times its predecessor's size.
  */
 function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
-  const named = (name: SpriteName): { canvas: HTMLCanvasElement; scale: number } => ({
-    canvas: sprite(name), scale: spriteWorldScale(name) ?? 1.4,
-  });
+  // One decision per icon: a procedural bake rides the old fixed 1.4, an atlas sprite
+  // rides its own row, and the picture always matches whichever it is.
+  const named = (name: SpriteName): { canvas: HTMLCanvasElement; scale: number } => {
+    const art = resolveSprite(name);
+    return { canvas: spriteFrame(art, 0), scale: art.worldScale ?? 1.4 };
+  };
   switch (p.kind) {
     case "coin": return named("coin");
     case "key": return named("key");
@@ -1208,9 +1239,14 @@ function pickupSprite(p: Pickup): { canvas: HTMLCanvasElement; scale: number } {
     case "gem": return named("gem");
     // No dedicated art for materials — a gem tinted by the element it's made of reads
     // clearly enough at a glance, and it keeps every planet from needing its own icon.
-    case "material": return p.element
-      ? { canvas: tinted("gem", ELEMENT_COLORS[p.element], 0.75), scale: spriteWorldScale("gem") ?? 1.4 }
-      : named("gem");
+    case "material": {
+      if (!p.element) return named("gem");
+      const art = resolveSprite("gem");
+      return {
+        canvas: spriteFrameTinted(art, 0, ELEMENT_COLORS[p.element], 0.75),
+        scale: art.worldScale ?? 1.4,
+      };
+    }
     case "relic": {
       // Same rule as items below: one decision (`chooseRelicArt`), one executor, so the
       // relic on the floor is the picture in the Hero slot and on the banner.

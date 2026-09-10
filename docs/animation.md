@@ -46,7 +46,7 @@ already the exhaustive table to key off.
 
 ## Every rung is a fallback, never an error
 
-The same idiom `monsterSprite` already uses for `MONSTER_SETS`. The ladder takes a **chain**
+The same idiom `chooseSpriteArt` already uses for `MONSTER_SETS`. The ladder takes a **chain**
 of names, most specific first, then `idle`, then frame 0 — for a boss cast that chain is
 `[<BossAbilityId>, "cast", "idle"]`.
 
@@ -276,6 +276,75 @@ enlarge the accent on the source sprite first (more pixels, not just brighter), 
 animation with a target frame, or to leave the boss static. Leaving it static is a hold, not
 a regression — an un-animated boss is exactly what ships today, and the `chroma` gate
 catching this is the gate doing its job rather than an obstacle to route around.
+
+## The first animated strips did not load at all, and the gate stayed green
+
+Worth reading before adding a frame to anything, because both halves of this will come
+back the next time a PNG grows.
+
+**What the owner saw:** raid bosses "turned tiny and super bad", and "the animations don't
+work" — a small, low-detail Ferryman with a full-size boss shadow under it.
+
+### Half one: the loader measured one frame against a whole strip
+
+`atlas/index.ts` rejects a decoded image whose size disagrees with its manifest row, which
+is right — a silent size drift puts every hitbox in that sprite's world footprint slightly
+wrong. But it compared the file against `spr.w`, and **for an animated row `w` is one frame
+by design**. So `boss.ferryman` (375x107 against a row reading 75) and both other strips
+were rejected on **every boot, permanently**. This was never a slow-load race: there is no
+size ceiling and nothing was merely late. Preloading harder would have fixed nothing.
+
+`npm run anim` measured the same files against `stripWidth` and passed. Neither side was
+wrong about its own number and **nothing compared the two** — the blind-instrument rule in
+CLAUDE.md from the other direction: the instrument ran, and it was measuring a different
+thing from the one that breaks. The fix is `fitsManifest` in `render/anim.ts`: one exported
+test, called by the loader on the decoded image and by the gate on the committed file.
+Keep it a call, not an inlined comparison, or the two drift apart again.
+
+### Half two: a scale and a canvas were two decisions
+
+The load failure should have shown the Ferryman's old sprite at its old size. Instead it
+showed a third-size one, because `spriteAt` fell back to the procedural grid when a PNG
+was not loaded while `spriteWorldScale` read `ATLAS[id].worldScale` with **no load check at
+all** — and `drawEnemy` took its canvas from one and its scale from the other. A ~26px
+procedural boss drawn at a scale tuned for 75px art is about a third of the right size, in
+the old low-detail style, with no frames. All three symptoms, one cause.
+
+That hazard predates animation and was invisible only because every boss PNG was ~4.6 KB
+and always arrived. **Fixing the loader would have hidden it again rather than removed
+it.** So `render/spriteart.ts` now owns the ladder as a pure function and returns
+`atlasId`, `meta`, `worldScale` and `feet` from one branch, with `worldScale` non-null
+*exactly* when `atlasId` is. `resolveSprite` in `sprites.ts` adds the canvas. There is no
+longer a scale getter to pair with the wrong picture, and `npm run anim` asserts the
+biconditional against a hostile load predicate ("nothing loaded" — the state the browser
+was actually in, and one no headless run reaches by accident).
+
+Two live bugs of that same family fell out while removing the API: a planet's resource
+nodes were drawing `tinted("crystal")` — the atlas PNG once committed — at a hardcoded
+`1.4`, the *procedural* grid's constant, so they have been roughly 3x oversized for as long
+as `prop.crystal.png` has existed; and `itemIcon` paired an atlas canvas with `?? 1.4` the
+same way. Both now take both halves from one `resolveSprite`. A third: the tint cache was keyed
+`<name>#<frame>`, which does not say which rung the picture came from — so a monster tinted
+during the pre-load window cached its *procedural* tint and kept serving it after the PNG
+landed. `artKey` now keys on the resolved `atlasId`, so the two rungs cannot share an entry.
+
+### What a frame actually costs
+
+Measured, since the roadmap needs a budget rather than a guess:
+
+| Sprite | Static | 5-frame strip | Per frame |
+| --- | --- | --- | --- |
+| `boss.ferryman` | 4,606 B | 39,389 B | 7,878 B |
+| `boss.war-queen` | 5,637 B | 42,608 B | 8,521 B |
+| `boss.exiled-tyrant` | 5,576 B | 37,253 B | 7,450 B |
+
+A frame costs about **1.5-1.7x what the same sprite costs standing alone** — PNG's row
+filters predict well down a single pose and poorly across a frame boundary, so the growth
+is linear in frames with a constant penalty, not a cliff. **Nothing was "pushed over" a
+limit**; the whole atlas is 0.4 MB across 136 files today. The only real ceiling is the
+browser's max canvas dimension (~16,384 px on the tightest engine), which at a 98 px frame
+is ~167 frames in one strip and at the hero's 39 px is ~420. An 8-tag hero is nowhere near
+any of it. Plan frames against legibility and generation cost, not bytes.
 
 ## Known open ends
 

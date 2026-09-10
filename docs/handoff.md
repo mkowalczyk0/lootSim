@@ -110,7 +110,9 @@ true as data:
   as you descend, which is backwards from where it is most needed.
 - **`sprite()` returns FRAME 0 of a strip, asserted pixel-identical to what shipped before.**
   Every un-migrated call site keeps drawing what it drew; a missed call site is a still
-  picture, not a bug. `spriteAt`/`tintedAt`/`silhouetteAt` are the opt-in.
+  picture, not a bug. `resolveSprite(name, set)` plus `spriteFrame`/`spriteFrameTinted`/
+  `spriteFrameSilhouette` are the opt-in — and the only way to get a world scale, because
+  a scale and a canvas are one decision (see `render/spriteart.ts`).
 - Three of four raid bosses idle: Ferryman, War Queen, Exiled Tyrant.
 
 ### Two new art gates

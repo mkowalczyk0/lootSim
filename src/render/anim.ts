@@ -31,13 +31,13 @@
  *
  * ## Every rung of the ladder is a fallback, never an error
  *
- * The same idiom `monsterSprite` already uses for `MONSTER_SETS`: a sprite with no `anim`,
+ * The same idiom `chooseSpriteArt` already uses for `MONSTER_SETS`: a sprite with no `anim`,
  * an unknown tag, or a tag naming frames the strip doesn't have all resolve to a valid
  * frame rather than throwing. Missing art is never a broken screen — the worst case is
  * the static single frame the game drew before any of this existed.
  */
 
-import type { AnimTag, AtlasSprite } from "./atlas/manifest";
+import type { AnimTag, AtlasAnim, AtlasSprite } from "./atlas/manifest";
 
 /** What a sprite with no animation table draws, and the end of every fallback ladder. */
 export const STATIC_FRAME = 0;
@@ -158,9 +158,37 @@ export function frameRect(
   return { sx: frame.index * w, sy: 0, sw: w, sh: h };
 }
 
-/** The strip PNG's width for an animated row, or the plain `w` for a static one. */
-export function stripWidth(meta: AtlasSprite): number {
+/**
+ * The strip PNG's width for an animated row, or the plain `w` for a static one — i.e. the
+ * width the file on disk actually is, which is what `atlas/index.ts` measures a decoded
+ * image against and what `npm run anim` measures the committed PNG against.
+ *
+ * Structural rather than `AtlasSprite`, so the loader can put every manifest row it loads
+ * through one function: an `AtlasScene` has no `worldScale`, and a row that can never
+ * carry an `anim` table is simply one whose strip is one frame wide.
+ */
+export function stripWidth(meta: { readonly w: number; readonly anim?: AtlasAnim }): number {
   return meta.w * (meta.anim?.cols ?? 1);
+}
+
+/**
+ * **The one test of whether a decoded PNG is the file its manifest row describes.**
+ *
+ * `atlas/index.ts` calls this at boot on the decoded image and rejects the sprite if it
+ * says no; `npm run anim` calls it on the committed file. That is the point — they must
+ * be the *same* test, not two that agree today.
+ *
+ * They didn't. The loader compared the file against `spr.w`, which for an animated row is
+ * one frame, so every strip was rejected — three raid bosses fell back to their ~26px
+ * procedural bakes on every boot — while the gate compared the same file against
+ * `stripWidth` and passed. Neither side was wrong about its own number and nothing
+ * compared them, which is the blind-instrument rule in CLAUDE.md wearing a different hat.
+ */
+export function fitsManifest(
+  meta: { readonly w: number; readonly h: number; readonly anim?: AtlasAnim },
+  width: number, height: number,
+): boolean {
+  return width === stripWidth(meta) && height === meta.h;
 }
 
 // --- reading a boss wind-up ------------------------------------------------

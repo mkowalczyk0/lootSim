@@ -79,7 +79,7 @@ const UNPAINTED_KINDS = new Set<HubStationKind>(["warTable", "altar"]);
 
 /**
  * A committed prop, or null. Tests `atlasCanvas` rather than manifest membership, the same
- * rule `monsterSprite` follows: a manifest row is a statement of intent and a loaded canvas
+ * rule `chooseSpriteArt` follows: a manifest row is a statement of intent and a loaded canvas
  * is a fact.
  */
 function deckArt(id: string | null): HTMLCanvasElement | null {

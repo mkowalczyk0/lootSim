@@ -6,7 +6,8 @@
  * and serves them straight in dev, so nothing here changes between the two.
  */
 
-import { ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, SCENES, TILESETS } from "./manifest";
+import { ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, SCENES, TILESETS, type AtlasAnim } from "./manifest";
+import { fitsManifest, stripWidth } from "../anim";
 
 const pngUrls = import.meta.glob("./**/*.png", {
   eager: true,
@@ -54,7 +55,19 @@ function toCanvas(img: HTMLImageElement): HTMLCanvasElement {
   return canvas;
 }
 
-function loadImage(id: string, w: number, h: number): Promise<HTMLCanvasElement> {
+/**
+ * Decodes one manifest row's PNG, refusing anything that isn't the size the row describes.
+ *
+ * The size test is `fitsManifest` in `render/anim.ts` and **must stay** that call rather
+ * than an inline comparison: the row's `w` is ONE FRAME for an animated sprite, so a
+ * hand-rolled `naturalWidth !== w` here rejects every strip — which is exactly what it did,
+ * silently dropping three raid bosses to their procedural stand-ins while `npm run anim`,
+ * which measured the same files against the real contract, stayed green.
+ */
+function loadImage(
+  meta: { readonly id: string; readonly w: number; readonly h: number; readonly anim?: AtlasAnim },
+): Promise<HTMLCanvasElement> {
+  const id = meta.id;
   return new Promise((resolve, reject) => {
     const url = urlById[id];
     if (!url) {
@@ -63,9 +76,10 @@ function loadImage(id: string, w: number, h: number): Promise<HTMLCanvasElement>
     }
     const img = new Image();
     img.onload = () => {
-      if (img.naturalWidth !== w || img.naturalHeight !== h) {
+      if (!fitsManifest(meta, img.naturalWidth, img.naturalHeight)) {
         reject(new Error(
-          `atlas: "${id}" is ${img.naturalWidth}x${img.naturalHeight}, manifest says ${w}x${h}`,
+          `atlas: "${id}" is ${img.naturalWidth}x${img.naturalHeight}, `
+          + `manifest says ${stripWidth(meta)}x${meta.h}`,
         ));
         return;
       }
@@ -88,7 +102,7 @@ export async function loadAtlas(): Promise<void> {
   ];
   await Promise.all([
     ...sprites.map(async (spr) => {
-      canvases.set(spr.id, await loadImage(spr.id, spr.w, spr.h));
+      canvases.set(spr.id, await loadImage(spr));
     }),
     // Tilesets degrade rather than throw: a biome that names one we can't load
     // (PNG or `<id>.json` missing, or the sheet the wrong size) just falls back
@@ -98,7 +112,7 @@ export async function loadAtlas(): Promise<void> {
         const layout = layoutById[ts.id];
         if (!layout) throw new Error(`no <id>.json — run npm run tileset`);
         if (layout.boxes.length !== 16) throw new Error(`${layout.boxes.length} tiles, expected 16`);
-        const canvas = await loadImage(ts.id, ts.w, ts.h);
+        const canvas = await loadImage(ts);
         tilesets.set(ts.id, { canvas, tile: layout.tile, boxes: layout.boxes });
       } catch (err) {
         console.warn(`atlas: tileset "${ts.id}" not loaded — ${(err as Error).message}`);
