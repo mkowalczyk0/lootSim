@@ -1186,3 +1186,44 @@ decision rather than a tuning pass.
 Whoever takes this: the fix is a handful of lines in one function. The *work* is the
 write-up and the owner's call, not the edit. Do not let it grow into a `recommendedLevel`
 overhaul — the `0.9 * d * danger^0.35` shape is not under review.
+
+## 26. Nothing checks that the `npm test` chain still runs everything
+
+`npm test` is a single `&&` chain of 34 `npm run` steps in `package.json`. **No check in
+this repo reads it.** Delete `npm run relics` from the middle of that line and the gate
+goes green in less time, having certified a tree whose relic rules were never run.
+
+This surfaced while landing the per-invocation bundle runner (`tools/run-tool.mjs`),
+which rewrote 45 of the 52 script bodies. The reviewing session asked for proof that the
+rewritten chain still ran everything, and the honest answer was that the repo could not
+supply one: the chain was 33 steps before and 34 after, with `dropped = none` and
+`added = harness`, but that was measured **by hand, once**, and nothing keeps it true.
+
+**`tools/check-scripts.mjs` looks like it already covers this and does not.** It prints
+`walked 53 npm scripts; 44 bundle via tools/run-tool.mjs` — a count of *defined scripts*.
+It never reads `scripts.test`. Both numbers are correct, neither is the chain length, and
+a plausible number from an instrument measuring something adjacent is precisely the shape
+of the four blind checks in CLAUDE.md's own rule. Do not extend that tool by assuming its
+existing print answers this; it answers the "does anything still bundle to a shared fixed
+path" question and should keep doing only that.
+
+### What the check has to be
+
+The trap is that the obvious version measures nothing. Asserting the chain contains what
+`package.json` defines is a filter over the thing under test — the bound comes from the
+subject, exactly the failure this repo has already shipped. Nor is a hardcoded list of 34
+names right: it goes stale on the next tool added and gets "fixed" by pasting in whatever
+the chain currently says, which is the same circularity with an extra step.
+
+The version with power compares against a **fixed reference the chain cannot move**:
+every `tools/*.ts` that is an acceptance tool must be reachable from `npm test`, with an
+explicit, commented allowlist for the ones deliberately excluded (`builds`, the one-off
+measurement harnesses, `relay`). Then adding a tool and forgetting to wire it in goes red,
+and so does deleting a step. And it must **print the count it walked**, so a scope that
+has silently emptied is visible rather than inferred.
+
+### Not urgent, and deliberately not done in the branch that found it
+
+The runner branch is a harness fix under a merge freeze; growing it into a second new
+check is how a narrow fix becomes an unreviewable one. Whoever picks this up: it is one
+new tool, one line in the chain, and the allowlist is the only judgement call in it.

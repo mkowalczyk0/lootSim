@@ -38,6 +38,27 @@
  *
  * Usage: `node tools/run-tool.mjs <name>` — bundles `tools/<name>.ts`. Extra arguments
  * are forwarded to the tool.
+ *
+ * ## The name is the SOURCE filename, not the old cache basename
+ *
+ * The lines this replaced carried two names, and for four scripts they differed:
+ *
+ * ```
+ * "pathing": "esbuild tools/monster-pathing.ts ... --outfile=node_modules/.cache/pathing.mjs && node node_modules/.cache/pathing.mjs"
+ * ```
+ *
+ * — source `monster-pathing`, cache basename `pathing`. Same for `bossarena`
+ * (`boss-arena-contrast`), `mpjitter` (`mp-jitter`) and `shop` (`rotating-shop`). The
+ * runner takes the **source** name, so those four read as retargeted in a diff while
+ * executing exactly the same file. Anyone converting a script by copying the name out of
+ * the `--outfile` — the last name on the line, and the one that matches the npm script
+ * key — gets it wrong, and `pathing` and `shop` are both in the `npm test` chain.
+ *
+ * **This fails loudly, and that is deliberate**: an unknown name exits 2 at the
+ * `existsSync(entry)` check below with `no such tool — .../tools/pathing.ts`, before
+ * anything is bundled or run. Do not "harden" that into a fallback, a fuzzy match, or a
+ * silent skip. A gate step that quietly runs nothing is the exact failure this whole file
+ * exists to remove, and a hard stop on a typo'd name is the cheap version of it.
  */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
