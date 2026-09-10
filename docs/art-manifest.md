@@ -309,14 +309,22 @@ remaining 8 were completed after that doc was written; this manifest supersedes 
 inventory purposes (the doc's pipeline *recipe* in its §2 is still the right process to
 follow for §2.2's raid items).
 
-One open question carried over from that doc, still unresolved: **named weapons render
-their icon correctly but swing in combat as an ordinary rarity-tinted family weapon** —
+Carried over from that doc, and **no longer an open question**: named weapons render
+their icon correctly but swing in combat as an ordinary rarity-tinted family weapon —
 `Threshold Brand` looks right in your stash and wrong in your hand mid-fight. Fixing
 this means a full greyscale +x weapon-skin sprite per named weapon (a materially bigger
-asset than an icon), which `docs/item-art-inventory.md` §5 already flagged as needing an
-explicit owner call. Threshold Brand (sword) and, after §2.2, Heaven's Severance
-(sword), Pole of the Three Rivers (spear) and The War-Queen's Reach (whip) would all
-want this if the owner says yes.
+asset than an icon), which `docs/item-art-inventory.md` §5 flagged as needing an explicit
+owner call.
+
+**The owner made that call in Sept 2026, ruling *"named weapon wins"*** on the precedence
+question — which only means anything if the named weapon has art of its own to draw, so
+authoring these is decided rather than pending. The resolution order is already live in
+`resolveWeaponDraw` (`render/sprites.ts`): a named id suppresses the skin lookup outright.
+What is left is the art. Threshold Brand (sword), Heaven's Severance (sword), Pole of the
+Three Rivers (spear) and The War-Queen's Reach (whip) each want a row in
+`ATLAS_WEAPON_SKINS`, fed as a second **source** into the existing resolution rather than
+as a parallel table — see the doc comment above `AtlasWeaponSkin` for why that distinction
+is load-bearing.
 
 ---
 

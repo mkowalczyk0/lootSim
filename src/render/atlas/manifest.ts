@@ -775,11 +775,17 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
  * parallel table — this codebase has already paid twice for one job done in two places
  * (`RARITY_WASH` forking, and the item art that `itemSprite` now funnels).
  *
- * The one genuinely open question there is **precedence**, and it is an owner call rather
- * than a technical one: if you wield a named weapon *and* have a skin for that family, which
- * do you see? The rarity ruling says vanity is never overruled by power, which argues for
- * the skin; a named item's identity is deliberately not for sale (it accepts only Reforge,
- * Temper and Salvage), which argues for the named weapon. Do not guess it here.
+ * **Precedence is settled: a named weapon beats a skin.** This was an open owner call —
+ * the rarity ruling says vanity is never overruled by power, which argued for the skin,
+ * while a named item's identity is deliberately not for sale (it accepts only Reforge,
+ * Temper and Salvage), which argued for the named weapon. The owner ruled for the named
+ * weapon in Sept 2026, in those words: *"named weapon wins"*.
+ *
+ * It is already implemented — see the resolution order in `resolveWeaponDraw`
+ * (`render/sprites.ts`), where `namedId` suppresses the skin lookup outright rather than
+ * losing a comparison to it. Do not re-open this, and do not reason from the two arguments
+ * above as though they were still live; they are recorded here only so the ruling is
+ * legible rather than arbitrary.
  */
 export interface AtlasWeaponSkin extends AtlasWeapon {
   /** The one family this skin is a weapon of. It draws only when that family is held. */
