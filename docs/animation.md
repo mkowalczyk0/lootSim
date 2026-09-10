@@ -284,6 +284,74 @@ A release is also cancelled by death, for the reason `castFrame` already refuses
 corpse in a cast pose: killing a boss through its wind-up is a real and rewarded play, and
 the ability it was winding up never happened.
 
+### An instrument can be right and still answer the wrong question
+
+`npm run windup` reports the War Queen's `strike` as **the best-travelling animation in the
+repo** — the only tag whose travel peaks on its last frame, where all three wind-ups peak on
+the penultimate one and retreat. That is true. The tag is also **not a strike**: it is the
+boss un-coiling and settling back to rest.
+
+The metric measures whether a pose MOVES. It cannot tell "unwinds to rest" from "strikes and
+recovers", because both travel monotonically from the apex to somewhere else. Nothing about
+the instrument is broken — it is calibrated, it has a positive and a negative control, and
+three of its rules were falsified by injection. It is answering a question nobody asked.
+
+    strike f13 -> nearest wind-up frame is cast f12
+    strike f14 -> cast f10
+    strike f15 -> cast f5
+    strike f16, f17, f18 -> cast f5
+
+The nearest wind-up frame walks back DOWN the wind-up, and no release frame ever leaves the
+wind-up's own path by more than 17% of its span. That measurement had to be *asked for*; the
+travel number could not volunteer it.
+
+**It was caught by rendering a contact sheet and looking at it.** That is the transferable
+part. This document already carries a family of findings about instruments that report
+plausible numbers while blind — a saturating pixel count, a straightness metric that ranked a
+closed loop above a straight line, a check overruled by prose. This one is the sharpest
+version: green numbers, correct method, wrong question. **Look at the art.**
+
+The structural reason the art came out this way is worth keeping too, because it kills a
+whole family of attempts: **interpolation between two endpoints can only produce poses
+BETWEEN them.** A strike's defining pose is the extension PAST the apex, away from both ends,
+so no two-point generation can ever contain it however the prompt is worded or how many
+frames it is given. A real blow needs a third, authored pose: apex -> impact -> rest.
+
+### Headroom is cheap: padding the canvas does not move the character
+
+**Recorded because the opposite was asserted first, by me, and it nearly priced a design
+decision out of reach.** The claim was that giving a boss room to swing into means a taller
+frame, which means `worldScale` changes, which means every telegraph radius and camera frame
+tuned against it moves too. That is wrong twice.
+
+First, **nothing outside `render/` reads `worldScale` at all.** Every consumer is in
+`draw.ts`, `spriteart.ts` or `hub.ts`. Telegraph radii and arena sizing are world-unit
+numbers in `data/bosses.ts` and have no relationship to it.
+
+Second, the draw is anchored bottom-centre — `drawImage(canvas, -w/2, -h + h*feet, w, h)` —
+so padding the canvas at the TOP with `worldScale` left alone moves nothing. Measured on
+`boss.war-queen`, +24px of top padding, `worldScale` kept at 1.0185 and `feet` re-derived:
+
+    char_top     -106.6981  ->  -106.6981   (0.000000)
+    char_bottom     3.2999  ->     3.2999   (0.000000)
+    char_h        109.9980  ->   109.9980   (0.000000)
+    char_w         99.8130  ->    99.8130   (0.000000)
+
+Exactly unchanged. What grows is transparent headroom above the character — 21.1 world units
+of room for a weapon to swing into. `npm run anim`, `npm run chroma` and `npm run smoke` all
+pass on the padded strip.
+
+Two things you MUST do, and the second is a live trap:
+
+- **Re-derive `feet`** as `feet * h_old / h_new`. It is a fraction of `h`, so padding changes
+  what it means; left at 0.03 the character sinks 0.73 world units into the floor.
+- **Do NOT paste `strip.py`'s printed `worldScale`.** It computes `targetWorldHeight / h` on
+  the assumption that the character fills the canvas. On a padded canvas that assumption is
+  false and its number shrinks the character by 18%. Keep the existing `worldScale`.
+
+So "the blow needs to reach" costs a re-export, a manifest `h` and a re-derived `feet`. It is
+not the expensive change it was first described as.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without
