@@ -272,7 +272,8 @@ function tabHelp(
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
       + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk`);
     case "Hero": return `${sel} pick a slot · ${e} unequip · on a relic slot, ${adj} browses your collection and ${e} sockets or removes`;
-    case "Skills": return `${sel} choose a slot · ${adj} or ${e} cycle the skill · ${q} clear it`;
+    case "Skills": return `${sel} / ${adj} move · up onto the bar to pick which slot, ${adj} to switch it · `
+      + `${e} or click a card to set it there · ${q} clear the active slot`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
     case "Universal": return `${sel} walk a path · ${adj} switch path · ${e} spend a point · ${q} refund it all — shared by every class`;
     case "Path": return `${sel} choose a class · ${e} commit to it`;
@@ -427,6 +428,14 @@ export class TownUI {
   private codexView: 0 | 1 | 2 = 0;
   /** Which owned relic the Hero screen's relic slot has highlighted (UAT §19). */
   private relicPick = 0;
+  /**
+   * Skills (docket item 12): which of the three real slots a card click or `confirm`
+   * fills. The grid itself (`cursor`, into `abilityPool`) and this are independent axes,
+   * exactly like Stash's `rarityFilter` sits beside its own `cursor` — walking up from
+   * the top card row (or a pill click) reaches the slot bar, `cursor < 0` means it has
+   * focus, and left/right there change this instead of the grid position.
+   */
+  private skillSlot = 0;
   /** Which column of the skill tree the cursor is walking down. */
   private treeBranch = 0;
   /** The same, for the universal tree's six paths. Its own field, since the two screens
@@ -584,6 +593,15 @@ export class TownUI {
         this.render();
         return;
       }
+      // Which Skills slot a card click fills — a pill click just repoints that, the
+      // same way a Stash filter pill above only narrows the grid. It never fires
+      // `primary()` on its own; a card still has to be clicked (or confirmed) after.
+      const skillSlotEl = target.closest<HTMLElement>("[data-skill-slot]");
+      if (skillSlotEl) {
+        this.skillSlot = Number(skillSlotEl.dataset.skillSlot);
+        this.render();
+        return;
+      }
       const essenceEl = target.closest<HTMLElement>("[data-essence]");
       if (essenceEl) {
         const v = essenceEl.dataset.essence!;
@@ -717,8 +735,12 @@ export class TownUI {
   refresh(): void {
     // A room filling up or emptying changes how many rows this screen has underneath a
     // cursor that was pointing at one of them.
-    // Stash allows cursor -1 (the rarity-filter bar has focus); every other tab floors at 0.
-    this.cursor = Math.max(this.tab === "Stash" ? -1 : 0, Math.min(this.cursor, this.rowCount() - 1));
+    // Stash and Skills allow cursor -1 (their bar above the grid has focus); every
+    // other tab floors at 0.
+    this.cursor = Math.max(
+      this.tab === "Stash" || this.tab === "Skills" ? -1 : 0,
+      Math.min(this.cursor, this.rowCount() - 1),
+    );
     if (!this.root.hidden) this.render();
   }
 
@@ -800,14 +822,15 @@ export class TownUI {
 
     const count = this.rowCount();
 
-    // Stash, Hero and Reforge (Craft's other screen) are real 2-D grids: W/A/S/D walk
-    // them in both axes and A/D are spent on nothing but movement. Every other tab keeps
-    // the flat-list model — up/down walk the cursor, left/right adjust whatever that tab
-    // adjusts.
+    // Stash, Hero, Skills and Reforge (Craft's other screen) are real 2-D grids:
+    // W/A/S/D walk them in both axes and A/D are spent on nothing but movement. Every
+    // other tab keeps the flat-list model — up/down walk the cursor, left/right adjust
+    // whatever that tab adjusts.
     const reforgeGrid = this.tab === "Craft" && this.forgeMode === "reforge";
-    if (this.tab === "Stash" || this.tab === "Hero" || reforgeGrid) {
+    if (this.tab === "Stash" || this.tab === "Hero" || this.tab === "Skills" || reforgeGrid) {
       const walk = (dx: number, dy: number) => {
         const moved = this.tab === "Stash" ? this.navStash(dx, dy)
+          : this.tab === "Skills" ? this.navSkills(dx, dy)
           : reforgeGrid ? this.navReforge(dx, dy)
           : this.navHero(dx, dy);
         if (moved) { this.resetArmed = false; this.salvageArmed = null; dirty = true; }
@@ -913,7 +936,9 @@ export class TownUI {
       case "Shop": return SHOP_TIERS[this.shopTier].slots;
       case "Stash": return this.filteredStash().length;
       case "Hero": return EQUIP_SLOTS.length + RELIC_SLOTS;
-      case "Skills": return SKILL_SLOTS;
+      // The whole learnable pool, not just the three equipped slots (docket item 12) —
+      // `navSkills` walks this exact array as the card grid.
+      case "Skills": return this.state.player.abilityPool.length;
       case "Tree": return TREE_PATH_DEPTH;
       // Row 0 is the shared root, which sits above the columns and is reachable by
       // walking up out of any of them — exactly what the tree's DAG says it is.
@@ -1031,10 +1056,6 @@ export class TownUI {
       this.craftEssence = options[(i + dir + options.length) % options.length] ?? null;
       return true;
     }
-    if (this.tab === "Skills") {
-      this.cycleSkill(this.cursor, dir);
-      return true;
-    }
     if (this.tab === "Tree") {
       this.treeBranch = clamp(this.treeBranch + dir, 0, TREE_PATH_COUNT - 1);
       return true;
@@ -1083,9 +1104,9 @@ export class TownUI {
   }
 
   /** How many columns the currently-shown card grid is actually laid out in right now
-   *  (Stash's or Reforge's — they share the `.stash-grid` class and only one is ever on
-   *  screen at a time). The grid is `auto-fill`, so this is read back off the DOM rather
-   *  than assumed. */
+   *  (Stash's, Reforge's or Skills' — they share the `.stash-grid` class and only one is
+   *  ever on screen at a time). The grid is `auto-fill`, so this is read back off the
+   *  DOM rather than assumed. */
   private stashColumns(): number {
     const grid = this.root.querySelector<HTMLElement>(".stash-grid");
     if (grid) {
@@ -1106,6 +1127,34 @@ export class TownUI {
     if (n === 0) { this.cursor = -1; return dx !== 0 && this.cycleFilter(dx); }
     if (this.cursor < 0) {
       if (dx !== 0) return this.cycleFilter(dx);
+      if (dy > 0) { this.cursor = 0; return true; }
+      return false;
+    }
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /**
+   * 2-D movement across the Skills grid (docket item 12) — the same shape as
+   * `navStash` on purpose: `cursor < 0` means the slot bar above the cards has focus,
+   * A/D there step `skillSlot` instead of the grid, S drops back into the cards.
+   */
+  private navSkills(dx: number, dy: number): boolean {
+    const n = this.state.player.abilityPool.length;
+    if (n === 0) return false;
+    if (this.cursor < 0) {
+      if (dx !== 0) {
+        const next = clamp(this.skillSlot + dx, 0, SKILL_SLOTS - 1);
+        if (next === this.skillSlot) return false;
+        this.skillSlot = next;
+        return true;
+      }
       if (dy > 0) { this.cursor = 0; return true; }
       return false;
     }
@@ -1204,16 +1253,6 @@ export class TownUI {
     if (next === this.cursor) return false;
     this.cursor = next;
     return true;
-  }
-
-  /** Cycles the ability in a slot through everything unlocked, plus empty. */
-  private cycleSkill(slot: number, dir: number): void {
-    const options: (string | null)[] = [null, ...this.state.player.unlockedAbilities.map((a) => a.id)];
-    const current = this.state.player.skills[slot] ?? null;
-    const i = options.indexOf(current);
-    const next = options[(i + dir + options.length) % options.length] ?? null;
-    this.state.player.setSkill(slot, next);
-    this.state.save();
   }
 
   /**
@@ -1612,7 +1651,17 @@ export class TownUI {
         break;
       }
       case "Skills": {
-        this.cycleSkill(this.cursor, 1);
+        const p = this.state.player;
+        const ab = p.abilityPool[this.cursor];
+        if (!ab) break;
+        const lv = p.abilityUnlockLevel(ab);
+        if (lv > p.level) {
+          this.notify(`Not learned yet — unlocks at level ${lv}.`, "#9aa4b2");
+          break;
+        }
+        p.setSkill(this.skillSlot, ab.id);
+        this.state.save();
+        this.notify(`${ab.name} set on [${this.skillKeyLabels[this.skillSlot] ?? this.skillSlot + 1}]`, this.state.heroClass.color);
         break;
       }
       case "Tree": {
@@ -1859,7 +1908,7 @@ export class TownUI {
         break;
       }
       case "Skills": {
-        this.state.player.setSkill(this.cursor, null);
+        this.state.player.setSkill(this.skillSlot, null);
         this.notify("Slot cleared", "#9aa4b2");
         break;
       }
@@ -4351,46 +4400,55 @@ export class TownUI {
    * Three slots on the keys around the attack finger. Everything is unlocked by
    * levelling, so this screen is about choosing, never about buying.
    */
+  /**
+   * The Skills screen (docket item 12): the Stash's own shape rather than a row you
+   * walk A/D through. A slot bar sits above a grid of every ability the class can ever
+   * know, exactly like Stash's rarity pills sit above its item cards — `cursor < 0`
+   * means the bar has focus, `skillSlot` says which of the three real slots is armed,
+   * and clicking (or confirming) a card sets that ability into it directly, through the
+   * same `primary()` a keyboard confirm calls.
+   */
   private renderSkills(): string {
     const p = this.state.player;
     const cls = p.heroClass;
     const byId = (id: string | null): Ability | undefined => (id ? p.abilityById(id) : undefined);
-    const rows = Array.from({ length: SKILL_SLOTS }, (_, i) => {
+    const onBar = this.cursor < 0;
+
+    const slotPills = Array.from({ length: SKILL_SLOTS }, (_, i) => {
       const ab = byId(p.skills[i] ?? null);
+      return `<span class="sf-pill ${i === this.skillSlot ? "sel" : ""}" data-skill-slot="${i}"
+            style="--r:${ab ? cls.color : "var(--line)"}">
+            [${this.skillKeyLabels[i] ?? i + 1}] ${ab ? escapeHtml(ab.name) : "empty"}</span>`;
+    }).join("");
+    // The fourth slot isn't yours to choose — it's whatever your gear is handing you,
+    // so it rides along on the bar for reference but takes no click of its own.
+    const granted = byId(p.grantedAbilityId);
+    const grantedPill = granted
+      ? `<span class="sf-pill" style="--r:${cls.color}" title="granted by your gear, not chosen">
+            [${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}] ${escapeHtml(granted.name)}</span>`
+      : "";
+    const slotBar = `<div class="stash-filter ${onBar ? "on" : ""}">${slotPills}${grantedPill}</div>`;
+
+    const pool = p.abilityPool;
+    const cards = pool.map((a, i) => {
+      const lv = p.abilityUnlockLevel(a);
+      const have = lv <= p.level;
+      const wornSlot = p.skills.indexOf(a.id);
+      const tip = `${a.name} — ${a.category}\n${a.description}\n${abilityCostLine(a, p)}`
+        + (have ? "" : `\nUnlocks at level ${lv}`);
       return `
-        <div class="row ${i === this.cursor ? "on" : ""}" data-index="${i}">
-          <div class="row-main">
-            <span class="slot">[${this.skillKeyLabels[i] ?? i + 1}]</span>
-            <span class="name" style="color:${ab ? cls.color : "#5a6270"}">
-              ${ab ? escapeHtml(ab.name) : "— empty —"}</span>
-          </div>
-          <div class="row-side">${ab ? abilityCostLine(ab, p) : "A / D to pick one"}</div>
+        <div class="item-card ${i === this.cursor ? "on" : ""}" data-index="${i}"
+             style="--r:${have ? cls.color : "#3a4150"}" title="${escapeHtml(tip)}">
+          ${!have ? `<span class="ic-lock">lv ${lv}</span>` : ""}
+          ${wornSlot >= 0 ? `<span class="ic-mark up">[${this.skillKeyLabels[wornSlot] ?? wornSlot + 1}]</span>` : ""}
+          <span class="ic-name" style="color:${have ? cls.color : "#5a6270"}">${escapeHtml(a.name)}</span>
+          <span class="ic-slot">${escapeHtml(a.category)}</span>
         </div>`;
     }).join("");
 
-    // The fourth slot isn't yours to choose — it's whatever your gear is handing you.
-    const granted = byId(p.grantedAbilityId);
-    const grantedRow = granted
-      ? `<div class="row">
-          <div class="row-main">
-            <span class="slot">[${this.skillKeyLabels[SKILL_SLOTS] ?? "M"}]</span>
-            <span class="name" style="color:${cls.color}">${escapeHtml(granted.name)}</span>
-            <span class="badge">from your gear</span>
-          </div>
-          <div class="row-side">${abilityCostLine(granted, p)} · granted, not chosen</div>
-        </div>`
-      : "";
-
-    const sel = byId(p.skills[this.cursor] ?? null);
-    const known = p.abilityPool.map((a) => {
-      const lv = p.abilityUnlockLevel(a);
-      const have = lv <= p.level;
-      const equipped = p.skills.includes(a.id);
-      return `<li style="color:${have ? cls.color : "#4a515e"}">
-        ${escapeHtml(a.name)} ${equipped ? "<em>equipped</em>" : have ? "" : `<em>lv ${lv}</em>`}</li>`;
-    }).join("");
-
-    return `<div class="list">${rows}${grantedRow}</div>
+    const sel = onBar ? undefined : pool[this.cursor];
+    const canTake = sel ? p.abilityUnlockLevel(sel) <= p.level : false;
+    return `<div class="stash-grid">${slotBar}${cards}</div>
       <aside class="side">
         ${sel ? `
           <h3 style="color:${cls.color}">${escapeHtml(sel.name)}</h3>
@@ -4399,18 +4457,19 @@ export class TownUI {
             <tr><td>Type</td><td>${escapeHtml(sel.category)}</td></tr>
             <tr><td>Cost</td><td>${abilityCostLine(sel, p)}</td></tr>
             <tr><td>Cooldown</td><td>${(sel.cooldown * p.cooldownMult).toFixed(1)}s</td></tr>
-          </table>`
-        : `<h3>Empty slot</h3><p class="muted">Press ${k(this.state.settings, "left")} or
-          ${k(this.state.settings, "right")} to put something in it.</p>`}
+          </table>
+          <p class="${canTake ? "" : "muted"}">
+            ${canTake
+              ? `${k(this.state.settings, "confirm")}, or click, sets it on [${this.skillKeyLabels[this.skillSlot] ?? this.skillSlot + 1}].`
+              : `Unlocks at level ${p.abilityUnlockLevel(sel)}.`}</p>`
+        : `<h3>${escapeHtml(cls.name)} abilities</h3>
+          <p class="muted">${onBar
+            ? "Picking which slot a card fills. Press down to step back into the grid."
+            : "Nine abilities, unlocked by levelling — pick a card to see what it does."}</p>`}
         <p>
-          <span class="chip" data-action="left">◀ ${k(this.state.settings, "left")}</span>
-          <span class="chip" data-action="right">${k(this.state.settings, "right")} ▶</span>
-          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · clear slot</span>
+          <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · clear the active slot</span>
         </p>
-        <h3>${escapeHtml(cls.name)} abilities</h3>
-        <ul class="pulls">${known}</ul>
-        <p class="muted">Nine abilities, unlocked by levelling. Pick three; the fourth is
-        whatever your gear grants.</p>
+        <p class="muted">Pick three; the fourth is whatever your gear grants.</p>
       </aside>`;
   }
 
