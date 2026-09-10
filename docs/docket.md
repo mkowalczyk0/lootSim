@@ -825,3 +825,50 @@ Two constraints:
 
 Any change to `level.ts` geometry or spawn sequencing perturbs the shared rng for every
 floor. Run the full `npm run smoke`, not just a targeted check.
+
+## 23. Item level follows the character everywhere — dropped items are still keyed on depth
+
+> "I did change the logic for the item drops that come out of chests and monster drops
+> etcetera, and crafting too... it's based off of the player level, not the depth... So could
+> we change that so all item drops, crafting, chest drops etcetera are all based off of the
+> player level. I just cleared some memories, and I'm still getting higher level drops because
+> the depth was higher. So I'm being punished for doing more challenging stuff."
+
+**Half of this is already done and the owner may not realise it.** `openAugmented`/`openChests`,
+`craftItem` and `craftNamed` already read `Math.max(1, this.player.level)` — that was the
+owner's own edit and it carries their comment. **What is still keyed on depth is dropped
+loot**, in three sites in `src/game/dungeon.ts`:
+
+```
+3115   ilvl: this.profile.depth + this.profile.itemPower
+3225   ilvl: this.profile.depth
+3245   ilvl: this.profile.depth
+```
+
+That is the report exactly: clear a Memory at depth 45 as a level-30 character and the drops
+roll at item level 45, whose `requiredLevel` (ilvl minus one level of grace) is far above what
+the earner can equip. **Doing the harder thing produces gear you cannot wear.**
+
+**The promise to implement: an item that drops for you is an item you can equip.** Gear whose
+level requirement exceeds the character who earned it is a punishment for attempting harder
+content, which is backwards.
+
+Three things to get right:
+
+- **In co-op, loot is per-hero and physical**, so the level must come from **the hero
+  receiving the drop**, not from one notion of "the player". A level 20 and a level 50 in the
+  same party should each get gear they can use. Do not reach for `localHero`.
+- **This interacts with §16's reward curve and must not silently repeal it.**
+  `DepthProfile.itemPower` exists precisely to add item levels for danger
+  (`docs/reward-curve.md`), and `rewards.ts` already notes it is "small and hard-capped,
+  because item level feeds `requiredLevel`". Harder content still has to pay better — but it
+  must not pay in a level requirement the earner cannot meet. **State the rule you land on
+  explicitly**, whether that is clamping the requirement, letting item power raise stats
+  without raising the requirement, or something better. Do not just delete the term.
+- **This is a live balance change to shipped content.** Item level feeds every stat roll, so
+  it moves the campaign and telegraph comparisons. Widen the seeds and A/B against master in
+  a throwaway worktree; one default `npm run smoke` proves nothing, as this repo has
+  documented at length.
+
+`CLAUDE.md`'s per-class-save section describes the chest/craft half of this rule and should be
+extended to cover drops **in the same commit as the code**, not before it.
