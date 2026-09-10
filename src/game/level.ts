@@ -893,6 +893,36 @@ function hasClearance(level: Level, cx: number, cy: number, r: number): boolean 
   return true;
 }
 
+/**
+ * The nearest walkable point to `(x, y)`, searching outward ring by ring — the docket
+ * §22 unstick net's "clip into the nearest room" (deterministic, not a random teleport
+ * like `randomOpenPoint`), so a body that's been genuinely embedded for a couple of
+ * seconds lands as close to where it actually was as the level allows. `radius` sizes
+ * the same cell-clearance check `randomOpenPoint` uses to whatever body is asking, so a
+ * boss doesn't get dropped somewhere only a swarmer would fit. Falls back to the level's
+ * own spawn point, which the portal-reachability guarantee already promises is open —
+ * a fallback that should never actually fire on a real floor.
+ */
+export function nearestOpenPoint(level: Level, x: number, y: number, radius: number): { x: number; y: number } {
+  const clearance = Math.max(1, Math.ceil(radius / GRID));
+  const cx0 = clamp(Math.floor(x / GRID), 0, level.cols - 1);
+  const cy0 = clamp(Math.floor(y / GRID), 0, level.rows - 1);
+  const maxRing = Math.max(level.cols, level.rows);
+  for (let ring = 0; ring <= maxRing; ring++) {
+    for (let dy = -ring; dy <= ring; dy++) {
+      for (let dx = -ring; dx <= ring; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue; // ring border only
+        const cx = cx0 + dx;
+        const cy = cy0 + dy;
+        if (cx < 0 || cy < 0 || cx >= level.cols || cy >= level.rows) continue;
+        if (!hasClearance(level, cx, cy, clearance)) continue;
+        return { x: cx * GRID + GRID / 2, y: cy * GRID + GRID / 2 };
+      }
+    }
+  }
+  return level.start;
+}
+
 function placeTraps(level: Level, rng: Rng, boss = false): Trap[] {
   const specs = trapsFor(level.depth, level.biome.traps);
   const out: Trap[] = [];
@@ -1289,6 +1319,28 @@ export function circleHitsWall(level: Level, x: number, y: number, r: number): b
     const dx = x - nx;
     const dy = y - ny;
     if (dx * dx + dy * dy <= r * r) return true;
+  }
+  return false;
+}
+
+/**
+ * True only for a *real* overlap, not the tangent contact `resolveCircle` leaves on
+ * purpose every time it pushes a body out (the resolved position sits at exactly
+ * `d == r`, which `circleHitsWall`'s `d <= r` still flags as a hit). Used to verify a
+ * resolve actually worked rather than merely ran — `resolveCircle` only pushes a circle
+ * out of whatever it directly overlaps, which can still leave it embedded if the point
+ * it started from was deep inside a multi-tile wall mass (docket §22: this is how a
+ * `spawnBurst` scatter point, offset from an already-validated centre, can come back
+ * from `resolveCircle` still inside rock).
+ */
+export function circleEmbeddedInWall(level: Level, x: number, y: number, r: number, margin = 2): boolean {
+  const rr = Math.max(0, r - margin);
+  for (const w of level.walls) {
+    const nx = clamp(x, w.x, w.x + w.w);
+    const ny = clamp(y, w.y, w.y + w.h);
+    const dx = x - nx;
+    const dy = y - ny;
+    if (dx * dx + dy * dy < rr * rr) return true;
   }
   return false;
 }

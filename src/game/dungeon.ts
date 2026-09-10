@@ -76,8 +76,8 @@ import {
   augmentsUpTo, pickAugment,
 } from "../data/augments";
 import {
-  circleHitsWall, FlowField, generateLevel, lineBlocked, randomOpenPoint, resolveCircle,
-  type Level, type ResourceNode, type Trap,
+  circleEmbeddedInWall, circleHitsWall, FlowField, generateLevel, lineBlocked, nearestOpenPoint, randomOpenPoint,
+  resolveCircle, type Level, type ResourceNode, type Trap,
 } from "./level";
 import type { GameState } from "./state";
 
@@ -114,6 +114,16 @@ const MAGNET_RANGE = 78;
 const PICKUP_RANGE = 16;
 /** Keeps bodies far enough from the arena edge that sprites don't overlap the border. */
 const WALL_PAD = 16;
+/**
+ * Docket §22's unstick net: how long a body has to sit genuinely embedded
+ * (`circleEmbeddedInWall`, not merely resting against a wall) before it clips to the
+ * nearest open tile. The owner asked for "two to three seconds"; this is the middle of
+ * that. With every known cause of real embedding fixed at the source
+ * (docs/stuck-in-walls.md measures zero activations across ~320k real-play ticks after
+ * the fixes), this is deliberately a backstop for whatever they didn't anticipate, not
+ * the primary defence — see `Dungeon.unstickCount` for whether it's earning its keep.
+ */
+const UNSTICK_SECONDS = 2.5;
 /**
  * Wave-spawned trash is a bit softer than the raw depth curve says, because a wave now
  * throws 2-3x as many bodies at once. This keeps the total health pool per wave from
@@ -271,6 +281,22 @@ export interface TelegraphInit {
 
 function emptyKeys(): Record<ChestTier, number> {
   return Object.fromEntries(CHEST_TIERS.map((t) => [t, 0])) as Record<ChestTier, number>;
+}
+
+/**
+ * `resolveCircle`, verified rather than trusted (docket §22, `docs/stuck-in-walls.md`):
+ * it only pushes a circle out of whatever it directly overlaps, which can still leave a
+ * body embedded if `(x, y)` overshot deep into a multi-tile wall mass — the shape every
+ * spawn-scatter call site here shares (an offset thrown out from some anchor: a burst's
+ * centre, a summoner's own position, a splitting monster's own position). `fallback` is
+ * that anchor, already known to be open because whatever is throwing the offset is
+ * already standing there. Retried once rather than trusted blind.
+ */
+function resolveOrFallback(
+  level: Level, x: number, y: number, r: number, fallback: { x: number; y: number },
+): { x: number; y: number } {
+  const at = resolveCircle(level, x, y, r);
+  return circleEmbeddedInWall(level, at.x, at.y, r) ? resolveCircle(level, fallback.x, fallback.y, r) : at;
 }
 
 /**
@@ -451,6 +477,12 @@ export class Dungeon implements CombatHost, RuleHost {
   readonly enemies: Enemy[] = [];
   readonly projectiles: Projectile[] = [];
   readonly pickups: Pickup[] = [];
+  /** Docket §22: how many times the unstick net has actually fired this run — a body or
+   *  item genuinely embedded for `UNSTICK_SECONDS` and clipped to the nearest open tile.
+   *  Every known cause is fixed at the source, so this should read 0 in ordinary play;
+   *  a nonzero count on a real run is a signal something new is producing the symptom,
+   *  not proof the net is doing its job. */
+  unstickCount = 0;
   /** Danger zones mid-wind-up. The whole vocabulary of a boss fight. */
   readonly telegraphs: Telegraph[] = [];
   /** Fire, tar and worse, left behind by whatever just went off. */
@@ -639,11 +671,11 @@ export class Dungeon implements CombatHost, RuleHost {
       // other, so four people arriving on a floor don't spend the first second untangling.
       const angle = (TAU / Math.max(1, setups.length)) * i - Math.PI / 2;
       const spread = setups.length > 1 ? 22 : 0;
-      const spot = resolveCircle(
+      const spot = resolveOrFallback(
         this.level,
         clamp(x + Math.cos(angle) * spread, PLAYER_RADIUS + WALL_PAD, this.level.width - PLAYER_RADIUS - WALL_PAD),
         clamp(y + Math.sin(angle) * spread, PLAYER_RADIUS + WALL_PAD, this.level.height - PLAYER_RADIUS - WALL_PAD),
-        PLAYER_RADIUS,
+        PLAYER_RADIUS, { x, y },
       );
       const hero = new Hero(setups[i]!, i, makeAvatar(spot.x, spot.y));
       hero.flow = new FlowField(this.level);
@@ -787,12 +819,23 @@ export class Dungeon implements CombatHost, RuleHost {
       + memoryEffects(this.config.memory).elites;
   }
 
-  /** Picks an archetype, rolls elite, and drops one wave monster near (x, y). */
-  private placeMonsterAt(spot: { x: number; y: number }): void {
+  /**
+   * Picks an archetype, rolls elite, and drops one wave monster near (x, y).
+   *
+   * `spot` is a scatter point offset from the burst's own already-validated `fallback`
+   * centre (`spawnBurst`'s `openSpot` call) — `resolveCircle` only pushes a body out of
+   * whatever it directly overlaps, which can still leave it embedded if `spot` overshot
+   * deep into a multi-tile wall mass (docket §22, measured in
+   * `docs/stuck-in-walls.md`: rare, and it lands almost entirely on the smallest
+   * archetype's radius). Verified rather than trusted: if the resolve didn't actually
+   * clear it, retry from the centre that was already proven open instead of shipping a
+   * spawn nobody checked twice.
+   */
+  private placeMonsterAt(spot: { x: number; y: number }, fallback: { x: number; y: number } = spot): void {
     const kinds = this.spawnableKinds();
     const weights = Object.fromEntries(kinds.map((k) => [k, ARCHETYPES[k].weight])) as Record<EnemyKind, number>;
     const archetype = ARCHETYPES[this.rng.weighted(weights)];
-    const at = resolveCircle(this.level, spot.x, spot.y, archetype.radius);
+    const at = resolveOrFallback(this.level, spot.x, spot.y, archetype.radius, fallback);
     // An elite is a capped, per-floor event now — a moderate roll, but only until the
     // floor's budget is spent. Later waves are likelier to carry the elite, so it lands
     // as an escalation rather than in the opening trickle.
@@ -848,7 +891,7 @@ export class Dungeon implements CombatHost, RuleHost {
       this.placeMonsterAt({
         x: clamp(center.x + Math.cos(angle) * reach, 40, this.width - 40),
         y: clamp(center.y + Math.sin(angle) * reach, 40, this.height - 40),
-      });
+      }, center);
       // Decremented per monster, not after the whole burst: `placeMonsterAt`'s forced-elite
       // check reads `this.queued` to see how many spawns are left to pay off an elite debt,
       // and a batched decrement left that number frozen at the burst's pre-spawn size for
@@ -988,6 +1031,7 @@ export class Dungeon implements CombatHost, RuleHost {
       facing: 0,
       trapCooldown: 0,
       stuckTimer: 0,
+      embedTimer: 0,
       dodgeDir: this.rng.chance(0.5) ? 1 : -1,
       // Off the affix stream so adding archetype behaviours doesn't shift the main
       // sequence, and only drawn for the roles that actually use it — a floor of plain
@@ -1068,7 +1112,13 @@ export class Dungeon implements CombatHost, RuleHost {
     // answer it differently.
     const spec = bossSpecForRun({ ...this.config, depth: this.profile.depth }, this.proving);
     const archetype = ARCHETYPES.boss;
-    const spot = this.openSpot(spec.radius, 260);
+    // `openSpot`'s clearance check works in tile cells, not `spec.radius`'s actual world
+    // units — every other spawn path in this file resolves the circle it's actually
+    // going to use before trusting it (docket §22, docs/stuck-in-walls.md); this one
+    // hadn't, purely by inconsistency rather than a measured failure (0 of 188 real boss
+    // spawns sampled were ever embedded). Closed for the same reason the others were.
+    const rough = this.openSpot(spec.radius, 260);
+    const spot = resolveCircle(this.level, rough.x, rough.y, spec.radius);
     const base = this.makeEnemy(archetype, spot.x, spot.y, {});
 
     const health = this.profile.enemyHealth * spec.health;
@@ -1122,7 +1172,8 @@ export class Dungeon implements CombatHost, RuleHost {
    */
   private spawnDummy(): void {
     const archetype = ARCHETYPES.dummy;
-    const spot = this.openSpot(archetype.radius, 150);
+    const rough = this.openSpot(archetype.radius, 150);
+    const spot = resolveCircle(this.level, rough.x, rough.y, archetype.radius);
     const base = this.makeEnemy(archetype, spot.x, spot.y, { noAffixes: true });
     const dummy: Enemy = {
       ...base,
@@ -1145,11 +1196,11 @@ export class Dungeon implements CombatHost, RuleHost {
       const archetype = ARCHETYPES[this.rng.weighted(weights)];
       const angle = this.rng.angle();
       const reach = this.rng.range(70, 150);
-      const spot = resolveCircle(
+      const spot = resolveOrFallback(
         this.level,
         clamp(x + Math.cos(angle) * reach, 40, this.width - 40),
         clamp(y + Math.sin(angle) * reach, 40, this.height - 40),
-        archetype.radius,
+        archetype.radius, { x, y },
       );
       this.enemies.push(this.makeEnemy(archetype, spot.x, spot.y, { summoned: true, healthMult: 0.62 }));
     }
@@ -2506,10 +2557,10 @@ export class Dungeon implements CombatHost, RuleHost {
         m.attackTimer = m.attackCooldown;
       }
     }
-    this.separateMinions();
+    this.separateMinions(dt);
   }
 
-  private separateMinions(): void {
+  private separateMinions(dt: number): void {
     const list = this.minions;
     for (let i = 0; i < list.length; i++) {
       const a = list[i]!;
@@ -2526,6 +2577,16 @@ export class Dungeon implements CombatHost, RuleHost {
         a.x -= nx * push; a.y -= ny * push;
         b.x += nx * push; b.y += ny * push;
       }
+    }
+    // Same fix as `separateEnemies` and for the same reason: this pairwise push has no
+    // idea where the walls are, so it can shove a summoned minion straight back into one
+    // right after `updateMinions`'s own per-minion `resolveCircle` pass already cleared
+    // it for the tick.
+    for (const m of list) {
+      const fixed = resolveCircle(this.level, m.x, m.y, m.radius);
+      m.x = fixed.x;
+      m.y = fixed.y;
+      this.tickEmbedTimer(m, dt);
     }
   }
 
@@ -3305,6 +3366,7 @@ export class Dungeon implements CombatHost, RuleHost {
       vy: Math.sin(angle) * speed,
       life: 0,
       magnet: false,
+      embedTimer: 0,
     });
   }
 
@@ -3442,11 +3504,11 @@ export class Dungeon implements CombatHost, RuleHost {
         e.attackTimer = e.attackCooldown * this.profile.aggression;
       }
     }
-    this.separateEnemies();
+    this.separateEnemies(dt);
   }
 
   /** Cheap pairwise push-apart so crowds spread around the player instead of stacking. */
-  private separateEnemies(): void {
+  private separateEnemies(dt: number): void {
     const list = this.enemies;
     for (let i = 0; i < list.length; i++) {
       const a = list[i]!;
@@ -3467,6 +3529,43 @@ export class Dungeon implements CombatHost, RuleHost {
         a.x -= nx * push * aShare; a.y -= ny * push * aShare;
         b.x += nx * push * bShare; b.y += ny * push * bShare;
       }
+    }
+    // The push above only knows about the other body — nothing here has ever consulted
+    // a wall. `updateEnemies` already wall-resolves every body earlier in this same tick,
+    // so a crowd bunched against a wall can be shoved straight back into it right here,
+    // with nothing left this tick to correct it (docket §22: bodies ending up inside
+    // rock, reproduced directly as this exact mechanism — see docs/stuck-in-walls.md).
+    // Cheap to close: every enemy this pass could have moved gets walked back out with
+    // the same collision test the rest of the tick already trusts.
+    for (const e of list) {
+      const fixed = resolveCircle(this.level, e.x, e.y, e.radius);
+      e.x = fixed.x;
+      e.y = fixed.y;
+      this.tickEmbedTimer(e, dt);
+    }
+  }
+
+  /**
+   * Docket §22's unstick net. `resolveCircle` just ran on `body` above; if it's still
+   * genuinely embedded (not merely touching — see `circleEmbeddedInWall`), that means
+   * the push-out itself failed, not that the body was merely against a wall a moment
+   * ago. `UNSTICK_SECONDS` of that sustained clips it to the nearest open tile — moves
+   * it, never removes it, so a wave-director monster (`Enemy.fromWave`) can never stall
+   * the floor's kill quota by disappearing.
+   */
+  private tickEmbedTimer(body: { x: number; y: number; radius: number; embedTimer: number }, dt: number): void {
+    if (circleEmbeddedInWall(this.level, body.x, body.y, body.radius)) {
+      body.embedTimer += dt;
+      if (body.embedTimer >= UNSTICK_SECONDS) {
+        const dest = nearestOpenPoint(this.level, body.x, body.y, body.radius);
+        body.x = dest.x;
+        body.y = dest.y;
+        body.embedTimer = 0;
+        this.unstickCount++;
+        this.events.push({ kind: "death", x: dest.x, y: dest.y, elite: null }); // a poof, not a death
+      }
+    } else {
+      body.embedTimer = 0;
     }
   }
 
@@ -3563,11 +3662,11 @@ export class Dungeon implements CombatHost, RuleHost {
         e.behaviorTimer = this.affixRng.range(6, 9);
         if (this.enemies.length < this.profile.maxAlive + 4) {
           const ang = this.affixRng.angle();
-          const spot = resolveCircle(
+          const spot = resolveOrFallback(
             this.level,
             clamp(e.x + Math.cos(ang) * 40, 40, this.width - 40),
             clamp(e.y + Math.sin(ang) * 40, 40, this.height - 40),
-            ARCHETYPES.swarmer.radius,
+            ARCHETYPES.swarmer.radius, e,
           );
           this.enemies.push(
             this.makeEnemy(ARCHETYPES.swarmer, spot.x, spot.y, { summoned: true, healthMult: 0.6 }),
@@ -3621,11 +3720,11 @@ export class Dungeon implements CombatHost, RuleHost {
           if (gap < e.radius + hero.radius + 40) break;
           const reach = Math.min(gap - (e.radius + hero.radius + 20), 240);
           const ang = Math.atan2(hero.y - e.y, hero.x - e.x);
-          const to = resolveCircle(
+          const to = resolveOrFallback(
             this.level,
             clamp(e.x + Math.cos(ang) * reach, 40, this.width - 40),
             clamp(e.y + Math.sin(ang) * reach, 40, this.height - 40),
-            e.radius,
+            e.radius, e,
           );
           e.x = to.x; e.y = to.y;
           this.events.push({ kind: "death", x: e.x, y: e.y, elite: null });
@@ -3645,11 +3744,11 @@ export class Dungeon implements CombatHost, RuleHost {
           const kind: EnemyKind = "swarmer";
           if (ARCHETYPES[kind].minDepth > this.profile.depth) break;
           const ang = this.affixRng.angle();
-          const spot = resolveCircle(
+          const spot = resolveOrFallback(
             this.level,
             clamp(e.x + Math.cos(ang) * 44, 40, this.width - 40),
             clamp(e.y + Math.sin(ang) * 44, 40, this.height - 40),
-            ARCHETYPES[kind].radius,
+            ARCHETYPES[kind].radius, e,
           );
           this.enemies.push(this.makeEnemy(ARCHETYPES[kind], spot.x, spot.y, { summoned: true, healthMult: 0.7 }));
           break;
@@ -3726,11 +3825,11 @@ export class Dungeon implements CombatHost, RuleHost {
           if (e.affixState.noSplit || e.summoned) break;
           for (let i = 0; i < 2; i++) {
             const ang = this.affixRng.angle();
-            const spot = resolveCircle(
+            const spot = resolveOrFallback(
               this.level,
               clamp(e.x + Math.cos(ang) * 26, 40, this.width - 40),
               clamp(e.y + Math.sin(ang) * 26, 40, this.height - 40),
-              e.archetype.radius * 0.7,
+              e.archetype.radius * 0.7, e,
             );
             const spawn = this.makeEnemy(e.archetype, spot.x, spot.y, { healthMult: 0.34, noAffixes: true });
             spawn.radius = e.archetype.radius * 0.7;
@@ -4060,6 +4159,10 @@ export class Dungeon implements CombatHost, RuleHost {
       const clear = resolveCircle(this.level, p.x, p.y, p.radius);
       p.x = clear.x;
       p.y = clear.y;
+      // Docket §22, the "items too" half: a corpse that dies genuinely embedded still
+      // drops its loot at that spot, and a pickup has no AI to path itself out the way a
+      // monster's own movement eventually would — this is the only recovery it gets.
+      this.tickEmbedTimer(p, dt);
 
       if (p.life > 0.3 && d < PICKUP_RANGE * reach) {
         this.collect(claimant, p);
@@ -4716,11 +4819,11 @@ export class Dungeon implements CombatHost, RuleHost {
     const ids: number[] = [];
     for (let i = 0; i < want; i++) {
       const angle = (TAU / want) * i + this.rng.next() * 0.6;
-      const spot = resolveCircle(
+      const spot = resolveOrFallback(
         this.level,
         clamp(req.x + Math.cos(angle) * (18 + i * 2), r + WALL_PAD, this.width - r - WALL_PAD),
         clamp(req.y + Math.sin(angle) * (18 + i * 2), r + WALL_PAD, this.height - r - WALL_PAD),
-        r,
+        r, req,
       );
       const id = this.nextMinionId++;
       this.minions.push({
@@ -4736,7 +4839,7 @@ export class Dungeon implements CombatHost, RuleHost {
         commandTargetId: null,
         guardX: req.x, guardY: req.y,
         sc: new StatusContainer(Dungeon.MINION_ID_BASE + id),
-        stuckTimer: 0, dodgeDir: this.rng.next() < 0.5 ? -1 : 1,
+        stuckTimer: 0, dodgeDir: this.rng.next() < 0.5 ? -1 : 1, embedTimer: 0,
       });
       ids.push(Dungeon.MINION_ID_BASE + id);
     }
