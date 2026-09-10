@@ -3386,7 +3386,7 @@ console.log("\n=== gems and the wardrobe ===");
   flying.player.towerChallengerBadges[4] = 18;     // tier 5
   flying.player.challengerBadges.abyss = 8;
   flying.player.planetChallengerBadges.htrae = 3;
-  flying.player.raidChallengerBadges["raid-the-ferryman"] = 2;
+  flying.player.raidChallengerBadges["the-ferryman"] = 2;
   const marksBefore = JSON.stringify(
     standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort());
   const flyingSheetBefore = JSON.stringify(flying.player.mods);
@@ -3395,7 +3395,13 @@ console.log("\n=== gems and the wardrobe ===");
     JSON.stringify(standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort())
       === marksBefore);
   const marks = standardsFor(flying.player, flying.player.classId);
-  check("this character actually earned marks to test with", marks.length >= 5, `${marks.length}`);
+  // Exact, not a floor: one mark banked per family above (legend, delve, tower, abyss,
+  // planet, raid), so anything other than 6 means one of those six silently failed to
+  // attach — a >= bound already let "raid-the-ferryman" (wrong id, zero raid marks) pass
+  // as "5 is at least 5" once. Printing the ids is what makes that visible without
+  // re-deriving it by hand next time.
+  check("this character earned exactly the six marks this fixture set up", marks.length === 6,
+    `${marks.length}: ${marks.map((m) => m.id).join(", ")}`);
   for (const m of marks) {
     if (!flying.setFlownStandard(m.id)) throw new Error(`should have been able to fly ${m.id}`);
   }
