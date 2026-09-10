@@ -612,7 +612,47 @@ Worth a moment's thought beyond the two-line fix: this is a function whose retur
 wrong silently and why `npm test` had nothing to say. A rule that cannot be violated beats a
 check that notices — see the CLAUDE.md passage on `SpriteName` and `worldScale`.
 
-## 17. Some boss animations are not coming through
+## 17. Some boss animations are not coming through — DIAGNOSED, roster classified, no art authorised
+
+**2026-09-10, re-diagnosed.** `npm run animcoverage` gained a fifth section
+(`=== 5. cause classification ===`) that walks all 35 encounters the game can spawn — the
+same `specs` list §2 already validates resolves to committed art, never a second, narrower
+filter — and assigns each one exactly one of this item's three causes, printing the count so
+a roster that silently shrinks is visible rather than assumed:
+
+    walked 35 encounters: 0 fine, 0 cause-1 (unwired art), 3 cause-2 (tail-trim), 32 cause-3 (never authored)
+
+**Cause 1 (a manifest row missing a tag for art that already exists) has zero instances**,
+and that is now a structural check rather than a one-time read: every static row's committed
+PNG is decoded and compared against the single frame its manifest row declares
+(`w`×`h`); a mismatch fails the tool. Falsified by shaving 1px off `boss.herald-unspoken`'s
+declared width — 5 encounters correctly flip to cause 1 and the tool exits red, then clean
+again once reverted, so this isn't a check that could only ever read green.
+
+**Cause 2 (a tag that exists but gets cut short at runtime) is exactly the 3 raid bosses
+`docs/animation.md` already found and the docket's §7 reorder already named**: `cast`
+beats `strike` unconditionally, so a release only plays out in full if the post-cast gap
+outlasts it, and that gap shrinks with `aggression` as depth/tier climbs. Re-measured,
+unchanged from that entry — tyrant CUT at 90%/74%, ferryman CUT at 93%, war-queen CUT at
+100%/80%, only at their harder tiers, only the tail. **Deliberately not touched**: the
+"fix" is either `BOSS_ACTION_GAP` (a shared cadence constant read by every boss in the
+game, so a change here is a difficulty change to the whole roster, not an animation fix —
+see CLAUDE.md "Boss difficulty is cadence, not card count") or a per-encounter timing
+table that doesn't exist yet ("the table" `docs/animation.md` calls for). Either is a
+design call, not a cheap manifest edit, and `docs/animation.md` already ruled it "not
+worth a fix, and not the owner's report."
+
+**Cause 3 (never authored) is the other 32 of 35**, and none of it is a wiring gap — every
+static/no-release sprite's manifest row carries its own reason (backlog budget for Warden/
+Saint/Colossus, a permanent owner-ruled hold for the Minotaur's 2px accent, or simply not
+started for Herald/Nameless and all 5 Tower bosses). Confirmed by hand for the fully-static
+rows too: their committed PNGs are exactly the single frame declared, not an orphaned strip
+sitting unwired. **This is the backlog §19 already describes as one hand-authoring problem
+with global leverage, not 35 separate art tasks — no frames were generated for this item.**
+
+No code outside `tools/animcoverage.ts` changed. `npm run test` green.
+
+The original entry follows, unedited, for context.
 
 > "Some boss animations are not coming through"
 
