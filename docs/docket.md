@@ -775,3 +775,53 @@ Three things to get right:
 - **Check whether the §20 drop preview quotes a count** that this changes. The preview must
   keep saying what the roll actually does; if it advertises "10 items" it is about to become
   true rather than false, but confirm rather than assume.
+
+## 22. Enemies and items end up inside walls — and an unstick net for when they do
+
+> "could we look into enemies spawning in walls? And also, if you have enough knockback, I'm
+> also noticing you can potentially knock them back into walls. Maybe we add something where
+> if something is stuck in a wall, including items too, because if they die, items get stuck.
+> Maybe we add something where if stuck for two to three seconds, it'll just clip into the
+> nearest room."
+
+**Do not confuse this with the pathing bug that was fixed this morning.** `docs/campaign-
+pathing-bias.md` is resolved and is about a monster **losing its route** while resting flush
+against a wall — `FlowField.direction()` returning null. The owner is reporting something
+different: bodies and items **positioned inside the rock volume**. A monster with no route is
+standing somewhere legal; a monster inside a wall is not. Read that doc so you don't
+re-measure a solved problem, then look somewhere else.
+
+**Three named causes, and they are probably not one bug:**
+
+- **Spawning in walls.** The floor is authored on the 32-unit tile lattice and `tools/smoke.ts`
+  already asserts that painted rock is exactly the collision volume. So either spawn placement
+  isn't consulting the same mask the renderer and `resolveCircle` use, or it places a *centre*
+  without accounting for the body's radius — a legal centre one pixel from rock puts a
+  24-unit-wide monster half inside it. Check the radius question first; it fits "spawning in
+  walls" better than a wholesale mask mismatch would, and a wholesale mismatch would have
+  failed the smoke test already.
+- **Knockback into walls.** If knockback displaces a body directly instead of resolving
+  through `resolveCircle` the way ordinary movement does, that is the bug and it is a real
+  one. **Check this before building any net** — a safety net over a knockback that ignores
+  collision papers over a defect that will keep producing new symptoms.
+- **Items stuck in walls.** Drops land at the corpse's position, so this is largely downstream
+  of the first two. Fixing them removes most of it; it does not remove all of it, because a
+  body legally overlapping rock at the moment it dies still drops there.
+
+**On the owner's proposed fix — build the net, but build it second.** A 2–3 second unstick
+that moves a stuck thing to the nearest walkable tile is a good backstop and the owner asked
+for it explicitly, including for items. But a net is a *backstop*, not a diagnosis: land the
+causes you can find first, then the net for what remains. **Say in the design record which
+symptoms the net is still catching after the fixes** — if it fires often, something else is
+still broken and the net is hiding it. Consider counting activations so that stays visible.
+
+Two constraints:
+
+- **The wave director's own monsters are the objective** (`Enemy.fromWave`), so an unstick
+  must move a monster, never despawn one — teleporting a body is cosmetic, removing one can
+  stall a floor's kill quota.
+- **Co-op is host-authoritative.** The unstick belongs in the simulation, so it travels in
+  the snapshot like everything else. Don't let a client decide something is stuck.
+
+Any change to `level.ts` geometry or spawn sequencing perturbs the shared rng for every
+floor. Run the full `npm run smoke`, not just a targeted check.
