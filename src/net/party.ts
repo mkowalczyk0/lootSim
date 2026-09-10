@@ -239,6 +239,21 @@ export class Party {
       hub.clearExpedition();
     }
 
+    // Same shape, same reason: the Raid Portal is spawned by the War Table rather than
+    // permanent like the Delve or a rift, so it only ever existed on whichever machine
+    // ran the picker (the host's) — nothing told anyone else's `Hub` to grow one. A party
+    // goes where the host goes, so this bypasses the viewer's own `raidOpen` (their own
+    // account's unlock) the same way joining a party's planet expedition already does.
+    const raid = this.plan?.config.raid;
+    if (raid) {
+      if (hub.raid?.raidId !== raid.spec.id || hub.raid.tier !== raid.tier) {
+        hub.setRaid(raid.spec.id, raid.tier);
+      }
+      hub.raidOpen = true;
+    } else if (hub.raid) {
+      hub.clearRaid();
+    }
+
     hub.mates = this.members.map((m) => ({
       id: m.id,
       name: m.name,
