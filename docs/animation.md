@@ -979,6 +979,39 @@ Warden's is cleave/slam/quake/windmill/ringOut, swings every one), and the impac
 **not** belong in the sprite (`render/fx.ts` already draws impact stars — the sprite owes only
 the pose).
 
+#### Stage D: §19's wall is TWO failures, and only one of them is about detail
+
+Run on `boss.gravebound-colossus` — chosen as the **least detailed sprite in the roster** (31
+colours), because its wind-up had just come back with on-model overhead arms where the
+war-queen's came back as detached tubes. If a generated blow was going to work anywhere it
+was going to work here. Raws and numbers in `art/anim/raw/colossus-blow/`.
+
+**The detail failure did not reproduce.** Every frame on-model — legs distinct, chains
+intact, no merged limbs. So the war-queen/Warden deformation is a property of *dense* sprites,
+and "the generator cannot pose" is too strong as written.
+
+**The pose failure reproduced completely, and it is the one that matters.** The arms come down
+— to the *sides*, which is the rest pose. Against the veto (bar: apex-vs-rest 2571), the
+arms-down frames measure 1424–1671. Nothing passes; the run does not arrive at an impact, it
+returns to rest, which is the definition of an unwind.
+
+> **An arms-down pose is near rest by definition, because rest IS arms-down.** On any boss
+> that rests with its hands or weapon low — most of them — a downward blow terminates on a
+> rest-shaped silhouette and is vetoed however well it is drawn. This is the same wall the
+> Ferryman hit, and its fix was not a better prompt: differentiate the impact on **body** —
+> stance, lean, trailing cloth — so the pose is far from rest for a reason other than where
+> the weapon is.
+
+The generator cannot supply that. It is a loop generator, and prompting for an ending does not
+override the prior — here the prior *is* the failure, because the loop's natural return and
+the blow's wrong answer are the same pose.
+
+**Route status after Stages B, C and D**, so nobody re-opens a closed one: free-form
+generation is closed (four attempts across two bosses, including the most favourable sprite in
+the game); rigid transform of existing pixels is closed; compositing from other frames is
+closed. **A pinned, hand-authored impact frame is the only route not yet eliminated** — which
+is exactly what §19 said, now with the alternatives ruled out rather than assumed.
+
 #### Reach is not one-per-sprite: check the borrow graph before choosing a target
 
 Animating `boss.warden` moved coverage 3/35 -> **10/35**, because `legendBossSpec` borrows
