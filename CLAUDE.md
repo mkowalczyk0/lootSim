@@ -745,6 +745,39 @@ Ultimates take their element from your *gear*, not the class (`Player.attackElem
 picks your biggest elemental fraction). A lightning Lancer and a fire Lancer are
 different characters made of the same class.
 
+**THE EXECUTE RULE: an execute only executes the wounded.** `executeMissingHealth` scales
+damage with the health a target has already lost, and for most of this project's life it
+carried no threshold — so it paid out at *every* health value, including full. The owner
+reported the Ranger's "The Last Hunt" deleting raid bosses, a first fix halved the
+coefficient and left the shape alone, and the same report came back: *"I don't think that
+ultimate should execute at any HP... I'm seeing it at, like, eighty percent health."*
+
+The threshold now lives at **the single runtime site where the term is evaluated**, not on
+the packets. That is deliberate and it is the load-bearing part: the term is authored on 14
+packets across 8 classes and *added* by 17 more tree nodes, mutations and a relic, so a
+required per-packet threshold field would have meant authoring ~31 numbers — an uncommanded
+balance pass across classes nobody reported — and could anyway be satisfied with `1.0`,
+which is the original bug spelled explicitly. **There is no per-site field to omit, so an
+ability written tomorrow is gated for free.** A rule that cannot be violated, rather than a
+check that notices.
+
+The term is a *normalised ramp inside the band*, not the old term with a gate bolted on:
+identical at 0 HP, exactly zero at and above the threshold, continuous between. The naive
+gate was rejected for its **cliff** — tens of thousands of damage materialising the instant
+a raid boss crosses the line is the original complaint relocated, not fixed. `npm run
+execute` asserts nine properties as comparisons against the old expression quoted verbatim,
+including that the new term is **never stronger anywhere**, so no ability in the game can
+have been buffed by this.
+
+Two things to carry rather than rediscover. **This was an implementation, not a nerf** — the
+Reaper's own description already promised *"everything below a health threshold"* and its
+Mythic promised to raise it; the threshold had been authored in the fiction and never in the
+code, the same shape as the Ranger's tooltip promising a narrower ultimate than it delivered.
+And the honest cost, which an earlier draft of the design record had backwards: **the ramp
+does reduce the middle of the health band for every rider, including the classes nobody
+reported.** Their coefficients and their kill-moment payoff are untouched; the middle of
+their band is not.
+
 ### Every class has its own save
 
 `GameState.players: Record<ClassId, Player>` — each class keeps a fully independent
