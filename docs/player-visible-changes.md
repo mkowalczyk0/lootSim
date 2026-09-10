@@ -11,6 +11,11 @@ different when you play."
   character and had never been resized when the hero changed. The witch hat was two and a
   half times as wide as the hero was, the cape was a tent and the wings were four times
   his width. All eight now fit the character actually in the game.
+- **The whole wardrobe is drawn now.** Every hat, ear, face item and back item in the game
+  has real artwork on the current character — the straw hat, the beanie, the chef's toque,
+  the flower circlet, the tall hat, the halo, bunny and fox ears, antennae, blush, the
+  eyepatch, fangs, the cat tail, moth wings, the floating tome and the leathery wings. Half
+  of them had never been drawn for this character at all.
 - **The character screen isn't mostly empty any more.** Your hero filled about a quarter
   of the width of his own portrait box, because the box had been stretched to hold those
   oversized wings. He now fills about half of it.

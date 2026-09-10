@@ -349,6 +349,251 @@ const build: Record<string, () => Grid> = {
     return g;
   },
 
+  // --- hats ---------------------------------------------------------------
+
+  // Straw hat: a wide floppy brim on a low crown, with a darker band. The brim reads
+  // against the SILHOUETTE like the witch hat's does — a sun hat that stops at the skull
+  // is just a cap.
+  "cosmetic.hat-straw": () => {
+    const g = new Grid(W, H);
+    const brimHW = Math.round(BODY_HW * 1.15), brimY = HEAD_TOP + 2;
+    g.ell(CX, brimY, brimHW, Math.max(1.6, brimHW * 0.26), "1");
+    g.ell(CX, HEAD_TOP, HEAD_HW * 0.85, 3.2, "1");          // the crown
+    g.outline();
+    g.ell(CX, brimY + 1, brimHW - 2, 1.2, "2");             // brim underside
+    g.rect(CX - HEAD_HW * 0.8, HEAD_TOP + 1, CX + HEAD_HW * 0.8, HEAD_TOP + 1, "3");
+    return g;
+  },
+
+  // Beanie: hugs the skull, one folded band across the brow, a pompom on top.
+  "cosmetic.hat-beanie": () => {
+    const g = new Grid(W, H);
+    const capY = HEAD_TOP + 3;
+    g.ell(CX, capY, HEAD_HW * 0.95, 4.2, "1");
+    g.rect(CX - HEAD_HW * 0.95, capY, CX + HEAD_HW * 0.95, capY + 1, "1");
+    g.ell(CX, capY - 5, 1.6, 1.6, "3");                     // pompom
+    g.outline();
+    g.rect(CX - HEAD_HW * 0.9, capY + 1, CX + HEAD_HW * 0.9, capY + 2, "2");  // the fold
+    return g;
+  },
+
+  // Toque: a tall soft cylinder with a puffed top and a banded base.
+  "cosmetic.hat-chef": () => {
+    const g = new Grid(W, H);
+    const hw = Math.round(HEAD_HW * 0.75), top = HEAD_TOP - Math.round(HERO.h * 0.2);
+    g.rect(CX - hw, HEAD_TOP - 1, CX + hw, HEAD_TOP + 2, "1");   // the band
+    g.rect(CX - hw + 1, top + 2, CX + hw - 1, HEAD_TOP - 1, "1");
+    g.ell(CX, top + 2, hw + 0.6, 2.6, "1");                      // the puff
+    g.outline();
+    g.rect(CX - hw + 1, HEAD_TOP, CX + hw - 1, HEAD_TOP + 1, "2");
+    g.detail(CX - 1, top + 1, "3");
+    return g;
+  },
+
+  // Flower circlet: a thin band with three small blooms sitting on it.
+  "cosmetic.hat-flower": () => {
+    const g = new Grid(W, H);
+    const y = HEAD_TOP + 1;
+    g.rect(CX - HEAD_HW * 0.9, y, CX + HEAD_HW * 0.9, y, "2");   // the stem band
+    for (const f of [-0.72, 0, 0.72]) {
+      const fx = CX + f * HEAD_HW * 0.9;
+      g.ell(fx, y - 2, 1.7, 1.7, "1");
+    }
+    g.outline();
+    for (const f of [-0.72, 0, 0.72]) g.detail(CX + f * HEAD_HW * 0.9, y - 2, "3");
+    return g;
+  },
+
+  // Very Tall Hat: a cylinder well above the head, a brim at the skull, one band.
+  "cosmetic.hat-top": () => {
+    const g = new Grid(W, H);
+    const hw = Math.round(HEAD_HW * 0.68), top = HEAD_TOP - Math.round(HERO.h * 0.28);
+    const brimHW = Math.round(HEAD_HW * 1.1), brimY = HEAD_TOP + 1;
+    g.rect(CX - hw, top, CX + hw, brimY, "1");
+    g.ell(CX, brimY, brimHW, 1.5, "1");
+    g.outline();
+    g.rect(CX - hw + 1, brimY - 3, CX + hw - 1, brimY - 2, "3");  // the band
+    g.rect(CX - hw + 1, top + 1, CX - hw + 1, brimY - 4, "2");    // one lit edge
+    return g;
+  },
+
+  // Halo: a ring floating clear above the head, tilted, with nothing holding it up.
+  "cosmetic.hat-halo": () => {
+    const g = new Grid(W, H);
+    const hw = Math.round(HEAD_HW * 0.85), y = HEAD_TOP - Math.round(HERO.h * 0.12);
+    // The ring has to be thick enough to survive `outline()`, which turns every cell
+    // touching transparency into ink — a two-pixel ring comes out as pure outline with no
+    // lit metal left inside it, which on a MYTHIC item reads as a scratch.
+    g.ell(CX, y, hw, hw * 0.5, "1");
+    g.ell(CX, y, hw - 3.2, hw * 0.5 - 2.3, ".");             // punch the hole
+    g.outline();
+    g.detail(CX - hw + 2, y, "3"); g.detail(CX + hw - 2, y, "3");
+    g.detail(CX, y - Math.round(hw * 0.42), "2");
+    return g;
+  },
+
+  // --- ears ---------------------------------------------------------------
+
+  // Bunny ears: two tall narrow ears, straight up, with a soft inner.
+  "cosmetic.ears-bunny": () => {
+    const g = new Grid(W, H);
+    const rise = Math.round(HERO.h * 0.32), base = HEAD_TOP + 3;
+    for (const dir of [-1, 1]) {
+      const x = CX + dir * HEAD_HW * 0.45;
+      // Wide enough to keep an interior after `outline()`; see the halo note.
+      g.ell(x, base - rise * 0.5, 2.7, rise * 0.5, "1");
+    }
+    g.outline();
+    for (const dir of [-1, 1]) {
+      const x = CX + dir * HEAD_HW * 0.45;
+      g.ell(x, base - rise * 0.5, 1.1, rise * 0.36, "2");
+    }
+    return g;
+  },
+
+  // Fox ears: broader and shorter than the cat's, set wider on the skull.
+  "cosmetic.ears-fox": () => {
+    const g = new Grid(W, H);
+    const rise = Math.round(HEAD_HW * 0.8), base = HEAD_TOP + 4;
+    for (const dir of [-1, 1]) {
+      const outer = CX + dir * HEAD_HW * 1.05, inner = CX + dir * HEAD_HW * 0.12;
+      g.tri(outer, base, inner, base, CX + dir * HEAD_HW * 0.62, base - rise, "1");
+    }
+    g.outline();
+    for (const dir of [-1, 1]) {
+      const outer = CX + dir * (HEAD_HW * 1.05 - 1.2), inner = CX + dir * HEAD_HW * 0.42;
+      g.tri(outer, base - 1, inner, base - 1, CX + dir * HEAD_HW * 0.62, base - rise + 1.5, "2");
+    }
+    return g;
+  },
+
+  // Bug antennae: two thin stalks curving outward, a bulb on each.
+  "cosmetic.ears-antenna": () => {
+    const g = new Grid(W, H);
+    const rise = Math.round(HERO.h * 0.2), base = HEAD_TOP + 2;
+    for (const dir of [-1, 1]) {
+      const sx = CX + dir * HEAD_HW * 0.35;
+      g.line(sx, base, sx + dir * HEAD_HW * 0.75, base - rise, "1");
+      g.ell(sx + dir * HEAD_HW * 0.75, base - rise, 1.7, 1.7, "1");
+    }
+    g.outline();
+    for (const dir of [-1, 1]) g.detail(CX + dir * HEAD_HW * 0.75, base - rise, "3");
+    return g;
+  },
+
+  // --- face ---------------------------------------------------------------
+
+  // Blush: two soft patches on the cheeks, just under the measured eye row.
+  "cosmetic.face-blush": () => {
+    const g = new Grid(W, H);
+    for (const dir of [-1, 1]) g.ell(CX + dir * HEAD_HW * 0.62, EYE_Y + 2, 1.7, 1.4, "1");
+    return g;                                    // no outline: it is skin, not an object
+  },
+
+  // Eyepatch: one lens-shaped patch over the hero's left eye, strap across the skull.
+  "cosmetic.face-eyepatch": () => {
+    const g = new Grid(W, H);
+    const ex = CX - Math.max(2, Math.round(HERO.headW * 0.19));
+    g.rect(CX - HEAD_HW, EYE_Y - 1, CX + HEAD_HW, EYE_Y - 1, "1");   // the strap
+    g.ell(ex, EYE_Y, 2.4, 2.0, "1");
+    g.outline();
+    g.ell(ex, EYE_Y, 1.2, 0.9, "2");
+    return g;
+  },
+
+  // Tiny fangs: two points hanging below the mouth line, and that is the whole item.
+  "cosmetic.face-fangs": () => {
+    const g = new Grid(W, H);
+    const my = EYE_Y + 3;
+    for (const dir of [-1, 1]) {
+      const x = CX + dir * HEAD_HW * 0.3;
+      g.tri(x - 0.9, my, x + 0.9, my, x, my + 2, "1");
+    }
+    g.outline();
+    return g;
+  },
+
+  // --- back ---------------------------------------------------------------
+
+  // Cat tail: rises at one hip and curls up and out. Feet-anchored like every back item.
+  "cosmetic.back-tail-cat": () => {
+    const g = new Grid(W, H);
+    const hip = FEET - Math.round(BODY_LEN * 0.42);
+    let x = CX + BODY_HW * 0.8, y = hip;
+    const pts: Array<[number, number, number]> = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      // Kept inside the stage's own half-width on purpose: the stage is sized from the
+      // widest CENTRED layer, so an off-centre one that reaches further is clipped rather
+      // than accommodated (`npm run smoke` catches it). A tail that curls up reads better
+      // than one that reaches out, so this is the shape following the constraint, not a
+      // compromise against it.
+      pts.push([x + BODY_HW * (0.2 + t * 0.5), y + Math.sin(t * Math.PI) * 4 - t * BODY_LEN * 0.5,
+        2.0 - t * 0.9]);
+    }
+    for (const [px, py, r] of pts) g.ell(px, py, r, r, "1");
+    g.outline();
+    const tip = pts[pts.length - 1]!;
+    g.ell(tip[0], tip[1], 1.0, 1.0, "2");
+    return g;
+  },
+
+  // Moth wings: two broad rounded pairs, upper larger than lower, veined in ink because
+  // this cosmetic's three colours are all pale and a marker vein would vanish.
+  "cosmetic.back-wings-butterfly": () => {
+    const g = new Grid(W, H);
+    const top = HY + HERO.neckY + 1, span = BODY_HW * 1.3, drop = Math.round(BODY_LEN * 0.62);
+    for (const dir of [-1, 1]) {
+      const bx = CX + dir * BODY_HW * 0.4;
+      g.ell(bx + dir * span * 0.55, top + drop * 0.22, span * 0.6, drop * 0.42, "1");
+      g.ell(bx + dir * span * 0.45, top + drop * 0.72, span * 0.45, drop * 0.32, "2");
+    }
+    g.rect(CX - BODY_HW * 0.38, top, CX + BODY_HW * 0.38, FEET, ".");
+    g.outline();
+    for (const dir of [-1, 1]) {
+      const bx = CX + dir * BODY_HW * 0.4;
+      g.line(bx, top + drop * 0.15, bx + dir * span * 1.0, top + drop * 0.2, "O");
+      g.detail(bx + dir * span * 0.8, top + drop * 0.18, "3");
+    }
+    return g;
+  },
+
+  // Floating tome: a closed book hanging at one shoulder, spine out, a clasp on it.
+  "cosmetic.back-tome": () => {
+    const g = new Grid(W, H);
+    const bx = CX + BODY_HW * 1.05, by = HY + HERO.shoulderY + 2;
+    const bw = Math.round(BODY_HW * 0.62), bh = Math.round(BODY_LEN * 0.3);
+    g.rect(bx - bw, by - bh, bx + bw, by + bh, "1");
+    g.outline();
+    g.rect(bx - bw + 1, by - bh + 1, bx - bw + 1, by + bh - 1, "2");   // the spine
+    g.rect(bx + bw - 2, by - 1, bx + bw - 1, by + 1, "3");             // the clasp
+    return g;
+  },
+
+  // Leathery wings: the same sweep as the feathered pair but with the membrane cut back
+  // between ink struts, so the shape reads as bat rather than bird at this size.
+  "cosmetic.back-wings-demon": () => {
+    const g = new Grid(W, H);
+    const top = HY + HERO.neckY + 1, span = BODY_HW * 1.32, drop = Math.round(BODY_LEN * 0.8);
+    for (const dir of [-1, 1]) {
+      const bx = CX + dir * BODY_HW * 0.45;
+      g.tri(bx, top, bx + dir * span, top - Math.round(drop * 0.3), bx + dir * span * 0.5, top + drop, "1");
+      for (const t of [0.35, 0.62, 0.88]) {
+        g.tri(bx + dir * span * t, top + drop * (0.42 + t * 0.3),
+          bx + dir * span * (t + 0.1), top + drop * (0.2 + t * 0.3),
+          bx + dir * span * (t + 0.02), top + drop * 0.95, ".");
+      }
+    }
+    g.rect(CX - BODY_HW * 0.38, top, CX + BODY_HW * 0.38, FEET, ".");
+    g.outline();
+    for (const dir of [-1, 1]) {
+      const bx = CX + dir * BODY_HW * 0.45;
+      for (const t of [0.3, 0.58, 0.85])
+        g.line(bx, top + 2, bx + dir * span * t, top + drop * (0.35 + t * 0.4), "O");
+    }
+    return g;
+  },
+
   // Feathered wings: two solid sweeps rising from the shoulders, separated into feather
   // banks by **ink** lines — the one key `recoloredCosmetic` never swaps. That matters
   // here because all three of this cosmetic's colours are near-white (#f8fafc/#e0f2fe/
@@ -412,6 +657,22 @@ const ANCHOR: Record<keyof typeof build, "head" | "feet"> = {
   "cosmetic.face-visor": "head",
   "cosmetic.back-cape": "feet",
   "cosmetic.back-wings-angel": "feet",
+  "cosmetic.hat-straw": "head",
+  "cosmetic.hat-beanie": "head",
+  "cosmetic.hat-chef": "head",
+  "cosmetic.hat-flower": "head",
+  "cosmetic.hat-top": "head",
+  "cosmetic.hat-halo": "head",
+  "cosmetic.ears-bunny": "head",
+  "cosmetic.ears-fox": "head",
+  "cosmetic.ears-antenna": "head",
+  "cosmetic.face-blush": "head",
+  "cosmetic.face-eyepatch": "head",
+  "cosmetic.face-fangs": "head",
+  "cosmetic.back-tail-cat": "feet",
+  "cosmetic.back-wings-butterfly": "feet",
+  "cosmetic.back-tome": "feet",
+  "cosmetic.back-wings-demon": "feet",
 };
 
 const OUT = process.argv[2]!;

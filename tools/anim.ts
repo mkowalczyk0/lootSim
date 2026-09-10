@@ -309,8 +309,15 @@ console.log("\nheroes — a class's own sprite, then the base, then the bake\n")
   for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
     const got = cosmeticStageXY(c, heroMeta.w, heroMeta.h);
     const headBottom = at.dy + Math.round(heroMeta.h * 0.35);   // generous head band
-    if (c.anchor === "head" && got.dy + c.h < at.dy)
-      misplaced ||= `${k} floats entirely above the head`;
+    // A head layer rests ON the head — unless it declares that it floats, which exactly one
+    // does (a halo). A declared floater is still bounded to near the head, so a genuinely
+    // misplaced layer cannot hide behind the flag.
+    const FLOAT_LIMIT = Math.round(heroMeta.h * 0.35);
+    if (c.anchor === "head" && got.dy + c.h < at.dy) {
+      if (!c.floats) misplaced ||= `${k} floats entirely above the head`;
+      else if (at.dy - (got.dy + c.h) > FLOAT_LIMIT)
+        misplaced ||= `${k} declares floats but is ${at.dy - (got.dy + c.h)}px clear of the head, over ${FLOAT_LIMIT}`;
+    }
     if (c.anchor === "head" && got.dy > headBottom)
       misplaced ||= `${k} hangs below the head band`;
     if (c.anchor === "feet" && got.dy + c.h < at.dy + Math.round(heroMeta.h * 0.5))

@@ -898,6 +898,21 @@ export interface AtlasCosmetic {
    * and `npm run heroes` asserts that as a comparison rather than trusting it.
    */
   readonly anchor: "head" | "feet";
+  /**
+   * This layer is **meant** to hang clear of its landmark instead of resting on it.
+   *
+   * A halo is the case that forced this: it is head-anchored, because it must follow the
+   * top of the head when the hero's height changes, but it sits entirely above the head by
+   * design. `npm run anim` asserts that a head-anchored layer lands *on* the head — a rule
+   * written to catch a hat floating in the air, which is a real placement bug — and a halo
+   * trips it honestly.
+   *
+   * Declared here rather than by loosening that rule for all twenty-four layers, so the
+   * one deliberate exception is visible in the data. A floating layer is still bounded: it
+   * has to stay near the head, which is what keeps this from becoming a way to opt out of
+   * the check.
+   */
+  readonly floats?: true;
 }
 
 /**
@@ -954,4 +969,26 @@ export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
   cape: { id: "cosmetic.back-cape", w: 25, h: 26, dx: 0, dy: -28, anchor: "feet" },
   // `Cosmetic.art` id for backAngel.
   wingsAngel: { id: "cosmetic.back-wings-angel", w: 29, h: 26, dx: 0, dy: -32, anchor: "feet" },
+
+  // The rest of the wardrobe, drawn against the same measured hero. Every row here is
+  // emitted by `art/cosmetics/author.ts` — re-run it rather than hand-editing a number.
+  hatStraw: { id: "cosmetic.hat-straw", w: 19, h: 8, dx: 0, dy: -3, anchor: "head" },
+  hatBeanie: { id: "cosmetic.hat-beanie", w: 15, h: 11, dx: 0, dy: -3, anchor: "head" },
+  hatChef: { id: "cosmetic.hat-chef", w: 11, h: 11, dx: 0, dy: -8, anchor: "head" },
+  hatFlower: { id: "cosmetic.hat-flower", w: 13, h: 4, dx: 0, dy: -2, anchor: "head" },
+  hatTop: { id: "cosmetic.hat-top", w: 17, h: 14, dx: 0, dy: -11, anchor: "head" },
+  // The one declared floater — see `floats` on `AtlasCosmetic`.
+  hatHalo: { id: "cosmetic.hat-halo", w: 13, h: 7, dx: 0, dy: -8, anchor: "head", floats: true },
+  earsBunny: { id: "cosmetic.ears-bunny", w: 11, h: 12, dx: 0, dy: -9, anchor: "head" },
+  earsFox: { id: "cosmetic.ears-fox", w: 15, h: 6, dx: 0, dy: -1, anchor: "head" },
+  earsAntenna: { id: "cosmetic.ears-antenna", w: 19, h: 10, dx: 0, dy: -7, anchor: "head" },
+  faceBlush: { id: "cosmetic.face-blush", w: 13, h: 3, dx: 0, dy: 10, anchor: "head" },
+  faceEyepatch: { id: "cosmetic.face-eyepatch", w: 15, h: 5, dx: 0, dy: 7, anchor: "head" },
+  faceFangs: { id: "cosmetic.face-fangs", w: 7, h: 2, dx: 0, dy: 12, anchor: "head" },
+  // `dx` is nonzero for the two that hang off ONE side — a tail at a hip, a book at a
+  // shoulder. Everything else is centred, which is why every other dx here is 0.
+  tailCat: { id: "cosmetic.back-tail-cat", w: 8, h: 18, dx: 10, dy: -27, anchor: "feet" },
+  wingsButterfly: { id: "cosmetic.back-wings-butterfly", w: 31, h: 21, dx: 0, dy: -30, anchor: "feet" },
+  tome: { id: "cosmetic.back-tome", w: 11, h: 17, dx: 8, dy: -24, anchor: "feet" },
+  wingsDemon: { id: "cosmetic.back-wings-demon", w: 27, h: 28, dx: 0, dy: -33, anchor: "feet" },
 };
