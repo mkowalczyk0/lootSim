@@ -67,10 +67,32 @@ export interface DepthProfile {
   readonly variantChance: number;
   /** The element a variant drop is infused with: this floor's own. */
   readonly variantElement: Element;
-  /** Recommended character level; below it you take a visible beating. */
+  /**
+   * Recommended character level at this floor's *actual* danger — Challenger tier and a
+   * rift's own compounding included. Below it you take a visible beating right now, on
+   * the dial as it's currently set.
+   */
   readonly recommendedLevel: number;
+  /**
+   * The same advice at danger 1 — what this depth wants on its own, with no dial turned.
+   * Equal to `recommendedLevel` on a plain floor; shown alongside it (docket §25) so a
+   * player who has Challenger up can tell how much of the number in front of them is the
+   * floor and how much is a dial they turned themselves.
+   */
+  readonly baseRecommendedLevel: number;
   /** Short label for the HUD: "Abyssal Rift · T4 · Floor 2/4", or "" for a delve. */
   readonly tag: string;
+}
+
+/**
+ * The one formula behind both of `DepthProfile`'s level-advice fields (docket §25) — a
+ * plain function of depth and danger, with no memory of which reading a caller wants, so
+ * `recommendedLevel` and `baseRecommendedLevel` can never fork into two derivations of
+ * "what level should you be": `profileFor` calls this twice, once at the floor's real
+ * `danger` and once at 1, rather than each field authoring its own math.
+ */
+function levelAdvice(d: number, danger: number): number {
+  return Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35)));
 }
 
 export function profileFor(depth: number, config?: RunConfig): DepthProfile {
@@ -194,28 +216,21 @@ export function profileFor(depth: number, config?: RunConfig): DepthProfile {
     // reason `rollElement` skips infusing monsters on one.
     variantChance: biome.element === "physical" ? 0 : reward.variantChance,
     variantElement: biome.element,
-    // Levelling now tracks depth closely, so the advice should too.
+    // Levelling now tracks depth closely, so the advice should too. Docket §25 resolved:
+    // this used to also floor at `d + reward.itemPower - 1`, the *equip floor* from when
+    // loot rolled at `ilvl = depth + itemPower` — advising below that level told the
+    // player to bring a character who couldn't wear what the floor paid out. Docket §23
+    // repealed the premise (a drop now rolls at the receiving hero's own level; no floor
+    // can pay out gear its earner cannot equip), so the term was deleted rather than kept
+    // pending a call that's now made — it was defending nothing, and its only visible
+    // effect was inflating "req. lv" wherever the Challenger dial raised `itemPower`
+    // without raising the character standing in front of the screen.
     //
-    // WARNING — the `d + reward.itemPower - 1` term below has outlived its reason, and is
-    // kept pending an owner call rather than because it is still justified (docket §25).
-    // It was the *equip floor*: loot used to roll at `ilvl = depth + itemPower`, so
-    // advising below `d + itemPower - 1` told the player to bring a character who couldn't
-    // wear what the floor paid out. Docket §23 repealed exactly that — a drop now rolls at
-    // the receiving hero's own level, `itemPower` feeds `powerIlvl` alone, and **no floor
-    // in the game can pay out gear its earner cannot equip.** So the equip floor no longer
-    // exists and this term no longer defends anything.
-    //
-    // It is not obviously wrong, which is the trap: at danger 1 `itemPower` is 0 and the
-    // term is just `d - 1`, so plain Delve advice is unchanged. It only bites where the
-    // Challenger dial is up, where it now inflates "req. lv" for a reason that has been
-    // deleted — and `danger^0.35` below is already the term that prices danger. Retuning
-    // player-facing level advice is a live balance change, so it is docketed, not quietly
-    // dropped here.
-    recommendedLevel: Math.max(
-      1,
-      d + reward.itemPower - 1,
-      Math.round(d * 0.9 * Math.pow(danger, 0.35)),
-    ),
+    // `levelAdvice` is now the one formula for both numbers on `DepthProfile`: called at
+    // this floor's actual `danger` for `recommendedLevel`, and at danger 1 for
+    // `baseRecommendedLevel` — one derivation, two readings, never two copies of the math.
+    recommendedLevel: levelAdvice(d, danger),
+    baseRecommendedLevel: levelAdvice(d, 1),
     tag: buildTag(run),
   };
 }

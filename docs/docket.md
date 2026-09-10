@@ -1130,7 +1130,19 @@ Worth noting when it is raised: this is also the reason §20's Reaper compensati
 (`executeMissingHealth` 0.8 → 1.0) is **reasoned rather than measured**, and that label
 should survive into any future conversation about the Reaper's numbers.
 
-## 25. `recommendedLevel`'s equip floor outlived the rule that justified it
+## 25. `recommendedLevel`'s equip floor outlived the rule that justified it — LANDED
+
+**Owner decision: show both numbers**, rather than either option this entry originally
+posed. `DepthProfile.recommendedLevel` (the floor's advice at its actual `danger` —
+Challenger tier and a rift's own compounding included) and the new
+`DepthProfile.baseRecommendedLevel` (the same advice at danger 1, what the depth wants on
+its own) are now one function, `levelAdvice(d, danger)` in `src/data/depth.ts`, called
+twice rather than authored twice. The dead equip-floor term (`d + reward.itemPower - 1`)
+is gone entirely — it was defending a premise §23 had already repealed, so neither number
+carries it forward. Every "req. lv" surface in `src/ui/town.ts` (Dive, Rifts, Star Map,
+Raid, Tower, the Altar's Memory table) now reads through one shared `levelLabel()`
+formatter: unchanged (`lv 18`) when the dial hasn't moved anything, `lv 18 → 22` when it
+has. Browser-verified (playwright-core, throwaway port, this worktree only).
 
 **Found while merging §23.** Not a bug the owner reported — a term whose stated reason
 was deleted by the change that landed under it, which is this repo's most-repeated
