@@ -130,6 +130,24 @@ for (const [k, e] of [...byLadder].sort()) {
   console.log(`    ${k.padEnd(8)} ${String(e.animated).padStart(2)} of ${String(e.total).padStart(2)} animated${note}`);
 }
 
+// The BORROW GRAPH: how many encounters each sprite backs, animated or not. This is the
+// number that picks the next animation target — reach is not one-per-sprite, because
+// `legendBossSpec` borrows Delve templates, so a template backing many Provings is worth
+// several that back none. Printed for EVERY boss sprite, not just the animated ones,
+// because the whole point is to choose among the ones that are still static.
+console.log("\n  BORROW GRAPH — encounters backed by each boss sprite, richest first:");
+const backed = new Map<string, string[]>();
+for (const sp of specs) {
+  const k = SPRITE_OVERRIDES[sp.sprite] ?? sp.sprite;
+  backed.set(k, [...(backed.get(k) ?? []), sp.id]);
+}
+for (const [k, ids] of [...backed].sort((a, b) => b[1].length - a[1].length)) {
+  const anim = ATLAS[k]?.anim ? "animated" : "STATIC  ";
+  const provings = ids.filter((i) => i.startsWith("legend-")).length;
+  console.log(`    ${k.padEnd(26)} ${anim}  ${String(ids.length).padStart(2)} encounters` +
+    (provings ? `  (${provings} of them Provings)` : ""));
+}
+
 console.log("\n  encounters sharing each animated sprite (a release is per SPRITE, not per fight):");
 for (const [atlasId, ids] of [...seen].sort()) {
   const meta = ATLAS[atlasId]!;
