@@ -238,12 +238,17 @@ export class Party {
     } else if (hub.expedition) {
       hub.clearExpedition();
     }
-
-    // Same shape, same reason: the Raid Portal is spawned by the War Table rather than
-    // permanent like the Delve or a rift, so it only ever existed on whichever machine
-    // ran the picker (the host's) — nothing told anyone else's `Hub` to grow one. A party
-    // goes where the host goes, so this bypasses the viewer's own `raidOpen` (their own
-    // account's unlock) the same way joining a party's planet expedition already does.
+    // A raid dives from the Raid Portal, which — like the expedition portal above — only
+    // exists once something has spawned it. The station that spawns it is the War Table,
+    // and only the machine whose player walked up to it runs that interaction, so without
+    // this the host's deck grew a portal and no client's did: the party could see the plan
+    // and had nowhere to stand. `RunConfigWire` already carries `raidId`/`raidTier` and
+    // `configFromWire` rebuilds through `raidConfig`, so the plan arriving here is already
+    // the raid — the only thing missing was mirroring it into everybody's hub. This also
+    // bypasses the viewer's own `raidOpen` (their own account's unlock) for the duration:
+    // a party goes where the host goes, the same call joining a planet expedition already
+    // makes, so a member whose own frontier hasn't personally unlocked this raid still
+    // comes along rather than finding nothing to stand in.
     const raid = this.plan?.config.raid;
     if (raid) {
       if (hub.raid?.raidId !== raid.spec.id || hub.raid.tier !== raid.tier) {
