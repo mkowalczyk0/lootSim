@@ -464,6 +464,99 @@ taste: its stated advantage is *cross-direction reference*, and a single-directi
 no completed sides to reference, so the mechanism that would make it better is inactive.
 It would be another re-render at twenty times the price.
 
+### The Ferryman and the Tyrant rise too — and what the second and third boss cost
+
+Both shipped the same shape as `boss.war-queen`: a padded canvas, and a `strike` that is a
+**rise, not a blow**. The Ferryman raises his pole to full height; the Tyrant lifts the
+sword overhead and spreads its wings. Neither is a punch, and the manifest says so.
+
+Worth stating plainly because this document said it could not be done: **"a pole raised
+overhead has nowhere to go" is now false.** It was true of a canvas the character fills. It
+is what the padding was for, and the Ferryman's pole is the clearest demonstration in the
+repo — it rises 23px into 24px of headroom.
+
+Costs: 2 generations per free-form harvest, 1-2 per pinned segment. The Ferryman needed two
+pinned segments (see the accent note below); the Tyrant needed one free-form rise and one
+pinned settle. Neither needed a re-roll.
+
+#### Pinning both lit endpoints rescues a two-pixel accent — mostly
+
+The Ferryman's accent is two pixels of `#7dd3fc`, and a **free-form** run destroys it: of
+eight frames, two had *no cold pixel anywhere on the sprite*, not a dimmed one. So its rise
+was regenerated as two **pinned** segments with both endpoints lit, which is what this
+document already recommends. That fixed most of it and not all of it:
+
+    free-form rise      2 of 8 frames lost the accent entirely
+    pinned rise         0 of 6 lost it   (three drifted to a neighbouring cold shade,
+                                          40.4-47.1 chroma — still well over the bar)
+    pinned settle       1 of 6 split, 1 of 6 gone
+
+**So pinning is a strong mitigation, not a guarantee.** Budget for losing a frame or two of
+a small-accent animation even when you do everything right.
+
+The bar is not a constant: `npm run chroma` requires each frame's loudest 2+px colour to
+beat **the hero's own max accent chroma, 35.3**. A frame whose eye drifts to a neighbouring
+cold shade passes; a frame whose loudest survivor is the robe's olive (25.1-27.8) does not.
+
+#### `art/anim/repair-split-accent.py`, and the one frame it refuses
+
+The two failing settle frames failed *differently*, and only one was repairable:
+
+- One had the documented **split**: a single pixel of the exact accent plus a neighbour one
+  shade off. Both look right; neither covers two pixels. Re-fusing the neighbour fixes it.
+- One had **no blue pixel above the robe's own dark grey at all**. Nothing to locate.
+
+`repair-split-accent.py` handles the first and **refuses** the second, loudly. It is the
+intermediate-frame counterpart to `target-accent.py`: that script fixes a *pinned endpoint*,
+whose eye is at a coordinate we chose, and this one must **find** the eye, because an
+intermediate frame is genuinely generated and a hardcoded coordinate is wrong the moment
+anything is re-rolled. The unrepairable frame was dropped from the strip. Do not give the
+script a fallback coordinate — being refused is the correct outcome.
+
+#### Two measurement traps, both of which nearly cost a good animation
+
+**A thin feature's motion is under-reported by silhouette XOR over body area.** The Tyrant's
+sword goes from held-low to raised overhead — the most dramatic pose change of the three
+bosses — and scores **8-12%**, under `windup-check.py`'s 25% "this reads as a fidget" bar.
+Nothing is wrong with the metric: a sword is a few hundred pixels against a large winged
+body, so the ratio is small however far it travels. Applying that bar here would have
+rejected the best rise of the set. The bar is calibrated for whole-body motion; a
+long thin held object is outside what it can see. Look at the frames.
+
+**Judge a seam against the animation's own steps, not against zero.** The `cast` -> `strike`
+hand-off measured 458 (Ferryman) and 522 (Tyrant) silhouette pixels, which looked like a
+visible pop, and by eye on a contact sheet it looked like one too. Measured against the
+consecutive-frame steps *inside* those same animations — 518-930 in the wind-ups, 274-1801
+in the releases — both seams are **smaller than ordinary motion**. There is no pop; there is
+a boss moving. An absolute pixel count cannot tell those apart and a comparison can.
+
+#### The last frame of a release should be the committed rest, exactly
+
+A pinned settle lands *near* its target, not always on it: the Tyrant's finished 76
+silhouette pixels away. Since the pin target was the idle frame in the first place, use the
+committed file as the final strike frame instead of the generated approximation. It costs
+nothing, and it makes the hand-off back to the idle loop **byte-identical** rather than
+merely close — measured 0 differing pixels on both bosses. The generated near-miss frame is
+just dropped.
+
+#### The generator sometimes erodes thin features on the returned frame 0
+
+The input-integrity canary (`frames[0] == input`) fired on the Tyrant, and it was **not** a
+corrupted upload: the encoder round-tripped that exact file losslessly. The generator
+returned frame 0 with 277 opaque pixels missing, all at the outer wing tips, **nothing
+gained and nothing recoloured**.
+
+That signature is worth learning, because it distinguishes the two failures the canary
+catches:
+
+    corrupted upload    large loss AND thousands of recoloured pixels  (my quantizer bug)
+    thin-feature erosion  small loss, 0 gained, 0 recoloured           (the Tyrant's wings)
+
+The first means stop and fix the encoding. The second is the generator trimming 1-2px off
+an extremity, is consistent across that run's own frames, and shows up only at the one
+frame boundary where generated art meets committed art. On the Tyrant it was judged
+acceptable and shipped; it is the reason its seam is 522 rather than nearer zero.
+
 ## The manifest tables
 
 `AtlasSprite.anim` is **optional**, and that is the whole compatibility story: a row without
