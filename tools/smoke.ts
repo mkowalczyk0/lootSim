@@ -3708,10 +3708,15 @@ console.log("\n=== multiplayer ===");
     check("a party member cannot pick up a drop that isn't theirs",
       own.pickups.length === 1 && thief.loot.items.length === thiefItemsBefore,
       `${thief.loot.items.length - thiefItemsBefore} item(s) stolen`);
+    // Read the pickup defensively rather than with `!`. If the drop above was stolen this
+    // array is empty, and a check that *throws* on a violation aborts the whole smoke run
+    // and hides every check after it — which is exactly what happened the first time this
+    // was falsified. A violated property must go red, not crash.
+    const held = own.pickups[0];
+    const moved = held ? Math.hypot(held.x - spot.x, held.y - spot.y) : Infinity;
     check("...and a non-owner's magnetism can't drag it either",
-      own.pickups[0]!.magnet === false
-      && Math.hypot(own.pickups[0]!.x - spot.x, own.pickups[0]!.y - spot.y) < 1,
-      `moved ${Math.hypot(own.pickups[0]!.x - spot.x, own.pickups[0]!.y - spot.y).toFixed(1)}u`);
+      held !== undefined && held.magnet === false && moved < 1,
+      held ? `moved ${moved.toFixed(1)}u` : "the drop was already collected");
 
     // The owner walks over their own drop and it behaves exactly as loot always has.
     holder.avatar.x = spot.x;
