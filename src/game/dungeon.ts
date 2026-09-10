@@ -11,7 +11,8 @@ import {
   zeroResists, type Element,
 } from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
-import { memoryEffects } from "../data/memories";
+import { memoryEffects, memoryPlace } from "../data/memories";
+import { memoryMaterialSource } from "../data/planets";
 import {
   AFFIX_BY_ID, affixCountFor, affixPrefix, foldAffixSpawn, rollMonsterAffixes,
   type MonsterAffix,
@@ -3161,6 +3162,27 @@ export class Dungeon implements CombatHost, RuleHost {
         (6 + this.profile.depth * 0.4) * yieldMult * finale * challengerRewardMult(this.config.challengerTier));
       if (materials > 0) {
         this.dropPickup(x, y, { kind: "material", value: materials, element: this.config.planet.spec.element });
+      }
+    }
+    // A Memory that happens to recall the Unbound Spire or the Hollow Orchard pays out
+    // that place's own material too (docs/reliquary-reachability.md,
+    // docs/materials-coverage.md) — the second, independent source for Rune Fragment and
+    // Heartwood Sap that "The Unbound Ward"/"Rootbound Plate" needed and neither sector
+    // can reach in practice. Same formula the sectors themselves pay, so a Memory of the
+    // place is worth what standing in the place would have been — not a discount on it —
+    // and everything about *reaching* this route (the Altar's own depth-30-and-height-30
+    // gate, then a 1-in-`memoryPlaces().length` roll to land on this specific place) is
+    // exactly as hard as any other Memory, never easier for landing here.
+    if (this.config.memory) {
+      const place = memoryPlace(this.config.memory.placeId);
+      const source = place ? memoryMaterialSource(place.name) : null;
+      if (source) {
+        const materials = Math.round(
+          (6 + this.profile.depth * 0.4) * source.materialYield * finale
+            * challengerRewardMult(this.config.challengerTier));
+        if (materials > 0) {
+          this.dropPickup(x, y, { kind: "material", value: materials, element: source.element });
+        }
       }
     }
 

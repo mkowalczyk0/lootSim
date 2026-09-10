@@ -16,8 +16,8 @@ on the strength of this doc; what's below is what's actually still open.
 | Storm Coil | lightning | The Storm Sepulcher (5) | 24 | ✅ kill + node | essence only |
 | Void Husk | void | The Black Archive (6) | 29 | ✅ kill + node | essence only |
 | **Gilt Reliquary** | holy | The Gilded Ossuary (7) | 34 | ✅ kill + node | **Threshold Brand (80), The Seal Unbroken (120)**, + essence |
-| **Rune Fragment** | arcane | The Unbound Spire (8) | 39 | ✅ kill + node | essence only — **no dedicated recipe** |
-| **Heartwood Sap** | nature | The Hollow Orchard (9) | 44 | ✅ kill + node | essence only — **no dedicated recipe** |
+| **Rune Fragment** | arcane | The Unbound Spire (8) | 39 | ✅ kill + node, + Memory (below) | **The Unbound Ward (550)**, + essence |
+| **Heartwood Sap** | nature | The Hollow Orchard (9) | 44 | ✅ kill + node, + Memory (below) | **Rootbound Plate (550)**, + essence |
 
 "Live-confirmed" is a real headless `Dungeon` run (`geared()` + a scripted bot), not a
 reading of the code: each sector was unlocked, a resource node was mined, and a kill
@@ -39,23 +39,31 @@ investigation started.
 
 ## What's still actually open
 
-- **Rune Fragment and Heartwood Sap have a source and no dedicated recipe sink.** Right
-  now they're only spendable through the general craft-essence mechanic (weighting a roll
-  toward an arcane/nature affix, confirmed working). Gilt Reliquary has two hard-cost
-  recipes; these two have none. Not a bug — nothing is broken — but a source with no sink
-  is a real design gap worth the owner knowing about, not an oversight to quietly fix.
-- **Sectors 7-9's reachability is unmeasured, not proven.** They unlock either by account
-  frontier (baseDepth 34/39/44 — CLAUDE.md already notes depth 30 is "far beyond the
-  measured frontier" for the campaign bots) or by clearing all six earlier sectors' first
-  tier in sequence, which needs no Delve/Tower depth at all. The ladder route is the
-  likely real path, but nothing in the test suite has ever played past `PLANETS[1]`
-  (`tools/smoke.ts`'s own planet coverage), so whether a real campaign actually reaches
-  sector 7, 8 or 9 — and how long that takes — has never been measured. A follow-up
-  attempt to measure a full nine-sector sequential campaign was started and produced
-  **zero numbers**: time ran out while reading `Dungeon.bankLoot()`'s floor-to-floor
-  semantics, before any harness code was written. That's stated plainly rather than
-  guessed at — "technically obtainable" and "reachable in practice" are still two
-  different, unreconciled claims for these three sectors specifically.
+- ~~Rune Fragment and Heartwood Sap have a source and no dedicated recipe sink~~ —
+  **closed the same day this doc first shipped**: "The Unbound Ward" and "Rootbound
+  Plate" (`src/data/named.ts`) are craft-only mythic recipes for exactly these two
+  materials, the same shape Gilt Reliquary already had. This table above was left stale
+  when that commit landed (the recipes existed; this file still said "no dedicated
+  recipe") — fixed here, not a second finding.
+- **Sectors 7-9's reachability was measured after this doc shipped, and it's worse than
+  "unmeasured": `docs/reliquary-reachability.md` found sector 7 (and, on a second pass,
+  sectors 4-6 before it) cannot be cleared by a scripted bot at any gearing tested, up to
+  +116 character levels over the sector's own baseDepth.** That makes the two recipes
+  above a second, sharper problem than a stale doc: the game shipped two fully-built
+  mythic recipes whose one in-fiction material source nobody can reach. **Fixed**: the
+  clear-cache material payout in `game/dungeon.ts` now also fires when a rolled Memory
+  (`data/memories.ts`) recalls the Unbound Spire or the Hollow Orchard specifically —
+  `data/planets.ts`'s `memoryMaterialSource` is the one place that list lives. This is a
+  second, independent route to the material, not a discount on the sector's own: a
+  Memory's own depth is drawn around the account's frontier (typically far below
+  baseDepth 39/44) rather than pinned to the sector, and landing on either place at all is
+  a roughly 1-in-20 roll (`memoryPlaces().length`) on top of the Altar's own
+  depth-30-and-height-30 unlock. The sector itself, its ladder and its difficulty curve
+  are all untouched — this doesn't make sectors 7-9 playable, only makes their two
+  recipes reachable by a different door. Live-confirmed the same way the table above was:
+  a headless `Dungeon` run with a `MemoryInstance` forced to each place, cleared, and
+  banked (`arcane`/`nature` moved by the exact `(6 + depth·0.4) × materialYield × finale`
+  formula the sector itself pays).
 
 ## Reproducing this
 
