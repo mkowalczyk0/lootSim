@@ -546,3 +546,43 @@ so falls back down the `[ability, "strike", "idle"]` chain; a tag that exists bu
 because `cast` beats `strike` in a case nobody intended; or art that simply was never
 authored for that boss. Establish which bosses the owner is actually seeing this on, and
 which of the three causes each one has, before generating a single frame.
+
+## 18. Two more screens can fire a destructive action on a single click
+
+Found while fixing §15, and unlike §9 this one **is** actionable: it is the same defect the
+owner already reported, in two screens they have not happened to click yet.
+
+`src/ui/town.ts` wires one generic click fallback — `[data-index]` → set cursor →
+`primary()` — and it is the house idiom, so mechanically every row-rendering tab is one
+click from its primary action. **That framing is too wide to act on, and the PM's first
+attempt at it ("any screen where `primary()` spends something") was the wrong filter.** For
+a chest tier or a rarity row, click-to-fire *is* the intent; the row has no second meaning.
+
+**The test that actually separates a bug from the idiom working: is the row also something
+you would click to inspect or select, without meaning to act?** That is what made the Forge
+a bug — its cards are a selection surface, you pick an item and then pick an op, so the
+click carried two meanings and the destructive one won.
+
+By that test, two screens have the same shape:
+
+- **The Altar's Vault / workbench** (`renderVault`). Rank this first. A Memory card is
+  exactly the thing you would click to read its boons and burdens, and `primary()` spends
+  Ash on a workbench op or consumes the Memory. `altarMode`/`altarOp` mirror
+  `forgeMode`/`forgeOp` exactly — it is the same screen architecture, which is both the tell
+  and the reason it is the most likely source of an identical owner report.
+- **Named recipes** (`renderNamedForge`). Rows with a full recipe panel beside them, where
+  `primary()` calls `craftNamed` and consumes **stash item components**, materials and
+  coins. Arguably worse than §15: it can eat a named item you meant to read about.
+
+Judgement calls, deliberately **not** included: the Dive / Tower / Rifts screens (a click
+commits you to a run, but spends nothing) and the Shop (a row buys). Both read as "click the
+thing to do the thing" and are fine as they are.
+
+Explicitly **not** hazards: the Stash (`primary` equips, and that is reversible), the class
+and universal trees (respec is free), and the two places already carved out on purpose — the
+Augment loadout slots and the tree cells, both carrying comments saying select-and-fire was
+wrong there.
+
+**That carve-out is the fix shape**, and §15 is now a worked example of it: give the row its
+own attribute and a select-only handler, and move executing into an action strip of its own,
+outside the scrolling grid and outside the reading panel.
