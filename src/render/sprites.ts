@@ -21,7 +21,9 @@ import {
   COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
   cosmeticStageXY, heroStage,
 } from "./atlas/manifest";
-import { type Appearance, type Cosmetic, COSMETICS_BY_ID, defaultAppearance } from "../data/cosmetics";
+import {
+  type Appearance, type Cosmetic, type WeaponPalette, COSMETICS_BY_ID, defaultAppearance,
+} from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice, ATLAS_WEAPON_WASH } from "./itemart";
 import { chooseHeroArt, chooseSpriteArt, type SpriteArt } from "./spriteart";
@@ -540,6 +542,65 @@ export interface WeaponDraw {
   readonly worldScale: number | null;
 }
 
+const legacySkinTintCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Below this luminance a source pixel is treated as the art's own ink outline and left
+ * untouched rather than painted into the gradient below — otherwise the transform paints
+ * the silhouette itself instead of just the fill inside it.
+ */
+const LEGACY_SKIN_OUTLINE_LUMA = 0.16;
+
+/**
+ * The seven original weapon skins (`data/cosmetics.ts`'s `family: null` roster —
+ * Bonecarved, Confection, Frostbound, Neon Signal, Petalfall, Abyssal, Starforged) were
+ * authored as palettes to paint over the procedural bake, from back when every family
+ * drew one. All fourteen families now have authored pipeline art and `resolveWeaponDraw`
+ * prefers it over the bake, so the thing those seven skins paint is no longer reachable —
+ * equip one and the weapon in your hand is unchanged (`docs/art-manifest.md` §7.1).
+ *
+ * **This is a stopgap, not the destination.** The owner already chose, for *new* skins,
+ * that a skin is its own authored weapon (`skinAbyssalScythe`/`skinSeamlessSword`) rather
+ * than a palette over someone else's — this function does not reopen that. It exists only
+ * because these seven are already sold and gems are on a path to real money, so leaving
+ * them invisible spends a player's currency for nothing in the meantime. Once an authored
+ * replacement lands for a family (a new `ATLAS_WEAPON_SKINS` row), `resolveWeaponDraw`
+ * already prefers it over this — same fallback-ladder shape as monster sets, tilesets and
+ * item art. Queuing that authored art is future work, not done here.
+ *
+ * Every non-outline pixel of the authored weapon is remapped along the palette's own
+ * `shade`→`edge` line by its own luminance, so the transform uses two of the skin's four
+ * colours rather than a single flat wash. `grip`/`jewel` have no legible region to target
+ * on arbitrary authored art and are left for whenever real art replaces this.
+ */
+function legacySkinTintedWeapon(
+  src: HTMLCanvasElement, key: string, palette: WeaponPalette,
+): HTMLCanvasElement {
+  const cacheKey = `${key}|${palette.edge}|${palette.shade}`;
+  const hit = legacySkinTintCache.get(cacheKey);
+  if (hit) return hit;
+
+  const { canvas, ctx } = blank(src.width, src.height);
+  ctx.drawImage(src, 0, 0);
+  const [er, eg, eb] = hexToRgb(palette.edge);
+  const [sr, sg, sb] = hexToRgb(palette.shade);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+    const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (luma < LEGACY_SKIN_OUTLINE_LUMA) continue;
+    data[i] = sr + (er - sr) * luma;
+    data[i + 1] = sg + (eg - sg) * luma;
+    data[i + 2] = sb + (eb - sb) * luma;
+  }
+  ctx.putImageData(img, 0, 0);
+  if (legacySkinTintCache.size > 256) legacySkinTintCache.clear();
+  legacySkinTintCache.set(cacheKey, canvas);
+  return canvas;
+}
+
 function resolveWeaponDraw(
   family: WeaponFamily, skinId: string | null, rarity: Rarity | null, namedId: string | null,
 ): WeaponDraw {
@@ -582,6 +643,19 @@ function resolveWeaponDraw(
   }
 
   const aw = ATLAS_WEAPONS[family];
+
+  // A legacy palette skin (`family: null`) has no `ATLAS_WEAPON_SKINS` row to match above,
+  // so it reaches here — and until one of the fourteen gets authored, it tints the
+  // authored weapon rather than drawing nothing. See `legacySkinTintedWeapon`.
+  const legacySkin = !namedId && !skinArt && skinId ? COSMETICS_BY_ID[skinId] : undefined;
+  if (aw && legacySkin?.weapon && legacySkin.family === null) {
+    const png = atlasCanvas(aw.id);
+    if (png) {
+      const canvas = legacySkinTintedWeapon(png, `atlasWeapon:${family}`, legacySkin.weapon);
+      return { canvas, gripX: aw.gripX, gripY: aw.gripY, worldScale: aw.worldScale };
+    }
+  }
+
   if (aw) {
     const png = atlasCanvas(aw.id);
     if (png) {
@@ -864,7 +938,14 @@ export function cosmeticPreview(id: string): HTMLCanvasElement {
     // a picture of something the player would never be handed.
     made = atlasCanvas(skinArt.id)!;
   } else if (c.weapon) {
-    made = bake(WEAPON_ART.sword!.grid, weaponPalette(c.weapon));
+    // A legacy palette skin previews as the same transform it now actually draws in your
+    // hand (a sword, the wardrobe's reference weapon) rather than the procedural bake
+    // nothing in the live draw path reaches any more — see `legacySkinTintedWeapon`.
+    const swordArt = ATLAS_WEAPONS.sword;
+    const swordPng = swordArt ? atlasCanvas(swordArt.id) : null;
+    made = swordPng
+      ? legacySkinTintedWeapon(swordPng, "atlasWeapon:sword", c.weapon)
+      : bake(WEAPON_ART.sword!.grid, weaponPalette(c.weapon));
   } else {
     const { canvas, ctx } = blank(8, 8);
     ctx.fillStyle = c.colors[0] ?? "#ffffff";
