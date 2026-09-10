@@ -543,7 +543,8 @@ section("9. live: the drop sites really read the table");
   rig(tooShallow).dropClearCache();
   check("...and a depth-3 cache holds none, per the table's minDepth", namedOnFloor(tooShallow).length === 0);
 
-  // A chest pull asks the chest table alongside the ordinary roll, never instead of it.
+  // A chest pull's named roll takes the ordinary roll's slot rather than riding alongside
+  // it (docket §21) — a chest returns exactly the number of items it promised.
   const chestState = new GameState(24);
   chestState.chooseClass("swordsman");
   const chestPriv = chestState as unknown as { rng: Rng };
@@ -558,7 +559,7 @@ section("9. live: the drop sites really read the table");
   chestState.keys.Legendary = 1;
   const found = chestState.openChests("Legendary", 1);
   check("a Legendary chest pull can pay out its named item", found.some((it) => it.named === "keepers-ledger"), found.map((it) => it.name).join(", "));
-  check("...alongside the ordinary pull, never replacing it", found.length === 2 && found.some((it) => !it.named));
+  check("...taking the ordinary pull's slot, never arriving alongside it", found.length === 1);
   chestState.keys.Basic = 1;
   check("a Basic chest, with no table entry, pays out nothing named", chestState.openChests("Basic", 1).every((it) => !it.named));
 }
