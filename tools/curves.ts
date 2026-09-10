@@ -380,11 +380,13 @@ const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(0)}%`;
 // which returns `null` every time, and a whole measurement pass was spent reporting a
 // bot that could not walk around a wall as a game that could not be finished.
 //
-// So this section runs the *published* control: the same twelve-seed campaign
+// So this section runs the *published* control: the same `CAMPAIGN_SEEDS` campaign
 // `tools/smoke.ts` asserts on, through the same imported `campaign`, and prints what it
-// gets. `smoke.ts` claims sharp 11.8 and reckless 9.4 with a margin of 2.4. If the two
-// numbers below do not match those, nothing further in this file should be believed —
-// and that discrepancy is itself the first finding.
+// gets. `smoke.ts` claims sharp 11.65 and reckless 9.60 with a margin of 2.05 (the
+// 60-seed widening, 2026-09-10 — see `docs/campaign-pathing-bias.md`; the original
+// twelve read sharp 11.8 / reckless 9.4 before that). If the two numbers below do not
+// match those, nothing further in this file should be believed — and that discrepancy
+// is itself the first finding.
 
 if (section("0")) {
   console.log("\n=== 0. calibration against the published campaign ===");
@@ -403,8 +405,8 @@ if (section("0")) {
     + `  deaths ${sharp.deaths.toFixed(1)}  unfinished ${sharp.unfinished.toFixed(2)}`);
   console.log(`   reckless (never dodges): deepest ${reckless.deepest.toFixed(1)}`
     + `  deaths ${reckless.deaths.toFixed(1)}  unfinished ${reckless.unfinished.toFixed(2)}`);
-  console.log(`   margin ${margin.toFixed(1)} — smoke.ts publishes sharp 11.8 / reckless 9.4 / margin 2.4`);
-  const ok = Math.abs(sharp.deepest - 11.8) < 0.05 && Math.abs(reckless.deepest - 9.4) < 0.05;
+  console.log(`   margin ${margin.toFixed(1)} — smoke.ts publishes sharp 11.65 / reckless 9.60 / margin 2.05`);
+  const ok = Math.abs(sharp.deepest - 11.65) < 0.05 && Math.abs(reckless.deepest - 9.60) < 0.05;
   console.log(ok
     ? "   MATCHES the published control: this harness plays the same game smoke.ts does."
     : "   *** DOES NOT MATCH — treat everything below as suspect and find out why first.");
