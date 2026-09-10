@@ -1,86 +1,90 @@
-# Hero v6 — three candidates, measured. Nothing committed.
+# Hero v7 — the boss-art direction, measured. Nothing committed.
 
-Five passes have been rejected. This round deliberately does not ship one: three candidates,
-one contact sheet, the owner picks by eye. `hero-candidates.png` (row 1 = shipped v4 control,
-then A, B, C) is the artefact; every number below is derived by `art/characters/candidates.ts`
-from the committed PNGs, never hand-scanned.
+The owner's direction changed: *"Give me an iteration not going off of the art-refs, go off
+the existing boss art instead for style."* `docs/art_refs/` no longer governs the hero, and
+the density-ratio metric derived from it does not either. Every number below comes from
+`art/characters/candidates.ts` reading the generated PNGs.
 
-## The two levers are one equation
+## The finding that explains six rejected passes, and it is not about the prompt
 
-`density = 2 / worldScale = 2h / worldHeight`. The floor is fixed at **2.0 world units per art
-pixel** (16 texels stamped across a 32-unit cell), so a candidate can be aimed at a ratio
-exactly rather than guessed toward one.
+**The hero and the bosses were generated in different modes, with opposite style settings.**
+Read straight off the PixelLab records:
 
-| | lever | px | **colours** | head col | hot accent | head/body lum | world h | tiles | density |
-|---|---|---|---|---|---|---|---|---|---|
-| v4 shipped | — | 39x57 | **40** | 25 | 30 (skin) | 89/42 = **2.1x** | 32 | 1.00 | 3.56x finer |
-| A cut the ink | colour only | 16x41 | **27** | 20 | 35 (skin) | 55/47 = **1.17x** | 32 | 1.00 | 2.56x finer |
-| B coarse+tall | height only | 20x51 | **18** | 15 | **73 `#dba820`** | 61/38 = 1.6x | 58 | 1.81 | 1.76x finer |
-| C both | both | 16x39 | **24** | 14 | 26 (skin) | 77/66 = 1.17x | 52 | 1.63 | 1.50x finer |
+| | mode evidence | `style` on record |
+| --- | --- | --- |
+| every raid boss | 8 directions, 112px | `-, -, -` |
+| hero v6 candidate A (shipped today) | 4 directions, 56px | `flat shading, single color black outline, low detail` |
 
-Colour count is printed first on purpose. It is the axis that has actually tracked the owner's
-rejections — a hooded candidate once measured 4.19x density (worse) while reading better,
-because its colour count fell 40 -> 13. "Too realistic" was information density, not pixels per
-world unit.
+Only `standard` mode honours `shading`/`detail`; `pro` and `v3` always produce 8 directions
+and ignore them. So the bosses are `pro`/`v3` with nothing clamped, and **the hero was being
+actively flattened and de-detailed while the bosses were not.** "Go off the boss art for
+style" therefore has a concrete mechanical translation: *generate the hero the way the
+bosses were generated* — same mode family, no flat/low clamps. That is what every candidate
+here does.
 
-## Three findings the sheet exists to surface
+## Negative phrasing summons the thing it forbids — three for three
 
-**1. The town portraits do not constrain drawn size at all.** They scale off the hero's
-*art-pixel* height (`heroMeta.h` -> `portraitScale`/`pixelImageBody`), never off `worldScale`.
-So lever 2 is free of them. What they do constrain is `h`, and the legal band — derived from the
-smoke bound's own functions, not remembered — is:
+Round 1 asked for "no wings", "no hood", "no helmet" and got:
 
-    h = 16-43, 46-50, 52-58, 78-87, 155-160
+- **B** — wings.
+- **C** — a pole, because the Ferryman used as the style reference holds one.
+- **D** (round 2, still carrying one negative) — a backpack, from "carrying nothing on his back".
 
-**Candidate B's natural trim of 51 lands in the 44-45 / 51 dead zone and would fail the gate.**
-Fixable for nothing (pad one transparent row to 52; `worldScale` becomes 58/52 = 1.1154 and the
-density barely moves) — but it has to be done deliberately, so it is stated here rather than
-silently applied to a candidate the owner has not chosen yet.
+Round 2 replaced every negative with a positive statement of what *is* there — "both hands
+empty and open at his sides" — and **E came back clean**. This extends the style guide's
+existing palette-clamp lesson (clamp with positives: *matte, blackened, soot-stained*) from
+palette to **subject**, which it did not previously cover.
 
-**2. B carries a hot accent, which §1.4 forbids on the hero outright.** A saturated gold buckle
-at `#dba820` (73) plus lit blue eyes. This is the same defect v3 was rejected for. Colour count
-alone cannot catch it — one bright pixel pair costs exactly one colour, and B has the *lowest*
-count of the three — so the tool now measures maximum chroma over any colour covering 2+ pixels.
-A, C and v4 top out at skin tone (26-35), which is the expected floor for an exposed face.
+**Props are not a cosmetic complaint.** Two reasons a hero must be empty-handed:
 
-**3. Lever 2 applied to the hero alone is a different picture, not a smaller one.** The cast is
-unchanged and stands at roughly one tile:
+1. `worldScale` is derived from the **trimmed** height, so a staff above the head sizes the
+   *staff* to 32 world units and shrinks the character to fit underneath it.
+2. The game already draws the held weapon as its own rotated sprite (`weaponSprite`), so a
+   hero holding anything is drawn holding two things at once.
 
-    rot-imp 29.9 (0.94 tiles) · bone-archer 29.6 · iron-brute 32.4 (1.01) · cult-caster 29.8 · scuttler 17.3
+This matters far more for the 21 class heroes than for one hero: a "creative per class"
+brief invites exactly the swords, staves and packs that break both rules.
 
-B at 58 units and C at 52 make the hero **1.8x and 1.6x the height of the iron brute**. `ref_5`
-has the *whole cast* at 2-3 tiles, not just the player. So:
+## The second size constraint, which the portrait band does not catch
 
-> **Picking B or C is a commitment to rescaling the drawn size of every monster.**
+Shipping hero A established that a legal band height can still break the town screen.
+`portraitScale` rounds to a **whole** factor and magnifies the entire hero *stage*, not the
+figure on it: v4 (57 rows) hit its target at x3 -> 243px; hero A (41 rows) needs x4 ->
+324px, and overflowed both pinned CSS boxes.
 
-That rescale is mechanically safe — `worldScale` is decoupled from collision, so no hitbox, no
-telegraph radius and no camera geometry moves — but it will read as a more zoomed-in game. That
-is a look-wide aesthetic decision and it belongs to the owner. **A is the only candidate that
-does not carry it**: same 32-unit footprint as today, cast relationship untouched.
+**The direction is counter-intuitive: a taller hero is safer.** Every candidate here needs a
+smaller factor than the hero shipped today, and all of them clear the pins with room —
+even though the stage itself has to grow to hold them. Numbers are in the tool's output.
 
-## What each candidate actually is
+## The mode split is not only about detail — it decides the palette
 
-- **A — cut the ink.** Lever 1 only. Same drawn size as today, plain adventurer, exposed head,
-  brown tunic. Colours 40 -> 27 and, more to the point, the §1.4c head/body luminance gap closes
-  from 2.1x to 1.17x — the head stops being the brightest, most colour-dense region on the
-  sprite, which is the specific thing §1.4c says to measure. Aimed squarely at the diagnosed
-  root cause and carries no consequential decision with it.
-- **B — coarse and tall.** Lever 2 only, palette left near generation. Lowest colour count, but
-  it is the configuration that has been rejected before *plus* a forbidden hot accent *plus* the
-  portrait dead zone *plus* the cast rescale. Kept in the round on purpose so the reasoning above
-  can be falsified by eye rather than asserted.
-- **C — both.** Coarse, no accent, head/body gap closed, density 1.50x — closest to the
-  reference's ~1.0. Still carries the cast rescale.
+Round 2 produced two clean *subjects* (D, E, F all bare-headed and empty-handed) and they
+split cleanly by mode on a rule that has nothing to do with subject:
 
-## Process
+| | mode | colours | hot accent | vs lowest monster (44.7) |
+| --- | --- | --- | --- | --- |
+| E | `pro` + Ferryman as style ref | **28** | 35 `#c38c6a` | passes |
+| D | `v3` from scratch @ 64 | 48 | **46** `#c4704e` | **FAILS §1.4** |
+| F | `v3` from scratch @ 96 | 50 | **52** `#a65f22` | **FAILS §1.4** |
 
-Generated in PixelLab **standard** mode, 4 directions, 1 generation each. Standard is the only
-mode that honours `shading: flat` and `detail: low` — pro and v3 ignore both, which is a likely
-contributor to earlier passes coming back more rendered than asked for. Four directions because
-the owner picks from a south view; the winner gets a full 8-direction v3 rotation afterwards
-rather than paying for three.
+**`v3` from scratch keeps drifting warm and saturated; `pro` with a boss as the style
+reference inherits the low, dirty palette the game actually wants.** That is the single most
+useful result here for the 21 class heroes, because it says which mode to use before anyone
+spends 21 generations. Colour-counting alone could not see it — E has the *fewest* colours
+and F the most, but both would have read as "muted brown" by eye.
 
-**Unverified in a browser.** No session on this machine can click through the game. These are
-measured and rendered through a reimplementation of the stamping path (`tools/inworld.ts`'s
-approach: real graded tileset, true fractional scale, nearest-neighbour), not a screenshot, so
-it cannot catch a bug living in `draw.ts` itself. The owner should eyeball the winner in game.
+## Status
+
+**E is the only candidate that passes everything**, and its one blocker is size: art height
+105 sits between the 78-87 and 155-160 bands. Two routes, both stated rather than chosen:
+pad to 155 (legal, but the Hero/Style spread lands at 11.9% against a 12% limit — right on
+the edge), or re-roll `pro` against a *smaller* style character so the content lands in
+78-87. `pro` requires `size` >= the style character's content size, and the Ferryman's is
+~107, which is why this family lands just above the band.
+
+A, B, C and D are rejects for the reasons above; F is a reject on the accent.
+
+Generated: rounds 1-2 in `v3` (2-3 generations) and `pro` with the Ferryman as
+`style_character_id` (25 generations). **Unverified in a browser** — no session on this
+machine can click through the game, so these are measured and rendered through a
+reimplementation of the stamping path, not a screenshot.

@@ -93,3 +93,41 @@ So:
   winner afterwards.
 
 Derived while generating the v6 hero candidates; see `art/characters/candidates/NOTES.md`.
+
+## Match the reference's generation SETTINGS, not just its prompt
+
+The rule above says which mode honours the style knobs. This is the consequence of it that
+actually cost the project six rejected hero passes, and it is a general rule rather than a
+hero one.
+
+When the owner said *"go off the existing boss art instead for style"*, the useful answer
+turned out not to be a prompt at all. Read straight off the PixelLab records for the two
+sets of sprites:
+
+| | directions / size | `style` on record |
+| --- | --- | --- |
+| every raid boss | 8 directions, 112px | `-, -, -` |
+| hero v6 (the shipped base) | 4 directions, 56px | `flat shading, single color black outline, low detail` |
+
+Only `standard` honours `shading`/`detail`, and `pro`/`v3` always produce 8 directions — so
+the bosses are `pro`/`v3` with **nothing clamped**, and the hero was `standard` with the
+flat and low-detail knobs **actively on**. The hero was being deliberately flattened and
+de-detailed while the rest of the cast was not.
+
+**That divergence is invisible in the picture and invisible in the prompt.** Six passes were
+judged by eye, described as "too realistic" or "doesn't fit", and re-prompted — while the
+setting that made the hero categorically different from everything it stands next to was
+never in the conversation. No amount of looking at candidates would have found it; reading
+the two records side by side found it in a minute.
+
+So, whenever art is meant to match art that already exists: **fetch the existing sprite's
+generation record first and match its mode and its style parameters, before writing a word
+of description.** `get_character(character_id)` prints them. A style difference you can see
+is usually a settings difference you cannot.
+
+A corollary worth knowing, measured on the v7 candidates: **the mode also decides the
+palette.** `v3` from scratch drifted warm and saturated and produced two candidates that
+FAIL the §1.4 accent rule (46 and 52 against the lowest monster's 44.7) while reading as
+muted brown by eye; `pro` with a boss passed as `style_character_id` inherited the low dirty
+palette and produced the fewest colours of the six. Colour counting could not separate them
+— the passing candidate had the fewest colours and the worst failure had the most.

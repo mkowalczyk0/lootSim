@@ -67,8 +67,8 @@ import {
 } from "../src/render/pixels";
 import { FLOOR_GRADE, gradeSheet, hexToRgb, luminance, tileLuminance } from "../src/render/grade";
 import {
-  ATLAS, ATLAS_COSMETICS, HERO_STAGE_H, HERO_STAGE_W, SPRITE_OVERRIDES, TILESETS,
-  cosmeticStageXY, heroStageOffset,
+  ATLAS, ATLAS_COSMETICS, SPRITE_OVERRIDES, TILESETS,
+  cosmeticStageXY, heroStage,
   MONSTER_SETS,
 } from "../src/render/atlas/manifest";
 import { STATION_PROP } from "../src/game/deck";
@@ -2872,17 +2872,17 @@ console.log("\n=== hero portraits (§12 — one size, either composer) ===");
   };
   // `heroStageOffset` now COMPUTES this rather than a constant happening to satisfy it,
   // which is what lets a per-class hero of any height paste correctly.
-  const heroAt = heroStageOffset(heroMeta.w, heroMeta.h);
+  const heroAt = heroStage(heroMeta.w, heroMeta.h);
   check("the pipeline hero stands on the bottom row of its stage",
-    heroAt.dy + opaqueBottom(heroPng) === HERO_STAGE_H - 1,
-    `hero ends at y${heroAt.dy + opaqueBottom(heroPng)} of ${HERO_STAGE_H - 1}`);
+    heroAt.dy + opaqueBottom(heroPng) === heroAt.h - 1,
+    `hero ends at y${heroAt.dy + opaqueBottom(heroPng)} of ${heroAt.h - 1}`);
 
   // 2. Nothing the stage holds is clipped by it. The stage's headroom is not slack — a
   //    migrated witch hat uses almost all of it — so an oversized new layer would be
   //    silently cropped rather than fail.
   const clipped = Object.entries(ATLAS_COSMETICS).filter(([, c]) => {
     const at = cosmeticStageXY(c, heroMeta.w, heroMeta.h);
-    return at.dx < 0 || at.dy < 0 || at.dx + c.w > HERO_STAGE_W || at.dy + c.h > HERO_STAGE_H;
+    return at.dx < 0 || at.dy < 0 || at.dx + c.w > heroAt.w || at.dy + c.h > heroAt.h;
   });
   check("every migrated cosmetic fits inside the hero stage", clipped.length === 0,
     clipped.map(([k]) => k).join(", "));
@@ -2938,7 +2938,7 @@ console.log("\n=== hero portraits (§12 — one size, either composer) ===");
     const rule = new RegExp(`\\${selector}\\s*\\{[^}]*?height:\\s*(\\d+)px`, "m").exec(css);
     return rule ? Number(rule[1]) : null;
   };
-  const stageH = HERO_STAGE_H;
+  const stageH = heroStage(heroMeta.w, heroMeta.h).h;
   for (const [selector, target, padY] of [
     [".doll-portrait", HERO_PORTRAIT_BODY_PX, 14 + 10],
     [".portrait.hero", STYLE_PORTRAIT_BODY_PX, 10 + 6],

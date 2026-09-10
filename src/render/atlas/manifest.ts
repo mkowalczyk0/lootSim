@@ -664,22 +664,83 @@ export const ATLAS_WEAPONS: Record<string, AtlasWeapon> = {
  * canvas doesn't have, and wings/a cape need side margin for the same reason the
  * procedural `CHAR_W` is wider than its 20-wide body.
  */
-export const HERO_STAGE_W = 79;
-export const HERO_STAGE_H = 81;
+/**
+ * **The stage is sized to the hero it holds, not the other way round.**
+ *
+ * It used to be a fixed 79x81 and every hero had to fit a magic height into it. That
+ * coupled two unrelated things to the art: the town portrait boxes are pinned against
+ * `stage height x portraitScale`, so a *shorter* hero forced a *bigger* box (a smaller
+ * body needs a larger whole factor, and the whole stage is magnified with it); and the
+ * figure filled less and less of its own portrait as it shrank — hero v6 fills 51% of a
+ * canvas sized for a hero 16 rows taller.
+ *
+ * Both are height problems, so height is what follows the hero:
+ *
+ *  - **Height** = the hero, plus the larger of ~42% of his height and whatever the tallest
+ *    head-anchored cosmetic rises above the head. The first term is the proportional
+ *    headroom the fixed stage was built on; the second is a floor, so a short hero cannot
+ *    have a witch hat cropped off the top of the canvas.
+ *  - **Width** = the hero plus half his width either side, floored at the widest cosmetic
+ *    layer. Width is deliberately generous rather than tight: it feeds neither the portrait
+ *    box nor the fill ratio, and a narrow stage would clip a cape at the shoulders for
+ *    nothing.
+ *
+ * For the 39x57 hero this returns exactly `79x81` at `(20, 24)` — the four numbers that
+ * used to be hardcoded — so the rewrite moves nothing that shipped. `npm run anim` asserts
+ * that as an identity rather than trusting it.
+ *
+ * **What this does NOT fix, and it is worth being exact about it:** the legal-portrait
+ * *band* is a different mechanism entirely and is untouched. The band comes from
+ * `portraitSpread`, which compares the PROCEDURAL composer's 22-row body against the
+ * pipeline's, each scaled by its own whole factor — the stage never enters that
+ * calculation. The band exists because the procedural fallback exists, not because the
+ * stage is fixed.
+ */
+export interface HeroStage {
+  readonly w: number;
+  readonly h: number;
+  /** Where the hero PNG is pasted: centred, standing on the stage floor. */
+  /**
+   * Horizontal offset from the stage's CENTRE, not from its left edge. Every shipped layer
+   * is 0 — they are all centred on the hero — and storing it this way is what lets the
+   * stage width follow the hero without dragging every hat off to one side.
+   */
+  readonly dx: number;
+  readonly dy: number;
+}
+
+/** Proportional margins, from the fixed stage this replaces: half a width, ~42% of a height. */
+const STAGE_SIDE_FRAC = 0.5;
+const STAGE_HEAD_FRAC = 0.42;
 
 /**
- * Where a hero PNG is pasted into the stage — **derived from its own size, never a
- * constant**, because there is about to be one hero per class and they will not all be
- * the same shape.
+ * What the cosmetic layers demand of any stage that has to hold them: how far the tallest
+ * head-anchored layer rises above the head, how far the tallest feet-anchored one rises
+ * above the floor, and the widest layer of all.
  *
- * The rule is the one the shipped hero already obeys: **centred, standing on the stage
- * floor.** For the 39x57 base that is `(20, 24)`, which is exactly the pair that used to
- * be hardcoded here — and `tools/smoke.ts` already asserts the second half of it (the
- * hero's last opaque row is the stage's last row), so this makes an existing invariant
- * into the thing that computes the answer instead of a number that happens to satisfy it.
+ * These are floors, not the design. A back item is authored at one body's LENGTH — the
+ * cape is 41 rows for a 57-row hero — so it cannot be made to fit a much shorter hero by
+ * anchoring, and `floorRise` is what stops it being cropped out of existence in the
+ * meantime. Cosmetics are parked, not switched off: they still render, and a layer sitting
+ * wrong on a hero it was not drawn for is the accepted cost. A layer sliced off the canvas
+ * is not.
  */
-export function heroStageOffset(w: number, h: number): { dx: number; dy: number } {
-  return { dx: Math.round((HERO_STAGE_W - w) / 2), dy: HERO_STAGE_H - h };
+function cosmeticExtent(): { rise: number; floorRise: number; width: number } {
+  let rise = 0, floorRise = 0, width = 0;
+  for (const c of Object.values(ATLAS_COSMETICS)) {
+    if (c.anchor === "head") rise = Math.max(rise, -c.dy);
+    else floorRise = Math.max(floorRise, -c.dy);
+    width = Math.max(width, c.w);
+  }
+  return { rise, floorRise, width };
+}
+
+export function heroStage(heroW: number, heroH: number): HeroStage {
+  const { rise, floorRise, width } = cosmeticExtent();
+  const side = Math.round(heroW * STAGE_SIDE_FRAC);
+  const w = Math.max(heroW + side * 2, width);
+  const h = Math.max(heroH + Math.max(Math.round(heroH * STAGE_HEAD_FRAC), rise), floorRise);
+  return { w, h, dx: Math.round((w - heroW) / 2), dy: h - heroH };
 }
 
 /**
@@ -766,8 +827,11 @@ export interface AtlasCosmetic {
 export function cosmeticStageXY(
   c: AtlasCosmetic, heroW: number, heroH: number,
 ): { dx: number; dy: number } {
-  const { dy: headTop } = heroStageOffset(heroW, heroH);
-  return { dx: c.dx, dy: c.anchor === "head" ? headTop + c.dy : HERO_STAGE_H + c.dy };
+  const stage = heroStage(heroW, heroH);
+  return {
+    dx: Math.round(stage.w / 2 - c.w / 2) + c.dx,
+    dy: c.anchor === "head" ? stage.dy + c.dy : stage.h + c.dy,
+  };
 }
 
 /**
@@ -785,22 +849,26 @@ export function cosmeticStageXY(
  * base needing its own separate back-item layer.
  */
 export const ATLAS_COSMETICS: Record<string, AtlasCosmetic> = {
-  // `dy` is measured from the layer's `anchor`, and every pair below is the shipped
-  // absolute row minus the anchor it belongs to (head-top 24, stage floor 81 for the
-  // 39x57 hero) — arithmetic on the numbers that already shipped, not a retune.
-  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 20, dy: -22, anchor: "head" },
+  // `dx` is an offset from the stage's CENTRE and `dy` from the layer's `anchor`. Every
+  // number below is the shipped absolute pair minus the anchor it belongs to (centre 39.5,
+  // head-top 24, stage floor 81 for the 39x57 hero) — arithmetic on what already shipped,
+  // not a retune, and `npm run anim` asserts the old absolute pairs come back out.
+  //
+  // Every `dx` is 0 because every layer is centred on the hero. That is worth seeing: the
+  // horizontal half of this was never carrying information, only a stage width.
+  hatWitch: { id: "cosmetic.hat-witch", w: 39, h: 28, dx: 0, dy: -22, anchor: "head" },
   // Shared by hatCrown (legendary) and hatUnspoken (divine, same grid in pixels.ts too).
-  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 27, dy: -12, anchor: "head" },
-  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 31, dy: -6, anchor: "head" },
-  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 29, dy: -1, anchor: "head" },
-  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 29, dy: 7, anchor: "head" },
-  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 29, dy: 7, anchor: "head" },
+  hatCrown: { id: "cosmetic.hat-crown", w: 25, h: 16, dx: 0, dy: -12, anchor: "head" },
+  earsCat: { id: "cosmetic.ears-cat", w: 17, h: 13, dx: 0, dy: -6, anchor: "head" },
+  earsHorn: { id: "cosmetic.ears-horn", w: 21, h: 15, dx: 0, dy: -1, anchor: "head" },
+  faceGlasses: { id: "cosmetic.face-glasses", w: 21, h: 7, dx: 0, dy: 7, anchor: "head" },
+  faceVisor: { id: "cosmetic.face-visor", w: 21, h: 7, dx: 0, dy: 7, anchor: "head" },
   // Back items hang off the body and reach the ground, so they are anchored to the stage
   // floor: the hem stays on the ground for any hero. **This is the least-wrong of the two
   // anchors, not a fix** — a cape is authored at one body's LENGTH (41px for a 57px hero),
   // so on a materially shorter hero it will still read wrong however it is anchored, and
   // that wants the cosmetic rework the owner has parked rather than a number nudged here.
-  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 10, dy: -46, anchor: "feet" },
+  cape: { id: "cosmetic.back-cape", w: 59, h: 41, dx: 0, dy: -46, anchor: "feet" },
   // `Cosmetic.art` id for backAngel.
-  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 5, dy: -51, anchor: "feet" },
+  wingsAngel: { id: "cosmetic.back-wings-angel", w: 69, h: 41, dx: 0, dy: -51, anchor: "feet" },
 };

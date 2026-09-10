@@ -30,8 +30,8 @@
 import { readFileSync } from "node:fs";
 import { decodePng } from "./png";
 import {
-  ATLAS, ATLAS_COSMETICS, CLASS_HEROES, HERO_STAGE_H, HERO_STAGE_W, MONSTER_SETS,
-  SPRITE_OVERRIDES, cosmeticStageXY, heroStageOffset, type AtlasSprite,
+  ATLAS, ATLAS_COSMETICS, CLASS_HEROES, MONSTER_SETS,
+  SPRITE_OVERRIDES, cosmeticStageXY, heroStage, type AtlasSprite,
 } from "../src/render/atlas/manifest";
 import { CLASS_IDS } from "../src/data/classes";
 import { chooseHeroArt, chooseSpriteArt } from "../src/render/spriteart";
@@ -259,10 +259,19 @@ console.log("\nheroes — a class's own sprite, then the base, then the bake\n")
 
   // --- the stage places a hero of ANY height, and the anchors are a no-op for this one ---
   const heroMeta = ATLAS[base]!;
-  const at = heroStageOffset(heroMeta.w, heroMeta.h);
-  check("the hero is centred on the stage and stands on its floor",
-    at.dx === Math.round((HERO_STAGE_W - heroMeta.w) / 2) && at.dy + heroMeta.h === HERO_STAGE_H,
-    `${at.dx},${at.dy}`);
+  const at = heroStage(heroMeta.w, heroMeta.h);
+  check("the hero is centred on its stage and stands on the floor",
+    at.dx === Math.round((at.w - heroMeta.w) / 2) && at.dy + heroMeta.h === at.h,
+    `${at.dx},${at.dy} in ${at.w}x${at.h}`);
+
+  // The stage now FOLLOWS the hero, so the four numbers that used to be hardcoded have to
+  // come back out of the derivation unchanged for the sprite they were tuned against.
+  // Asserted as an identity, not trusted: this is the whole claim that the rewrite moved
+  // nothing that shipped.
+  const v4 = heroStage(39, 57);
+  check("the derivation reproduces the old fixed stage exactly for the 39x57 hero",
+    v4.w === 79 && v4.h === 81 && v4.dx === 20 && v4.dy === 24,
+    `${v4.w}x${v4.h} at ${v4.dx},${v4.dy} — want 79x81 at 20,24`);
 
   // The rewrite from absolute stage rows to anchor-relative ones must move NOTHING for the
   // hero that is actually shipped. Asserted as a comparison against the numbers that were
@@ -285,16 +294,19 @@ console.log("\nheroes — a class's own sprite, then the base, then the bake\n")
   // layers follow the head, feet-anchored ones do not move, and nothing lands off-canvas
   // in a way that would clip a layer out of existence entirely.
   let vanished = "";
-  for (const h of [16, 41, 43, 57, 80]) {
-    const top = heroStageOffset(16, h).dy;
+  for (const h of [16, 41, 43, 57, 80, 105, 155]) {
+    const stage = heroStage(16, h);
     for (const [k, c] of Object.entries(ATLAS_COSMETICS)) {
       const got = cosmeticStageXY(c, 16, h);
-      if (c.anchor === "head" && got.dy !== top + c.dy) vanished ||= `${k}@${h} did not follow the head`;
-      if (c.anchor === "feet" && got.dy !== HERO_STAGE_H + c.dy) vanished ||= `${k}@${h} moved off the floor`;
-      if (got.dy + c.h <= 0 || got.dy >= HERO_STAGE_H) vanished ||= `${k}@${h} is entirely off the stage`;
+      if (c.anchor === "head" && got.dy !== stage.dy + c.dy) vanished ||= `${k}@${h} did not follow the head`;
+      if (c.anchor === "feet" && got.dy !== stage.h + c.dy) vanished ||= `${k}@${h} moved off the floor`;
+      // Parked cosmetics still RENDER. A layer may sit wrong on a hero it was not authored
+      // for; it may not fall off the canvas or be cropped out of existence.
+      if (got.dy < 0 || got.dy + c.h > stage.h) vanished ||= `${k}@${h} is cropped vertically`;
+      if (got.dx < 0 || got.dx + c.w > stage.w) vanished ||= `${k}@${h} is cropped horizontally`;
     }
   }
-  check("every layer still lands on the stage for hero heights 16..80", vanished === "", vanished);
+  check("no cosmetic is cropped off the stage, for hero heights 16..155", vanished === "", vanished);
 }
 
 console.log("\nanimation — the design promises\n");
