@@ -432,6 +432,22 @@ export interface Pickup extends Body {
    * registry to read the id out of. Null for everything else.
    */
   defId: string | null;
+  /**
+   * The hero index this drop belongs to, or `-1` for a drop that belongs to the floor.
+   *
+   * Loot is per-hero (CLAUDE.md, "Loot is per-hero and physical"), and the rule is that
+   * **ownership goes exactly where assignment already exists**: an item, relic or augment
+   * is rolled *for* a specific hero — its level and its affinity bias come from that
+   * hero's own character (docket §23) — so it carries that hero's index and only that
+   * hero may collect it or magnetise it. Coins, gems, keys, materials and potions take no
+   * hero input at roll time (`coinFindMult`/`gemFindMult` are applied to whoever picks
+   * them up, at `collect`), so they are genuinely the floor's and stay first-come.
+   *
+   * Solo needs no special case and deliberately doesn't get one: a one-hero party has
+   * exactly one owner, so every owned drop carries index 0 and every shared drop resolves
+   * to the same hero `nearestHero` was already returning.
+   */
+  owner: number;
   /** Pop-out velocity so drops scatter instead of stacking on the corpse. */
   vx: number;
   vy: number;

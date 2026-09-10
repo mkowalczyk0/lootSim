@@ -390,10 +390,18 @@ export class WorldRenderer {
       const bob = Math.sin((d.elapsed + p.life) * 6) * 2;
       const { canvas, scale } = pickupSprite(p);
       ctx.save();
-      if (p.rarity) {
+      // Someone else's drop. Every drop belongs to exactly one hero and only its owner can
+      // collect it, so a teammate's loot has to *read* as theirs — otherwise the fix looks
+      // like a bug, and you spend the floor walking onto items that refuse to be picked
+      // up. Faded and stripped of its glow: still legible as an object on the floor (you
+      // can see your friend got something good), plainly not yours to take. Solo never
+      // takes this branch — the only hero owns everything.
+      const mine = p.owner < 0 || p.owner === d.localHero.index;
+      if (!mine) ctx.globalAlpha = 0.4;
+      if (mine && p.rarity) {
         ctx.shadowColor = RARITY_COLORS[p.rarity];
         ctx.shadowBlur = 12;
-      } else if (p.kind === "gem") {
+      } else if (mine && p.kind === "gem") {
         ctx.shadowColor = "#f0abfc";
         ctx.shadowBlur = 14;
       }

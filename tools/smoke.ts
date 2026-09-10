@@ -3647,6 +3647,136 @@ console.log("\n=== multiplayer ===");
     applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
     check("and goes away again with it", client.completionPortal === null);
   }
+
+  // 3b. Loot ownership. Every drop belongs to exactly one hero and only its owner may
+  // collect it (owner ruling). Before this, `updatePickups` claimed every drop for
+  // `nearestHero`, so a party member could walk off with an item rolled at someone
+  // else's level — the drop tables have always assigned per hero and the collection loop
+  // threw that away.
+  //
+  // The check is built so it goes RED on that old behaviour rather than merely passing
+  // on the new one: the *thief* stands directly on the drop and the *owner* is parked
+  // across the floor, so `nearestHero` would pick the thief and collect. Two heroes on
+  // the same tile would prove nothing — it would pass under both rules.
+  {
+    const ownState = geared(14, 8804, 16, "swordsman");
+    const own = new Dungeon(ownState, delveConfig(4, 0, 2), {
+      seed: 771, role: "host", heroes: setups,
+    });
+    const thief = own.heroes[0]!;
+    const holder = own.heroes[1]!;
+    own.enemies.length = 0;
+    own.pickups.length = 0;
+
+    // Park them genuinely apart: the thief on the portal (walkable, so nothing shoves the
+    // drop), the owner in the far corner, well outside any magnet reach.
+    const spot = { x: own.portal.x, y: own.portal.y };
+    thief.avatar.x = spot.x;
+    thief.avatar.y = spot.y;
+    holder.avatar.x = spot.x > own.width / 2 ? 20 : own.width - 20;
+    holder.avatar.y = spot.y > own.height / 2 ? 20 : own.height - 20;
+    const gap = Math.hypot(holder.avatar.x - spot.x, holder.avatar.y - spot.y);
+
+    const drop = (kind: "coin" | "item", owner: number) => {
+      own.pickups.push({
+        kind, x: spot.x, y: spot.y, px: spot.x, py: spot.y, radius: 6,
+        value: kind === "coin" ? 100 : 0,
+        item: kind === "item"
+          ? rollItem({ rarity: "rare", type: "ring", ilvl: 10, rng: new Rng(5) })
+          : null,
+        keyTier: null, rarity: kind === "item" ? "rare" : null, element: null, defId: null,
+        owner, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
+      });
+    };
+    const runPickups = (seconds: number) => {
+      const steps = Math.round(seconds / DT);
+      for (let i = 0; i < steps; i++) {
+        (own as unknown as { updatePickups(dt: number): void }).updatePickups(DT);
+      }
+    };
+
+    // The instrument first: unless the thief really is the hero `nearestHero` would have
+    // handed this to, the check can pass without the rule doing any work at all.
+    drop("item", holder.index);
+    check("the ownership check is pointed at a real theft — the non-owner is the nearest hero",
+      own.nearestHero(spot.x, spot.y) === thief && gap > 78 * 3,
+      `thief on the drop, owner ${gap.toFixed(0)}u away`);
+
+    const thiefItemsBefore = thief.loot.items.length;
+    const holderItemsBefore = holder.loot.items.length;
+    runPickups(1);
+    check("a party member cannot pick up a drop that isn't theirs",
+      own.pickups.length === 1 && thief.loot.items.length === thiefItemsBefore,
+      `${thief.loot.items.length - thiefItemsBefore} item(s) stolen`);
+    check("...and a non-owner's magnetism can't drag it either",
+      own.pickups[0]!.magnet === false
+      && Math.hypot(own.pickups[0]!.x - spot.x, own.pickups[0]!.y - spot.y) < 1,
+      `moved ${Math.hypot(own.pickups[0]!.x - spot.x, own.pickups[0]!.y - spot.y).toFixed(1)}u`);
+
+    // The owner walks over their own drop and it behaves exactly as loot always has.
+    holder.avatar.x = spot.x;
+    holder.avatar.y = spot.y;
+    runPickups(1);
+    check("the hero it belongs to collects it normally",
+      own.pickups.length === 0 && holder.loot.items.length === holderItemsBefore + 1);
+    check("and it went to the owner, not to whoever was standing there",
+      thief.loot.items.length === thiefItemsBefore);
+
+    // The owner ruling extends the rule to currency: coins are owned too.
+    holder.avatar.x = spot.x > own.width / 2 ? 20 : own.width - 20;
+    holder.avatar.y = spot.y > own.height / 2 ? 20 : own.height - 20;
+    const coinsBefore = thief.loot.coins;
+    drop("coin", holder.index);
+    runPickups(1);
+    check("currency is owned too — a teammate's coins are not free money",
+      own.pickups.length === 1 && thief.loot.coins === coinsBefore,
+      `${thief.loot.coins - coinsBefore} coins stolen`);
+
+    // A disconnect must never strand loot on the floor for the rest of the run.
+    holder.departed = true;
+    runPickups(1);
+    check("a departed owner releases their claim rather than wedging the drop",
+      own.pickups.length === 0 && thief.loot.coins > coinsBefore);
+  }
+
+  // 3c. Solo is unchanged, and structurally so rather than by special case: a one-hero
+  // party has exactly one owner, so the hero owns every drop and collects it as always.
+  {
+    const soloState = geared(14, 8805, 16, "swordsman");
+    const soloRun = new Dungeon(soloState, delveConfig(4), { seed: 772, role: "solo" });
+    soloRun.enemies.length = 0;
+    soloRun.pickups.length = 0;
+    const me = soloRun.localHero;
+    me.avatar.x = soloRun.portal.x;
+    me.avatar.y = soloRun.portal.y;
+    soloRun.pickups.push({
+      kind: "coin", x: soloRun.portal.x, y: soloRun.portal.y,
+      px: soloRun.portal.x, py: soloRun.portal.y, radius: 6,
+      value: 50, item: null, keyTier: null, rarity: null, element: null, defId: null,
+      owner: me.index, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
+    });
+    const before = me.loot.coins;
+    for (let i = 0; i < Math.round(1 / DT); i++) {
+      (soloRun as unknown as { updatePickups(dt: number): void }).updatePickups(DT);
+    }
+    check("solo picks its own loot up exactly as before",
+      soloRun.pickups.length === 0 && me.loot.coins > before,
+      `+${me.loot.coins - before} coins`);
+  }
+
+  // The wire carries the owner, because a drop you cannot collect and a drop you simply
+  // haven't reached must not look identical on a client.
+  {
+    host.pickups.length = 0;
+    host.pickups.push({
+      kind: "coin", x: 100, y: 100, px: 100, py: 100, radius: 6, value: 7,
+      item: null, keyTier: null, rarity: null, element: null, defId: null,
+      owner: 1, vx: 0, vy: 0, life: 0, magnet: false, embedTimer: 0,
+    });
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("a drop's owner crosses the wire",
+      client.pickups[0]?.owner === 1, `owner ${client.pickups[0]?.owner}`);
+  }
   console.log(`  the busiest snapshot of that fight was ${(busiest.bytes / 1024).toFixed(1)}kB`
     + ` with ${busiest.monsters} monsters on screen`
     + ` — ${((busiest.bytes * 20) / 1024).toFixed(0)}kB/s per player at ${20} snapshots a second`);
