@@ -229,6 +229,43 @@ as a resource-contention incident during a live measurement, and once earlier in
 same family as the shared-`node_modules/.cache` hazard (item 6) — a killed job's orphaned
 child can go on writing to that same shared bundle path exactly as a live one would.
 
+## An eighth instance, three days later: the de-jitter buffer that reached a player
+
+The de-jitter buffer landed with `tools/mp-jitter.ts` — a modelled network link — written
+in the same commit as the fix it was built to validate, and every number it produced
+agreed with the fix. Days later, the first human to actually play behind it disagreed
+within minutes: the client was measurably worse, stuttering *and* delayed at the same
+time. It was reverted (`fix/revert-buffer`).
+
+The root cause matches the symptom exactly. Playout was clocked off the simulation tick
+rather than wall clock, and the fixed-timestep loop's own spiral guard discards leftover
+time when a frame runs long — so a client running below 60Hz permanently loses netClock
+time on every tick it drops. Arrivals then outpace playout, the buffer's queue overflows,
+and several snapshots get applied in one tick to catch up: the exact stutter-and-delay
+pairing the player reported. The buffer coupled network smoothness to frame rate, and it
+did so worst on precisely the busy floors where a player is most likely to be dropping
+frames in the first place.
+
+That's a real bug with a real fix, and it isn't the entry. The entry is that
+`tools/mp-jitter.ts` — the only instrument that ever cleared this buffer — was written in
+the same commit as the buffer itself, modelling the link the buffer was designed against.
+Bound, scope and subject all came from the thing under test: CLAUDE.md's fourth lesson, a
+few days old at the time, in the one place in the project nobody had checked it against.
+The instrument and the defect shared an author, a commit, and a model of the world, so
+every measurement it ever produced agreed with itself by construction — there was no way
+for this check to fail, which is a different thing from the buffer having no bugs.
+
+Run this document's own catching question against it: *if the defect were true right now,
+would this instrument's number be any different?* No — because the instrument's model of a
+real link **was** the fix's model of a real link. Nothing external to the pair could ever
+have disagreed with it, which is exactly what item 1 in the six above already found for
+`mp-stutter.ts` (localhost, zero jitter) — the same shape, but this time the flawed
+instrument wasn't caught by a session asking the question before it shipped. It was caught
+by a person playing the game, which is the expensive way to catch it and the reason this
+instance belongs in the file even though it arrived after the file was written: it's the
+same failure the other seven describe, priced in stutter a real player felt rather than in
+a docket item nearly closed.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
