@@ -31,6 +31,20 @@ import type { WeaponFamily } from "../data/weapons";
  */
 export const RARITY_WASH = 0.5;
 
+/**
+ * The same decision for a **pipeline weapon**, which is a different number on purpose: a
+ * weapon PNG carries its own authored colour (steel, a brown grip, gold), so a wash strong
+ * enough to recolour a flat type icon would bury it. A weapon only needs enough tint that
+ * a mythic axe reads as mythic before anyone reads the word.
+ *
+ * It lives here, next to `RARITY_WASH` and away from the canvas, for the reason this file
+ * exists: it is a *decision* about what an item looks like, and a second copy of it is how
+ * the item-art bug in this file's header happened — one surface washing at 0.4 while
+ * another washed at 0.5. It was a bare literal at a single call site in `render/sprites.ts`
+ * until `npm run art` needed to draw the same weapons and would have had to repeat it.
+ */
+export const ATLAS_WEAPON_WASH = 0.26;
+
 /** The sprite an item with no icon of its own falls back to. */
 export const ITEM_FALLBACK_SPRITE = "capsule";
 

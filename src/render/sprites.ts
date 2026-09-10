@@ -22,7 +22,7 @@ import {
 } from "./atlas/manifest";
 import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
-import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice } from "./itemart";
+import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice, ATLAS_WEAPON_WASH } from "./itemart";
 import { chooseHeroArt, chooseSpriteArt, type SpriteArt } from "./spriteart";
 import type { ClassId } from "../data/classes";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
@@ -540,7 +540,7 @@ export function weaponSprite(
     const png = atlasCanvas(aw.id);
     if (png) {
       const made = rarity
-        ? tintedCanvas(png, `atlasWeapon:${family}`, RARITY_COLORS[rarity], 0.26)
+        ? tintedCanvas(png, `atlasWeapon:${family}`, RARITY_COLORS[rarity], ATLAS_WEAPON_WASH)
         : png;
       weaponCache.set(key, made);
       return made;

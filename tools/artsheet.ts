@@ -36,7 +36,7 @@ import {
   BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
   MOB_BRUTE, MOB_CASTER, MOB_IMP, MOB_RANGER, MOB_CRAWLER, PALETTES,
   WEAPON_ART, bodyPalette, cosmeticPalette, hairPalette,
-  rarityWeaponPalette, weaponPalette, type Grid, type Palette,
+  weaponPalette, type Grid, type Palette,
 } from "../src/render/pixels";
 import {
   COSMETICS_BY_ID, defaultAppearance, type Appearance,
@@ -44,8 +44,8 @@ import {
 import { NAMED_ITEMS } from "../src/data/named";
 import { RELICS } from "../src/data/relics";
 import { RARITIES, RARITY_COLORS } from "../src/data/rarity";
-import { RARITY_WASH } from "../src/render/itemart";
-import { ATLAS, TILESETS } from "../src/render/atlas/manifest";
+import { ATLAS_WEAPON_WASH, RARITY_WASH } from "../src/render/itemart";
+import { ATLAS, ATLAS_WEAPONS, TILESETS } from "../src/render/atlas/manifest";
 import { BIOMES } from "../src/data/biomes";
 import { TOWER_BIOMES } from "../src/data/tower";
 import { PLANETS } from "../src/data/planets";
@@ -226,10 +226,42 @@ strip([
   [BOSS_GRIDS.bossNameless!, PALETTES.nameless],
 ], true);
 
-// Every weapon twice: bare legendary steel, then wearing the Starforged skin.
+// --- weapons: the real art, then the one case that is still procedural ---
+//
+// This used to be two rows of `WEAPON_ART` — the procedural grids — and **neither of them
+// was what the game draws.** All fourteen families have had a committed pipeline PNG since
+// `59d94d7`/`30f5cec`, and `weaponSprite` uses it for every weapon that is not wearing a
+// cosmetic skin, so the sheet was showing a bare legendary sword that no player has seen in
+// months. The earlier museum sweep (`3e74a31`) left weapons alone on the grounds that they
+// are "still the live fallback whenever a realm's own pipeline PNG isn't committed", which
+// is true of monsters and bosses and simply not true of weapons: every one of them is
+// committed.
+//
+// So: the first row is the real thing, decoded and washed exactly as the game washes it
+// (`ATLAS_WEAPON_WASH`, shared with `render/sprites.ts` rather than repeated here — a
+// second copy of a wash constant is the item-art bug in this file's own §11 note).
+{
+  const weaponIds = Object.values(ATLAS_WEAPONS).map((w) => w.id);
+  stripPng(
+    weaponIds.map((id) => washPng(
+      decodePng(readFileSync(`src/render/atlas/weapons/${id}.png`)),
+      RARITY_COLORS.legendary, ATLAS_WEAPON_WASH,
+    )),
+    3, false, 14,
+  );
+}
+
+// The second row is the procedural grid wearing the Starforged skin, and it is **not** a
+// museum piece — it is the last live procedural weapon path in the game. `weaponSprite`
+// falls back to the bake for any weapon with a cosmetic skin equipped (`aw && !skinId`),
+// because a skin is a five-colour palette (edge/shade/grip/jewel/glow) over a grid with
+// semantic keys, and the pipeline PNGs are full-colour art — measured: 10-37 distinct
+// colours each, saturation up to 189 — not the neutral greyscale the manifest's own
+// comment claims. A palette cannot drive art whose colours are already decided, so
+// skinning the real weapons needs them indexed onto those five slots first, the way
+// `COSMETIC_MARK_*` already does it for cosmetic layers. Until that lands, this row is
+// exactly what a player with a skin equipped sees, and it belongs on the sheet.
 const starforged = COSMETICS_BY_ID.skinStar!.weapon!;
-const legendary = rarityWeaponPalette("legendary");
-strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(legendary)] as const), false, 14);
 strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(starforged)] as const), false, 14);
 
 // 2026-09: this used to be one strip of the procedural coin/key/potion/gem/capsule,
