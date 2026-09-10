@@ -155,7 +155,7 @@ def frame_order(p: Path):
 
 
 def load_tag(spec: str):
-    """`tag=dir` or `tag=dir:drop=i,j` -> (tag, [frames]), in frame order.
+    """`tag=dir`, `tag=dir:drop=i,j`, `tag=dir:first=<png>` -> (tag, [frames]), in order.
 
     `drop=` removes generated frames by their index in the directory, and it exists for one
     measured reason. With a pinned ending, `animate_image` reliably backs off toward rest in
@@ -165,11 +165,36 @@ def load_tag(spec: str):
     progress-keyed wind-up it reads as the boss committing, relaxing, then snapping — a
     false tell in the animation whose whole job is to be a true one. Dropping that frame is
     a treatment, so it lives here rather than in whoever-remembers-to-do-it.
+
+    `first=` replaces the tag's opening frame with a committed file, and it is the same
+    treatment docs/animation.md already prescribes by hand for the closing frame of a
+    release ("The last frame of a release should be the committed rest, exactly"). It moves
+    here for the reason every other treatment did: applied by hand it is lost the first time
+    anybody re-rolls the tag.
+
+    Why it is needed at the START of a cast and not only at the end of a release: when a
+    boss ships a cast with **no idle tag**, frame 0 is what `render/anim.ts`'s
+    `STATIC_FRAME` draws for the whole fight whenever the boss is not winding up. The
+    generator's returned frame 0 is very nearly the input but not exactly — measured on
+    `boss.gravebound-colossus`, 8 opaque pixels lost and 1 gained, the same thin-feature
+    erosion recorded for the Tyrant's wing tips. Substituting the committed rest file makes
+    "this change cannot alter how the boss looks at rest" a fact rather than a rounding
+    error.
+
+    A caution that cost an hour here: do NOT compare the generated frame 0 against your
+    input with a naive whole-pixel equality. That reports thousands of differences which are
+    **stale RGB underneath fully transparent pixels** — invisible, and normalised by
+    `scrub_transparent` below. Compare opaque pixels, or scrub both sides first.
     """
     if "=" not in spec:
         raise SystemExit(f"expected tag=dir, got {spec!r}\n{__doc__}")
     tag, _, where = spec.partition("=")
     drop = set()
+    first = None
+    if ":first=" in where:
+        where, _, first = where.partition(":first=")
+        if not Path(first).is_file():
+            raise SystemExit(f"first={first} is not a file")
     if ":drop=" in where:
         where, _, raw = where.partition(":drop=")
         drop = {int(x) for x in raw.split(",") if x != ""}
@@ -185,6 +210,8 @@ def load_tag(spec: str):
     paths = [p for i, p in enumerate(paths) if i not in drop]
     if not paths:
         raise SystemExit(f"{where}: every frame was dropped")
+    if first is not None:
+        paths[0] = Path(first)
     return tag, [scrub_transparent(Image.open(p).convert("RGBA")) for p in paths]
 
 
