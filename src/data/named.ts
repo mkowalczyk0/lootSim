@@ -381,6 +381,75 @@ export const NAMED_ITEMS: readonly NamedItemDef[] = [
     art: "named.threshold-brand",
   },
 
+  // ---- craft-only, the last two reserved-element sinks (docs/materials-coverage.md) ----
+  // Rune Fragment and Heartwood Sap dropped and banked with nowhere dedicated to spend
+  // them — same shape of complaint as a material with no source, from the other
+  // direction. Gilt Reliquary already got a craft-only recipe for exactly this reason;
+  // these two close the set the same way rather than inventing a third answer.
+  {
+    id: "unbound-ward",
+    name: "The Unbound Ward",
+    flavor: "Cast once, decades ago, and never finished.",
+    description: "A fragment of the Spire's own broken wards. Your ultimate lands, and "
+      + "the spell the tower never stopped casting answers it.",
+    rarity: "mythic", type: "ring", statScale: 1.15,
+    mods: [
+      { key: "arcaneDamage", value: 0.3 },
+      { key: "cooldownRate", value: 0.12 },
+      { key: "ultimateRate", value: 0.15 },
+    ],
+    // onUltimate is one of the "rarer events" TRIGGER_SHAPES always sets to chance 1
+    // (player-rate-limited, unlike a kill) — same shape and numbers as that table's own
+    // onUltimate/chain entry, so this doesn't invent a new trigger tier.
+    trigger: {
+      id: "onUltimate-chain", kind: "onUltimate", effect: "chain", element: "arcane",
+      chance: 1, power: 2.4, radius: 320, count: 7,
+    },
+    sources: [{
+      kind: "craft",
+      // The Spire is a wound only unto itself — it doesn't need a second element the way
+      // the Threshold does. Two legendary weapons melted down are the same "already
+      // proved themselves" cost Threshold Brand pays, read here as the tower recycling
+      // its own casters' relics into a new ward instead of a war between two sides.
+      materials: { arcane: 550, physical: 350 },
+      coins: 45_000,
+      items: [{ count: 2, minRarity: "legendary", slot: "weapon" }],
+    }],
+    art: "named.unbound-ward", minIlvl: 34,
+  },
+  {
+    id: "rootbound-plate",
+    name: "Rootbound Plate",
+    flavor: "Grown around what they were buried in. Still fed.",
+    description: "Armor the Orchard grew through rather than around. Every kill feeds "
+      + "the ground, and the ground gives some of it back.",
+    rarity: "mythic", type: "armor", statScale: 1.3,
+    mods: [
+      { key: "healthPercent", value: 0.15 },
+      { key: "lifeOnHit", value: [3, 5], scale: "rarity" },
+      { key: "thorns", value: 3, scale: "rarity" },
+    ],
+    // onKill is NOT one of TRIGGER_SHAPES' rarer, always-1 events — a kill isn't
+    // player-rate-limited the way a dash or an ultimate is, and that table's own
+    // onKill/nova entry is chance 0.35 for exactly that reason. Matching it here rather
+    // than shipping a guaranteed proc on every kill in a crowded wave.
+    trigger: {
+      id: "onKill-nova", kind: "onKill", effect: "nova", element: "nature",
+      chance: 0.35, power: 1.3, radius: 104, count: 0,
+    },
+    sources: [{
+      kind: "craft",
+      // Life grown out of rot: Heartwood Sap paired with a pinch of Blight Root is the
+      // Orchard's own "both sides" reading, the way Threshold Brand paired holy and
+      // void — grave and growth instead of Heaven and Hell. Two legendary suits of
+      // armor, buried with whoever the Orchard grew over, go in whole.
+      materials: { nature: 550, poison: 150, physical: 300 },
+      coins: 50_000,
+      items: [{ count: 2, minRarity: "legendary", slot: "armor" }],
+    }],
+    art: "named.rootbound-plate", minIlvl: 40,
+  },
+
   // ---- multi-step (UAT §24/§25): a boss drop is the component ----------------------
   {
     id: "the-seal-unbroken",
