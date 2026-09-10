@@ -21,7 +21,7 @@ import {
   COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
   cosmeticStageXY, heroStage,
 } from "./atlas/manifest";
-import { type Appearance, type Cosmetic, COSMETICS_BY_ID } from "../data/cosmetics";
+import { type Appearance, type Cosmetic, COSMETICS_BY_ID, defaultAppearance } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice, ATLAS_WEAPON_WASH } from "./itemart";
 import { chooseHeroArt, chooseSpriteArt, type SpriteArt } from "./spriteart";
@@ -392,10 +392,7 @@ function worn(id: string | null): Cosmetic | null {
  * top of the hair and under the witch hat, exactly as anyone would expect.
  */
 function composeCharacter(appearance: Appearance | null): HTMLCanvasElement {
-  const a = appearance ?? {
-    skin: 1, hair: 0, hairStyle: "bob" as const, eyes: 0, dye: 0,
-    hat: null, ears: null, face: null, back: null, aura: null, weapon: null,
-  };
+  const a = appearance ?? defaultAppearance();
   const { canvas, ctx } = blank(CHAR_W, CHAR_H);
 
   const back = worn(a.back);
@@ -850,6 +847,7 @@ export function cosmeticPreview(id: string): HTMLCanvasElement {
   let made: HTMLCanvasElement;
   const migrated = c?.art ? ATLAS_COSMETICS[c.art] : undefined;
   const migratedPng = migrated ? atlasCanvas(migrated.id) : null;
+  const skinArt = c?.slot === "weapon" ? ATLAS_WEAPON_SKINS[id] : undefined;
   if (!c) {
     made = blank(1, 1).canvas;
   } else if (migrated && migratedPng) {
@@ -860,6 +858,11 @@ export function cosmeticPreview(id: string): HTMLCanvasElement {
   } else if (c.art && COSMETIC_ART[c.art]) {
     const art = COSMETIC_ART[c.art]!;
     made = bake(art.grid, cosmeticPalette(c));
+  } else if (skinArt && atlasCanvas(skinArt.id)) {
+    // An authored skin previews as the weapon it actually is. It used to preview as a
+    // *sword* wearing its palette, which for a scythe whose whole point is its shape was
+    // a picture of something the player would never be handed.
+    made = atlasCanvas(skinArt.id)!;
   } else if (c.weapon) {
     made = bake(WEAPON_ART.sword!.grid, weaponPalette(c.weapon));
   } else {

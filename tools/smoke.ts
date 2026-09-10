@@ -60,7 +60,7 @@ import { BOSSES } from "../src/data/bosses";
 import { ARCHETYPES, type EnemyBehavior, type EnemyKind } from "../src/data/enemies";
 import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, HAIR_STYLES,
-  cosmeticProblems,
+  cosmeticProblems, wornInSlot,
 } from "../src/data/cosmetics";
 import {
   BODY, BODY_DY, BODY_H, BOSS_GRIDS, CHAR_H, COSMETIC_ART, HAIR, WEAPON_ART, gridProblems,
@@ -3273,14 +3273,20 @@ console.log("\n=== gems and the wardrobe ===");
   const dressed = geared(20, 4244, 10);
   const before = JSON.stringify(dressed.player.mods);
   dressed.cosmetics = COSMETICS.map((c) => c.id);
+  const heldFamily = dressed.player.weapon.id;
   for (const slot of COSMETIC_SLOTS) {
-    const first = dressed.ownedInSlot(slot)[0];
-    if (first) dressed.wear(slot, first.id);
+    const first = slot === "weapon"
+      ? dressed.ownedWeaponSkins(heldFamily)[0]
+      : dressed.ownedInSlot(slot)[0];
+    if (first) dressed.wear(slot, first.id, heldFamily);
   }
   dressed.player.refresh();
   check("cosmetics never touch your numbers", JSON.stringify(dressed.player.mods) === before);
+  // The non-vacuity guard on the check above: it proves nothing if the dressing silently
+  // failed. The weapon slot is asked for the family actually held, since that is where it
+  // now keeps its answer.
   check("wearing everything fills every slot",
-    COSMETIC_SLOTS.every((slot) => dressed.appearance[slot] !== null));
+    COSMETIC_SLOTS.every((slot) => wornInSlot(dressed.appearance, slot, heldFamily) !== null));
 }
 
 console.log("\n=== combat stats overlay: powerless, like cosmetics ===");

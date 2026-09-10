@@ -42,6 +42,7 @@
  */
 
 import { RARITIES, type Rarity } from "./rarity";
+import { WEAPON_FAMILIES, type WeaponFamily } from "./weapons";
 
 /**
  * Where a cosmetic goes. Five of these are pixels layered onto the character; `aura` is
@@ -82,25 +83,43 @@ export interface Cosmetic {
   readonly colors: readonly string[];
   readonly aura: { readonly kind: AuraKind; readonly color: string } | null;
   readonly weapon: WeaponPalette | null;
+  /**
+   * Which weapon family this skin is a weapon *of* — see the "may never lie" rule in the
+   * file header. Null on everything that is not a weapon skin, and also on the seven
+   * original skins, which were authored as palettes to be painted over whatever you held
+   * and so belong to no family in particular.
+   *
+   * This is the authority: `ATLAS_WEAPON_SKINS` carries a `family` too, but that copy
+   * exists so the *renderer* can refuse a mismatched draw without reaching into game
+   * data. `tools/smoke.ts` asserts the two agree, which is a real comparison because the
+   * two tables are authored in different files for different reasons.
+   */
+  readonly family: WeaponFamily | null;
 }
 
 function look(
   id: string, name: string, slot: CosmeticSlot, rarity: Rarity,
   art: string, colors: readonly string[], blurb: string,
 ): Cosmetic {
-  return { id, name, slot, rarity, blurb, art, colors, aura: null, weapon: null };
+  return { id, name, slot, rarity, blurb, art, colors, aura: null, weapon: null, family: null };
 }
 
 function aura(
   id: string, name: string, rarity: Rarity, kind: AuraKind, color: string, blurb: string,
 ): Cosmetic {
-  return { id, name, slot: "aura", rarity, blurb, art: null, colors: [color], aura: { kind, color }, weapon: null };
+  return { id, name, slot: "aura", rarity, blurb, art: null, colors: [color], aura: { kind, color }, weapon: null, family: null };
 }
 
+/**
+ * A weapon skin. `family` is what separates the two generations of these: the original
+ * seven are palettes with no family, and everything authored from Sept 2026 on is a
+ * drawn weapon belonging to exactly one family.
+ */
 function skin(
   id: string, name: string, rarity: Rarity, weapon: WeaponPalette, blurb: string,
+  family: WeaponFamily | null = null,
 ): Cosmetic {
-  return { id, name, slot: "weapon", rarity, blurb, art: null, colors: [weapon.edge], aura: null, weapon };
+  return { id, name, slot: "weapon", rarity, blurb, art: null, colors: [weapon.edge], aura: null, weapon, family };
 }
 
 /**
@@ -206,7 +225,14 @@ export const COSMETICS: readonly Cosmetic[] = [
   // drawn from, so they stay as the record of where it came from.
   skin("skinAbyssalScythe", "Abyssal Scythe", "legendary",
     { edge: "#a78bfa", shade: "#5b21b6", grip: "#1e1b4b", jewel: "#c4b5fd", glow: "#8b5cf6" },
-    "The edge is still leaving. It has been leaving for a while now."),
+    "The edge is still leaving. It has been leaving for a while now.", "scythe"),
+  // Heaven's half of the same idea. The worldbuilding's Heaven is Order — "everything has
+  // a place", perfect and therefore frightening — so the blade is the flawless part and
+  // the presence lives in the collar, per the split-the-contradiction rule in
+  // `art/weaponskins/author.ts`.
+  skin("skinSeamlessSword", "Seamless Sword", "legendary",
+    { edge: "#fdfdf5", shade: "#c6be99", grip: "#18151a", jewel: "#f5b52e", glow: null },
+    "No join, no forge mark, no history. It was decided upon rather than made.", "sword"),
   skin("skinStar", "Starforged", "mythic",
     { edge: "#fef3c7", shade: "#fbbf24", grip: "#78350f", jewel: "#ffffff", glow: "#fde68a" },
     "Reportedly fell. Nobody saw it land."),
@@ -361,13 +387,44 @@ export interface Appearance {
   face: string | null;
   back: string | null;
   aura: string | null;
-  weapon: string | null;
+  /**
+   * **The weapon slot holds one choice per family, not one choice.** Every other slot is
+   * a single id because a hat is a hat whatever you are carrying; a weapon skin is a
+   * *weapon*, authored for exactly one family (the "may never lie" rule in the file
+   * header), so a single slot would mean owning a scythe skin and a sword skin and
+   * getting to see only one of them.
+   *
+   * So the wardrobe records what each family should look like and the renderer reads the
+   * entry for the family actually in your hand — swapping weapons swaps the skin with it,
+   * with nothing to re-equip. The seven original palette skins have no family of their
+   * own and may be set on any of these, which is exactly the reach they had before.
+   */
+  weapons: Record<WeaponFamily, string | null>;
+}
+
+/** A weapon-skin map with every family empty. */
+export function emptyWeaponSkins(): Record<WeaponFamily, string | null> {
+  return Object.fromEntries(WEAPON_FAMILIES.map((f) => [f, null])) as Record<WeaponFamily, string | null>;
+}
+
+/** The skin to draw for the family currently held, if any. */
+export function wornWeaponSkin(a: Appearance, family: WeaponFamily): string | null {
+  return a.weapons[family] ?? null;
+}
+
+/**
+ * What is worn in one slot right now. Five slots answer from a single field; the weapon
+ * slot answers for the family in your hand, so every caller that walks `COSMETIC_SLOTS`
+ * generically keeps working without knowing which kind it is looking at.
+ */
+export function wornInSlot(a: Appearance, slot: CosmeticSlot, family: WeaponFamily): string | null {
+  return slot === "weapon" ? wornWeaponSkin(a, family) : a[slot];
 }
 
 export function defaultAppearance(): Appearance {
   return {
     skin: 1, hair: 0, hairStyle: "bob", eyes: 0, dye: 0,
-    hat: null, ears: null, face: null, back: null, aura: null, weapon: null,
+    hat: null, ears: null, face: null, back: null, aura: null, weapons: emptyWeaponSkins(),
   };
 }
 
@@ -405,8 +462,41 @@ export function normalizeAppearance(raw: unknown): Appearance {
     face: ownedOrNull(a.face, "face"),
     back: ownedOrNull(a.back, "back"),
     aura: ownedOrNull(a.aura, "aura"),
-    weapon: ownedOrNull(a.weapon, "weapon"),
+    weapons: normalizeWeaponSkins(a),
   };
+}
+
+/**
+ * The per-family weapon-skin map, forgiving of both shapes it can arrive in.
+ *
+ * Saves from before v31 carry a single `weapon` id, because a skin used to be a palette
+ * worn over whatever you held. That choice is not lost: a palette skin belongs to no
+ * family and so is restored on **all** of them, which is precisely the reach it had; an
+ * authored skin is restored only on the family it is a weapon of, because claiming a
+ * scythe is equipped while you hold a sword would be the wardrobe lying about what you
+ * will see.
+ */
+function normalizeWeaponSkins(a: Record<string, unknown>): Record<WeaponFamily, string | null> {
+  const out = emptyWeaponSkins();
+  const raw = a.weapons;
+  if (raw && typeof raw === "object") {
+    for (const family of WEAPON_FAMILIES) {
+      const id = ownedOrNull((raw as Record<string, unknown>)[family], "weapon");
+      const c = id ? COSMETICS_BY_ID[id] : null;
+      // A skin that is a weapon of some other family cannot be worn here, however it
+      // came to be written down.
+      out[family] = c && (c.family === null || c.family === family) ? id : null;
+    }
+    return out;
+  }
+  const legacy = ownedOrNull(a.weapon, "weapon");
+  const c = legacy ? COSMETICS_BY_ID[legacy] : null;
+  if (c) {
+    for (const family of WEAPON_FAMILIES) {
+      if (c.family === null || c.family === family) out[family] = c.id;
+    }
+  }
+  return out;
 }
 
 /** Only ids that still exist survive a load; everything else is quietly dropped. */

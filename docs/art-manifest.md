@@ -378,13 +378,44 @@ default `colors` to prompt from.
 
 **Two items explicitly out of scope for this pass** (per the style guide, not this
 document's call): the 6 aura types (`auraSakura`/`auraEmber`/etc.) are particle behaviour
-in `render/fx.ts`, not sprites — nothing to author here. The 7 weapon skins
-(`skinBone`…`skinStar`) need an engineering change first (`WeaponPalette` has 4 colour
-regions vs. the cosmetic system's 3-marker convention) before art can land — flag to the
-owner, don't start authoring. The 5 hairstyles are an open question, not a backlog item:
+in `render/fx.ts`, not sprites — nothing to author here. The 5 hairstyles are an open
+question, not a backlog item:
 `hero.legend-base` bakes its one hairstyle into a single flat image, so a swappable hair
 *shape* means redrawing the hero base without baked-in hair — bundle this with the
 separate hero-rework track (see `lootsim-art-direction-and-cosmetics` memory), not here.
+
+### 7.1 Weapon skins — the engineering change landed; the seven old ones are inert
+
+This section used to say the 7 weapon skins (`skinBone`…`skinStar`) "need an engineering
+change first (`WeaponPalette` has 4 colour regions vs. the cosmetic system's 3-marker
+convention) before art can land — flag to the owner, don't start authoring." **That change
+landed**, and it did not go the way the paragraph assumed: rather than indexing the
+authored weapons onto palette slots, the owner chose that a skin is *its own weapon*,
+authored per family (`ATLAS_WEAPON_SKINS`). Authoring is open, one weapon at a time.
+
+Done: **Abyssal Scythe** (scythe), **Seamless Sword** (sword). Twelve families to go.
+The recipe is `art/weaponskins/author.ts` — it derives `worldScale` from the family's own
+art so a skin cannot be drawn longer or shorter than the weapon it stands in for, and its
+header records the one briefing trick that has worked twice now (give the contradictory
+qualities to different *parts* of the object rather than averaging them over the whole).
+`npm run weaponskins` is the gate.
+
+**A finding for the owner, not a decision taken here.** All fourteen families have had a
+committed pipeline PNG since `59d94d7`/`30f5cec`, and `resolveWeaponDraw` prefers that
+authored art over the procedural bake. The seven original palette skins can only paint the
+*bake*. So they currently draw **nothing at all** — you can buy Frostbound, equip it, and
+your weapon looks exactly as it did. That is deliberate as far as it goes (`829d2a9` made
+an undrawn skin inert rather than destructive, which was strictly better than the bug it
+replaced), but it leaves seven purchasable cosmetics with no visible effect.
+
+They are **left in place**, wearable on every family exactly as before — cosmetics are
+permanent here and removing seven of them is not a call to make on the way past. The three
+options, cheapest first, are: author art for the ones worth keeping (7 × 14 = 98 sprites at
+full coverage, so realistically a chosen subset); let a palette skin *tint* the authored
+weapon the way the rarity wash does (cheap, covers everything, and is the colour-transform
+model the owner already turned down once for *new* skins — which is a different question
+from what to do with seven already sold); or retire them from the capsules with a gem
+refund and leave existing wardrobes untouched. Ask before doing any of them.
 
 ---
 

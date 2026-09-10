@@ -11,7 +11,7 @@ import {
 import {
   CAPSULES, CAPSULE_TIERS, COSMETICS, COSMETIC_SLOTS, COSMETIC_SLOT_LABELS,
   COSMETICS_BY_ID, EYE_COLORS, HAIR_COLORS, HAIR_STYLES, HAIR_STYLE_LABELS,
-  OUTFIT_DYES, SKIN_TONES, type CosmeticSlot,
+  OUTFIT_DYES, SKIN_TONES, wornInSlot, wornWeaponSkin, type CosmeticSlot,
 } from "../data/cosmetics";
 import {
   ASH_NAME, CRAFTABLE_RARITIES, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABELS, FORGE_OPS, FORGE_OP_INFO,
@@ -62,7 +62,7 @@ import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
 import { DELVE_BOTTOM, legendName, provingFloor, provingUnlocked } from "../data/legends";
 import { previewForRun, type ActivityPreview } from "../data/previews";
 import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
-import { WEAPONS } from "../data/weapons";
+import { WEAPONS, type WeaponFamily } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
 import {
   ACTION_LABELS, DEFAULT_KEYBINDS, keyLabel, MOUSE_SECONDARY_LABELS, MOUSE_SECONDARY_OPTIONS,
@@ -1209,6 +1209,15 @@ export class TownUI {
   }
 
   /**
+   * The weapon family in your hand. The wardrobe's weapon-skin row reads and writes the
+   * entry for this family and no other — a skin is a weapon, so the only one worth
+   * choosing is the one for the weapon you are actually carrying.
+   */
+  private get skinFamily(): WeaponFamily {
+    return this.state.player.weapon.id;
+  }
+
+  /**
    * Steps one row of the style screen. The free rows wrap through their palette; a
    * cosmetic slot wraps through everything you own plus "nothing", so taking a hat off
    * is the same gesture as changing it.
@@ -1219,18 +1228,23 @@ export class TownUI {
     const a = this.state.appearance;
 
     if (row.kind === "slot") {
-      const owned = this.state.ownedInSlot(row.slot);
+      const family = this.skinFamily;
+      const owned = row.slot === "weapon"
+        ? this.state.ownedWeaponSkins(family)
+        : this.state.ownedInSlot(row.slot);
       if (owned.length === 0) {
         this.notify(
-          `No ${COSMETIC_SLOT_LABELS[row.slot].toLowerCase()} in the wardrobe yet. Open a capsule.`,
+          row.slot === "weapon"
+            ? `No skins for ${WEAPONS[family].name.toLowerCase()} in the wardrobe yet. Open a capsule.`
+            : `No ${COSMETIC_SLOT_LABELS[row.slot].toLowerCase()} in the wardrobe yet. Open a capsule.`,
           "#9aa4b2",
         );
         return true;
       }
       const options: (string | null)[] = [null, ...owned.map((c) => c.id)];
-      const i = options.indexOf(a[row.slot]);
+      const i = options.indexOf(wornInSlot(a, row.slot, family));
       const next = options[(i + dir + options.length) % options.length] ?? null;
-      this.state.wear(row.slot, next);
+      this.state.wear(row.slot, next, family);
     } else if (row.kind === "hairStyle") {
       const i = HAIR_STYLES.indexOf(a.hairStyle);
       a.hairStyle = HAIR_STYLES[(i + dir + HAIR_STYLES.length) % HAIR_STYLES.length]!;
@@ -1836,11 +1850,11 @@ export class TownUI {
           this.notify("That one is always on. Cycle it with A and D.", "#9aa4b2");
           break;
         }
-        if (this.state.appearance[row.slot] === null) {
+        if (wornInSlot(this.state.appearance, row.slot, this.skinFamily) === null) {
           this.notify("Already wearing nothing there.", "#9aa4b2");
           break;
         }
-        this.state.wear(row.slot, null);
+        this.state.wear(row.slot, null, this.skinFamily);
         this.notify(`${COSMETIC_SLOT_LABELS[row.slot]} removed`, "#9aa4b2");
         break;
       }
@@ -4792,15 +4806,26 @@ export class TownUI {
           blurb: "Recolours whatever you happen to be wearing. Armour included." };
       }
       case "slot": {
-        const id = a[row.slot];
+        const family = this.skinFamily;
+        const weaponRow = row.slot === "weapon";
+        const id = wornInSlot(a, row.slot, family);
         const c = id ? COSMETICS_BY_ID[id] : null;
-        const owned = this.state.ownedInSlot(row.slot).length;
+        const held = WEAPONS[family].name.toLowerCase();
+        const owned = weaponRow
+          ? this.state.ownedWeaponSkins(family).length
+          : this.state.ownedInSlot(row.slot).length;
         return {
-          label: COSMETIC_SLOT_LABELS[row.slot],
+          // The weapon row is choosing for the weapon actually in your hand, and says so
+          // — otherwise picking a skin, swapping weapons and seeing nothing looks broken.
+          label: weaponRow ? `${COSMETIC_SLOT_LABELS[row.slot]} · ${held}` : COSMETIC_SLOT_LABELS[row.slot],
           value: c ? c.name : owned > 0 ? "— nothing —" : "— none owned —",
           color: c ? RARITY_COLORS[c.rarity] : "#5a6270",
           id,
-          blurb: c ? c.blurb : `${owned} owned for this slot.`,
+          blurb: c
+            ? c.blurb
+            : weaponRow
+              ? `${owned} owned that fit ${held}. Each weapon remembers its own skin.`
+              : `${owned} owned for this slot.`,
         };
       }
     }
@@ -4832,7 +4857,8 @@ export class TownUI {
     const hero = heroSprite(a, this.state.activeClassId);
     const portrait = pixelImageBody(hero.canvas, hero.bodyHeight, STYLE_PORTRAIT_BODY_PX);
     const weapon = pixelImageFit(
-      weaponSprite(this.state.player.weapon.id, a.weapon, held?.rarity ?? null, held?.named ?? null), 72);
+      weaponSprite(this.state.player.weapon.id, wornWeaponSkin(a, this.skinFamily),
+        held?.rarity ?? null, held?.named ?? null), 72);
     const selected = STYLE_ROWS[this.cursor];
     const info = selected ? this.styleRowInfo(selected) : null;
     const owned = this.state.cosmetics.length;

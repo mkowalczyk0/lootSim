@@ -35,8 +35,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import {
   BODY, BODY_DX, BODY_DY, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
   MOB_BRUTE, MOB_CASTER, MOB_IMP, MOB_RANGER, MOB_CRAWLER, PALETTES,
-  WEAPON_ART, bodyPalette, cosmeticPalette, hairPalette,
-  weaponPalette, type Grid, type Palette,
+  bodyPalette, cosmeticPalette, hairPalette, type Grid, type Palette,
 } from "../src/render/pixels";
 import {
   COSMETICS_BY_ID, defaultAppearance, type Appearance,
@@ -306,18 +305,19 @@ if (SHOW_LEGACY_MOBS) {
   );
 }
 
-// The second row is the procedural grid wearing the Starforged skin, and it is **not** a
-// museum piece — it is the last live procedural weapon path in the game. `weaponSprite`
-// falls back to the bake for any weapon with a cosmetic skin equipped (`aw && !skinId`),
-// because a skin is a five-colour palette (edge/shade/grip/jewel/glow) over a grid with
-// semantic keys, and the pipeline PNGs are full-colour art — measured: 10-37 distinct
-// colours each, saturation up to 189 — not the neutral greyscale the manifest's own
-// comment claims. A palette cannot drive art whose colours are already decided, so
-// skinning the real weapons needs them indexed onto those five slots first, the way
-// `COSMETIC_MARK_*` already does it for cosmetic layers. Until that lands, this row is
-// exactly what a player with a skin equipped sees, and it belongs on the sheet.
-const starforged = COSMETICS_BY_ID.skinStar!.weapon!;
-strip(Object.values(WEAPON_ART).map((a) => [a.grid, weaponPalette(starforged)] as const), false, 14);
+// **There used to be a second row here: the procedural grid wearing the Starforged
+// palette, justified as "exactly what a player with a skin equipped sees".** That stopped
+// being true in `829d2a9`, which made an undrawn skin *inert* — `resolveWeaponDraw` no
+// longer has the `aw && !skinId` condition the old comment quoted, so equipping one of the
+// seven original palette skins now draws the ordinary authored weapon above rather than
+// the bake. Nobody can see that row in the game any more, and this file's own policy two
+// comments up is that a weapon museum piece does not belong on the sheet, because all
+// fourteen families are committed.
+//
+// It is removed rather than relabelled on purpose. A picture on a sheet the owner reviews
+// by eye is read as "this is in the game"; a picture that is merely *labelled* as dead
+// still has to be looked at and dismissed every time. What the seven palette skins
+// actually draw today is row one, and it is already there.
 
 // Authored weapon skins (`ATLAS_WEAPON_SKINS`) — each one is its own weapon of a declared
 // family rather than a recolour, so it gets its own row next to the families above. Empty

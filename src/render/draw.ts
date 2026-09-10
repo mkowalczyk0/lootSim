@@ -1,6 +1,6 @@
 import { clamp, lerp, TAU } from "../core/math";
 import type { PropKind } from "../data/biomes";
-import { COSMETICS_BY_ID } from "../data/cosmetics";
+import { COSMETICS_BY_ID, wornWeaponSkin } from "../data/cosmetics";
 import { ELEMENT_COLORS } from "../data/elements";
 import { RARITY_COLORS } from "../data/rarity";
 import { AUGMENT_BY_ID } from "../data/augments";
@@ -628,7 +628,7 @@ export class WorldRenderer {
     const a = hero.avatar;
     const spec = hero.player.weapon;
     const item = hero.player.equipment.weapon;
-    const skinId = hero.appearance.weapon;
+    const skinId = wornWeaponSkin(hero.appearance, spec.id);
     const rarity = item?.rarity ?? null;
     // One decision, not three. The picture, the grip it pivots around and the world scale
     // all come off the same rung, so an authored skin can never be drawn at the underlying
