@@ -238,6 +238,7 @@ function tabHelp(
   const q = k(s, "cancel");
   const semi = k(s, "special"); // menus reuse the ultimate key as a "tertiary" action
   const mark = k(s, "mark");
+  const salvageAll = k(s, "salvageAll");
   const forgeToggle = `${k(s, "tabPrev")}/${k(s, "tabNext")}`;
   const altarToggle = forgeToggle;
   switch (tab) {
@@ -271,7 +272,7 @@ function tabHelp(
     case "Shop": return `${sel} pick a slot · ${adj} switch tier · ${e} buy · ${q} reroll this slot`;
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
-      + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk`);
+      + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk · ${salvageAll} salvage all junk`);
     case "Hero": return `${sel} pick a slot · ${e} unequip · on a relic slot, ${adj} browses your collection and ${e} sockets or removes`;
     case "Skills": return `${sel} / ${adj} move · up onto the bar to pick which slot, ${adj} to switch it · `
       + `${e} or click a card to set it there · ${q} clear the active slot`;
@@ -647,6 +648,7 @@ export class TownUI {
           case "primary": this.primary(); break;
           case "secondary": this.secondary(); break;
           case "tertiary": this.tertiary(); break;
+          case "salvageAll": this.salvageAllJunk(); break;
         }
         this.render();
         return;
@@ -904,6 +906,7 @@ export class TownUI {
     if (input.wasPressed("cancel")) { this.secondary(); dirty = true; }
     if (input.wasPressed("special")) { this.tertiary(); dirty = true; }
     if (input.wasPressed("mark")) { this.markHighlighted(); dirty = true; }
+    if (input.wasPressed("salvageAll")) { this.salvageAllJunk(); dirty = true; }
 
     if (this.toast && performance.now() > this.toast.until) {
       this.toast = null;
@@ -2041,14 +2044,7 @@ export class TownUI {
       this.massSalvage();
       return;
     }
-    const equipped = this.state.player.equipment;
-    const junk = this.state.inventory.filter((it) => {
-      // A named item is never junk, whatever its score says — it's a thing you farmed for.
-      if (it.named) return false;
-      const worn = equipped[it.slot];
-      const cls = this.state.heroClass;
-      return worn ? itemScore(it, cls) < itemScore(worn, cls) : false;
-    });
+    const junk = this.junkItems();
     if (junk.length === 0) {
       this.notify("No junk to sell — nothing is worse than what you're wearing.", "#9aa4b2");
       return;
@@ -2057,6 +2053,53 @@ export class TownUI {
     this.notify(`Sold ${junk.length} junk items for ${formatNumber(gained)}`, "#fbbf24");
     this.cursor = 0;
     this.state.save();
+  }
+
+  /**
+   * "Junk": a non-named stash item scored worse than whatever's worn in its slot. The
+   * one definition both "sell all junk" and the salvage-all shortcut below read, so the
+   * two bulk actions can never quietly define "junk" two different ways (docket §13).
+   * A slot with nothing worn in it contributes no junk — there's nothing to be worse
+   * than — and a worn item itself can never appear here, because equipped gear never
+   * sits in `state.inventory` to begin with; a bulk action built on this can't sweep up
+   * something the player has on.
+   */
+  private junkItems(): Item[] {
+    const equipped = this.state.player.equipment;
+    const cls = this.state.heroClass;
+    return this.state.inventory.filter((it) => {
+      if (it.named) return false;
+      const worn = equipped[it.slot];
+      return worn ? itemScore(it, cls) < itemScore(worn, cls) : false;
+    });
+  }
+
+  /**
+   * The Stash's one-button salvage (docket §13): "all the stuff" is exactly
+   * {@link junkItems} — the same set "sell all junk" already sells, just routed to
+   * salvage instead of the vendor. This only removes the *marking* step; it feeds the
+   * junk set into the existing mass-salvage batch (`stashSelected`) and calls
+   * `massSalvage()` unchanged, so the two-press arm-then-confirm and the "can't be
+   * undone" copy are exactly what a manually marked batch already gets. Pressing this
+   * again with the junk pile unchanged confirms it, same as any other second press;
+   * if the pile changed underneath it (an item sold, equipped, or salvaged elsewhere
+   * between presses) it re-arms and re-previews instead of firing on stale state.
+   */
+  private salvageAllJunk(): void {
+    if (this.tab !== "Stash") return;
+    const junk = this.junkItems();
+    if (junk.length === 0) {
+      this.notify("Nothing to salvage — nothing is worse than what you're wearing.", "#9aa4b2");
+      return;
+    }
+    const ids = new Set(junk.map((it) => it.id));
+    const sameBatch = ids.size === this.stashSelected.size
+      && [...ids].every((id) => this.stashSelected.has(id));
+    if (!sameBatch) {
+      this.stashSelected = ids;
+      this.massSalvageArmed = false;
+    }
+    this.massSalvage();
   }
 
   /** Toggles one item's membership in the Stash's mass-salvage batch — the one method
@@ -4174,6 +4217,10 @@ export class TownUI {
           <span class="chip" data-action="secondary">${k(this.state.settings, "cancel")} · sell selected</span>
           <span class="chip" data-action="tertiary">${k(this.state.settings, "special")}
             · ${marked > 0 ? `salvage ${marked} marked` : "sell all junk"}</span>
+          ${marked === 0
+            ? `<span class="chip" data-action="salvageAll">${k(this.state.settings, "salvageAll")}
+                · salvage all junk</span>`
+            : ""}
         </p>
         ${marked > 0
           ? `<p class="muted">${k(this.state.settings, "mark")} or a card's checkbox toggles what's marked.
@@ -4181,7 +4228,9 @@ export class TownUI {
                 ? `<b style="color:#ef4444">Press ${k(this.state.settings, "special")} again to salvage — this can't be undone.</b>`
                 : `Salvage is one-way; the confirm asks once more before it runs.`}</p>`
           : `<p class="muted">${k(this.state.settings, "mark")}, or a card's checkbox, marks
-              several items to salvage together at the Forge's Ash rate.</p>`}
+              several items to salvage together at the Forge's Ash rate — or press
+              ${k(this.state.settings, "salvageAll")} to salvage everything that qualifies as junk
+              in one go, same two-press confirm.</p>`}
         <p class="muted">${this.state.inventory.length} / 200 slots used.</p>
       </aside>`;
   }

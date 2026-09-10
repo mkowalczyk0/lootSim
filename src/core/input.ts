@@ -7,7 +7,7 @@ export type Action =
   | "up" | "down" | "left" | "right"
   | "attack" | "dash" | "potion" | "special"
   | "skill1" | "skill2" | "skill3" | "skill4"
-  | "confirm" | "cancel" | "tabPrev" | "tabNext" | "pause" | "mark";
+  | "confirm" | "cancel" | "tabPrev" | "tabNext" | "pause" | "mark" | "salvageAll";
 
 /**
  * Every action — movement and menu navigation included — comes from exactly one
