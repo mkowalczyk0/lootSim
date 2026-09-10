@@ -29,6 +29,7 @@
     "legends": "esbuild tools/legends.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/legends.mjs --log-level=error && node node_modules/.cache/legends.mjs",
     "monstersets": "esbuild tools/monstersets.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/monstersets.mjs --log-level=error && node node_modules/.cache/monstersets.mjs",
     "chroma": "esbuild tools/chroma.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/chroma.mjs --log-level=error && node node_modules/.cache/chroma.mjs",
+    "bossarena": "esbuild tools/boss-arena-contrast.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/bossarena.mjs --log-level=error && node node_modules/.cache/bossarena.mjs",
     "abilityfx": "esbuild tools/abilityfx.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/abilityfx.mjs --log-level=error && node node_modules/.cache/abilityfx.mjs",
     "augments": "esbuild tools/augments.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/augments.mjs --log-level=error && node node_modules/.cache/augments.mjs",
     "memories": "esbuild tools/memories.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/memories.mjs --log-level=error && node node_modules/.cache/memories.mjs",
