@@ -61,7 +61,8 @@
     "execute": "node tools/run-tool.mjs execute",
     "relicunion": "tsx tools/relicunion.ts",
     "ultimate-uptime": "node tools/run-tool.mjs ultimate-uptime",
-    "ultfloor": "node tools/run-tool.mjs ultimate-floor"
+    "ultfloor": "node tools/run-tool.mjs ultimate-floor",
+    "raidhealth": "node tools/run-tool.mjs raid-health-ab"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
