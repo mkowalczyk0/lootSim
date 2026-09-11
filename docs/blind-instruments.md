@@ -830,6 +830,52 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twentieth instance (numbering approximate — several land the same night): a stat with no instrument pointed at it at all
+
+Every entry above is a check that ran and returned a wrong or misleading answer about its
+subject. This one inverts the shape completely: **there was no check, because nothing in
+the acceptance gate connects "a mod is authored" to "a mod is read by the simulation," so
+there was nothing to be blind in the first place.**
+
+Building the affix codex (docket: a Codex screen explaining every stat and affix, read live
+off `mods.ts`/`items.ts`) meant tracing what every `ModKey` actually does in combat, to
+write an honest sentence about it rather than a guessed one. `wardPower` traced to nothing.
+`runtime.ts`'s `"shield"` effect step computes its amount via `scaledAmount(base, scale,
+input)`, whose `switch` recognises exactly two scale kinds (`"attack"`, `"spell"`) and
+returns the flat authored number for anything else — including no scale at all, which is
+what every shield-granting site in the game uses. `wardPower` is never read anywhere on that
+path, nor by `WARD_RESIST` (a flat constant), nor anywhere else in `combat/`, `game/` or
+`progression/`. It has never had a mechanical effect.
+
+It was not, however, unauthored or unused in the sense the rest of this file's entries mean
+"unused." It is real, deliberate content: a dropped affix ("of Warding", uncommon and up), a
+raid relic, and foundation-tier tree nodes on eleven separate classes, plus two classes'
+resource-threshold bonuses. `npm run roster` walks all 21 classes' full node trees and never
+flagged any of it, because the roster audit checks structural properties of the tree (no
+duplicate ids, hybrid/archetype thresholds, anti-overlap) — it has no concept of "does this
+class's granted mod resolve to a combat effect anywhere," so a mod being real vocabulary with
+zero consumers is invisible to it by construction, the same way a scope that was never asked
+to look is invisible to itself.
+
+**The rule this suggests, stated the way the file's other entries are:** a check that
+verifies a value is *authored* correctly (present, well-typed, structurally consistent) is
+not a check that it is *consumed* anywhere. Those are different properties, and a roster
+audit that is thorough about the first can still be totally blind to the second — not
+because it looked and missed, but because "is this mod ever read" was never a question in
+its vocabulary at all.
+
+**How to apply, priced rather than built here.** Every key in the `Mods` vocabulary
+(`MOD_KEYS`) should be read at least once somewhere in `src/combat/`, `src/game/` or
+`src/progression/` outside `mods.ts` itself and the display-only formatters (`modLine`,
+`shortLabel`, the Hero sheet). That is a single pass over ~50 keys against a grep for each
+one's identifier — cheap to write, and it would have caught this the day `wardPower` was
+first authored rather than however many months later a documentation screen happened to
+trace it by hand. Not built in this branch, which is a Codex screen, not a new gate; priced
+here so it doesn't have to be rediscovered. The owner's ruling on the finding itself was to
+remove `wardPower` rather than wire it up or document it as inert — see docket, `26`'s
+branch — which makes this entry a record of how the gap was found, not a description of a
+stat that still exists.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
