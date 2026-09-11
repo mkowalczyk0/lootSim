@@ -634,3 +634,36 @@ its own piece of work.
 
 Not edited on the branch, per the standing rule that `CLAUDE.md` changes come here for one
 owner read instead.
+
+---
+
+## From `feat/boss-cadence` (docket §39): name which boss timer is which
+
+The boss section says, correctly:
+
+> **A kit's difficulty is cadence × mean threat per card, not card count.** ... to make a
+> fight harder, move the cadence or raise the threat of the cards in it
+
+Nothing needs correcting there. What is *missing* is the one fact that made two separate
+readers — including the PM briefing this work, from the same file — reach for the wrong
+number: **`src/game/boss.ts` has three timers and only one of them is the cadence.**
+
+- `b.actionTimer` (`:432`) is the recovery between casts. **This is the cadence**, and
+  `BOSS_CADENCE` (new, 0.7) times `BOSS_ACTION_GAP` is its base.
+- `b.castTimer` (`:212`) is the wind-up. It must never shorten — it is the whole of the
+  "if a hit landed, it was readable" promise the section already states.
+- `b.cooldowns[id]` (`:223`) is neither: it is the per-card re-pick gate. Cutting the
+  recovery without it makes a cooldown-bound kit **stutter** in 0.35s stall beats rather
+  than cast more often, which is why `BOSS_CADENCE` multiplies both.
+
+Suggested addition, one sentence at the end of that paragraph:
+
+> The cadence is `BOSS_CADENCE * BOSS_ACTION_GAP` (the recovery between casts) **and** the
+> per-card `cooldown` that decides what is available to cast — move both or a kit stutters
+> instead of pressing; the wind-up is not the cadence and must never shorten.
+
+Also worth knowing, since the doc quotes the bullet-hell patterns' tuning elsewhere: their
+per-bolt damage is now **0.6–0.9** of a boss hit, not the 0.4–0.6 they shipped with.
+
+Measurement and reasoning: `docs/boss-cadence.md`. Not edited on the branch, per the
+standing rule that `CLAUDE.md` changes come here for one owner read instead.

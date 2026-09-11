@@ -151,9 +151,11 @@ export const PROVING_SELF_RESIST = 150;
  */
 export const PROVING_CORE: readonly BossAbilityId[] = ["ringOut", "beam"];
 /**
- * The tightest the gap between casts is ever allowed to get. `BOSS_ACTION_GAP` times this
- * is that gap, and a rotation short enough to overlap its own wind-ups would break the
- * one rule the whole encounter rests on: if a hit landed, it was readable.
+ * The tightest the gap between casts is ever allowed to get. `BOSS_ACTION_GAP *
+ * BOSS_CADENCE` times this is that gap — §39 added the second factor, and the floor
+ * scales with it on purpose, since a tighter rotation is the whole point of that change.
+ * A rotation short enough to overlap its own wind-ups would break the one rule the whole
+ * encounter rests on: if a hit landed, it was readable.
  */
 export const PROVING_HASTE_FLOOR = 0.42;
 /** Health fraction the appended final phase begins at. */
@@ -401,9 +403,10 @@ export function provingPhases(
     name: PROVING_LAST_PHASE_NAME,
     abilities: [...finale],
     // Tighter than the phase before it, never slower than the reference encounter's own
-    // last phase, and floored so it can't outrun its own wind-ups — `BOSS_ACTION_GAP`
-    // times this is the gap between casts, and a gap short enough to overlap the
-    // telegraphs would break the promise that a landed hit was readable.
+    // last phase, and floored so it can't outrun its own wind-ups —
+    // `BOSS_ACTION_GAP * BOSS_CADENCE` times this is the gap between casts, and a gap
+    // short enough to overlap the telegraphs would break the promise that a landed hit
+    // was readable.
     haste: Math.max(PROVING_HASTE_FLOOR, Math.min(last.haste * 0.85, refLast.haste)),
     speed: last.speed * 1.05,
     addsOnEnter: Math.max(last.addsOnEnter + 3, refLast.addsOnEnter + 1),

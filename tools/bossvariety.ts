@@ -340,6 +340,27 @@ check(
   inEveryTemplate.length === 0,
   `no pattern is dealt into every template (${inEveryTemplate.join(", ") || "none"})`,
 );
+// A fourth, added when docket §39 unparked the per-bolt dial (0.4-0.6 -> 0.6-0.9 of the
+// boss's hit). A field is meant to be dangerous because it keeps asking, not because one
+// bolt is a slam — so **a bolt costs less than the cheapest card that paints a shape**.
+//
+// The reference is the minimum over every damaging ability with a real telegraph
+// (`shape !== "none"`), taken from the same table rather than written here as a number: a
+// bound would let the next unparking pass silently, which is exactly how this dial would
+// get away from someone. It is the `HUNT_SPEED`-vs-slowest-hero shape, one table over.
+//
+// Shapeless cards are excluded deliberately, and `volley` is why: at 0.9 it is a ring of
+// bolts, the pattern family's own ancestor, so ranking a bolt against it compares the
+// thing to itself. The comparison that means something is bolt versus *shape you have to
+// leave*, and `corruption` (1.1) is the cheapest of those.
+const shaped = Object.values(BOSS_ABILITIES).filter((a) => a.damage > 0 && a.shape !== "none");
+const mechanicFloor = Math.min(...shaped.map((a) => a.damage));
+const maxBolt = Math.max(...PATTERN_IDS.map((id) => BOSS_ABILITIES[id].damage));
+const heavyBolts = PATTERN_IDS.filter((id) => BOSS_ABILITIES[id].damage >= mechanicFloor);
+check(
+  heavyBolts.length === 0,
+  `every pattern's bolt costs less than the cheapest shaped mechanic (max bolt ${maxBolt} < ${mechanicFloor}, over ${shaped.length} shaped cards${heavyBolts.length ? ` — ${heavyBolts.join(", ")}` : ""})`,
+);
 
 console.log("");
 if (failures > 0) {

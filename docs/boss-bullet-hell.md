@@ -135,12 +135,22 @@ design working — the cards test movement continuously where the old deck teste
 added, not swapped; `BOSS_ACTION_GAP` governs), so the cost of the addition is that big
 hits are a smaller share of the rotation: fights ran the same length or slightly longer,
 wins moved by at most one seed in six either way, and damage rate rose 10–20% for a
-reader. Not a nerf, not a sweep-grade claim; a sanity play that says the theory's failure
+reader. (Rotation cadence *was* untouched then; docket §39 has since moved it — see
+`docs/boss-cadence.md`. The figures in this section are the pre-§39 fight.) Not a nerf, not a sweep-grade claim; a sanity play that says the theory's failure
 mode did not occur.
 
-One lever is deliberately left where it is: per-bolt damage (0.4–0.6 of the boss's hit).
+~~One lever is deliberately left where it is: per-bolt damage (0.4–0.6 of the boss's hit).
 If the owner plays it and wants a field to *hurt* more when eaten, that number is the dial
-and `HIT_INVULN` is the cap it works under.
+and `HIT_INVULN` is the cap it works under.~~
+
+**Unparked by docket §39** (2026-09-11). The owner asked for a shorter gap between boss
+attacks and ruled that this dial moves in the same pass, because the two compound. Per-bolt
+damage is now **0.6–0.9** of the boss's hit. The measurement is `docs/boss-cadence.md`; the
+short version is that it was the right call — bolts alone cost 2.3 points of win rate and
+cadence alone 3.5, but together they cost 9.5, because a tighter rotation deals *more
+patterns* (4.3 → 4.8 per fight) and this paragraph's own finding above is that a pattern
+lands five to ten times what a circle lands on a player who reads. Measuring the two
+separately would have lost a third of the effect.
 
 ## 5. Decided against
 

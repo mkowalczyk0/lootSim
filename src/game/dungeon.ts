@@ -1174,6 +1174,11 @@ export class Dungeon implements CombatHost, RuleHost {
       boss: {
         spec,
         phase: 0,
+        // Deliberately the *unscaled* gap, unlike the two sites in `boss.ts` that
+        // `BOSS_CADENCE` multiplies. This is the one beat before the encounter's first
+        // cast, not the time between its attacks, so §39's dial has no business here —
+        // and leaving it alone is also what `tools/boss-cadence.ts` measured, so the
+        // shipped fight is the fight the numbers in `docs/boss-cadence.md` describe.
         actionTimer: BOSS_ACTION_GAP,
         ability: null,
         crescendo: 0,
