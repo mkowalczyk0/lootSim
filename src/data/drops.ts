@@ -53,6 +53,12 @@ import { RAID_BY_ID, raidOfBossId } from "./raids";
 // --- sources ----------------------------------------------------------------
 
 /**
+ * Which half of a raid clear paid out. A raid's one floor is its boss floor, so the floor
+ * pays twice: the encounter drops when it dies, and the cache drops when the floor closes.
+ */
+export type RaidDropEvent = "encounter" | "cache";
+
+/**
  * Where a thing is *found*. `chance` is per qualifying event, before `dropChance`
  * scales it by danger. Optional `mode` / `minTier` narrow an event to one run mode and
  * a rift tier floor — omitted means "anywhere this event happens".
@@ -79,12 +85,25 @@ export type FoundSource =
   /** Any wave monster at least this deep. Elites triple the odds. */
   | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
   /**
-   * Paid out by a raid (UAT §15) — the encounter and the cache that closes it, addressed
-   * by `RaidSpec.id`. `minTier` is §16: the rarest half of a raid's table only opens at a
-   * tier, so a harder raid drops things an easier one cannot rather than better rolls of
-   * the same thing.
+   * Paid out by a raid (UAT §15), addressed by `RaidSpec.id`. `minTier` is §16: the rarest
+   * half of a raid's table only opens at a tier, so a harder raid drops things an easier
+   * one cannot rather than better rolls of the same thing.
+   *
+   * A raid floor **is** its boss floor, so it emits this query twice — once when the
+   * encounter dies and once when the cache that closes the floor lands. `event` says which
+   * of those halves a source is paid from; omitted means both, which is what every named
+   * item declares and what this source meant before the field existed.
+   *
+   * That field exists because "both" is a *composition* decision that nobody authored and
+   * that no per-source `chance` can express. A source paid from both halves pays at
+   * `1-(1-p)²` per clear, not at `p` — so the number in the table stops meaning the thing
+   * its own comment says it means, and the gap widens with every event a floor gains.
+   * Naming the event is how a source states its per-clear odds and keeps them stated.
    */
-  | { readonly kind: "raid"; readonly raidId: string; readonly chance: number; readonly minTier?: number }
+  | {
+      readonly kind: "raid"; readonly raidId: string; readonly chance: number;
+      readonly minTier?: number; readonly event?: RaidDropEvent;
+    }
   /**
    * In the cache that closes a Tower floor at least this high (UAT §21). A *height*, not
    * a depth — the ascent's own address, so nothing here can be confused for the descent.
@@ -126,7 +145,7 @@ export type DropQuery =
       readonly tier?: number; readonly lastFloor?: boolean;
     }
   | { readonly kind: "worldDrop"; readonly depth: number; readonly elite: boolean; readonly mode?: RunModeId }
-  | { readonly kind: "raid"; readonly raidId: string; readonly tier?: number }
+  | { readonly kind: "raid"; readonly raidId: string; readonly tier?: number; readonly event?: RaidDropEvent }
   | { readonly kind: "tower"; readonly floor: number };
 
 /** The UAT §16 hook: harder content pays better odds. Gentle, capped, one place. */
@@ -156,8 +175,15 @@ export function sourceMatches(src: DropSource, q: DropQuery): boolean {
       return q.kind === "worldDrop" && q.depth >= src.minDepth
         && (src.mode === undefined || src.mode === q.mode);
     case "raid":
+      // `event` on either side may be absent, and absent means "all of them" on both: a
+      // source without one is paid from the whole clear, and a *query* without one is a
+      // preview asking what this raid can pay at all rather than a roll site reporting
+      // which half just happened. The §20 preview depends on that second reading — a
+      // preview that had to name an event would answer a narrower question than the
+      // screen asks, and would silently stop listing anything the cache pays.
       return q.kind === "raid" && src.raidId === q.raidId
-        && (src.minTier === undefined || (q.tier ?? 0) >= src.minTier);
+        && (src.minTier === undefined || (q.tier ?? 0) >= src.minTier)
+        && (src.event === undefined || q.event === undefined || src.event === q.event);
     case "tower":
       return q.kind === "tower" && q.floor >= src.minFloor;
     case "craft":

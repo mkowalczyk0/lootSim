@@ -73,6 +73,7 @@
 import type { BiomeStyle } from "./biomes";
 import { BOSSES, type BossAbilityId, type BossPhase, type BossSpec } from "./bosses";
 import { challengerMultiplier } from "./challenger";
+import type { DropQuery } from "./drops";
 import type { Element } from "./elements";
 import { LAYER_BY_ID, type WorldLayer } from "./layers";
 import { MODES, type RunConfig } from "./modes";
@@ -392,6 +393,31 @@ export function isRaidId(id: unknown): id is string {
 /** The boss id a raid's encounter emits, and the id a `raid` drop source names. */
 export function raidBossId(raidId: string): string {
   return `raid-${raidId}`;
+}
+
+/**
+ * **The** list of drop-table queries one raid clear fires, in order.
+ *
+ * There is exactly one floor and it pays twice — the encounter when it dies, the cache
+ * when the floor closes — so a raid clear asks every drop table twice, differing only in
+ * `event`. This function is the single statement of that, and `Dungeon` builds its two
+ * queries from it rather than writing them out, so a tool measuring "what does a raid
+ * clear pay" reads the same list the simulation rolls instead of a copy that can drift.
+ *
+ * That matters more than it looks: the per-clear odds of a source paid from both halves
+ * are `1-(1-p)²`, not `p`, so anything measuring this table is measuring a *composition*.
+ * A measurement that restated the event list would keep reporting the old composition
+ * after the real one changed — the blind-instrument failure this repo keeps re-finding
+ * (`docs/blind-instruments.md`), where the scope of a check comes from the check.
+ *
+ * A type-only import of `DropQuery` keeps `data/drops.ts` free to import values from here,
+ * as it already does, without a runtime cycle.
+ */
+export function raidDropQueries(raidId: string, tier: number): DropQuery[] {
+  return [
+    { kind: "raid", raidId, tier, event: "encounter" },
+    { kind: "raid", raidId, tier, event: "cache" },
+  ];
 }
 
 /** The raid a boss id belongs to, or null for any other encounter. */

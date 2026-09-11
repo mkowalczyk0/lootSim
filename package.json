@@ -56,7 +56,8 @@
     "raids": "node tools/run-tool.mjs raids",
     "bossvariety": "node tools/run-tool.mjs bossvariety",
     "hublayout": "node tools/run-tool.mjs hub-layout",
-    "execute": "node tools/run-tool.mjs execute"
+    "execute": "node tools/run-tool.mjs execute",
+    "relicunion": "tsx tools/relicunion.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

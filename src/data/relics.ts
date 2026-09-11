@@ -131,17 +131,36 @@ export const RELIC_ODDS = {
    */
   towerCache: 0.025,
   /**
-   * An artifact from a raid encounter (UAT §15). The most generous artifact source in the
-   * game on purpose: a raid is one floor with one fight on it, gated behind a frontier and
-   * its own tier ladder, and §15's whole promise is "a reason to repeatedly farm specific
-   * bosses". Still comfortably above `raidRelic` — rule 5's ratio holds inside a raid the
-   * same way it holds inside the Abyss.
+   * An artifact from a raid **encounter** (UAT §15) — the largest single artifact chance
+   * authored anywhere in this table, on purpose: a raid is one floor with one fight on it,
+   * gated behind a frontier and its own tier ladder, and §15's whole promise is "a reason
+   * to repeatedly farm specific bosses". Still comfortably above `raidRelic` — rule 5's
+   * ratio holds inside a raid the same way it holds inside the Abyss.
+   *
+   * **It is not the most generous artifact *source* in the game, and this comment used to
+   * claim it was.** That claim compared per-source chances (0.18 > `abyssBoss` 0.14) and a
+   * per-source chance is not what a player experiences. An Abyssal Rift boss matches
+   * *fourteen* artifact definitions and rolls each independently, so the Abyss pays a
+   * relic-tier item on 92% of tier-1 clears and 99% of tier-8 clears against a raid's 18%
+   * and 39% — and it wins per floor too, ~40% against ~18%, even after normalising the
+   * Abyss's five floors. Measured 2026-09-10; see `docs/relic-economy.md` and
+   * `npm run relicunion`. Left standing as a finding rather than fixed, because the Abyss
+   * is content people are playing and lowering it is a live balance call for the owner.
+   *
+   * **Paid from the encounter only, and that is what makes this number mean what it says.**
+   * A raid floor is its own boss floor, so it pays twice: the encounter and the closing
+   * cache. A source claiming both is rolled on both, which turns an authored 0.18 into a
+   * per-clear `1-(1-0.18c)²` — 33% at tier 1 rather than 18%, and the gap grows with the
+   * curve. Nobody authored 33%; it fell out of the composition. Naming the event is how
+   * this constant goes back to stating the odds a player experiences. See
+   * `docs/relic-economy.md` and `npm run relicunion` for the measurement.
    */
   raidArtifact: 0.18,
   /**
-   * A relic-tier item from a raid, at the tier it opens at. Half the artifact's odds, and
-   * gated behind `minTier` on top: a raid's relic is the top of that raid's table, so the
-   * first tier of it cannot pay one out at all (UAT §16).
+   * A relic-tier item from a raid encounter, at the tier it opens at. Half the artifact's
+   * odds, and gated behind `minTier` on top: a raid's relic is the top of that raid's
+   * table, so the first tier of it cannot pay one out at all (UAT §16). Paid from the
+   * encounter only, for the reason `raidArtifact` gives.
    */
   raidRelic: 0.09,
 } as const;
@@ -768,7 +787,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "damage", damage: { base: 1.8, scale: "spell", type: "holy" }, to: "allTargets" }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidRelic, minTier: 4, event: "encounter" }],
   }),
   relic({
     id: "thread-of-the-labyrinth",
@@ -791,7 +810,7 @@ export const RELICS: readonly RelicDef[] = [
         }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidRelic, minTier: 4, event: "encounter" }],
   }),
   relic({
     id: "the-ferrymans-toll",
@@ -810,7 +829,7 @@ export const RELICS: readonly RelicDef[] = [
         ],
       },
     ],
-    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidRelic, minTier: 3 }],
+    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidRelic, minTier: 3, event: "encounter" }],
   }),
   relic({
     id: "the-seventh-crown",
@@ -833,7 +852,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "status", status: "burn", to: "allTargets", chance: 0.6 }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidRelic, minTier: 4 }],
+    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidRelic, minTier: 4, event: "encounter" }],
   }),
 
   artifact({
@@ -850,7 +869,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "damage", damage: { base: 0.8, scale: "spell", type: "holy" }, to: "allTargets" }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidArtifact }],
+    sources: [{ kind: "raid", raidId: "tyrant-of-the-first-heavens", chance: RELIC_ODDS.raidArtifact, event: "encounter" }],
   }),
   artifact({
     id: "bronze-of-the-ninth-gate",
@@ -866,7 +885,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "shield", amount: 0.5, scale: "attack", duration: 2.5, to: "self" }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidArtifact }],
+    sources: [{ kind: "raid", raidId: "minotaur-of-the-ninth-labyrinth", chance: RELIC_ODDS.raidArtifact, event: "encounter" }],
   }),
   artifact({
     id: "obol-of-the-three-rivers",
@@ -882,7 +901,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "status", status: "chill", to: "allTargets", chance: 0.35 }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidArtifact }],
+    sources: [{ kind: "raid", raidId: "the-ferryman", chance: RELIC_ODDS.raidArtifact, event: "encounter" }],
   }),
   artifact({
     id: "standard-of-the-seventh-circle",
@@ -898,7 +917,7 @@ export const RELICS: readonly RelicDef[] = [
         effects: [{ kind: "damage", damage: { base: 0.7, scale: "attack", type: "fire" }, to: "allTargets" }],
       },
     ],
-    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidArtifact }],
+    sources: [{ kind: "raid", raidId: "queen-of-the-seventh-circle", chance: RELIC_ODDS.raidArtifact, event: "encounter" }],
   }),
 ];
 
