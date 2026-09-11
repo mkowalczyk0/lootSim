@@ -347,6 +347,34 @@ instance belongs in the file even though it arrived after the file was written: 
 same failure the other seven describe, priced in stutter a real player felt rather than in
 a docket item nearly closed.
 
+### The corollary: check whether the instrument *could* have produced the answer
+
+The question above asks whether the number would move. There is a second, quieter failure it
+does not catch, and it turned up three times in one evening (2026-09-11) while people were
+answering a question as ordinary as *which files does the test chain actually read?*
+
+> **A narrower instrument agreeing with a lucky earlier answer is not confirmation — check
+> whether it could have produced that answer at all.**
+
+The worked example is the cleanest one. Enumerating `readFileSync` calls that carry an inline
+`.md` path **cannot see `tools/blind-index.mjs`**, which builds its path from a const. The file
+was in the resulting list only because a different, luckier route had already put it there — so
+the narrow check *appeared* to confirm an answer it was structurally incapable of generating.
+That is the mechanism by which two independent-looking checks turn out to be one.
+
+Two siblings from the same evening, both the same shape one level out:
+
+- **Grepping a filename in source is not asking what the process opens.** `grep -r docket
+  tools/` returned 22 hits, every one a prose citation in a comment. A name in a file is a
+  *mention*; a mention is not a dependency. Two people ran that grep independently and both
+  got a plausible, wrong read set.
+- **A folder is not a read set.** "If the rebase only touched `docs/`, the green stands" is
+  wrong here, because `docs/blind-instruments.md` *is* read by a chain step — and so, less
+  obviously, is source code *as text*: `relics` reads `src/game/rules.ts`, `smoke` reads
+  `src/styles.css`, and `modkeys` and `retiredmods` walk every `.ts` under the sim. Those last
+  two disagree **on purpose** — `retiredmods` strips comments first and `modkeys` does not — so
+  "it only changes a comment" is safe under one and not the other.
+
 ## A ninth instance, in the same family as the seventh: a wrapper's exit code answers the wrong question
 
 A background `npm test` gate was wrapped as `npm test > log 2>&1; echo GATE_EXIT=$?`, and the
