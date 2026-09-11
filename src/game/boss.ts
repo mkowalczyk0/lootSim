@@ -24,7 +24,7 @@
  * a telegraph, a ground zone or a run event.
  */
 
-import { clamp, dist, normalize, TAU } from "../core/math";
+import { clamp, dist, TAU } from "../core/math";
 import {
   BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, type BossAbility, type BossAbilityId,
 } from "../data/bosses";
@@ -126,9 +126,12 @@ export function updateBoss(d: Dungeon, e: Enemy, dt: number): boolean {
 
   if (b.castTimer > 0) {
     b.castTimer -= dt;
-    // Face the player through the wind-up so a cone or a line still means something.
-    const aim = d.aimAvatar(e.x, e.y);
-    e.facing = Math.atan2(aim.y - e.y, aim.x - e.x);
+    // `e.facing` is not re-aimed here. It used to be, every tick, off a fresh
+    // `aimAvatar` call — which meant a followId'd cone/line telegraph
+    // (`updateTelegraphs` mirrors `owner.facing`) kept rotating for the whole wind-up,
+    // and in a party could reassign onto a different hero than the one it was painted
+    // against, an instant before it hit. `beginAbility` now locks `e.facing` once, at
+    // commit, the same rule `dungeon.ts`'s charger already follows for its own wind-up.
     if (b.castTimer <= 0) resolveAbility(d, e);
     return true;
   }
@@ -199,6 +202,13 @@ function beginAbility(d: Dungeon, e: Enemy): void {
   const aimed = d.aimAvatar(e.x, e.y);
   b.aimX = ability.onSelf ? e.x : aimed.x;
   b.aimY = ability.onSelf ? e.y : aimed.y;
+  // Committed for the whole wind-up: the wind-up is the player's window to read a fixed
+  // threat, not one that can retarget them at the last instant. `paintTelegraph` reads
+  // this same value rather than re-deriving it, and a followId'd cone/line telegraph
+  // inherits it every tick from `owner.facing` (`updateTelegraphs`), so the painted
+  // shape, the boss's own orientation and (for `charge`) the resolved hit direction are
+  // all one read taken once, here.
+  e.facing = Math.atan2(aimed.y - e.y, aimed.x - e.x);
 
   d.emit({ kind: "bossCast", name: ability.name, time: cast });
   paintTelegraph(d, e, ability, cast);
@@ -210,7 +220,9 @@ function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number
   const b = e.boss!;
   const element = b.spec.element;
   const victim = d.aimAvatar(e.x, e.y);
-  const toPlayer = Math.atan2(victim.y - e.y, victim.x - e.x);
+  // Same value `beginAbility` just locked into `e.facing` — read rather than re-derived,
+  // so there is only one place this angle is ever computed for the whole cast.
+  const toPlayer = e.facing;
   const damage = e.damage * ability.damage * b.buffDamageMult * crescendoDamage(b);
   const instances = Math.max(1, ability.count || 1);
 
@@ -420,8 +432,11 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
       break;
     }
     case "charge": {
-      const charging = d.aimAvatar(e.x, e.y);
-      const dir = normalize(charging.x - e.x, charging.y - e.y);
+      // The direction was committed when the wind-up began (`e.facing`, locked in
+      // `beginAbility`) rather than re-read here — a fresh `aimAvatar` call at this
+      // point is exactly how the charge used to launch somewhere the telegraphed line
+      // never pointed, which is the bug this lock exists to close.
+      const dir = { x: Math.cos(e.facing), y: Math.sin(e.facing) };
       b.chargeTimer = CHARGE_TIME;
       b.chargeVx = dir.x * CHARGE_SPEED;
       b.chargeVy = dir.y * CHARGE_SPEED;
