@@ -884,6 +884,60 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twenty-sixth instance, and it was inside the process rule: an anchored grep that cannot see most of the chain's failures
+
+*(Numbered 26 by the PM session; 22–25 are assigned to other branches and may land after this.)*
+
+The rule for reading a gate log, as written into a handoff doc on master and repeated in
+four assignment briefs on 2026-09-11, was: report the terminator line and an **anchored**
+`grep -c '^FAIL'` count — never the exit code, never `grep -i fail`. Both prohibitions were
+earned: an exit code had certified a killed chain, and a case-insensitive grep matches
+prose in ok lines. The anchor was meant to be the precise instrument between them.
+
+It is blind to most of the chain. Thirty-two of the tools in `tools/` print their failure
+line **indented** — `" FAIL  the harvest collected drops on both sides"`, one leading space
+from the same `check()` helper that prints `"  ok  "` — so `^FAIL` matches nothing they
+emit. On the Nine Circles branch's post-rebase gate the log read:
+
+```
+anchored grep -c '^FAIL'   0
+grep -c ' FAIL '           1
+```
+
+and the one was a real red (`1 REWARD CURVE CHECK(S) FAILED`, then `EXIT=1`). A reader
+following the rule to the letter, with the terminator overlooked, would have called that
+run clean. Master's batch-three integration log was rescanned at every indentation and is
+genuinely green — the hole was in the reading, not in the code.
+
+**The species.** Not a check with its bound taken from the thing under test, and not a
+subject that never existed: this is an instrument in the *process* — the rule that exists
+to stop blind instruments — that was itself scoped to a format most of the chain does not
+use. It is entry 4's "a filter over an empty table passes" one level up: the filter was
+correct for the tools it was written against and silently empty for the rest. Nobody
+enumerated which tools print `FAIL` at column zero before anchoring on it, the same
+omission entry 13 records for worktrees and gates.
+
+**The correct reading, so the next brief copies this and not the old line:**
+
+1. **The terminator.** The chain's last step prints `ALL CHECKS PASSED`, and the wrapper's
+   own `EXIT=0` (or whatever terminator the launcher appends) must be present. An absent
+   terminator means the chain **stopped** — `npm test` halts at the first failing step —
+   so every step after the red one *never ran*, and a green tail cannot be inferred from a
+   green head. Compare the list of `> lootsim@2.0.0 <step>` banners against the chain in
+   `package.json`; missing banners are unrun steps.
+2. **A case-sensitive, unanchored `grep -c 'FAIL'`.** Not `^FAIL` (misses the indented
+   thirty-two), not `-i` (matches "failed" in prose). The count must be zero. If it is not,
+   the matching lines are the finding; read them.
+3. **Both, never one.** A terminator with a non-zero count is a tool that printed a red and
+   did not exit non-zero (entry 7's shape). A zero count with no terminator is a killed or
+   halted chain (entries 6 and 13). Only the pair says "green".
+
+**How to apply.** Any grep that stands in for "did this run fail" has to be checked against
+what the tools actually print before it is written into a rule — `grep -rlE ' FAIL '
+tools/*.ts` was a one-line question that would have caught this on the day the rule was
+written. And when a rule is repeated into briefs, it inherits whatever blindness it had:
+this one reached four sessions before its first run under it exposed the gap.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
