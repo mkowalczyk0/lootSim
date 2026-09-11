@@ -19,6 +19,29 @@
  * **A written argument is not evidence.** If you are talking a red campaign check down,
  * measure the thing the argument claims.
  *
+ * ## What this measured, 2026-09-10 — read this before hunting a regression
+ *
+ * The sweep above has been run. Two disjoint 60-seed blocks read margins of **2.55**
+ * (`CAMPAIGN_SEEDS` itself) and **2.50** (offset 1000000), agreeing to 0.05, so **the current
+ * width sits on the noise floor's plateau** rather than its edge.
+ *
+ * Sharp and reckless run the *same* `GameState` seeds at different dodge rates, so per-seed
+ * differences pair and yield a real standard error: margin **sd ~6.1** — single seeds swing
+ * from depth 4 to 20 — giving **SE ~0.78 at n=60**, which puts the gate's bar of 1 just
+ * **1.9 SE** below the observed margin.
+ *
+ * **So the operational consequence, which matters more than the history: a red on that check
+ * is ~3% likely to be noise — about 1 run in 30. The first move is one disjoint block, not a
+ * regression hunt.** Nudging balance numbers to make it green would be chasing a coin flip.
+ *
+ * The same arithmetic explains the **-0.33** inversion CLAUDE.md records: at the old n=12 that
+ * sd gives SE ~1.75, putting the bar **0.9 SE** away. The check inverted because it was thin,
+ * not because the design promise failed — and the widening to 60 is what moved the bar from
+ * 0.9 SE to 1.9 SE and made a green here mean something.
+ *
+ * Still unpaid, and an owner decision rather than a session's: a **3-sigma** bar would need
+ * ~150 seeds, 2.5x this cost.
+ *
  * `node tools/run-tool.mjs campaignblock [offset]`  (~14 min at the current width)
  */
 import { CAMPAIGN_SEEDS, campaign } from "./bot";
