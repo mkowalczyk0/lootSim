@@ -28,7 +28,7 @@
 import type { DropSource, FoundSource } from "./drops";
 import { ELEMENTS, type Element } from "./elements";
 import { CHESTS, type ChestTier } from "./chests";
-import { ITEM_TYPES, MOD_POOL, isWeaponType, modAllowed, type ItemType, type ModRoll } from "./items";
+import { ITEM_TYPES, MOD_POOL, isWeaponType, modAllowed, type ItemType, type ModPoolId, type ModRoll } from "./items";
 import { BASE_RARITY_WEIGHTS, RARITIES, rarityIndex, rarityLabel, type Rarity } from "./rarity";
 import { WEAPON_FAMILIES } from "./weapons";
 
@@ -334,7 +334,11 @@ const ELEMENT_AUGMENTS: readonly AugmentDraft[] = ELEMENTS.filter((e) => e !== "
  * is derived from the roll's own `minTier` (see `augmentGrade` below), never authored, so
  * an affix augment can never claim to be commoner than the roll it guarantees.
  */
-const AFFIX_MOD_IDS: readonly string[] = [
+// Typed against MOD_POOL's own ids, NOT `string`. A `readonly string[]` here is what let
+// a deleted affix row become a module-load TypeError that typechecked perfectly on the way
+// in — see the ModPoolId comment in data/items.ts. With this annotation a retired affix is
+// a compile error at the id list, which is where the mistake actually is.
+const AFFIX_MOD_IDS: readonly ModPoolId[] = [
   "deadly", "savage", "frenzied", "quickened", "fleet",
   "bloodthirsty", "titanic", "vast", "splitting",
   // "rebounding" stood here until `of Rebounding` was retired with the `ultimateBounces`

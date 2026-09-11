@@ -42,8 +42,20 @@ because the ids are plain strings.
 which is the argument for having written the check before believing the inventory. An
 undercounted scope is this repo's signature failure and the brief undercounted by one.
 
-The assertion is now a thrown error naming the actual cause, so the next affix retirement gets
-a sentence instead of a stack trace.
+**The real fix is a type, not a message.** `readonly string[]` on a list of ids is a decision
+to switch off the only mechanism that could have caught this. `MOD_POOL`'s authored rows are
+now a `const` tuple with `ModPoolId` recovered off them, and `AFFIX_MOD_IDS: readonly
+ModPoolId[]` makes a retired affix a **compile error at the id list**. Falsified by putting
+`"rebounding"` back: `error TS2322: Type '"rebounding"' is not assignable to ...`. `MOD_POOL`
+keeps its `readonly ModRoll[]` type so no consumer changed, and `ModPoolId` deliberately covers
+the authored rows only — `ELEMENTAL_MODS` is generated and folding it in would widen the union
+back to `string` and undo the guard silently. The thrown error is kept as the residual, since
+`modRollById` is a `.find()` the compiler cannot prove exhaustive.
+
+Measured rather than assumed: `: readonly string[] = [` appears twice in `src/`, so this is two
+instances and not a class. The other, `GRANTABLE_ABILITY_IDS`, has the same shape but fails
+quietly (a dead grant, not a crash) and is named in blind-instruments entry 30 rather than
+fixed on this branch. See that entry for the full write-up.
 
 ## How power was held constant
 
@@ -113,11 +125,16 @@ actually exists.
 An augment guarantees a specific affix, so `affix-rebounding` could not outlive `of
 Rebounding`. `AFFIX_MOD_IDS` is nine entries rather than ten.
 
-**Player-visible consequence, flagged rather than absorbed:** a saved `affix-rebounding` is
-dropped by the `isAugmentId` filter in `state.ts` on load — the same graceful path a retired
-cosmetic id takes, so nothing crashes, but **an owned copy is lost.** No refund path was built,
-because inventing a compensation currency for a consumable is a design decision rather than a
-mechanical follow-on. If that loss is not acceptable, the fix belongs in a separate change.
+**Player-visible consequence, and it was ruled on rather than absorbed:** a saved
+`affix-rebounding` is dropped by the `isAugmentId` filter in `state.ts` on load — the same
+graceful path a retired cosmetic id takes (`normalizeAppearance` does exactly this), so
+nothing crashes, but **an owned copy is lost.**
+
+**No refund, by decision.** The augment guaranteed an affix that has never done anything, so
+there is no value to refund; building a compensation path for a consumable whose payload was
+always a no-op is a new mechanism for zero player benefit. The loss goes on the owner's
+player-visible-changes list rather than being papered over, and if they want compensation when
+they read it, that is its own change.
 
 ## What the branch leaves behind
 

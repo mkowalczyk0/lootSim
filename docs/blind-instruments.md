@@ -884,6 +884,106 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A thirtieth instance: the annotation that switches the compiler off, found only by running the code
+
+Ordinal assigned by the PM to avoid collisions across sessions; 29 is another branch's and
+entries 22–27 are not on master yet.
+
+Retiring `ultimateBounces` and `ultimateProjectiles` meant deleting two rows from `MOD_POOL`.
+The inventory had been swept by `git grep` over both key names, came back as nine sites across
+four files, and the sweep was correct — every one of those nine was real and every one was
+handled. The branch typechecked clean, `tsc --noEmit` over `src` and `tools` both.
+
+The game would not boot.
+
+`src/data/augments.ts` holds `AFFIX_MOD_IDS`, the curated shortlist of affixes that get their
+own Augment, and it is a list of **ids into `MOD_POOL`**:
+
+```ts
+const AFFIX_MOD_IDS: readonly string[] = [
+  "deadly", "savage", "frenzied", "quickened", "fleet",
+  "bloodthirsty", "titanic", "vast", "splitting", "rebounding",
+];
+
+const AFFIX_AUGMENTS = AFFIX_MOD_IDS.map((modId) => {
+  const mod = modRollById(modId)!;
+```
+
+`"rebounding"` was one of the deleted rows. `modRollById` is a `.find()`, so it returned
+`undefined`, and the non-null assertion turned that into a module-load
+`TypeError: Cannot read properties of undefined (reading 'minTier')` — thrown at import, from
+a file whose name has nothing to do with the change, with a message that names neither the
+affix nor the list.
+
+**It was not in the grep because it does not contain either key name.** `AFFIX_MOD_IDS` names
+the affix *row* (`rebounding`), not the mod *key* (`ultimateBounces`). A sweep for the thing
+being retired cannot find a reference that spells it differently, and there is no general fix
+for that by grepping harder.
+
+**It was not caught by the typechecker because the annotation told the typechecker not to
+look.** `readonly string[]` is a perfectly ordinary thing to write and it is exactly wrong
+here: these are not strings, they are ids drawn from a known finite set, and declaring them as
+`string` discards the only fact that would have made the mistake visible. The compiler had
+every piece of information needed — `MOD_POOL` is a module constant in the same package — and
+was explicitly instructed to ignore it.
+
+**What found it was running the code.** A round-trip check had just been written for a
+different reason (to prove that deleting an affix row does not orphan a saved item's name,
+after the PM refused to accept that claim from inspection). It imports `GameState`, which
+transitively imports `augments.ts`, so it died on import before executing a single assertion.
+Reading the diff, reading the file, and typechecking the whole repo had all just said fine.
+
+### The fix is a rule, not a check
+
+The repair is not "grep for id lists" and it is not a new gate. `MOD_POOL` was annotated
+`readonly ModRoll[]`, which widens every `id` to `string`; the authored rows are now a `const`
+tuple with the type recovered off it:
+
+```ts
+const AUTHORED_MODS = [ /* ...rows... */ ] as const satisfies readonly ModRoll[];
+export type ModPoolId = (typeof AUTHORED_MODS)[number]["id"];
+export const MOD_POOL: readonly ModRoll[] = [...AUTHORED_MODS, ...ELEMENTAL_MODS];
+```
+
+`AFFIX_MOD_IDS: readonly ModPoolId[]` then makes a retired affix a **compile error at the id
+list**, which is where the mistake actually is. Falsified by putting `"rebounding"` back:
+
+```
+src/data/augments.ts(343,51): error TS2322: Type '"rebounding"' is not assignable to type
+'"arcane" | "keen" | "brutal" | ... | "splitting"'.
+```
+
+Two details of that fix are load-bearing and easy to get wrong. `MOD_POOL` keeps its
+`readonly ModRoll[]` type for every consumer, so nothing downstream changed. And `ModPoolId`
+covers the **authored rows only** — `MOD_POOL` also spreads generated `ELEMENTAL_MODS`, whose
+ids are `string` by construction, and folding those in would widen the union straight back to
+`string` and silently undo the whole thing. A guard that quietly becomes vacuous is worse than
+no guard; this one is narrow and its comment says so.
+
+### The honest size of it
+
+The instinct was to call this a whole class of defect and sweep the repo. Measured instead:
+`: readonly string[] = [` appears **twice** in `src/`, and only one of the two was this bug.
+The other is `GRANTABLE_ABILITY_IDS` in `progression/index.ts`, a list of ability ids consumed
+by `rng.pick` and the Inscribe op. It has the same shape and is unvalidated at compile time,
+but **its failure mode is different** — a stale id there yields an item with a dead grant, not
+a crash — so it is named here rather than fixed on an unrelated branch.
+
+So: not a class, two instances, one loud and one quiet. Writing "a whole class" would have
+been the same error this file keeps recording, committed in the sentence describing the fix.
+
+**The rule.** A `string` annotation on a list of ids is a decision to turn off the only
+mechanism that could check them. Type an id list against the set it draws from, and a deleted
+member becomes a compile error rather than something that depends on whether anyone happens to
+execute that module. `CLAUDE.md` already states the general form — *a rule that cannot be
+violated beats a check that notices* — and names `SpriteName` and derived `worldScale` as the
+two places it was spent well. This is a third.
+
+**How to apply.** When you delete a member of any authored table, ask what *else* addresses it
+by name, and remember that the other name may not be the one you are deleting. Then ask why
+the compiler is not already stopping you; the answer is usually an annotation somebody wrote
+without noticing it was a waiver.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

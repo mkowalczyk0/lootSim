@@ -331,7 +331,23 @@ export const RESERVED_ELEMENTAL_MODS: readonly ModRoll[] = RESERVED_ELEMENTS.fla
  * extra projectile simply does not exist below epic, and an extra ultimate bounce
  * doesn't exist below mythic.
  */
-export const MOD_POOL: readonly ModRoll[] = [
+/**
+ * The hand-authored affix rows, kept as a `const` tuple so their ids survive as literal
+ * types rather than widening to `string`.
+ *
+ * This exists because of a crash, not a preference. `data/augments.ts` holds
+ * `AFFIX_MOD_IDS`, a list of ids into this pool, and looked them up with
+ * `modRollById(id)!`. Retiring an affix row therefore turned that non-null assertion into
+ * a module-load `TypeError: Cannot read properties of undefined` — the game would not
+ * boot — and it typechecked perfectly on the way in, because a `readonly string[]`
+ * annotation switches the compiler off for exactly the question being asked. Reading the
+ * code found nothing; only executing it did.
+ *
+ * `MOD_POOL` keeps its `readonly ModRoll[]` type for every consumer. The only thing that
+ * changed is that the ids are now recoverable as `ModPoolId`, so a list of them can be
+ * typed and a deleted row becomes a **compile error** instead of a runtime one.
+ */
+const AUTHORED_MODS = [
   { id: "keen", key: "attack", kind: "prefix", label: "Keen", base: 2.5, perTier: 0, scale: "rarity", where: "offense", minTier: 0 },
   { id: "brutal", key: "attack", kind: "prefix", label: "Brutal", base: 4, perTier: 0, scale: "rarity", where: "weapon", minTier: 1 },
   { id: "guarded", key: "defense", kind: "prefix", label: "Guarded", base: 3, perTier: 0, scale: "rarity", where: "defense", minTier: 0 },
@@ -369,6 +385,21 @@ export const MOD_POOL: readonly ModRoll[] = [
   // docs/ultimate-mods-removal.md. This block is deliberately two entries thinner at the
   // top end as a result; that is the cost of the removal, not an oversight.
 
+] as const satisfies readonly ModRoll[];
+
+/**
+ * Every id in the hand-authored pool, as a union. Type an id list against this and the
+ * compiler refuses a name that is not a row — including one that used to be.
+ *
+ * Deliberately covers the authored rows only. `ELEMENTAL_MODS` is generated, so its ids
+ * are `string` by construction and folding it in would widen the union straight back to
+ * `string` and silently undo the whole point. A check that has quietly become vacuous is
+ * worse than no check; this one is narrow and says so.
+ */
+export type ModPoolId = (typeof AUTHORED_MODS)[number]["id"];
+
+export const MOD_POOL: readonly ModRoll[] = [
+  ...AUTHORED_MODS,
   ...ELEMENTAL_MODS,
 ];
 
