@@ -262,6 +262,13 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
     .filter((id) => id.startsWith("boss.") || id.startsWith("tower.boss."))
     .sort();
   stripPng(bossIds.map((id) => frameZero(id, `bosses/${id}.png`)), 2, true, 14);
+
+  // Docket §36 — the 21 summon bodies, shown UNWASHED. The game paints each one toward
+  // its owner's element (`SUMMON_ELEMENT_WASH` in `render/sprites.ts`) and there is no
+  // single element to show here; the wash's strength and carrier are an open owner call
+  // (`docs/summon-sprite-seam.md`), so the sheet shows the authored art the wash sits on.
+  const summonIds = Object.keys(ATLAS).filter((id) => id.startsWith("summon.")).sort();
+  stripPng(summonIds.map((id) => decodePng(readFileSync(`src/render/atlas/summons/${id}.png`))), 3, true, 12);
 }
 
 // The procedural monster/boss grids stay reachable behind one flag rather than being

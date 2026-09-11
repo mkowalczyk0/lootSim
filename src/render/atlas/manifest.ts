@@ -123,6 +123,49 @@ export interface AtlasSprite {
 }
 
 /**
+ * Docket §36 — the 21 bespoke summon bodies, one south pose each, finished by
+ * `art/summons/finish.ts` from the raws under `art/summons/` (the README there is the
+ * generation plan). Kept as their own table and spread into `ATLAS` below so that
+ * `SummonArtId` is a real union of these keys: `SUMMON_UNIT_ART` can then only ever name
+ * an id that has a manifest row, at compile time, which is the "cannot be violated" half
+ * of the Tower-tileset rule (a declared id whose PNG isn't committed). The other half —
+ * the PNG really being on disk at the declared size — is `loadAtlas` refusing to boot
+ * and `npm run summonart` refusing to pass.
+ *
+ * World heights are README decision 3 against the hero's 32 units: bipeds 24-26, floaters
+ * 24 with `feet` inside the hem, constructs 18-20, the siege engine 30, birds and the
+ * drone 14 with `feet` 0.5/0.45 so they hover about their position the way the triangle
+ * did. `Minion.radius` is untouched. Every PNG carries **no hot accent** (§1.4) — the
+ * finish script refuses to write one that does, and `npm run chroma` walks `summon.*`.
+ */
+export const SUMMON_ATLAS = {
+  "summon.skeleton-warrior": { id: "summon.skeleton-warrior", w: 24, h: 46, worldScale: 0.5435, feet: 0.05 }, // 46 * 0.5435 = 25.0
+  "summon.grave-guard":      { id: "summon.grave-guard",      w: 29, h: 56, worldScale: 0.4643, feet: 0.05 }, // 56 * 0.4643 = 26.0
+  "summon.blood-servant":    { id: "summon.blood-servant",    w: 20, h: 47, worldScale: 0.5106, feet: 0.05 }, // 47 * 0.5106 = 24.0
+  "summon.decoy-husk":       { id: "summon.decoy-husk",       w: 20, h: 48, worldScale: 0.5,    feet: 0.05 }, // 48 * 0.5 = 24.0
+  "summon.ghost-deckhand":   { id: "summon.ghost-deckhand",   w: 22, h: 47, worldScale: 0.5106, feet: 0.05 }, // 47 * 0.5106 = 24.0
+  "summon.reaped-wraith":    { id: "summon.reaped-wraith",    w: 36, h: 51, worldScale: 0.4706, feet: 0.12 }, // 51 * 0.4706 = 24.0
+  "summon.limbo-shade":      { id: "summon.limbo-shade",      w: 37, h: 50, worldScale: 0.48,   feet: 0.18 }, // 50 * 0.48 = 24.0
+  "summon.kept-name":        { id: "summon.kept-name",        w: 40, h: 52, worldScale: 0.4615, feet: 0.05 }, // 52 * 0.4615 = 24.0
+  "summon.auto-turret":      { id: "summon.auto-turret",      w: 30, h: 37, worldScale: 0.5135, feet: 0.05 }, // 37 * 0.5135 = 19.0
+  "summon.bone-turret":      { id: "summon.bone-turret",      w: 35, h: 36, worldScale: 0.5278, feet: 0.05 }, // 36 * 0.5278 = 19.0
+  "summon.mortar-pod":       { id: "summon.mortar-pod",       w: 35, h: 31, worldScale: 0.5806, feet: 0.05 }, // 31 * 0.5806 = 18.0
+  "summon.shield-generator": { id: "summon.shield-generator", w: 34, h: 41, worldScale: 0.4878, feet: 0.05 }, // 41 * 0.4878 = 20.0
+  "summon.repair-drone":     { id: "summon.repair-drone",     w: 24, h: 21, worldScale: 0.6667, feet: 0.45 }, // 21 * 0.6667 = 14.0
+  "summon.siege-engine":     { id: "summon.siege-engine",     w: 53, h: 58, worldScale: 0.5172, feet: 0.06 }, // 58 * 0.5172 = 30.0
+  "summon.spirit-wolf":      { id: "summon.spirit-wolf",      w: 12, h: 40, worldScale: 0.5,    feet: 0.05 }, // 40 * 0.5 = 20.0
+  "summon.falcon":           { id: "summon.falcon",           w: 36, h: 23, worldScale: 0.6087, feet: 0.5 },  // 23 * 0.6087 = 14.0
+  "summon.spirit-hawk":      { id: "summon.spirit-hawk",      w: 40, h: 28, worldScale: 0.5,    feet: 0.5 },  // 28 * 0.5 = 14.0
+  "summon.moon-guardian":    { id: "summon.moon-guardian",    w: 23, h: 49, worldScale: 0.4898, feet: 0.1 },  // 49 * 0.4898 = 24.0
+  "summon.elder-spirit":     { id: "summon.elder-spirit",     w: 38, h: 58, worldScale: 0.431,  feet: 0.05 }, // 58 * 0.431 = 25.0
+  "summon.healing-spirit":   { id: "summon.healing-spirit",   w: 18, h: 17, worldScale: 0.7059, feet: 0.45 }, // 17 * 0.7059 = 12.0
+  "summon.healing-bloom":    { id: "summon.healing-bloom",    w: 24, h: 37, worldScale: 0.4324, feet: 0.05 }, // 37 * 0.4324 = 16.0
+} as const satisfies Record<string, AtlasSprite>;
+
+/** An id with a `SUMMON_ATLAS` row — the only thing `SUMMON_UNIT_ART` may point at. */
+export type SummonArtId = keyof typeof SUMMON_ATLAS;
+
+/**
  * Every pipeline sprite. Keyed by file id. `w`/`h` are the trimmed PNG's real size; if
  * you re-export a sprite at a new size, update the row (and re-check `worldScale`).
  */
@@ -609,6 +652,10 @@ export const ATLAS: Record<string, AtlasSprite> = {
   "relic.stitch-of-the-colossus":      { id: "relic.stitch-of-the-colossus",      w: 27, h: 31, worldScale: 0.60, feet: 0.15 },
   "relic.interval-of-the-keepers":     { id: "relic.interval-of-the-keepers",     w: 19, h: 33, worldScale: 0.60, feet: 0.15 },
   "relic.step-of-the-pilgrim":         { id: "relic.step-of-the-pilgrim",         w: 30, h: 27, worldScale: 0.60, feet: 0.15 },
+
+  // Docket §36 — the summon bodies, authored above as their own table so their ids are a
+  // compile-time union (`SummonArtId`); spread here so every reader of ATLAS sees them.
+  ...SUMMON_ATLAS,
 };
 
 /**
@@ -1119,19 +1166,36 @@ export const CLASS_HEROES: Record<ClassId, string | null> = {
  * all — they're the player-copy family (`PLAYER_COPY_UNITS` in `render/minionart.ts`) and
  * resolve unconditionally to the summoning hero's own composed sprite instead.
  *
- * `id` (once authored) is `summon.<unit-id-hyphenated>` by convention, PNGs under
- * `src/render/atlas/summons/` — same shape as `reliquary.monster.*` / `tower.monster.*`.
- * Don't declare the id here before its PNG is committed in the same change (the Tower
- * tileset rule: an ATLAS row with no PNG fails `npm run smoke` and claims art the repo
- * doesn't have) — leave it `null` until then.
+ * `id` is `summon.<unit-id-hyphenated>`, PNGs under `src/render/atlas/summons/` — same
+ * shape as `reliquary.monster.*` / `tower.monster.*`. The value type is `SummonArtId`,
+ * the keys of `SUMMON_ATLAS`, so a row cannot name an id that has no manifest row — the
+ * Tower tileset rule ("don't declare art the repo doesn't have") as a compile error
+ * rather than a check. All 21 are drawn as of the first finish pass; a `null` is still
+ * legal and still means "draw the triangle", so a unit added tomorrow degrades rather
+ * than breaks.
  */
-export const SUMMON_UNIT_ART: Record<string, string | null> = {
-  auto_turret: null, blood_servant: null, bone_turret: null, decoy_husk: null,
-  elder_spirit: null, falcon: null, ghost_deckhand: null, grave_guard: null,
-  healing_bloom: null, healing_spirit: null, kept_name: null, limbo_shade: null,
-  moon_guardian: null, mortar_pod: null, reaped_wraith: null, repair_drone: null,
-  shield_generator: null, siege_engine: null, skeleton_warrior: null, spirit_hawk: null,
-  spirit_wolf: null,
+export const SUMMON_UNIT_ART: Record<string, SummonArtId | null> = {
+  auto_turret: "summon.auto-turret",
+  blood_servant: "summon.blood-servant",
+  bone_turret: "summon.bone-turret",
+  decoy_husk: "summon.decoy-husk",
+  elder_spirit: "summon.elder-spirit",
+  falcon: "summon.falcon",
+  ghost_deckhand: "summon.ghost-deckhand",
+  grave_guard: "summon.grave-guard",
+  healing_bloom: "summon.healing-bloom",
+  healing_spirit: "summon.healing-spirit",
+  kept_name: "summon.kept-name",
+  limbo_shade: "summon.limbo-shade",
+  moon_guardian: "summon.moon-guardian",
+  mortar_pod: "summon.mortar-pod",
+  reaped_wraith: "summon.reaped-wraith",
+  repair_drone: "summon.repair-drone",
+  shield_generator: "summon.shield-generator",
+  siege_engine: "summon.siege-engine",
+  skeleton_warrior: "summon.skeleton-warrior",
+  spirit_hawk: "summon.spirit-hawk",
+  spirit_wolf: "summon.spirit-wolf",
 };
 
 /**

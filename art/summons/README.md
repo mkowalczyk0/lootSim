@@ -1,8 +1,11 @@
-# Summon sprites (docket §36, art-wave 2) — the plan and the first pass
+# Summon sprites (docket §36, art-wave 2) — the plan, the first pass, and the finish
 
-**State: 21 raw generations on disk, none finished, none wired.** Nothing here is in
-`ATLAS` yet and the game still draws every summon as the element-tinted triangle.
-This file exists so the plan survives the session that made it.
+**State: all 21 finished and wired** (`art/summon-wire`). `art/summons/finish.ts` turns
+every raw here into `src/render/atlas/summons/summon.*.png`; `SUMMON_ATLAS` in
+`src/render/atlas/manifest.ts` holds the rows and `SUMMON_UNIT_ART` points every unit at
+one. `drawMinions` reaches a real sprite for all 21; the triangle is now only the
+fallback rung. The sections below are the plan as it was written, kept because the
+decisions in it are still the decisions; the finish pass is at the bottom.
 
 ## What is being drawn, and what is not
 
@@ -116,3 +119,51 @@ that the wrappings read as linen and not armour.
    sheet against real PNGs before fixing the tint strength.
 4. Take a gate slot from the PM before running `npm test` or `npm run smoke` — several
    concurrent smokes killed three chains on 2026-09-11.
+
+## The finish pass (2026-09-11, session on `art/summon-wire`)
+
+`finish.ts` is the whole treatment and is meant to be re-run after any reroll: raw →
+per-unit op → quiet every hot pixel → trim → write PNG → print the `ATLAS` and
+`SUMMON_UNIT_ART` rows. Three things it does that the plan above did not anticipate:
+
+- **The roster said 21 and the disk held 20.** The falcon's generation
+  (`bd183d76`) had completed and was never saved, and nothing would have caught it — a
+  finish over "whatever raws are here" writes 20 PNGs and the seam draws a triangle for
+  the falcon, silently and forever. Recovered for zero generations by downloading the
+  finished job. The script now walks its expected set from `SUMMON_UNITS` minus
+  `PLAYER_COPY_UNITS` and refuses to run over a spec list that disagrees with it in
+  either direction, printing what it walked (`walked 27 summon units: 6 player copies,
+  21 bodies to draw, 21 specs here`).
+- **One reroll, for shape, not colour.** The shield generator came back as a purple
+  crate with four flames — a brazier. Muting the flames would have shipped a smoking
+  crate; a wrong shape cannot be fixed in the finish pass. Rerolled once as a riveted
+  iron device with a domed emitter and three prongs (job `759012d3`), the brazier kept
+  at `rejected/summon.shield-generator.v1-brazier.raw.png`. Every other raw was
+  shape-correct and got colour work only. Two inherited descriptions were wrong on
+  inspection: the ghost deckhand is white with gold trim, not red-and-white striped, and
+  the blood servant's wrappings read as bandage, not armour.
+- **Quieting is desaturation toward each pixel's own luminance, iterated, on two
+  detectors.** Not a pull toward a fixed bone-gold (that shifts value and reads as a
+  patch on dark cloth). Iterated because one pass at 0.35 keep left the drone's dark red
+  eye at 0.64 saturation — pulling toward a low luminance shrinks the bright channel far
+  more than the dark ones. Two detectors because §1.4's hand rule (saturation > 0.55) and
+  the gate's `chroma` (saturation × value) disagree on bright, moderately saturated
+  pixels: the auto-turret's cream-gold `#f7cb76` was not "hot" and still read 50.6,
+  louder than four committed monsters. The script quiets on either, and refuses to write
+  a PNG that still trips its own rule. The siege engine's baked lavender shadow plate is
+  erased (`eraseFlat`); the game draws its own.
+
+Decision 2 above ("no hot accent, nothing enforces it") is now enforced: `npm run chroma`
+walks `summon.*`, prints the count it walked against the count `SUMMON_UNIT_ART` points
+at, and holds every summon's loudest 2+px colour below every committed monster's accent
+one by one — the hero's own predicate. After the pass the loudest summon is the ghost
+deckhand's boot-tan at 39.6 against the minotaur's 45.5. `npm run summonart` now also
+checks the art half (row → manifest → PNG on disk at the declared size, and every
+`summon.*` row claimed by exactly one unit), because `npm run smoke`'s "nothing in ATLAS
+without a PNG" walk never sees a summon row. And `SUMMON_UNIT_ART`'s value type is
+`SummonArtId` (the keys of `SUMMON_ATLAS`), so a unit cannot point at an id with no
+manifest row — that one is a compile error, not a check.
+
+**Still open, deliberately:** `SUMMON_ELEMENT_WASH` — strength and whether a full-body
+wash is the right carrier at all. See `docs/summon-sprite-seam.md`; the study is the next
+step on this branch, and the call is the owner's.

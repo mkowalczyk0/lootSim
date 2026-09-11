@@ -54,6 +54,7 @@ function dirFor(id: string): string {
   if (id.startsWith("named.")) return "items";
   if (id.startsWith("relic.")) return "relics";
   if (id.startsWith("hub.")) return "scenes";
+  if (id.startsWith("summon.")) return "summons";
   if (id.includes(".monster.")) return "monsters";
   return "icons";
 }

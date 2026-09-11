@@ -89,7 +89,7 @@ function writePng(path: string, img: Img): void {
 function atlasPng(id: string): Img {
   // The atlas is organised by category folder; the id's first segment names it well
   // enough to find, and the set of folders is small and stable.
-  const dirs = ["characters", "monsters", "bosses", "props", "icons", "weapons"];
+  const dirs = ["characters", "monsters", "bosses", "summons", "props", "icons", "weapons"];
   for (const d of dirs) {
     try {
       const png = decodePng(readFileSync(`src/render/atlas/${d}/${id}.png`));

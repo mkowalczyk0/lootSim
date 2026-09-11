@@ -24,7 +24,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { decodePng } from "./png";
-import { ATLAS, SPRITE_OVERRIDES } from "../src/render/atlas/manifest";
+import { ATLAS, SPRITE_OVERRIDES, SUMMON_UNIT_ART } from "../src/render/atlas/manifest";
 import { chroma } from "../src/render/grade";
 
 let failures = 0;
@@ -189,6 +189,53 @@ const KNOWN_ACCENT_VIOLATIONS: readonly string[] = [
   check("the hero's accent violates §1.4 against exactly the monsters we already knew about",
     found.join(",") === pinned.join(","),
     `found [${found.join(", ") || "none"}]  pinned [${pinned.join(", ") || "none"}]`);
+}
+
+// --- 4b. summons (docket §36): a summon is YOURS, and reads on the hero's side of the line
+//
+// Every summoned minion draws a bespoke body (`SUMMON_UNIT_ART` -> `summon.*`), authored
+// with NO hot accent on purpose: the element wash the renderer paints over it is meant to
+// be the only saturated thing on the body, and a summon carrying a monster's "this is
+// looking at you" signal would read as one more monster in the pack. The predicate is the
+// hero's own, applied per summon — max accent chroma below EVERY committed monster's, one
+// by one — because the monsters are the fixed reference this art cannot move.
+//
+// Scope comes from the data, not from a glob: the set of `summon.*` ATLAS rows must equal
+// the set of ids `SUMMON_UNIT_ART` actually points at, and both counts are printed, so a
+// scope that quietly empties (a folder rename, a prefix change) is a red line here rather
+// than a check that walked nothing. Before this section existed the rule lived in prose
+// and one art session's discipline only — `summon.*` matched none of the patterns above.
+
+section("summons (§36): no hot accent — every summon's chroma stays below every monster's");
+
+{
+  const summonIds = Object.keys(ATLAS).filter((id) => id.startsWith("summon.")).sort();
+  const pointedAt = [...new Set(Object.values(SUMMON_UNIT_ART).filter((v): v is NonNullable<typeof v> => v !== null))].sort();
+  console.log(`  walked ${summonIds.length} summon.* row(s) in ATLAS; ${pointedAt.length} distinct id(s) pointed at by SUMMON_UNIT_ART`);
+  check("the summon walk is the set SUMMON_UNIT_ART points at (scope from the data, not a glob)",
+    summonIds.length > 0 && summonIds.join(",") === pointedAt.join(","),
+    `atlas [${summonIds.length}] vs table [${pointedAt.length}]`);
+
+  const summons: { id: string; max: number; hex: string }[] = [];
+  for (const id of summonIds) {
+    const path = `src/render/atlas/summons/${id}.png`;
+    // Unlike a monster, a summon.* row with no PNG is not "not yet drawn" — the row only
+    // exists because the PNG landed with it (SummonArtId), and a missing file breaks boot.
+    if (!existsSync(path)) { check(`${id}: PNG is committed at ${path}`, false); continue; }
+    const m = measureFile(path);
+    summons.push({ id, ...m });
+    const louder = monsters.filter((x) => m.max >= x.max).map((x) => `${x.id} (${x.max.toFixed(1)})`);
+    console.log(`  ${id.padEnd(34)} ${m.max.toFixed(1).padStart(6)}  ${m.hex}`);
+    check(`${id}: accent chroma stays below every monster's`, louder.length === 0,
+      louder.length ? `>= ${louder.join(", ")}` : "");
+  }
+  check("at least one summon sprite was measured", summons.length > 0, `${summons.length} measured`);
+  if (summons.length) {
+    const loudest = summons.reduce((a, b) => (b.max > a.max ? b : a));
+    const weakest = monsters.reduce((a, b) => (b.max < a.max ? b : a));
+    console.log(`  loudest summon ${loudest.id} at ${loudest.max.toFixed(1)} vs weakest monster accent `
+      + `${weakest.id} at ${weakest.max.toFixed(1)} — the margin this rule lives on`);
+  }
 }
 
 // --- 5. per-FRAME presence, for animated sprites -----------------------------------------
