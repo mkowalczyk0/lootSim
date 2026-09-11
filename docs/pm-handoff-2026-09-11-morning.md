@@ -71,7 +71,7 @@ Worktrees are under `~/Desktop/lootSim-worktrees/<name>`.
 
 | Branch | Tip | Worktree | State |
 |---|---|---|---|
-| `fix/ultimate-uptime` | `eb504ab` | `ult-pass` | **Needs a full gate.** Past batch three's cut: the Engineer fix, doc rewrites, blind-instruments 22 & 23, the `meter x/100` units print, and the summon mitigation work + `docs/summon-scaling.md`. |
+| `fix/ultimate-uptime` | `ec5ee37` | `ult-pass` | **Needs a full gate — none has ever been run on any of it.** Past batch three's cut: the Engineer grant-path fix with its pin emptied, doc rewrites, blind-instruments 22 & 23, the `meter X/100` units print, and the §37 summon work (mitigation inheritance and the per-hit cap). `npm run check` green. The two §37 commits are the only untested balance changes in it. |
 | `feat/nine-circles` | `14dd607` | `nine-circles` | Built on `ebc61cb`, green through `deadpaths`, smoke was still running (PID 61086; log `/private/tmp/claude-501/-Users-martinkowalczyk-Desktop-lootSim/099ec789-4356-4a7b-89c5-dc8315649446/tasks/by47o7xws.output`, read for `CHAIN_EXIT=` and a ` FAIL ` count). `SAVE_VERSION` **36**. **Next: `git reset --hard 6a67250` to drop the duplicated rewards-dial commit, `git rebase cf33abe` (expect a conflict in `src/core/save.ts`'s version list — master has 35, keep 36), then a fresh gate.** |
 | `feat/summon-sprite-seam` | `c063d6a` | `summon-sprites` | Complete. Hardening landed after its gate started, so **it needs one more full run**. |
 | `docs/blind-instruments-index` | `fb99597` | `relic-levelgate` (branch present, not checked out) | Index, `npm run blindindex`, `harness` duplicate- and undefined-step detection, and **`docs/batch-four-union.md`** — the union-order reasoning written for someone with no context. Never run inside a full chain. **Merge this first in batch four** — see §4. |
@@ -101,6 +101,11 @@ part of tonight's work.
    **Ask each author whether their step has a real ordering constraint or is free** — a
    duplicated step is now caught and an undefined one fails in a second, but a *mis-ordered*
    union passes silently, because nothing in the repo knows what a step depends on.
+   **Two answers are already in**: `blindindex` is free (node builtins and one markdown file;
+   preferred second because it is instant), and `ultfloor` is free with a soft preference for
+   *after* `check` (a type error makes its failure unreadable) and *before* `smoke` (~20s
+   against several minutes, same subsystem). Neither is a constraint. **`summonart` and the
+   affix-codex branch were never asked.**
 4. **Land `fix/rewards-harvest-dial` first — it is already split out.** It fixes a check
    that is blind on master *today*: the `rewards` harvest fixture runs at a difficulty dial
    where its level-60 subject dies in eight seconds on every seed, and passes only when
@@ -183,8 +188,16 @@ part of tonight's work.
   the builder: **what share** (derive it from the 508-vs-29 measurement, don't pick it),
   **before or after mitigation**, and **a check that a summon standing in a raid boss's fire
   still dies** so a one-shot problem doesn't become a tanking-with-skeletons problem.
-  `summonDamage` and `maxSummons` were deliberately **not** added until the cap gave them a
-  live read — see the `wardPower` rule below — and now go in with it. The inheritance line
+  **As built:** `MINION_MAX_HIT_FRACTION = 0.25`, applied *after* mitigation; both choices
+  are argued from measurements in `docs/summon-scaling.md`, bottom section, which is the
+  first thing to read before touching §37. **The immortality check is owed and unrun**, and
+  the depth-22 A/B is the reason it matters: the death rate fell **20% → 4%**, meaning 96%
+  of summons now expire on their lifespan rather than dying. That is either the intended
+  outcome or tanking-with-skeletons arriving by another route, and nothing yet distinguishes
+  them. **If 4% is wrong, the lever is the fraction (0.34 = three hits, 0.5 = two), never the
+  structure.** `summonDamage` and `maxSummons` are approved but **unwritten** — they were
+  deliberately withheld until the cap gave them a live read (see the `wardPower` rule below),
+  and `docs/summon-scaling.md` names where each attaches. The inheritance line
   the owner's builder drew, accepted: **in** — damage reduction, resists, plus the
   already-inherited element and attack damage; **out** — triggers, granted skills, leech,
   and anything about the player's own body; **deferred** — crit and elemental damage %.
