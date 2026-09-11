@@ -96,8 +96,23 @@ const REFERENCE = BOSSES[BOSSES.length - 1]!;
  * the one fight in the game that is allowed to be a project, and below anything absurd
  * because v1 is solo: `partyScale` already multiplies health by the size of the group, so
  * this number is the *one-player* fight and the co-op pass tunes the multiplier, not this.
+ *
+ * Raised from 1.7 to 3.0 on the owner's instruction ("all of the raid bosses need a much
+ * much higher health pool"), measured rather than assumed first —
+ * `docs/raid-health-measurement.md` / `npm run raidhealth`. This buys **duration, not
+ * difficulty**: on the two raids a well-geared level-70 bot can actually win, tripling this
+ * constant made the fight ~2.1x as long and moved win rate by roughly nothing (potions
+ * drunk barely changed either). That's expected — CLAUDE.md's own model says health alone
+ * makes a fight longer, not harder, and `docs/raid-party-scaling.md` already found the same
+ * shape on the co-op axis. The reason to raise it anyway: CLAUDE.md's own design target for
+ * a raid boss is a fight that "lasts a minute or two", and at 1.7 the two shallowest raids
+ * (the Ferryman, the Queen) were resolving in 21-30 seconds — well under that target, and
+ * nobody had measured a raid's actual duration until now. At 3.0 they land at 44s/64s,
+ * and the two deeper raids move from roughly a minute to two-plus, which is what the
+ * design doc already asked for. Not a taste call — the multiplier that meets an existing,
+ * previously-unmeasured target across the roster.
  */
-export const RAID_HEALTH = 1.7;
+export const RAID_HEALTH = 3.0;
 /** Multiplies the reference encounter's damage. Modest — the pressure is in the rotation. */
 export const RAID_DAMAGE = 1.15;
 /**

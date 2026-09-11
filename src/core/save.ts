@@ -205,11 +205,18 @@
 // session's inbox does not exist for anybody else. This list is the only reservation
 // that counts, and it is here rather than in a doc because this is the line you have to
 // edit anyway.
-//   (nothing in flight)
+//   35 — the relic level gate (`relicRequiredLevel` in `data/relics.ts`): a relic may only
+//        be socketed by a character at the level of the shallowest floor that can pay it
+//        out. Nothing in the save's *shape* changes — `Player.relics` is the same array of
+//        ids — but a previously legal loadout can become illegal, which is why this needs a
+//        version at all. `normalizeRelicLoadout` now takes the character's level, unsockets
+//        what outranks it, and reports what it took, so the town can say so once
+//        (`GameState.relicsUnsocketed`). Nothing is lost: the relics stay in the
+//        account-wide collection and go back on at level.
 //
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.
-export const SAVE_VERSION = 34;
+export const SAVE_VERSION = 35;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

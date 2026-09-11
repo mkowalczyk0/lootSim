@@ -858,9 +858,14 @@ export class Player {
     return prev;
   }
 
-  /** Why `id` can't go in relic slot `slot`, or null when it can. The one rule, from `data/relics.ts`. */
+  /**
+   * Why `id` can't go in relic slot `slot`, or null when it can. The one rule, from
+   * `data/relics.ts` — including the level gate, which is why this passes `this.level`
+   * rather than leaving it to the caller. Every socketing path in the game reaches the rule
+   * through here.
+   */
   relicBlocker(slot: number, id: string): string | null {
-    return relicSocketBlocker(this.relics, slot, id);
+    return relicSocketBlocker(this.relics, slot, id, this.level);
   }
 
   /** Puts a relic in a slot. Returns what was there. Refuses (returns undefined) when the rule says no. */

@@ -304,6 +304,14 @@ export class GameState {
    */
   treePointsRefunded = 0;
   /**
+   * Relic ids the SAVE_VERSION 35 level gate had to unsocket on load, across every class.
+   * Non-empty exactly once, right after loading a save whose worn relics outrank the
+   * character wearing them; the town shows a notice and clears it. Transient and
+   * deliberately not persisted, exactly like `treePointsRefunded` — nothing is lost, the
+   * relics are still in the collection and go back on at level.
+   */
+  relicsUnsocketed: string[] = [];
+  /**
    * Set the moment a class's Proving is banked, cleared by the town once it has said so
    * (UAT §13). Transient and deliberately not persisted — exactly like
    * `treePointsRefunded`, it exists to make the next trip back to the ship announce
@@ -1635,10 +1643,12 @@ export class GameState {
       const playersRaw = d.players as Record<string, unknown> | undefined;
       if (playersRaw) {
         for (const id of CLASS_IDS) {
-          state.treePointsRefunded += applyPlayerJSON(
+          const loaded = applyPlayerJSON(
             state.players[id], playersRaw[id] as Record<string, unknown> | undefined, preProgression,
             universalPool,
           );
+          state.treePointsRefunded += loaded.treePointsRefunded;
+          state.relicsUnsocketed.push(...loaded.relicsUnsocketed);
         }
         state.activeClassId = isClassId(d.activeClassId) ? d.activeClassId : state.activeClassId;
       } else {
@@ -1647,9 +1657,11 @@ export class GameState {
         const p = d.player as Record<string, unknown> | undefined;
         if (p) {
           const legacyClass: ClassId = isClassId(p.classId) ? p.classId : DEFAULT_CLASS;
-          state.treePointsRefunded += applyPlayerJSON(
+          const loaded = applyPlayerJSON(
             state.players[legacyClass], p, preProgression, universalPool,
           );
+          state.treePointsRefunded += loaded.treePointsRefunded;
+          state.relicsUnsocketed.push(...loaded.relicsUnsocketed);
           state.activeClassId = legacyClass;
         }
       }
@@ -1734,21 +1746,33 @@ export function playerFromJSON(classId: ClassId, raw: Record<string, unknown> | 
   return player;
 }
 
+/** What a load had to change about a character sheet, for the town to say once. */
+interface LoadedSheet {
+  /** Tree points handed back by the v14 class-refactor migration. */
+  readonly treePointsRefunded: number;
+  /** Relic ids unsocketed by the SAVE_VERSION 35 level gate. */
+  readonly relicsUnsocketed: readonly string[];
+}
+
 /**
  * Applies one saved character sheet onto a fresh `Player` of the matching class. Used
  * once per class on a current save, and once for whichever class a pre-v10 save's
  * single shared character belonged to. `preProgression` is true for a save older than
  * v14, whose tree allocation and equipped skills predate the class refactor and are
- * dropped rather than migrated; the return value is how many tree points that class got
- * handed back, for a one-time town notice.
+ * dropped rather than migrated.
+ *
+ * The return value is the two things a load can silently take away from a player — refunded
+ * tree points and unsocketed relics — so the town can announce both once rather than a
+ * character quietly coming back different. A migration players cannot see is how trust in a
+ * save format dies.
  */
 function applyPlayerJSON(
   p: Player,
   raw: Record<string, unknown> | undefined,
   preProgression: boolean,
   universalPool: number,
-): number {
-  if (!raw) return 0;
+): LoadedSheet {
+  if (!raw) return { treePointsRefunded: 0, relicsUnsocketed: [] };
   p.level = Number(raw.level ?? 1);
   // Saves from before per-character progress existed (or a class that predates this
   // field) have no `deepestDepth` of their own — estimate one from level rather than
@@ -1769,8 +1793,13 @@ function applyPlayerJSON(
     : [];
   // A save from before v17 has no Proving, so no class can have completed one.
   p.legendComplete = raw.legendComplete === true;
-  // A save from before v22 wears no relics; anything else is brought back to legal.
-  p.relics = normalizeRelicLoadout(raw.relics);
+  // A save from before v22 wears no relics; anything else is brought back to legal — which
+  // since SAVE_VERSION 35 includes the level gate, and so can take out a relic the player
+  // legitimately earned and was wearing. `p.level` is set above, so this asks the gate at
+  // the character's own level rather than the account's. What came out is returned for a
+  // one-time town notice; see `normalizeRelicLoadout`.
+  const loadout = normalizeRelicLoadout(raw.relics, p.level);
+  p.relics = loadout.worn;
   // A save from before v26 has never banked a Challenger badge — every activity starts
   // unearned, which is true. Same `{ ...fresh, ...saved }` shape `riftTiers` already uses,
   // so a fixed-map entry a newer build hasn't seen yet (or one absent from an older save)
@@ -1821,7 +1850,10 @@ function applyPlayerJSON(
   p.mana = Number(raw.mana ?? p.maxMana);
   p.skills = preProgression ? [null, null, null] : readSkills(raw.skills);
   p.autoSlotNewAbilities();
-  return preProgression && hadAllocation ? p.treePoints : 0;
+  return {
+    treePointsRefunded: preProgression && hadAllocation ? p.treePoints : 0,
+    relicsUnsocketed: loadout.unsocketed,
+  };
 }
 
 /**

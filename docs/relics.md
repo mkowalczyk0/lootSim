@@ -146,8 +146,119 @@ It is one constant and the owner may loosen it. `normalizeRelicLoadout` brings a
 back to legal on load and on the wire, so a loosening that is later reverted costs
 nobody a crash: the extra relic comes off.
 
-No level gate. Relics are account progression an alt inherits, the same call the
-universal tree made.
+## The level gate — a relic answers to the floor it fell on
+
+**This reverses an earlier call.** The paragraph here used to read *"No level gate. Relics
+are account progression an alt inherits, the same call the universal tree made."* The owner
+overturned it: a brand-new alt walking out of the Citadel wearing the account's best relic is
+the same objection they have raised about every account-wide system, and the universal tree
+is not actually the precedent it looked like — the universal *pool* is account-wide but its
+allocation is per-class and it grants no abilities and flips no rules. A relic does both.
+
+The rule: **a relic may only be socketed by a character at the level of the shallowest floor
+that can pay it out.** All three slots, both tiers, no carve-outs. A softer variant that let
+an alt wear low-tier artifacts immediately was offered and declined.
+
+### The requirement is derived, never authored
+
+`relicRequiredLevel(def)` in `data/relics.ts` reads the **drop table**. An item answers this
+question from its own `ilvl` (`requiredLevel` in `game/item.ts`), because a drop's item level
+already tracks the floor that produced it. A relic has no `ilvl` — no base block, no affixes,
+nothing that scales — so the same question is asked of the only thing it does carry:
+
+```
+relicRequiredLevel(def) = min over live sources of sourceLevel(src), less one level of grace
+sourceLevel(src)        = levelAdvice(sourceFloor(src).depth, sourceFloor(src).danger)
+```
+
+`levelAdvice` is the *identical* function behind `DepthProfile.recommendedLevel` — not a
+second formula that can drift from it. `sourceFloor` (`data/drops.ts`) walks a `FoundSource`
+to the shallowest run that satisfies it, and it is a **reading** of the configuration rather
+than a second model of the world:
+
+- `riftConfig`, `raidConfig` and `towerConfig` are *called* for the depth and danger they
+  actually produce. No rift arithmetic is restated here, so a retuned `baseDepth` or
+  `dangerPerTier` moves the gate with it.
+- `bossFor` answers which encounter a rift floor spawns. `riftBossSources` writes all five
+  Delve encounters out per rift, so "the Nameless, in the Abyss" is a far deeper ask than
+  "the Choir, in the Abyss" — 31 against 11. Assuming a rift boss is whatever its lowest tier
+  meets would have flattened five artifacts' requirements silently, and did, until a
+  falsification caught it (see below).
+- Every constraint on a source composes as a **maximum**, because `sourceMatches` composes
+  them as a conjunction.
+
+**Why derived rather than a `requiredLevel` field on `RelicDef`.** The same argument
+`requiredLevel` itself makes, and the same one that put the execute threshold at its single
+evaluation site: a field is thirty numbers to keep in step with thirty drop tables, could be
+satisfied with `1`, and would be forgotten by the thirty-first definition. Derived, a relic
+authored tomorrow is gated for free with no number for anyone to omit. The gate asserts the
+absence of such a field positively.
+
+**Danger is part of it; the Challenger dial is not.** A rift tier, a raid tier and a sector
+tier are part of *where the thing drops* — the Abyss at tier 8 is a different place from the
+Abyss at tier 1, and its relics ask 37 against 11. The Challenger dial is the opposite: it is
+weather the player turns up themselves, and letting it through would mean a player could
+raise their own relics' requirements by choosing a harder floor. It is excluded **by
+construction** rather than by a subtraction — every config call above passes `challengerTier`
+0, so there is nothing to divide back out.
+
+**The grace is one level, and it is `requiredLevel`'s grace for `requiredLevel`'s reason.** A
+floor's XP lands as its monsters die, so a character clearing the floor that pays a relic is
+often a level short of that floor's advice at the moment it drops. Without the grace, the run
+that earns a relic routinely could not wear it.
+
+### It gates the socket, not the drop
+
+An above-level relic still drops, still banks, and waits in the account-wide collection. The
+account owns it; the character grows into it. That is the shape the shared stash already has,
+and it is what keeps this from becoming a second, invisible rarity ceiling.
+
+### What the numbers come out as
+
+Artifacts land at **6–23**, relics at **13–36**. The two extremes are the Abyss's tier-1 clear
+cache (`coin-of-the-first-circle`, depth 8, level 6) and its tier-8 boss
+(`remnant-of-what-was-not`, depth 28 at danger 3.0, level 36). The tiers **overlap heavily**
+and that is correct: the gate tracks where a thing drops, not what tier it is, so a relic off
+a shallow Tower cache (`sandals-of-the-swift-messenger`, 13) asks less than a deep artifact.
+
+### The migration
+
+`SAVE_VERSION` 35. The save's *shape* does not change — `Player.relics` is the same array of
+ids — but a previously legal loadout can become illegal, which is the only reason this needs
+a version at all. `normalizeRelicLoadout(raw, level)` now takes the character's level,
+unsockets what outranks it, and **returns what it took** (`RelicLoadout.unsocketed`).
+`GameState.relicsUnsocketed` carries that to a one-time town notice, exactly as
+`treePointsRefunded` already does for the class refactor: a migration players cannot see is
+how trust in a save format dies. Nothing is lost — the relics stay in the collection and go
+back on at level.
+
+Only a *level* removal is reported. A duplicate, an unknown id or a cap violation comes out
+silently as it always has, and the distinction is made by asking the same blocker a second
+question ("would this have fit at its own level?") rather than by a second rule that could
+drift — otherwise the town would tell a player to level up for something levelling will never
+fix.
+
+### Falsification
+
+Six injected violations, against the checks in `tools/relics.ts` §7b. Five went red
+immediately; **two did not, and both were real holes in the checks rather than in the code**:
+
+| injection | first verdict | what it exposed |
+|---|---|---|
+| flatten the gate to level 1 | red | — |
+| off-by-one in the blocker (`level + 1 < need`) | red | — |
+| reject at exactly the required level (`level <= need`) | red | — |
+| widen the grace to three levels | red | — |
+| report every removal as a level removal | red | — |
+| **divide danger back out of `sourceLevel`** | **green** | the "tier 8 asks more than tier 1" check was confounded: `depthPerTier` raises the depth too, so the comparison was carried by depth whether danger was read or not. Fixed by holding the depth still and comparing against `levelAdvice(depth, 1)` — the control it was missing. |
+| **stop asking `bossFor` in the rift tier search** | **green** | nothing tested the search at all, so it could silently flatten five artifacts' requirements. Fixed by comparing two sources that name different encounters in the *same* rift at the *same* minimum tier, so mode and tier are held still and the encounter is the only variable. |
+
+Both are the same lesson this repo keeps relearning and it is worth stating in its own right:
+**a comparison needs a control, not just two numbers that differ.** Each of those checks was
+a real comparison, phrased as a comparison, and green for a reason that had nothing to do with
+what it claimed to measure. The one-sided-bound rule in `CLAUDE.md` says assert a design
+promise as a comparison; the refinement here is that the comparison must vary *only* the thing
+being asserted.
 
 ## The wire
 
@@ -251,3 +362,6 @@ the live count. `tools/itemart.ts` never hardcodes the number for this exact rea
 `SAVE_VERSION` 22 (20 was reserved and never shipped; the weekly took 21 first).
 One account-wide list `relics`, one per-character list `relics` on each `Player`, one
 `relicsFound` counter on the stats. An older save loads owning none and wearing none.
+
+`SAVE_VERSION` 35 added the level gate. No field changed shape; what changed is that a
+loadout can now load back *smaller* than it was saved, and say so. See "The level gate" above.

@@ -41,7 +41,8 @@ import {
 } from "../data/named";
 import type { NodeEffect } from "../progression/nodes";
 import {
-  RELICS, RELIC_BY_ID, RELIC_SLOTS, RELIC_TIER_INFO, relicSourceLines, relicsOfTier, type RelicDef,
+  RELICS, RELIC_BY_ID, RELIC_SLOTS, RELIC_TIER_INFO, relicRequiredLevel, relicSourceLines, relicsOfTier,
+  type RelicDef,
 } from "../data/relics";
 import {
   MODES, RIFT_LORE, RUN_MODES, delveConfig, describeRun, modeUnlocked, riftConfig, type RunConfig,
@@ -793,6 +794,21 @@ export class TownUI {
         `The class update rebuilt the skill tree. ${n} point${n === 1 ? "" : "s"} refunded — `
           + `spend them however you like, respec is still free.`,
         "#7dd3fc",
+      );
+    }
+    // Relics now answer to the floor they fell on (SAVE_VERSION 35), so a character below
+    // that level had theirs taken out. Say it once, then clear it — nothing was lost, the
+    // relics are still in the collection and go straight back on at level.
+    if (this.state.relicsUnsocketed.length > 0) {
+      const names = this.state.relicsUnsocketed.map((id) => RELIC_BY_ID[id]?.name ?? id);
+      this.state.relicsUnsocketed = [];
+      this.state.save();
+      const one = names.length === 1;
+      this.announce(
+        `Relics answer to the depth they came out of now. ${names.join(", ")} `
+          + `came off — still yours, still in the collection. `
+          + `Level up and put ${one ? "it" : "them"} back on.`,
+        "#c084fc",
       );
     }
     // The Legend became Complete on the dive that just ended (UAT §13). Say it once, on
@@ -4936,12 +4952,16 @@ export class TownUI {
     const lines = describeEffects(def.effects, dctx).map((l) => `<li>${escapeHtml(l)}</li>`).join("");
     const sources = relicSourceLines(def).map((l) => `<li class="muted">${escapeHtml(l)}</li>`).join("");
     const info = RELIC_TIER_INFO[def.tier];
+    // Stated whether or not it's blocked: the requirement is a property of the relic (it is
+    // derived from where the thing drops), not a complaint about the character reading it.
+    const need = relicRequiredLevel(def);
     return `
       <div class="cmp-hero" style="--r:${info.color}">
         <div class="cmp-art">${pixelImageTag(relicArt(def), 96, 96, relicArtKey(def))}</div>
         <div>
           <h3 style="color:${info.color};margin:0">${escapeHtml(def.name)}</h3>
-          <p class="muted" style="margin:2px 0 0">${info.label}</p>
+          <p class="muted" style="margin:2px 0 0">${info.label} · answers to level ${need}${
+            this.state.player.level < need ? ` (you are ${this.state.player.level})` : ""}</p>
         </div>
       </div>
       <p class="muted" style="font-style:italic;margin:4px 0">${escapeHtml(def.flavor)}</p>

@@ -486,6 +486,10 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
          * crescent on screen is the hitbox rather than an approximation of it.
          */
         case "swing": {
+          // A client drew its own swing the tick it pressed (`Dungeon.startSwing`,
+          // predicted); the host's copy of that same swing arrives a round trip later
+          // and would draw a second crescent. Allies' swings are only ever the host's.
+          if (d.role === "client" && ev.hero === d.localHero.index && !ev.predicted) break;
           if (ev.pattern === "bolt") break;
           const element = ev.element;
           const base = ev.ultimate ? "#ffd34d"

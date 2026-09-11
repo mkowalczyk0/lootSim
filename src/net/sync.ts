@@ -293,6 +293,7 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
     ]),
     g: d.ground.map((g) => [
       Math.round(g.x), Math.round(g.y), Math.round(g.radius), ELEMENTS.indexOf(g.element), r2(g.remaining),
+      g.follows ?? -1, r2(g.vx ?? 0), r2(g.vy ?? 0),
     ]),
     tm: d.totems.map((t) => [Math.round(t.x), Math.round(t.y), ELEMENTS.indexOf(t.element)]),
     tr: d.level.traps.map((t) => [t.state === "idle" ? 0 : t.state === "warn" ? 1 : 2, r2(t.t), r2(t.angle)]),
@@ -437,8 +438,13 @@ export function applySnapshot(d: Dungeon, s: Snapshot, planetNames?: Record<stri
 
 function applyHero(d: Dungeon, hero: Hero, h: HeroSnap, log?: InputLog): void {
   const a = hero.avatar;
-  a.swingTimer = h.sw;
-  a.swingAngle = h.sa;
+  // The local hero's swing is predicted (`Dungeon.startSwing`) and drawn the tick the
+  // button goes down; the host's copy of it arrives a round trip later and, adopted,
+  // would restart the animation mid-swing. Everyone else's swing is the host's word.
+  if (!hero.local) {
+    a.swingTimer = h.sw;
+    a.swingAngle = h.sa;
+  }
   a.hitFlash = h.hf;
   // Statuses first: the replay below reads slows and roots off them.
   mirrorStatuses(hero.sc, h.st ?? 0);
@@ -708,12 +714,21 @@ function applySimpleBodies(d: Dungeon, s: Snapshot): void {
   }
 
   d.ground.length = 0;
-  for (const [x, y, radius, elementIndex, remaining] of s.g) {
+  for (const [x, y, radius, elementIndex, remaining, follows, vx, vy] of s.g) {
     const element = ELEMENTS[elementIndex!] ?? "physical";
+    // A zone that rides a hero is placed on *this* browser's copy of that hero straight
+    // away — the predicted body if it's the local hero — rather than where the host had
+    // them a round trip ago. See `Snapshot.g`. `advanceRemote` keeps it there between
+    // snapshots. Older hosts send five numbers; those zones simply don't move.
+    const owner = follows !== undefined && follows >= 0 ? d.heroes[follows] : undefined;
+    const ax = owner ? owner.avatar.x : x!;
+    const ay = owner ? owner.avatar.y : y!;
     d.ground.push({
-      x: x!, y: y!, px: x!, py: y!, radius: radius!,
+      x: ax, y: ay, px: ax, py: ay, radius: radius!,
       element, damage: 0, remaining: remaining!, tickTimer: 1,
       hitsPlayer: true, hitsEnemies: false, color: ELEMENT_COLORS[element],
+      ...(owner ? { follows: owner.index } : {}),
+      ...(vx || vy ? { vx: vx ?? 0, vy: vy ?? 0 } : {}),
     });
   }
 

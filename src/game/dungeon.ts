@@ -110,6 +110,10 @@ const DASH_SPEED = 470;
 const DASH_TIME = 0.14;
 const DASH_COOLDOWN = 0.75;
 const SWING_TIME = 0.13;
+/** How long each attack pattern's swing shows for, as a fraction of `SWING_TIME`. */
+function swingTimeFor(pattern: AttackPattern): number {
+  return pattern === "bolt" ? 0.6 : pattern === "dual" ? 0.8 : 1;
+}
 const HIT_INVULN = 0.65;
 const MAGNET_RANGE = 78;
 const PICKUP_RANGE = 16;
@@ -251,6 +255,12 @@ export type RunEvent =
       /** Whose gear this swing is made of. Carried on the event rather than read off
        *  the local character, so an ally's crescent is their element and not yours. */
       element: Element;
+      /** Who swung. Not `owner`: everybody should see a swing, so it must not be
+       *  filtered to one person — but a client that already *predicted* its own swing
+       *  (`predictLocal`) uses this to drop the host's copy when it arrives. */
+      hero: number;
+      /** Raised by a client's own prediction, not by the host. */
+      predicted?: boolean;
     }
   | { kind: "bossSpawn"; name: string; title: string }
   | { kind: "bossPhase"; name: string; phase: number; total: number }
@@ -1241,6 +1251,8 @@ export class Dungeon implements CombatHost, RuleHost {
     if (this.role === "client") {
       this.advanceRemote(dt);
       this.predictLocal(dt, input);
+      // After prediction, so a zone riding the local hero sits under this tick's body.
+      this.carryZones(dt);
       return;
     }
     if (this.phase === "dead") return;
@@ -1325,8 +1337,10 @@ export class Dungeon implements CombatHost, RuleHost {
    * A client moves its own character immediately (UAT §1 B2), dash included, and is
    * reconciled against the host by `applyHero` in `net/sync.ts`: the host echoes the
    * last input it consumed, and the client re-applies everything newer than that from
-   * the host's position through `predictStep` — the very step the host used. Nothing
-   * else is predicted: a swing that hasn't happened yet must never draw a number.
+   * the host's position through `predictStep` — the very step the host used. The only
+   * other thing predicted is the *look* of a basic attack (`startSwing`, below): a swing
+   * that hasn't happened on the host yet must never draw a number, and doesn't — the
+   * animation is the client's, every hit is the host's.
    */
   private predictLocal(dt: number, input: AvatarInput): void {
     const hero = this.localHero;
@@ -1339,6 +1353,17 @@ export class Dungeon implements CombatHost, RuleHost {
     if (aim !== null) a.facing = aim;
     else if (move.x !== 0 || move.y !== 0) a.facing = Math.atan2(move.y, move.x);
     this.predictStep(hero, move, input.wasPressed("dash"), dt);
+    // The swing is the client's own to draw (see `startSwing`): its timers tick here
+    // and `applyHero` leaves them alone for the local hero. The gate is the host's gate
+    // — the same cooldown, the same disables, both derived from state the snapshot
+    // already mirrors — so the only way the two ends disagree is a status that changed
+    // in flight, which costs one swing drawn without a hit, or one hit without a swing.
+    a.attackTimer = Math.max(0, a.attackTimer - dt);
+    a.swingTimer = Math.max(0, a.swingTimer - dt);
+    a.buffAttackSpeed = hero.sc.modsContribution().attackSpeed;
+    if (input.wasPressed("attack") && a.attackTimer <= 0 && !hero.sc.disables().attack) {
+      this.startSwing(hero, true);
+    }
   }
 
   /**
@@ -1413,6 +1438,29 @@ export class Dungeon implements CombatHost, RuleHost {
       a.hitFlash = Math.max(0, a.hitFlash - dt);
       a.dashTimer = Math.max(0, a.dashTimer - dt);
       a.invulnTimer = Math.max(0, a.invulnTimer - dt);
+    }
+  }
+
+  /**
+   * Client only: a zone that moves keeps moving between snapshots, the same two ways it
+   * does on the host in `updateGround`. A `follows` zone rides its owner — for the local
+   * hero that is the *predicted* body, so the ward you are standing in stays under your
+   * feet instead of a round trip behind them (the owner's "horrendous delay on wards /
+   * AOE that follow the player"; see `Snapshot.g`) — and a drifting zone travels on its
+   * velocity like a projectile does in `advanceRemote`. Runs after `predictLocal` so the
+   * anchor is this tick's position, not last tick's.
+   */
+  private carryZones(dt: number): void {
+    for (const g of this.ground) {
+      g.px = g.x;
+      g.py = g.y;
+      if (g.follows !== undefined) {
+        const owner = this.heroes[g.follows];
+        if (owner) { g.x = owner.avatar.x; g.y = owner.avatar.y; }
+      } else if (g.vx || g.vy) {
+        g.x = clamp(g.x + g.vx! * dt, 30, this.width - 30);
+        g.y = clamp(g.y + g.vy! * dt, 30, this.height - 30);
+      }
     }
   }
 
@@ -2077,8 +2125,7 @@ export class Dungeon implements CombatHost, RuleHost {
     // knockback — is that ability's, and it lands through the same pipeline a spell's
     // hits do.
     const ability = weaponAbilityFor(p.weaponFamily);
-    a.attackTimer = p.attackCooldown / (1 + a.buffAttackSpeed);
-    a.swingAngle = a.facing;
+    this.startSwing(hero, false);
     const damage = p.attackDamage;
 
     switch (w.pattern) {
@@ -2091,7 +2138,6 @@ export class Dungeon implements CombatHost, RuleHost {
           const offset = count === 1 ? 0 : (i / (count - 1) - 0.5) * spread * (count - 1);
           this.spawnPlayerBolt(hero, a.facing + offset, damage, w.pierce + Math.round(p.mods.pierce));
         }
-        a.swingTimer = SWING_TIME * 0.6;
         break;
       }
       case "thrust": {
@@ -2100,7 +2146,6 @@ export class Dungeon implements CombatHost, RuleHost {
         for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc).slice(0, limit)) {
           this.weaponStrike(hero, e, damage, a.facing, ability);
         }
-        a.swingTimer = SWING_TIME;
         break;
       }
       case "dual": {
@@ -2111,7 +2156,6 @@ export class Dungeon implements CombatHost, RuleHost {
             this.weaponStrike(hero, e, damage, angle, ability);
           }
         }
-        a.swingTimer = SWING_TIME * 0.8;
         break;
       }
       case "orb": {
@@ -2120,7 +2164,6 @@ export class Dungeon implements CombatHost, RuleHost {
           this.weaponStrike(hero, e, damage, Math.atan2(e.y - a.y, e.x - a.x), ability);
         }
         this.talismanSpark(hero, damage);
-        a.swingTimer = SWING_TIME;
         break;
       }
       default: {
@@ -2128,15 +2171,37 @@ export class Dungeon implements CombatHost, RuleHost {
         for (const e of this.meleeTargets(hero, a.facing, w.reach, w.arc)) {
           this.weaponStrike(hero, e, damage, a.facing, ability);
         }
-        a.swingTimer = SWING_TIME;
         break;
       }
     }
+  }
 
+  /**
+   * The *visible* half of a basic attack — the cooldown, the swing angle, the swing
+   * timer and the crescent event — with none of the hits. One function for both ends
+   * of the wire: the host calls it from `attack()` and a client calls it from
+   * `predictLocal` the tick the button is pressed, so what a client shows itself and
+   * what the host resolves can't drift apart. The cooldown reads the same status-fed
+   * attack-speed buff on both ends (`hero.sc` is mirrored by the snapshot).
+   *
+   * Why a client predicts this at all: before it did, a client's own swing waited for
+   * the host's word — a round trip plus a snapshot interval plus the interpolation span
+   * — and *your own attack button* was the most delayed thing on your screen (the
+   * owner's "attacks still have delays"). Everything the swing does — damage, knockback,
+   * the numbers — is still the host's alone; this is the animation and nothing else.
+   */
+  private startSwing(hero: Hero, predicted: boolean): void {
+    const a = hero.avatar;
+    const p = hero.player;
+    const w = p.weapon;
+    a.attackTimer = p.attackCooldown / (1 + a.buffAttackSpeed);
+    a.swingAngle = a.facing;
+    a.swingTimer = SWING_TIME * swingTimeFor(w.pattern);
     this.events.push({
       kind: "swing", x: a.x, y: a.y - 8, angle: a.swingAngle,
       arc: w.arc, reach: w.reach, pattern: w.pattern, ultimate: false,
-      element: p.attackElement,
+      element: p.attackElement, hero: hero.index,
+      ...(predicted ? { predicted: true } : {}),
     });
   }
 
