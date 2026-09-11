@@ -20,7 +20,7 @@ import { BOSSES, BOSS_ABILITIES, bossFor, type BossAbilityId } from "../data/bos
 import { ARCHETYPES, type EnemyKind } from "../data/enemies";
 import { MONSTER_AFFIXES, affixPrefix } from "../data/monster-affixes";
 import { CHEST_TIERS } from "../data/chests";
-import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type StatusKind } from "../data/elements";
+import { ELEMENTS, ELEMENT_COLORS, ELEMENT_PREFIX, STATUSES, type Element, type StatusKind, zeroResists} from "../data/elements";
 import { MODES, delveConfig, riftConfig, type RunConfig, type RunModeId } from "../data/modes";
 import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
@@ -625,6 +625,13 @@ function applyMinions(d: Dungeon, s: Snapshot): void {
         x: x!, y: y!, px: x!, py: y!, radius: radius!,
         health: hp!, maxHealth: maxHp!, damage: 0, attackCooldown: 1, attackTimer: 0, attackRange: 0,
         windup: windup!, speed: 0, element, facing: facing!, hitFlash: hitFlash!, knockX: 0, knockY: 0,
+        // §37's mitigation fields are zeroed here on purpose, and that is not a wire gap.
+        // A client's minion is a **render shell** — note `damage: 0`, `speed: 0`,
+        // `attackRange: 0` above. The host owns the simulation, so `hurtMinion` only ever
+        // runs there, against the real values snapshotted at spawn; the client never reads
+        // these. Sending them would be paying snapshot bytes per minion per tick for a
+        // number no client consults.
+        damageReduction: 0, resists: zeroResists(),
         remaining: Infinity, behavior: "follow", commandTargetId: null, guardX: x!, guardY: y!,
         sc: new StatusContainer(2_000_000 + id!), stuckTimer: 0, dodgeDir: 1, embedTimer: 0,
       };

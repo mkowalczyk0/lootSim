@@ -68,13 +68,17 @@ explained", and **nothing is widened silently**. All three landed in the second 
 
 ### 1. `Engineer: THE ULTIMATE RULE` (meter 0.0 → 2.0) — a real game bug
 
-Not a fixture artifact. An armed Engineer's ultimate refills its own meter, because the
-ultimate *summons constructs* and a construct's damage packets carry no `fromUltimate`
-stamp, so the runtime guard never sees them. **Pinned by name, not fixed**, in
-`tools/legends.ts`'s idiom: a second class self-refilling goes red, and silently fixing the
-Engineer without removing the pin goes red too. Full diagnosis, the sweep of all 21
-classes, and three fix options with **no number proposed**:
-`docs/engineer-ultimate-loop.md`.
+Not a fixture artifact. An armed Engineer's ultimate refilled its own meter. **Fixed in
+docket §33 (`fa77457`); the pin is now empty.**
+
+The cause stated here originally — *"the ultimate summons constructs and a construct's
+damage packets carry no `fromUltimate` stamp"* — **was wrong**, and is left visible rather
+than quietly swapped because it was repeated from `docs/engineer-ultimate-loop.md` and
+believed for weeks. The real cause is the Engineer's "Machine Shop" foundation node: a
+`grantEffect` on the `construct` tag adding `+2` ultimate meter, fired by the ultimate's own
+cast because `abilities.ts` subscribes tag-gated grants to `ultimateUse` as well as
+`skillUse`. Note also that `meter 2.0` is **2% of a `max: 100` pool**, not a full meter —
+the probe reads `.value`. See `docs/engineer-ultimate-loop.md`.
 
 ### 2. `a whole path can be walked` (5/5 → 0/5 nodes) — fixture contamination
 

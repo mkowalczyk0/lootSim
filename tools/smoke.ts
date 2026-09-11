@@ -81,7 +81,7 @@ import {
   HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX, portraitScale, portraitSpread,
 } from "../src/ui/portrait";
 import { BIOMES, type BiomeStyle } from "../src/data/biomes";
-import { ELEMENT_COLORS } from "../src/data/elements";
+import { ELEMENT_COLORS, zeroResists} from "../src/data/elements";
 import { decodePng } from "./png";
 import { existsSync, readFileSync } from "node:fs";
 import { RARITIES, rarityIndex, type Rarity } from "../src/data/rarity";
@@ -756,9 +756,19 @@ console.log("\n=== minion subsystem ===");
     ownerId: cd.localHero.index, unit: "x", x: cd.localHero.avatar.x, y: cd.localHero.avatar.y,
     count: 40, duration: 20, command: { behavior: "follow" },
   });
-  check("the per-owner summon cap holds", cd.minions.length === MINION_CAP_PER_OWNER, `${cd.minions.length}`);
+  // §37 made this cap modifiable: `spawnMinion` clamps to
+  // `MINION_CAP_PER_OWNER + floor(mods.maxSummons)`. So "the count equals the constant" is
+  // now only true for a character carrying none of the `of the Throng` suffix — which this
+  // fixture does not, but silently, and a fixture whose assumption is silent is a red
+  // waiting for the day the gear roll changes. Asserted explicitly so that if it ever does,
+  // the check says *why* it broke instead of just breaking.
+  const capBonus = Math.max(0, Math.floor(cs.player.mods.maxSummons));
+  check("the cap fixture carries no +maxSummons, so the constant is the right expectation",
+    capBonus === 0, `mods.maxSummons = ${cs.player.mods.maxSummons}`);
+  const expectedCap = MINION_CAP_PER_OWNER + capBonus;
+  check("the per-owner summon cap holds", cd.minions.length === expectedCap, `${cd.minions.length} vs ${expectedCap}`);
   const dead = cd.sacrificeSummons(cd.localHero.index, 3);
-  check("sacrificeSummons kills its own", dead === 3 && cd.minions.length === MINION_CAP_PER_OWNER - 3, `${dead}`);
+  check("sacrificeSummons kills its own", dead === 3 && cd.minions.length === expectedCap - 3, `${dead}`);
 }
 
 /**
@@ -992,26 +1002,31 @@ for (const id of CLASS_IDS) {
   );
   check(`${cls.name}: the ultimate fires`, r.fired);
   check(`${cls.name}: the ultimate does something`, didSomething, `dealt ${Math.round(r.dealt)}`);
-  // PINNED VIOLATION, in `tools/legends.ts`'s idiom: one class is known to break this and
-  // is recorded here by name rather than left as a red the gate teaches people to expect.
+  // The pin is EMPTY, and that is the state to defend. The Engineer sat here as a known,
+  // unfixed self-refilling ultimate (docket §27) until §33 found the actual cause and
+  // closed it: not the missing `fromUltimate` stamp on constructs that the design record
+  // described, but the "Machine Shop" foundation node — a `grantEffect` on the `construct`
+  // tag adding +2 ultimate meter, fired by the ultimate's own cast because `abilities.ts`
+  // subscribes tag-gated grants to `ultimateUse` as well as `skillUse`. Exactly one grant
+  // of that shape exists in the roster.
   //
-  // The Engineer's ultimate summons constructs; a construct's damage packets carry no
-  // `fromUltimate` stamp, so THE ULTIMATE RULE's runtime guard does not reach them and the
-  // `construct` tag matches its own meter's gate. Diagnosis, the sweep of all 21 classes,
-  // and three fix options with no number attached: `docs/engineer-ultimate-loop.md`.
-  //
-  // Pinned, not forgiven. This is a real defect awaiting an owner decision, and the check
-  // below fails BOTH ways: a *second* class self-refilling goes red, and silently fixing
-  // the Engineer without removing it from the pin goes red too. Do not add a class here to
-  // make a red go away — that is the widening this whole re-baseline refused to do.
-  const ULTIMATE_RULE_PINNED = new Set<string>(["Engineer"]);
+  // The check still fails BOTH ways: a class that starts self-refilling goes red, and so
+  // does adding a name here to make a red go away. Do not widen it — that is the whole
+  // point of it being a pin.
+  const ULTIMATE_RULE_PINNED = new Set<string>();
   const pinned = ULTIMATE_RULE_PINNED.has(cls.name);
   const refilled = r.meterRightAfter >= 1;
+  // The scale is printed with the number, not left to the reader. `meterRightAfter` is
+  // `.value` against a `max: 100` pool, and a bare "meter 2.0" was read as a full meter
+  // for weeks — a 50x error that set the severity of a whole docket entry
+  // (`docs/blind-instruments.md` §23). A measurement without its units is not a
+  // measurement, and "2.0/100" cannot be misread.
+  const meterMax = r.d.localHero.resources.ultimateMeter()?.max ?? 100;
   check(`${cls.name}: THE ULTIMATE RULE — its own output did not refill the meter`,
     pinned ? refilled : !refilled,
     pinned
-      ? `meter ${r.meterRightAfter.toFixed(1)} — PINNED violation, see docs/engineer-ultimate-loop.md`
-      : `meter ${r.meterRightAfter.toFixed(1)}`);
+      ? `meter ${r.meterRightAfter.toFixed(1)}/${meterMax} — PINNED violation, see docs/engineer-ultimate-loop.md`
+      : `meter ${r.meterRightAfter.toFixed(1)}/${meterMax}`);
   check(`${cls.name}: the run is still standing afterwards`, r.d.phase !== "dead");
 }
 
@@ -5049,6 +5064,7 @@ console.log("\n=== multiplayer ===");
       id: 41, owner: 0, unit: "skeleton", x: 300, y: 300, px: 300, py: 300, radius: 7,
       health: 30, maxHealth: 40, damage: 5, attackCooldown: 1, attackTimer: 0, attackRange: 20,
       windup: 0.3, speed: 100, element: "void", facing: 1, hitFlash: 0, knockX: 0, knockY: 0,
+      damageReduction: 0, resists: zeroResists(),
       remaining: 20, behavior: "follow", commandTargetId: null, guardX: 300, guardY: 300,
       sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1, embedTimer: 0,
     });

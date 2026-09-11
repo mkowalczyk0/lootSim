@@ -17,11 +17,33 @@
  *     so damage the guard absorbs is never counted as `damagePrevented` and never reaches
  *     the meter.
  *
- * What is left is a loop that does not involve the ultimate at all: ward absorption *is*
- * counted in `prevented`; `damagePrevented` feeds both the ultimate meter (40/maxHealth
- * fraction) and Conviction (50); and Conviction above 60 grants `healthPercent +0.05`, which
- * makes the ward bigger, which prevents more. This tool measures what that is worth in a
- * real fight.
+ * What is left is a driver that does not involve the ultimate at all: mitigation and ward
+ * absorption *are* counted in `prevented`, and `damagePrevented` feeds both the ultimate
+ * meter (40/maxHealthFraction) and Conviction (50). The harder you are hit, the sooner it
+ * returns. This tool measures what that is worth in a real fight.
+ *
+ * **CORRECTION (docket §38), and it has two halves because two branches met here.** An
+ * earlier version of this header called that a *positive feedback loop*, closed by
+ * Conviction above 60 granting `wardPower +0.15` — a bigger ward preventing more damage,
+ * charging faster. **`wardPower` was read by nothing in the simulation and never had
+ * been**, so at the time that was written the amplifying step did not exist and the driver
+ * was linear. Found by lootsim-d8's rip-out sweep.
+ *
+ * **The loop exists again as of the same rip-out, by a different key.** Retiring
+ * `wardPower` re-authored that threshold to `whileAbove: { healthPercent: 0.05 }`
+ * (`src/progression/paladin.ts`), and `healthPercent` *is* read — so a bigger pool absorbs
+ * more, which prevents more, which charges Conviction. Verified in the union, not assumed:
+ * the two branches were each correct about their own tree and neither could see the other.
+ * Read this as: linear on master before batch four, compounding after.
+ *
+ * Nothing this tool measures or concludes depended on either version: every constant below
+ * is either observed (depth 22 because depth 14 is a pinned zero row) or stated, the
+ * outputs are casts/min and `under_oath` uptime read off a live fight, and the tool asserts
+ * nothing at all — it is a reporter. The one thing that *did* rest on the dead link was a
+ * **rejected** option in `docs/ultimate-uptime.md`: "damp the Conviction → wardPower →
+ * prevented feedback" was never a real lever, because there was no feedback to damp. The
+ * owner took a different option. Recorded rather than deleted, because a header that
+ * quietly stops claiming something is how the next reader inherits it again.
  *
  * Reported as **comparisons**, never as one class's bound — the project's standing lesson.
  * The bot fires the ultimate the tick it charges (`bot.ts`: `if (d.specialCharge >= 1)`),

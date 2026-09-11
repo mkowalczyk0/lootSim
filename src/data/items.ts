@@ -374,12 +374,35 @@ const AUTHORED_MODS = [
   { id: "virulent", key: "ailmentChance", kind: "prefix", label: "Virulent", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 1 },
   { id: "caustic", key: "ailmentPotency", kind: "prefix", label: "Caustic", base: 0.1, perTier: 0.35, scale: "linear", where: "any", minTier: 2 },
   { id: "attuned", key: "elementalDamage", kind: "suffix", label: "of Attunement", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 2 },
+  // §37. An ordinary damage percentage, priced and gated like its neighbours — the
+  // build-defining half of the summons pass is `of the Throng`, not this.
+  { id: "commanding", key: "summonDamage", kind: "prefix", label: "Commanding", base: 0.08, perTier: 0.3, scale: "linear", where: "offense", minTier: 2 },
   { id: "warded", key: "defensePercent", kind: "suffix", label: "of Warding", base: 0.1, perTier: 0.3, scale: "linear", where: "defense", minTier: 1 },
   { id: "barbed", key: "thorns", kind: "prefix", label: "Barbed", base: 1.5, perTier: 0, scale: "rarity", where: "defense", minTier: 1 },
 
   // The whole-extra-thing mods. These are the drops people actually shout about.
   { id: "piercing", key: "pierce", kind: "suffix", label: "of Skewering", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 3 },
   { id: "splitting", key: "projectiles", kind: "suffix", label: "of Splitting", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
+  // §37. Gated at `minTier: 4` alongside `of Splitting`, because it is the same shape of
+  // mod — a flat +1 to how many things you have on the floor at once — and CLAUDE.md's
+  // rarity rule puts "+1 projectile" at epic.
+  //
+  // **Flat +1, not a rolled +1-3, and that is deliberate.** The brief said "+1-3 Max
+  // Summons", but `modValue`'s `flat` case returns `mod.base` and **ignores `perTier`** — so
+  // a `perTier` here would be a field nothing reads, the exact defect the `wardPower` ruling
+  // exists to prevent, authored the same day it was ruled on.
+  //
+  // That is a fact about `modValue`, and it is cited that way rather than by pointing at a
+  // neighbour, because the neighbours are in motion: `ultimateBounces` and
+  // `ultimateProjectiles` are being removed and re-authored under a separate owner ruling,
+  // so `of the Manifold` two rows below would have rotted as a precedent within the day.
+  // `of Splitting` (+1 projectile) and `of Skewering` (+1 pierce) are the surviving
+  // examples, but check `modValue` rather than either of them.
+  //
+  // A player reaches +3 the way they reach +3 projectiles — by wearing three, since `Mods`
+  // sums across slots. `where: "any"` rather than `"weapon"` is what makes that reachable
+  // for a summoner, whose build does not live in the weapon slot.
+  { id: "thronged", key: "maxSummons", kind: "suffix", label: "of the Throng", base: 1, perTier: 0, scale: "flat", where: "any", minTier: 4 },
   // `of the Manifold` (ultimateProjectiles, tier 4) and `of Rebounding` (ultimateBounces,
   // tier 5) stood here and were retired — see RETIRED_MOD_KEYS below and
   // docs/ultimate-mods-removal.md. This block is deliberately two entries thinner at the

@@ -971,6 +971,100 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twenty-second instance, and the first where the blind instrument was a design record: a confident wrong diagnosis, load-bearing for weeks
+
+`docs/engineer-ultimate-loop.md` diagnosed docket §27 — the Engineer's self-refilling
+ultimate — as the `fromUltimate` stamp failing to propagate to the constructs the ultimate
+summons, and recommended carrying the stamp onto minions and zones. It is a careful page. It
+sweeps all 21 classes, it corrects an earlier draft of itself in the text, it explains why
+only the Engineer is exposed, and it explicitly declines to propose a number so the owner
+can decide. **Every structural claim in it is wrong**, and the fix it recommends would have
+changed nothing.
+
+It was believed for weeks, it was quoted into a PM's task brief, and an hour of
+implementation work was nearly spent on it — by me — before a measurement contradicted it.
+
+**Three separate errors, and they compound:**
+
+1. **A units error at the top** — a 50x misreading of the one number the page is built on.
+   It gets its own entry below (§21), because it is a different species from the rest of
+   this one.
+2. **A mechanism inferred rather than traced.** "The ultimate summons constructs; construct
+   packets carry no stamp; the tag matches; the meter fills" is a coherent chain in which
+   every individual link is true. It is not what happens. Removing the zone step changes
+   nothing; removing the summon step changes nothing. The credit lands in `fireGrant`
+   *before the `ultimateUse` event is emitted* — a `grantEffect` on the `construct` tag,
+   fired by the ultimate's own cast, on a path `resources.ts` never guarded.
+3. **A scope claim that was never counted.** "Of the seven, only the Engineer's ultimate
+   summons anything" — ten ultimates create a persistent thing. The number was asserted from
+   a reading, not from a walk.
+
+**The rule this adds, because the existing entries are all about tools:** a design record is
+an instrument. It is read the way a green check is read — as a measurement someone already
+took — and it has none of a check's properties. It does not re-run. It is not falsified when
+the code moves. Nothing counts what it walked. **Its confidence is authored, not earned**,
+and prose is the one artefact in this repository where a wrong answer and a right answer
+look identical.
+
+The nearest existing sibling is the fourth lesson's *"a correct check can be overruled by
+prose"* (`art/anim/windup-check.py`, talked down by its own docstring). This is the harder
+version: there was no correct check to overrule, and **the prose was the only instrument
+anybody had.**
+
+**How to apply:** before building the fix a design record recommends, **reproduce the
+number the record is built on.** Not the bug — the number. Here that was thirty seconds:
+print the meter's `max` next to the value the record quotes, and the whole entry falls over
+before a line of code is written. If a record states a magnitude, a mechanism and a scope,
+those are three separate claims and the cheap one to check first is always the magnitude,
+because a units error invalidates the other two for free. And when a record turns out to be
+wrong, **correct it in place with the wrongness visible** rather than deleting it — the next
+session needs to know the page was confidently wrong, not merely that it is now right.
+
+## A twenty-third instance, a sibling to the twenty-first: the instrument was right and was read in the wrong units
+
+§21 above found a measurement that was correct and complete and still told the wrong story,
+because it measured the right quantity about the wrong behaviour. This is the cheaper,
+dumber cousin of that, and it cost more: the instrument measured the right quantity about
+the right behaviour, printed it correctly, and **it was read on the wrong scale.**
+`probeUltimate` got the Engineer's ultimate meter exactly right.
+
+```
+  Engineer: THE ULTIMATE RULE — its own output did not refill the meter  — meter 2.0
+```
+
+`meterRightAfter` is `resources.ultimateMeter()?.value`. Every ultimate meter in the game is
+`max: 100`. So `meter 2.0` is **2% of a meter**. It was written up as:
+
+> `meter 2.0` is a full meter — the ultimate paid for itself, immediately, and could be cast
+> again.
+
+**A 50x error, and it set the severity of everything downstream.** It made a 2% per-cast
+trickle read as a self-sustaining loop; it justified a docket entry, a pinned smoke
+violation, a PM task brief, and an approved fix axis. None of those would have survived the
+question *"two out of what?"*
+
+What makes it worth its own entry next to §21 is that **no measurement was wrong and no
+scope was empty**. The usual remedies in this file — print what you walked, compare against
+a fixed reference, run a control, falsify by injection — would all have passed. A control
+would have confirmed the 2.0 was real, because it *is* real. §21's remedy does not reach it
+either: that entry's answer is to check the behaviour behind the number, and here the
+behaviour was exactly what the number described. The defect is entirely in the reading, and
+the only thing that catches it is asking what the number is a number *of*.
+
+The adjacent trap, worth naming because the same codebase has both: `Dungeon.specialCharge`
+returns `meter.fraction` (0–1) while `meterRightAfter` reads `meter.value` (0–100). Two
+accessors onto the same pool, differing by 100x, both called "the meter" in prose. A sweep
+turned up no other live instance, but `docs/arm-the-trees-rebaseline.md` had inherited the
+same sentence and was corrected alongside.
+
+**How to apply:** **a measurement without its units is not a measurement.** When a tool
+prints a bare number, print the scale with it — `meter 2.0/100` costs nothing and cannot be
+misread. When a design record quotes a number, it must say what scale it is on, and a reader
+who cannot tell from the page should treat the claim as unverified rather than assume. And
+when a number is the load-bearing fact of a diagnosis, **reproduce that number before
+building on it** — not the bug, the number: here it was thirty seconds of printing `pool.max`
+next to it, and the whole entry falls over before a line of code is written.
+
 ## A twenty-fifth instance, a new species: a subject that never survives long enough to be measured, passing on the luck of five elites
 
 *(Numbered 25 by the PM session; 22–24 are assigned elsewhere and may land after this.)*
@@ -1036,6 +1130,70 @@ at the end — and a reader should refuse a green from a fixture whose subject w
 before the property could occur. If the number sits exactly on its bar, that is not a
 pass; it is the instrument telling you it has no margin, and the next unrelated change
 will flip it.
+**Corroborated independently, from a second branch.** `fix/ultimate-uptime` added two rows
+to `MOD_POOL` — an affix change that touches no reward code at all — and the same check went
+red at 9 plain / 2 hard. Isolating it showed why: on master the hard side sits at **exactly
+3, the threshold itself.** A guard resting on its own floor flips on any perturbation of the
+item-roll rng whatsoever, so it has been reporting the seed stream rather than the property
+for as long as it has existed. Three branches hit it in one day (`feat/nine-circles`,
+`fix/ultimate-uptime`, and this one), which is what a fixture at its floor looks like from
+the outside: it appears to indict whatever changed most recently.
+
+## A twenty-seventh instance, and it is a law rather than an incident: making a fixed thing variable narrows every existing reader of it
+
+Entries 24-26 are other sessions' and land from their own branches; 27 was assigned to this
+one to avoid the ordinal collision entry 17 is about.
+
+Docket §37 made `MINION_CAP_PER_OWNER` modifiable — `spawnMinion` now clamps to
+`MINION_CAP_PER_OWNER + floor(mods.maxSummons)` so the new `of the Throng` affix can raise
+it. One line, in one function.
+
+`tools/smoke.ts` had asserted, correctly and for the life of the project:
+
+```ts
+check("the per-owner summon cap holds", cd.minions.length === MINION_CAP_PER_OWNER, ...);
+```
+
+That assertion did not change, was not touched, and **stopped being the claim it used to
+be.** It now holds only for a character carrying no `of the Throng`. The full gate passes on
+it — measured, 0 of 120 geared necromancers roll the suffix, because it is `minTier: 4` and
+`geared()` opens Advanced chests — and it would have kept passing until some future gearing
+change rolled one, failing then in a file where nobody would think to connect a summon-count
+failure to an affix roll.
+
+**The law:**
+
+> When you make a fixed thing variable, **every existing reader of it is now asserting
+> something narrower than it used to** — and some of those readers are checks. A check that
+> passes for a reason nobody recorded is indistinguishable from a check that passes because
+> the code is right.
+
+This is the file's first entry that is not about an instrument being wrong. Every check here
+was right when written, is still right today, and is *becoming* wrong at a rate nobody is
+watching — the defect is in the gap between when a constant becomes a variable and when its
+readers find out.
+
+**How to apply, and the whole method is two seconds:**
+
+```
+grep -rn MINION_CAP_PER_OWNER src/ tools/
+```
+
+After making any constant modifiable, grep for it across `src/` and `tools/` and read every
+hit as a sentence. The ones in `src/` you will usually notice, because they are the feature.
+The ones in `tools/` are the dangerous half: a check written against the old invariant keeps
+passing, so nothing tells you, and the gate's greenness actively conceals it.
+
+Where a reader's assumption survives, **say so in the check** rather than leaving it
+implicit — the fix here computes the expectation the way `spawnMinion` computes it and
+asserts `mods.maxSummons === 0` on the fixture directly, so the day it does roll one the
+check reports *why* it broke instead of merely breaking.
+
+**Note what did not find this.** Not the gate, which passes. Not a falsification, because the
+check is not false. Not a control. The question that found it was asked of the *change*
+rather than of the code: having made a constant variable, who else was relying on it being
+constant. It was the third finding in one day from that question and none of the three came
+from a check.
 
 ## A thirty-first instance: a stat with no instrument pointed at it at all
 

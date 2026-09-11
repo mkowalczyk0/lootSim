@@ -8,8 +8,7 @@ import {
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
 import {
   AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, LOOT_ELEMENTS, STATUS_FOR_ELEMENT,
-  zeroResists, type Element,
-} from "../data/elements";
+  zeroResists, type Element, resistFraction,} from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
 import { memoryEffects, memoryPlace } from "../data/memories";
 import { memoryMaterialSource } from "../data/planets";
@@ -62,6 +61,7 @@ import "../combat/legacy-ailments";
 import type { Avatar, Body, Corpse, Enemy, GroundZone, Minion, Pickup, Projectile, Telegraph, Totem } from "./entities";
 import {
   MINION_CAP_GLOBAL, MINION_CAP_PER_OWNER, MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN,
+  MINION_MAX_HIT_FRACTION,
   MINION_GUARD_LEASH, MINION_LEASH, MINION_SEPARATION, MINION_WINDUP,
 } from "../data/minions";
 import type { Appearance } from "../data/cosmetics";
@@ -2685,7 +2685,16 @@ export class Dungeon implements CombatHost, RuleHost {
   /** Damage onto a minion — no armour or resists, they are cheap bodies. Returns dealt. */
   private hurtMinion(m: Minion, amount: number, element: Element): number {
     if (m.health <= 0) return 0;
-    const dealt = Math.max(1, Math.round(amount));
+    // §37: the same curve the owner is mitigated by (`Player.mitigate`), against the
+    // mitigation snapshotted at spawn. Armour is half-weight against non-physical exactly
+    // as it is for a hero, so a summon is not quietly tougher than the player who made it.
+    const armor = m.damageReduction * (element === "physical" ? 1 : 0.5);
+    const resist = resistFraction(m.resists[element] ?? 0);
+    const mitigated = amount * (1 - armor) * (1 - resist);
+    // §37: the cap is applied last, so the bound on hits-to-kill is exact and does not
+    // move with the owner's gear. See MINION_MAX_HIT_FRACTION for why not before.
+    const cap = m.maxHealth * MINION_MAX_HIT_FRACTION;
+    const dealt = Math.max(1, Math.round(Math.min(mitigated, cap)));
     m.health -= dealt;
     m.hitFlash = 0.12;
     this.events.push({
@@ -5030,15 +5039,26 @@ export class Dungeon implements CombatHost, RuleHost {
 
     // Caps: cull the owner's oldest to fit the per-owner limit, then clamp to whatever
     // global room is left — a raid must never bury a floor in pathing bodies.
-    let want = Math.min(req.count, MINION_CAP_PER_OWNER);
+    //
+    // §37: `maxSummons` is the **live read** for that mod key — a flat, floored bonus to
+    // how many bodies one hero may hold, exactly as `dashCharges` is to how many dodges.
+    // The global cap is deliberately *not* raised with it: a party of summoners must still
+    // not bury the floor, so the mod buys a bigger share of a fixed room rather than a
+    // bigger room.
+    const perOwnerCap = MINION_CAP_PER_OWNER + Math.max(0, Math.floor(owner.player.mods.maxSummons));
+    let want = Math.min(req.count, perOwnerCap);
     const owned = this.minionsOf(owner.index);
-    for (let k = 0; k < owned.length + want - MINION_CAP_PER_OWNER; k++) {
+    for (let k = 0; k < owned.length + want - perOwnerCap; k++) {
       if (owned[k]) this.despawnMinion(owned[k]!, false);
     }
     want = Math.max(0, Math.min(want, MINION_CAP_GLOBAL - this.minions.length));
     if (want <= 0) return [];
 
-    const power = Math.max(1, owner.player.attackDamage * inherit);
+    // §37: `summonDamage` is the **live read** for that mod key. It scales what the summon
+    // inherits rather than replacing it, so a summoner's own weapon still matters and the
+    // mod is a multiplier on a build rather than a substitute for one.
+    const summonBonus = 1 + Math.max(0, owner.player.mods.summonDamage);
+    const power = Math.max(1, owner.player.attackDamage * inherit * summonBonus);
     const hp = Math.max(6, owner.player.maxHealth * 0.12 * inherit);
     const r = Dungeon.MINION_RADIUS;
     const ids: number[] = [];
@@ -5058,6 +5078,9 @@ export class Dungeon implements CombatHost, RuleHost {
         attackCooldown: 1.1, attackTimer: 0.3 + i * 0.05, attackRange: 20, windup: 0,
         speed: PLAYER_SPEED * 0.9,
         element: owner.player.attackElement,
+        // §37: what the owner survives by, carried onto the thing they made.
+        damageReduction: owner.player.damageReduction,
+        resists: { ...owner.player.resists },
         facing: angle, hitFlash: 0, knockX: 0, knockY: 0,
         remaining: lifespan,
         behavior: req.command.behavior,

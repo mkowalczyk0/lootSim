@@ -1039,6 +1039,12 @@ export function runEffect(
         const a = host.actor(id);
         const pool = a?.resources?.get(step.resource);
         if (!pool) continue;
+        // THE ULTIMATE RULE, on the effect path (docket §33). `resources.ts` enforces it
+        // for *generation rules*; a `resource` step run by a build grant never went
+        // through that code at all, so an ultimate whose tag fired its own class's grant
+        // paid straight into the meter that cast it. Refused here, at the one site that
+        // adds to a pool, so no grant author has a field to omit.
+        if (pool.spec.isUltimateMeter === true && ctx.source.fromUltimate === true) continue;
         if (step.delta >= 0) pool.add(step.delta);
         else pool.spend(-step.delta);
       }
