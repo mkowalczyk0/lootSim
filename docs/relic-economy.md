@@ -163,14 +163,32 @@ Narrowing them would be an uncommanded balance change to a different table.
 
 **The Proving, the Nameless, the deep Delve cache, the Tower cache.** Untouched.
 
-## 6. Co-op amplifies the *feel* without changing the number
+## 6. Co-op: what is true, and one thing that is not
 
-The complaint came out of a co-op session, and that is relevant. `Dungeon.collect` credits
-**every** non-departed hero with their own copy of a collected drop — the owner's own
-2026-09-10 ruling. One successful roll therefore produces four relic banners in a
-four-player party, and the banner is deliberately loud.
+The complaint came out of a co-op session. `Dungeon.collect` credits **every** non-departed
+hero with their own copy of a collected drop — the owner's own 2026-09-10 ruling — so one
+successful roll puts a relic into up to four accounts.
 
-So the per-player union is exactly the number measured here, while the party *sees* up to
-four times as many payouts as any one player's odds would suggest. Worth knowing before
-reading any future report of this kind: the party's experience and the per-player
-probability are different quantities, and only the second is what `RELIC_ODDS` describes.
+**What is true**: a *party's collective* relic acquisition scales with party size. Four
+people farming together fill four collections at the rate one person fills one.
+
+**What is NOT true, and was claimed here in an earlier draft**: that a party therefore sees
+four relic banners per drop. It does not. Every event `credit()` raises is stamped with
+`owner`, and the client pipeline filters on it in three places — `main.ts:449` drops any
+owned event that isn't the local hero's, `main.ts:529` shows a relic banner only when
+`ev.owner === d.localHero.index`, and `net/party.ts:426` forwards each owned event only to
+the member it belongs to. **Each player sees exactly one banner, for their own copy.** This
+was designed for precisely that failure when shared loot landed.
+
+**What is unmeasured**: whether co-op raises an individual player's relic rate above the
+solo numbers in this document. The roll fires once per drop *event* and everyone is
+credited, so the per-player rate *per event* is unchanged; whether a party floor produces
+more qualifying events (party scaling makes more monsters, but relic sources are bosses and
+caches, which do not multiply) is a separate question nobody has measured. **Do not assert
+a direction on it without measuring.**
+
+The general caution still stands, and the error above is an example of it: the party's
+experience and the per-player probability are different quantities, and only the second is
+what `RELIC_ODDS` describes. A simulation-side fact ("every hero is credited") does not by
+itself license a claim about what the player *sees* — that requires tracing the event
+filter and the party publish path, which the earlier draft had not done.

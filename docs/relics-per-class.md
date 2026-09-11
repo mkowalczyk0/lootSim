@@ -8,6 +8,138 @@ and measuring the live roster rather than trusting the docket's figures.
 
 ---
 
+# ⚠ THE PREMISE CHANGED — READ §A FIRST
+
+The owner clarified what they actually wanted, and it is not what §1–§6 below are costed
+against:
+
+> "My intention with the perclass thing is that if they are shared, you get too much of an
+> avantage when you create a new class. Thats really the only issue with them."
+
+**This is a power-inheritance problem, not an identity problem.** §A below is the live
+recommendation. §1–§6 are kept because the roster measurements and the migration analysis
+are still correct and still needed — but they answer "how do we make relics feel per-class",
+which is the wrong axis. The worldbuilding argument in §1, though right on its own terms, is
+irrelevant to the owner's actual complaint.
+
+---
+
+# §A. The real problem: a fresh alt inherits the account's relics
+
+## A.1 The decisive finding: **per-class relics would not fix this**
+
+This should be settled before anything is costed, because it removes the expensive option on
+its merits rather than on price.
+
+A character wears **three slots, at most one of them relic-tier** (`RELIC_SLOTS = 3`,
+`MAX_RELICS_WORN = 1`). So a fresh alt's loadout is **1 relic + 2 artifacts**. Measured
+against the live roster:
+
+| | count | reachable by a fresh alt of any class? |
+|---|---|---|
+| relic-tier, Proving-only (class-keyed) | **7** | no — needs that class's own Proving |
+| relic-tier, non-class sources | **9** | **yes** — the Nameless ×2, a depth-30 cache, a 5-boss table, 4 raid relics, the Tower |
+| artifact-tier | **23** | **yes** — all of it. Abyss bosses, caches, raids |
+
+So:
+
+- **Two of the three slots are artifacts, and artifacts stay shared under every sane option**
+  — the fiction is explicit that an artifact is the remnant of something that died and is
+  nobody's (§1). Per-class relics do not touch them.
+- **Even the relic slot is only half class-keyed.** Nine of sixteen relic-tier definitions
+  drop from the Abyss, the Nameless, caches, the Tower and raids — sources any class farms.
+  A player who has farmed the Abyss already owns relics every alt can wear on day one.
+
+**Conclusion: per-class relics fix at most one of three slots, and only partially. They do
+not solve the problem the owner described.** Option B/C below should not be bought for this
+reason. (They might still be bought for identity, later, as a separate decision.)
+
+## A.2 How much power is actually inherited — and a caveat about the measurement
+
+Best legal loadout on a level-1 Swordsman, versus the same character bare:
+
+| | level 1 | level 30 | level 60 |
+|---|---|---|---|
+| attack damage | **+12.0%** | +12.0% | +12.0% |
+| max health | +0.0% | +0.0% | +0.0% |
+
+**Do not read 12% as the answer.** That is only what the character *sheet* can see, and
+relic power is overwhelmingly **behavioural**: 37 of 39 definitions carry an effect beyond
+`mods` (29 `grantEffect`, 13 `mutate`). A level-1 alt putting on relics does not mainly get
+bigger numbers — it gets **endgame mechanics**: burns that detonate, on-kill novas, rewritten
+abilities, and in two cases (`sandals-of-the-swift-messenger`, `thread-of-the-labyrinth`) a
+**whole extra dash charge**, which is a defensive cooldown the class was never designed to
+have at level 1.
+
+So the honest statement is: the stat inheritance is modest and the *mechanical* inheritance
+is large and not quantified here. That matches the owner's wording — "too much of an
+avantage" — better than a 12% sheet delta would.
+
+## A.3 The options, re-priced on the real axis
+
+### A-i. A level gate on relics *(recommended)*
+
+The precedent is already in this codebase and the owner already accepted it for gear: the
+shared stash had exactly this problem and it was solved with `requiredLevel()` in
+`game/item.ts` plus `Player.canEquip`, with one level of grace because a floor's XP lands as
+its monsters die. **Relics are the one account-wide power system with no level gate at all**
+— CLAUDE.md says so outright ("No level gate, like the universal tree"), and that exemption
+was reasonable when relics were rare and is precisely the hole being reported.
+
+**The real design question is what the gate keys on, because a `RelicDef` has no `ilvl` and
+no level field of any kind.** Two ways:
+
+- **Derive it from the source the relic comes from** *(preferred)*. Every source already
+  carries an authored difficulty: `minDepth` on a cache source, `DELVE_BOTTOM` for a Proving,
+  a raid's `unlockFrontier`, an Abyss tier. A relic from a depth-30 cache requires ~level 30.
+  This mirrors `requiredLevel()`'s spirit — *derived*, not authored — so it cannot drift, and
+  a relic added tomorrow is gated for free with no number to forget. It is the same
+  "a rule that cannot be violated beats a check that notices" move the codebase already
+  prefers.
+- **Author a `minLevel` per definition.** Explicit and tunable, 39 numbers to write, and the
+  39th is the one someone forgets. Worth having as an *override* field on top of the derived
+  value, not as the mechanism.
+
+**Cost**: small. One derived function, one clause in `relicSocketBlocker` (which already
+refuses a socket with a reason string), a `SAVE_VERSION` bump, and the migration notice from
+§4. No new content, no new concept, no fiction spent. **It also fixes the artifact slots,
+which is the two-thirds of the problem per-class relics cannot reach.**
+
+### A-ii. A per-character attune / earn step
+
+Ownership stays account-wide; *usability* is earned per character (a cost, a quest, a
+first-clear at some depth). Solves it completely and is the most satisfying version.
+
+**Cost**: a new concept, new UI, new save state, and a new grind on top of an existing one.
+Also the thing most likely to annoy — the owner's stated problem is alts being too strong,
+not alts having too little to do.
+
+### A-iii. Per-class relics
+
+**Does not solve the stated problem** (§A.1). Costed in §3 below as content. Should be
+decided on identity grounds, separately, if at all.
+
+## A.4 Recommendation
+
+**Ship A-i, with the gate derived from the source.** It is targeted exactly at what the owner
+described, reuses a pattern they have already accepted for the shared stash, costs no
+content, covers all three slots rather than one, and needs no fiction.
+
+Two things to confirm with the owner before building:
+
+1. **Does a relic above your level still drop?** Yes, I would say — it drops and waits, which
+   is exactly how the shared stash already behaves for gear an alt will want. This is the
+   same question already answered "yes" under the old framing, and it survives the reframe.
+2. **Grace.** Gear gets one level. Relics probably want the same for the same reason.
+
+**The co-op credit question is deferred** and mostly evaporates under a level gate: everyone
+is credited, some cannot wear it yet, and that needs no new rule because it is how the stash
+already works.
+
+---
+
+---
+
 ## 0. Two corrections to the numbers everyone is quoting
 
 The brief for this memo said **30 definitions (18 artifacts, 12 relics)**. That is stale —
