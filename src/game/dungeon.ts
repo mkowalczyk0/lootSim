@@ -5039,15 +5039,26 @@ export class Dungeon implements CombatHost, RuleHost {
 
     // Caps: cull the owner's oldest to fit the per-owner limit, then clamp to whatever
     // global room is left — a raid must never bury a floor in pathing bodies.
-    let want = Math.min(req.count, MINION_CAP_PER_OWNER);
+    //
+    // §37: `maxSummons` is the **live read** for that mod key — a flat, floored bonus to
+    // how many bodies one hero may hold, exactly as `dashCharges` is to how many dodges.
+    // The global cap is deliberately *not* raised with it: a party of summoners must still
+    // not bury the floor, so the mod buys a bigger share of a fixed room rather than a
+    // bigger room.
+    const perOwnerCap = MINION_CAP_PER_OWNER + Math.max(0, Math.floor(owner.player.mods.maxSummons));
+    let want = Math.min(req.count, perOwnerCap);
     const owned = this.minionsOf(owner.index);
-    for (let k = 0; k < owned.length + want - MINION_CAP_PER_OWNER; k++) {
+    for (let k = 0; k < owned.length + want - perOwnerCap; k++) {
       if (owned[k]) this.despawnMinion(owned[k]!, false);
     }
     want = Math.max(0, Math.min(want, MINION_CAP_GLOBAL - this.minions.length));
     if (want <= 0) return [];
 
-    const power = Math.max(1, owner.player.attackDamage * inherit);
+    // §37: `summonDamage` is the **live read** for that mod key. It scales what the summon
+    // inherits rather than replacing it, so a summoner's own weapon still matters and the
+    // mod is a multiplier on a build rather than a substitute for one.
+    const summonBonus = 1 + Math.max(0, owner.player.mods.summonDamage);
+    const power = Math.max(1, owner.player.attackDamage * inherit * summonBonus);
     const hp = Math.max(6, owner.player.maxHealth * 0.12 * inherit);
     const r = Dungeon.MINION_RADIUS;
     const ids: number[] = [];

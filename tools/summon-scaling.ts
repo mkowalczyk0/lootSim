@@ -17,12 +17,13 @@
 
 import { geared, playFloor } from "./bot";
 import {
-  MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN, MINION_MAX_HIT_FRACTION,
+  MINION_CAP_PER_OWNER, MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN,
+  MINION_MAX_HIT_FRACTION,
 } from "../src/data/minions";
 import { BOSS_ABILITIES } from "../src/data/bosses";
 import { delveConfig } from "../src/data/modes";
+import { Dungeon } from "../src/game/dungeon";
 import { ELEMENTS } from "../src/data/elements";
-import type { Dungeon } from "../src/game/dungeon";
 import type { ClassId } from "../src/data/classes";
 import type { Element } from "../src/data/elements";
 
@@ -255,6 +256,50 @@ for (const cls of SUMMONERS) {
     console.log(`       wall-clock to die ranged ${Math.min(...deathTimes).toFixed(1)}-${worst.toFixed(1)}s,` +
       ` which is the boss's re-cast cadence rather than the summon's durability`);
   }
+}
+
+// --- pass 4: the two new mod keys are read, not merely declared ------------
+
+/**
+ * The `wardPower` ruling: **no mod key may exist without a live read in `src/combat/` or
+ * `src/game/`.** `summonDamage` and `maxSummons` each have one, both in
+ * `Dungeon.spawnMinion`, and this is the check that says so — a declaration and a
+ * `MOD_POOL` row prove only that the key can be *rolled*, which is exactly what
+ * `wardPower` had for months.
+ *
+ * Asserted as comparisons against a zeroed baseline on the same seed, not as bounds.
+ */
+{
+  console.log("\n=== the two new mod keys move real numbers ===");
+  const probe = (summonDamage: number, maxSummons: number): { power: number; count: number } => {
+    const st = geared(40, 9, 30, "necromancer");
+    (st.player.mods as unknown as Record<string, number>).summonDamage = summonDamage;
+    (st.player.mods as unknown as Record<string, number>).maxSummons = maxSummons;
+    const d = new Dungeon(st, delveConfig(12), 9);
+    d.sealWaves();
+    d.minions.length = 0;
+    d.summonFor(d.localHero, d.avatar.x + 40, d.avatar.y, 12);
+    const m = d.minions[0];
+    return { power: m ? m.damage : 0, count: d.minions.length };
+  };
+  const base = probe(0, 0);
+  console.log(`  baseline: summon damage ${base.power.toFixed(1)}, ${base.count} summons at the per-owner cap of ${MINION_CAP_PER_OWNER}`);
+  check("the baseline probe actually summoned — otherwise the rest proves nothing",
+    base.count > 0 && base.power > 0, `${base.count} summons at ${base.power.toFixed(1)} damage`);
+
+  const dmg = probe(0.5, 0);
+  check("summonDamage is read: +50% raises a summon's damage by exactly half",
+    Math.abs(dmg.power / base.power - 1.5) < 0.001 && dmg.count === base.count,
+    `x${(dmg.power / base.power).toFixed(3)}, count unchanged at ${dmg.count}`);
+
+  const cnt = probe(0, 3);
+  check("maxSummons is read: +3 puts three more bodies on the floor",
+    cnt.count === base.count + 3 && Math.abs(cnt.power - base.power) < 0.001,
+    `${base.count} -> ${cnt.count}, damage unchanged`);
+
+  const frac = probe(0, 2.7);
+  check("…and it floors, because half a skeleton is no skeleton",
+    frac.count === base.count + 2, `2.7 gave +${frac.count - base.count}`);
 }
 
 console.log("");

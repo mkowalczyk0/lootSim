@@ -358,12 +358,29 @@ export const MOD_POOL: readonly ModRoll[] = [
   { id: "virulent", key: "ailmentChance", kind: "prefix", label: "Virulent", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 1 },
   { id: "caustic", key: "ailmentPotency", kind: "prefix", label: "Caustic", base: 0.1, perTier: 0.35, scale: "linear", where: "any", minTier: 2 },
   { id: "attuned", key: "elementalDamage", kind: "suffix", label: "of Attunement", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 2 },
+  // §37. An ordinary damage percentage, priced and gated like its neighbours — the
+  // build-defining half of the summons pass is `of the Throng`, not this.
+  { id: "commanding", key: "summonDamage", kind: "prefix", label: "Commanding", base: 0.08, perTier: 0.3, scale: "linear", where: "offense", minTier: 2 },
   { id: "warded", key: "wardPower", kind: "suffix", label: "of Warding", base: 0.1, perTier: 0.3, scale: "linear", where: "defense", minTier: 1 },
   { id: "barbed", key: "thorns", kind: "prefix", label: "Barbed", base: 1.5, perTier: 0, scale: "rarity", where: "defense", minTier: 1 },
 
   // The whole-extra-thing mods. These are the drops people actually shout about.
   { id: "piercing", key: "pierce", kind: "suffix", label: "of Skewering", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 3 },
   { id: "splitting", key: "projectiles", kind: "suffix", label: "of Splitting", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
+  // §37. Gated at `minTier: 4` alongside `of Splitting`, because it is the same shape of
+  // mod — a flat +1 to how many things you have on the floor at once — and CLAUDE.md's
+  // rarity rule puts "+1 projectile" at epic.
+  //
+  // **Flat +1, not a rolled +1-3, and that is deliberate.** The brief said "+1-3 Max
+  // Summons", but `modValue`'s `flat` case returns `mod.base` and ignores `perTier`, so a
+  // `perTier` here would be a field nothing reads — the exact defect the `wardPower` ruling
+  // exists to prevent, authored the same day. Every whole-extra-thing mod in this pool is
+  // flat for the same reason: `of Skewering` +1 pierce, `of Splitting` +1 projectile, `of
+  // the Manifold` +2. A player reaches +3 the way they reach +3 projectiles — by wearing
+  // three of them, since `Mods` sums across slots. `where: "any"` rather than `"weapon"` is
+  // what makes that reachable for a summoner, whose weapon slot is not where their build
+  // lives.
+  { id: "thronged", key: "maxSummons", kind: "suffix", label: "of the Throng", base: 1, perTier: 0, scale: "flat", where: "any", minTier: 4 },
   { id: "manifold", key: "ultimateProjectiles", kind: "suffix", label: "of the Manifold", base: 2, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
   { id: "rebounding", key: "ultimateBounces", kind: "suffix", label: "of Rebounding", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 5 },
 

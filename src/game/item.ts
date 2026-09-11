@@ -454,6 +454,11 @@ const MOD_SCORE: Record<ModKey, number> = {
   attack: 2.2, defense: 1.8, maxHealth: 0.5, power: 3, haste: 3, maxMana: 1.2,
   critChance: 260, critDamage: 90, attackSpeed: 240, moveSpeed: 120, areaSize: 90,
   projectiles: 300, pierce: 150, ailmentChance: 80, ailmentPotency: 70,
+  // §37. `maxSummons` is priced against `projectiles` (300) because it is the same shape
+  // of mod — a flat +1 to how many things you have on the floor — discounted because it
+  // is worth nothing to the eleven classes that summon nothing, which the upgrade arrows
+  // cannot know. `summonDamage` sits with the other damage percentages for the same reason.
+  summonDamage: 90, maxSummons: 220,
   lifeOnHit: 12, manaOnHit: 8, cooldownRate: 90, ultimateRate: 70, ultimatePower: 80,
   skillDamage: 140, meleeDamage: 150, projectileDamage: 120, elementalDamage: 130,
   wardPower: 50, thorns: 2, ultimateBounces: 200, ultimateProjectiles: 60,

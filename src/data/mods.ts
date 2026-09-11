@@ -49,6 +49,28 @@ export const COMBAT_MOD_KEYS = [
    * a second charge is a second *answer*, not a faster one — `dashRate` is that.
    */
   "dashCharges",
+  /**
+   * Summon damage, as a fraction added to what a summon inherits from its owner
+   * (docket §37). Percentage, like every other `*Damage` key.
+   *
+   * **Live read: `Dungeon.spawnMinion`**, folded into `power` alongside the ability's own
+   * `inheritPower`. A summon already scales off `owner.player.attackDamage`; this is the
+   * knob that makes a summoner build's gear about *its summons* rather than about itself.
+   */
+  "summonDamage",
+  /**
+   * Extra simultaneous summons, on top of `MINION_CAP_PER_OWNER` (docket §37). Flat and
+   * floored, exactly like `dashCharges` — half a skeleton is no skeleton.
+   *
+   * **Live read: `Dungeon.spawnMinion`**, which clamps `want` against the per-owner cap
+   * and culls the oldest to fit. Raising the cap is the whole of the effect; nothing else
+   * needs to know.
+   *
+   * Gated like `projectiles` in `MOD_POOL` (`minTier: 4`, epic and up) because it is the
+   * same shape of mod — a flat +1 to how many things you put on the floor at once, which
+   * is a build-defining step rather than a bigger number.
+   */
+  "maxSummons",
 ] as const;
 export type CombatModKey = (typeof COMBAT_MOD_KEYS)[number];
 
@@ -118,6 +140,8 @@ export const MOD_LABELS: Record<ModKey, string> = {
   moveSpeed: "movement speed",
   areaSize: "area of effect",
   projectiles: "projectiles",
+  summonDamage: "summon damage",
+  maxSummons: "max summons",
   pierce: "pierce",
   ailmentChance: "ailment chance",
   ailmentPotency: "ailment potency",
