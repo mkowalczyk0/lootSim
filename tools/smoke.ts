@@ -756,9 +756,19 @@ console.log("\n=== minion subsystem ===");
     ownerId: cd.localHero.index, unit: "x", x: cd.localHero.avatar.x, y: cd.localHero.avatar.y,
     count: 40, duration: 20, command: { behavior: "follow" },
   });
-  check("the per-owner summon cap holds", cd.minions.length === MINION_CAP_PER_OWNER, `${cd.minions.length}`);
+  // §37 made this cap modifiable: `spawnMinion` clamps to
+  // `MINION_CAP_PER_OWNER + floor(mods.maxSummons)`. So "the count equals the constant" is
+  // now only true for a character carrying none of the `of the Throng` suffix — which this
+  // fixture does not, but silently, and a fixture whose assumption is silent is a red
+  // waiting for the day the gear roll changes. Asserted explicitly so that if it ever does,
+  // the check says *why* it broke instead of just breaking.
+  const capBonus = Math.max(0, Math.floor(cs.player.mods.maxSummons));
+  check("the cap fixture carries no +maxSummons, so the constant is the right expectation",
+    capBonus === 0, `mods.maxSummons = ${cs.player.mods.maxSummons}`);
+  const expectedCap = MINION_CAP_PER_OWNER + capBonus;
+  check("the per-owner summon cap holds", cd.minions.length === expectedCap, `${cd.minions.length} vs ${expectedCap}`);
   const dead = cd.sacrificeSummons(cd.localHero.index, 3);
-  check("sacrificeSummons kills its own", dead === 3 && cd.minions.length === MINION_CAP_PER_OWNER - 3, `${dead}`);
+  check("sacrificeSummons kills its own", dead === 3 && cd.minions.length === expectedCap - 3, `${dead}`);
 }
 
 /**
