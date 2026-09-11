@@ -1009,7 +1009,7 @@ for (const id of CLASS_IDS) {
   // The scale is printed with the number, not left to the reader. `meterRightAfter` is
   // `.value` against a `max: 100` pool, and a bare "meter 2.0" was read as a full meter
   // for weeks — a 50x error that set the severity of a whole docket entry
-  // (`docs/blind-instruments.md` §21). A measurement without its units is not a
+  // (`docs/blind-instruments.md` §23). A measurement without its units is not a
   // measurement, and "2.0/100" cannot be misread.
   const meterMax = r.d.localHero.resources.ultimateMeter()?.max ?? 100;
   check(`${cls.name}: THE ULTIMATE RULE — its own output did not refill the meter`,

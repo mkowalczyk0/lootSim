@@ -884,7 +884,7 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
-## A twentieth instance, and the first where the blind instrument was a design record: a confident wrong diagnosis, load-bearing for weeks
+## A twenty-second instance, and the first where the blind instrument was a design record: a confident wrong diagnosis, load-bearing for weeks
 
 `docs/engineer-ultimate-loop.md` diagnosed docket §27 — the Engineer's self-refilling
 ultimate — as the `fromUltimate` stamp failing to propagate to the constructs the ultimate
@@ -933,11 +933,13 @@ because a units error invalidates the other two for free. And when a record turn
 wrong, **correct it in place with the wrongness visible** rather than deleting it — the next
 session needs to know the page was confidently wrong, not merely that it is now right.
 
-## A twenty-first instance, a species with no precedent here: the instrument was right and was read in the wrong units
+## A twenty-third instance, a sibling to the twenty-first: the instrument was right and was read in the wrong units
 
-Every other entry in this file is an instrument that could not see its subject. This one saw
-perfectly. `probeUltimate` measured the Engineer's ultimate meter exactly right, printed the
-number exactly right, and the number was read on the wrong scale.
+§21 above found a measurement that was correct and complete and still told the wrong story,
+because it measured the right quantity about the wrong behaviour. This is the cheaper,
+dumber cousin of that, and it cost more: the instrument measured the right quantity about
+the right behaviour, printed it correctly, and **it was read on the wrong scale.**
+`probeUltimate` got the Engineer's ultimate meter exactly right.
 
 ```
   Engineer: THE ULTIMATE RULE — its own output did not refill the meter  — meter 2.0
@@ -954,11 +956,13 @@ trickle read as a self-sustaining loop; it justified a docket entry, a pinned sm
 violation, a PM task brief, and an approved fix axis. None of those would have survived the
 question *"two out of what?"*
 
-What makes this its own species is that **no measurement was wrong and no scope was empty**.
-The usual remedies in this file — print what you walked, compare against a fixed reference,
-run a control, falsify by injection — would all have passed. A control would have confirmed
-the 2.0 was real, because it *is* real. The defect is entirely in the reading, and the only
-thing that catches it is asking what the number is a number *of*.
+What makes it worth its own entry next to §21 is that **no measurement was wrong and no
+scope was empty**. The usual remedies in this file — print what you walked, compare against
+a fixed reference, run a control, falsify by injection — would all have passed. A control
+would have confirmed the 2.0 was real, because it *is* real. §21's remedy does not reach it
+either: that entry's answer is to check the behaviour behind the number, and here the
+behaviour was exactly what the number described. The defect is entirely in the reading, and
+the only thing that catches it is asking what the number is a number *of*.
 
 The adjacent trap, worth naming because the same codebase has both: `Dungeon.specialCharge`
 returns `meter.fraction` (0–1) while `meterRightAfter` reads `meter.value` (0–100). Two

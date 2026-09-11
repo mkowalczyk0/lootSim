@@ -99,4 +99,4 @@ The standing question the original page raised — *should* the `fromUltimate` s
 ultimate's creations? — is still open, and is now a design question with **no defect behind
 it**. It should arrive attached to something real rather than because it is on a list.
 
-See `docs/blind-instruments.md` §20 and §21 for what this cost as an instrument failure.
+See `docs/blind-instruments.md` §22 and §23 for what this cost as an instrument failure.
