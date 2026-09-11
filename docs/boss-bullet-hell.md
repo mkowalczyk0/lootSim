@@ -175,6 +175,20 @@ is a small, honest change to what "reads the floor" means once the floor has bol
 it, and without it the smoke test's telegraph A/B would have compared two bots that both
 stand in every pattern.
 
+**Published figures that predate the instrument change.** Twenty tools drive `tools/bot.ts`.
+With the dodge scoped to a field (a boss on the floor and six or more hostile bolts in the
+air), a reader that never plays a boss floor is byte-identical to before — `npm run
+abilityfx`'s own identity comparison is one of them. Three harnesses outside the gate do
+play boss floors and hold numbers in their write-ups: **`tools/execute-ab.ts`
+(`docs/execute-threshold.md`), `tools/raid-party-measure.ts` (`docs/raid-party-scaling.md`)
+and `tools/reachability.ts` (`docs/reliquary-reachability.md`)**. Their published figures
+were measured with the bot as it stood before `feat/boss-bullet-hell` (the boundary is
+commit `1a68b9d`, the first with the dodge) and **are not comparable against a run made
+after it** — a bot that steps off a pattern's bolts takes a different bill on the same
+floor. They are records of the bot that produced them, not baselines for the bot in the
+tree; a session that re-runs one and gets a different number has found a different
+instrument, not necessarily a regression. They were deliberately not re-run here.
+
 `npm run bossvariety` gained four comparisons: every pattern's bolts are slower than a dash
 (`DASH_SPEED`, now exported for it — the sweep's first draft at 520 went red and came down
 to 450); a ring's door at the radius it is fired is wider than a hero; every one of the 44
