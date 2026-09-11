@@ -1,10 +1,10 @@
-# What more raid-boss health actually buys (owner item B — measurement only)
+# What more raid-boss health actually buys, and what shipped (owner item B)
 
 > "All of the raid bosses need a much much higher health pool"
 
-**No change was made.** This is the measurement the owner should see before one is, and it
-was handed over mid-flight when the item was reassigned. `npm run raidhealth`,
-`tools/raid-health-ab.ts`.
+This started as measurement-only, handed over mid-flight when the item was reassigned.
+**The owner has since seen the finding below and asked to raise it anyway** — see "What
+shipped" at the end. `npm run raidhealth`, `tools/raid-health-ab.ts`.
 
 ## First: the gate is *not* in conflict with this change
 
@@ -66,6 +66,27 @@ The Tyrant's 2/8 → 0/8 is the only sign of increased difficulty anywhere in th
 two wins out of eight is too thin to carry it. The Minotaur is pinned at 0/8 and measures
 nothing about win rate at all.
 
+### The win/loss split (closes the confound above)
+
+Duration summed separately by outcome — a win ends when the boss dies (scales with its
+health), a loss ends when the player dies (mostly doesn't) — at 1.0x vs 3.0x:
+
+| raid | win-only duration | loss-only duration |
+|---|---|---|
+| The Ferryman | 20.7s → 43.7s (**2.11x**) | n/a — no losses at either factor |
+| Queen of the Seventh Circle | 29.6s → 59.7s (**2.02x**) | n/a — no losses at either factor |
+| Tyrant of the First Heavens | n/a — no wins at 3.0x | 53.0s → 69.4s (**1.31x**) |
+| Minotaur of the Ninth Labyrinth | n/a — no wins at either factor | 88.0s → 113.7s (**1.29x**) |
+
+This is exactly the shape the confound predicted: on the two raids the character can win,
+tripling health scales the fight almost linearly with it (2.0-2.1x on a 3x health increase —
+consistent with a body that takes proportionally longer to whittle down while damage taken
+per second is roughly flat). On the two it loses, duration barely moves, because the run
+ends on the *player's* death timer, which the boss's health doesn't touch. **The Tyrant and
+Minotaur rows say nothing about whether more health makes those fights harder** — they say
+only that a losing fight against a bigger body takes slightly longer to lose, which is a
+statement about how fast this character dies, not about the boss.
+
 ## What this suggests, for the owner rather than for us
 
 More health delivers **a longer fight, not a harder one** — measured, on the two fights where
@@ -84,5 +105,36 @@ call; this exists so they make it knowing what it buys.
   read exactly once in the codebase (`raidBossSpec`), so this is equivalent and lets one
   process sweep several values.
 - Not in `npm test`: it plays 128 raid fights.
-- **Not run**: a win/loss split of the duration figure, which would remove the confound above
-  for the two contested raids. Worth doing if the Tyrant row is to carry any weight.
+
+## What shipped
+
+**`RAID_HEALTH` raised from 1.7 to 3.0** (`src/data/raids.ts`). The owner's answer to the
+finding above was to raise it anyway, knowing it buys duration rather than difficulty — and
+there's a second, independent reason to land exactly this number rather than treat it as a
+taste call: `CLAUDE.md`'s own design target for a raid boss is a fight that "lasts a minute
+or two", and at 1.7 the two shallowest raids were resolving in 21-30 seconds, well under
+that — a target the roster had apparently never met and nobody had measured until this A/B
+existed. At 3.0, the Ferryman and Queen land at 44s/64s and the two deeper raids move from
+roughly a minute to two-plus once the loss confound is accounted for. That is the design
+doc's own spec, hit across the roster, not a number chosen by feel.
+
+**What this change is not**: it does not touch `BossSpec.health` per encounter, damage,
+cadence, ability count, or `partyScale`. It is `RAID_HEALTH` alone. Win rate on the two raids
+this character can beat is essentially unchanged (100%→100%, 100%→88%) and potions drunk
+barely moved — this is a longer fight, not a harder one, exactly as measured above.
+
+**What to watch**: the two deeper raids (Tyrant, Minotaur) were already unwinnable for this
+test character at 1.7x and stay unwinnable at 3.0x, just slower to lose (1.31x, 1.29x on the
+loss-only duration, see the split above). Tripling their health moves them from
+"unwinnable in ~60-90 seconds" to "unwinnable in up to ~114 seconds." That is not evidence
+against shipping this — the owner asked for it, the shallow raids clearly needed it to hit
+the doc's own target, and a raid outlasting a level-70 solo bot says more about the bot (and
+about these two raids being tuned near/at the top of what's currently beatable — a known,
+separately-documented finding, not new here) than about the boss. But it is worth naming
+before someone reads "3x health, same win rate" as uniformly good news: for these two
+raids, nobody has yet measured a build that wins, so "same win rate" there means "still 0%",
+not "still fine."
+
+**No gate exception was needed.** `tools/raids.ts` §4 never went red — its six-stat
+comparison reads `DepthProfile` (ordinary monster scaling), never `BossSpec.health`, exactly
+as established above.

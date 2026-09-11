@@ -48,11 +48,18 @@ const DODGE = 0.95;
 const CLASS: ClassId = "swordsman";
 const MAX_SECONDS = 420;
 
-interface Res { win: number; runs: number; secs: number; potions: number; taken: number; timeouts: number }
+interface Res {
+  win: number; runs: number; secs: number; potions: number; taken: number; timeouts: number;
+  /** Duration summed separately by outcome, so a loss (which ends on death, not on the
+   *  boss's health) can't dilute the win-only figure that's actually informative about
+   *  what more health bought. `d.phase` is `"cleared" | "dead" | "fighting"` — a run still
+   *  `"fighting"` when the budget ran out is the timeout bucket, tracked apart from both. */
+  winSecs: number; lossSecs: number; lossRuns: number;
+}
 
 function measure(raidIdx: number, factor: number): Res {
   const spec = RAIDS[raidIdx]!;
-  const out: Res = { win: 0, runs: 0, secs: 0, potions: 0, taken: 0, timeouts: 0 };
+  const out: Res = { win: 0, runs: 0, secs: 0, potions: 0, taken: 0, timeouts: 0, winSecs: 0, lossSecs: 0, lossRuns: 0 };
   for (const seed of SEEDS) {
     const state = geared(LEVEL, seed, KEYS, CLASS);
     let scaled = false;
@@ -70,8 +77,15 @@ function measure(raidIdx: number, factor: number): Res {
     out.secs += r.seconds;
     out.potions += r.potionsDrunk;
     out.taken += r.damageTaken;
-    if (r.d.phase === "cleared") out.win += 1;
-    else if (r.seconds >= MAX_SECONDS - 1) out.timeouts += 1;
+    if (r.d.phase === "cleared") {
+      out.win += 1;
+      out.winSecs += r.seconds;
+    } else if (r.d.phase === "dead") {
+      out.lossSecs += r.seconds;
+      out.lossRuns += 1;
+    } else if (r.seconds >= MAX_SECONDS - 1) {
+      out.timeouts += 1;
+    }
   }
   return out;
 }
@@ -103,5 +117,16 @@ for (let i = 0; i < RAIDS.length; i++) {
   const wBase = base.win / base.runs;
   const wTop = top.win / top.runs;
   console.log(`   => at ${FACTORS[FACTORS.length - 1]!.toFixed(1)}x: fight is ${dLen.toFixed(2)}x as long, win rate ${(wBase * 100).toFixed(0)}% -> ${(wTop * 100).toFixed(0)}%`);
+  // Split by outcome: a loss ends on death, not on the boss's remaining health, so an
+  // aggregate average length mixes a quantity that scales with the factor (a win) with one
+  // that mostly doesn't (a loss). Printed only where the bucket has at least one run in it.
+  const winLine = base.win > 0 && top.win > 0
+    ? `${(base.winSecs / base.win).toFixed(1)}s -> ${(top.winSecs / top.win).toFixed(1)}s (${((top.winSecs / top.win) / (base.winSecs / base.win)).toFixed(2)}x)`
+    : "n/a (no wins in one of the two rows)";
+  const lossLine = base.lossRuns > 0 && top.lossRuns > 0
+    ? `${(base.lossSecs / base.lossRuns).toFixed(1)}s -> ${(top.lossSecs / top.lossRuns).toFixed(1)}s (${((top.lossSecs / top.lossRuns) / (base.lossSecs / base.lossRuns)).toFixed(2)}x)`
+    : "n/a (no losses in one of the two rows)";
+  console.log(`   => win-only duration:  ${winLine}`);
+  console.log(`   => loss-only duration: ${lossLine}`);
   console.log("");
 }
