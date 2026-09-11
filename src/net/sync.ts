@@ -26,6 +26,7 @@ import { PLANETS_BY_ID, planetConfig } from "../data/planets";
 import { RARITIES, type Rarity } from "../data/rarity";
 import { RELICS } from "../data/relics";
 import { AUGMENTS } from "../data/augments";
+import { SUMMON_UNITS } from "../data/summons";
 import { REGARD_WATCH } from "../data/traps";
 import { RAID_BY_ID, raidConfig } from "../data/raids";
 import { towerConfig } from "../data/tower";
@@ -252,6 +253,12 @@ export function encodeSnapshot(d: Dungeon): Snapshot {
     m: d.minions.map((m) => [
       m.id, m.owner, Math.round(m.x), Math.round(m.y), Math.round(m.radius), r2(m.facing),
       Math.round(m.health), Math.round(m.maxHealth), r2(m.windup), r2(m.hitFlash), ELEMENTS.indexOf(m.element),
+      // Docket §36: the client needs `unit` to resolve an authored sprite (`minionSprite`
+      // in `render/sprites.ts`), not just to draw the element-tinted triangle it drew
+      // before that seam existed. Same registry-index shape as a dropped relic/augment a
+      // few lines below — both ends run the same build, so an index is the whole payload
+      // rather than a string per minion per snapshot.
+      SUMMON_UNITS.indexOf(m.unit),
     ]),
     c: d.corpsePile.map((c) => [Math.round(c.x), Math.round(c.y), r2(c.remaining)]),
     p: d.projectiles.map((p) => [
@@ -592,13 +599,23 @@ function applyMinions(d: Dungeon, s: Snapshot): void {
   const seen = new Set<number>();
   const byId = new Map<number, Minion>();
   for (const m of d.minions) byId.set(m.id, m);
-  for (const [id, owner, x, y, radius, facing, hp, maxHp, windup, hitFlash, elementIndex] of s.m) {
+  for (const [id, owner, x, y, radius, facing, hp, maxHp, windup, hitFlash, elementIndex, unitIndex] of s.m) {
     seen.add(id!);
     const element = ELEMENTS[elementIndex!] ?? "physical";
+    // Same registry-index shape as a dropped relic/augment: both ends run the same
+    // build and `SUMMON_UNITS` is sorted at module load, so both derive the identical
+    // array regardless of the order the underlying walk happened to visit units in — an
+    // index means the same string on either end by construction, not by luck.
+    // `"__unknown_unit__"` is not a real unit id and never will be (real ids come from
+    // `src/data/summons.ts`'s walk, which only ever emits authored `unit` strings), so an
+    // out-of-range index — which shouldn't happen, but the render path's own rule is that
+    // an unrecognised summon draws the triangle rather than breaking — falls through
+    // `chooseMinionArt` to the triangle rung exactly like any other unauthored unit does.
+    const unit = SUMMON_UNITS[unitIndex!] ?? "__unknown_unit__";
     let m = byId.get(id!);
     if (!m) {
       m = {
-        id: id!, owner: owner!, unit: "summon",
+        id: id!, owner: owner!, unit,
         x: x!, y: y!, px: x!, py: y!, radius: radius!,
         health: hp!, maxHealth: maxHp!, damage: 0, attackCooldown: 1, attackTimer: 0, attackRange: 0,
         windup: windup!, speed: 0, element, facing: facing!, hitFlash: hitFlash!, knockX: 0, knockY: 0,

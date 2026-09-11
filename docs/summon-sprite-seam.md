@@ -1,0 +1,129 @@
+# Docket §36 — the summon sprite seam
+
+> "Sprites for each class summons, ie. Replace the triangle sprite"
+
+This is the renderer seam, not the art. Session 56 owns generating the 21 bespoke bodies
+the owner asked for; this document is what they land into, so a PNG committed one class at
+a time appears in the game with nobody touching `render/draw.ts` again.
+
+## The ladder
+
+Every summoned minion resolves through `chooseMinionArt` (`src/render/minionart.ts`, pure,
+no DOM — mirrors `render/itemart.ts`/`render/spriteart.ts`'s existing shape rather than
+inventing a fourth one) and is executed by `minionSprite` (`src/render/sprites.ts`):
+
+1. **Player-copy units** — `mirror_image`, `monk_afterimage`, `trickster_decoy`,
+   `trickster_mirror`, `trickster_mirror_self`, `trickster_lure`. Draw the summoning hero's
+   own composed sprite (`heroSprite(appearance, classId)`, the full back→body→hair→face→
+   ears→hat stack, cosmetics included). Unconditional — this is the mechanic (a Trickster
+   decoy that doesn't look like the Trickster is wrong), not a fallback for missing art.
+2. **The unit's own authored sprite** — a `SUMMON_UNIT_ART` row whose PNG has loaded.
+3. **Today's flat, element-tinted triangle** — unconditional, never removed. This is what
+   makes it safe for 56 to land the 21 bodies one at a time rather than all at once.
+
+`SUMMON_UNIT_ART: Record<string, string | null>` (`src/render/atlas/manifest.ts`, next to
+`CLASS_HEROES`) is one row per unit, `null` until a PNG lands — same "declared but
+undrawn" idiom `MONSTER_SETS`/`CLASS_HEROES` already use. **Never declare an id here before
+its PNG is committed in the same change** — the Tower tileset rule: a manifest row with no
+PNG fails `npm run smoke` and claims art the repo doesn't have.
+
+## Where the unit list comes from
+
+`src/data/summons.ts`'s `SUMMON_UNITS` is walked from every place a `{ kind: "summon" }`
+step can originate — class abilities, tree-node mutations, hybrid/archetype unlocks,
+relic effects, named-item effects — rather than typed by hand. **27 units today**, in four
+families (per 56/26's derivation from the same data): 6 player copies, 8 risen dead, 6
+constructs, 7 spirits/beasts. `tools/summonart.ts` (`npm run summonart`, in `npm test`)
+prints the walked count and fails a unit with no `SUMMON_UNIT_ART` row (or player-copy
+membership) — CLAUDE.md's rule that a check's scope must come from the data, not a
+maintained list, applied here so a 28th summon can't silently miss the ladder.
+
+**Two independent counts landed on 27.** 56/26 counted by reading the progression files by
+eye; this walk counts by executing the data. That agreement is real evidence the number is
+right — and the one place they disagreed is the more interesting result: `kept_name` and
+`limbo_shade` were reported as "named items," but they're actually relic-sourced
+(`src/data/relics.ts`'s `RelicDef.effects`, not `src/data/named.ts`). The *lead* was
+correct — a summon can come from the worn-effect vocabulary, not only a class's ability
+table — and only the specific file was off, which is exactly why the gate has to be scoped
+over every source (abilities, mutations, unlocks, relics, named items) rather than the two
+sources a report happened to name.
+
+This same list is also the co-op wire's registry for a minion's unit id
+(`SUMMON_UNITS.indexOf`/`SUMMON_UNITS[i]` in `net/sync.ts`, the identical shape
+`RELICS`/`AUGMENTS` already use for a dropped item) — see "The co-op bug this almost
+shipped" below.
+
+## Facing: one authored direction, flip only
+
+Every migrated monster and boss in this game already draws one authored pose and mirrors
+it left/right (`drawEnemy`: `const flip = Math.cos(e.facing) < 0;` then
+`drawSprite(ctx, canvas, x, y, flip, scale, feet)`); the hero works the same way. This is
+not a cost-saving compromise adopted for §36 — it is the existing seam, unchanged. So the
+owner's "21 bespoke bodies" ruling costs 21 drawings, not 21×N: one pose per unit.
+
+56 confirmed the roster's actual authored orientation is **south, front-on** (not the +x
+convention this doc first guessed) and asked whether directional units — `falcon`,
+`spirit_hawk`, `spirit_wolf`, `siege_engine`, the turrets' barrels — should get an east
+rotation instead, since the character pipeline can generate all eight for free. **Answer:
+no, keep it uniform.** The renderer has no mechanism to pick between two authored
+rotations per entity; every other multi-directional creature in the game (chargers,
+archers, anything that logically aims or moves in four directions) already accepts
+south-plus-flip with nobody treating it as a defect. Adding a second rotation for five
+units would be a genuine new special case for a benefit nothing else in the roster gets.
+
+## The element carrier: tint pass, strength undecided
+
+Item #3 of the brief: whatever replaces the triangle still has to say "this is mine, and
+it is my element" — the tint is currently doing that job alone. Mechanism: a tint pass
+over 56's authored art via the existing `tintedCanvas` (the same one rarity-washing and
+elite recolors use), **not** an authored variant per element — one body per unit, not
+five.
+
+**The wash strength (`SUMMON_ELEMENT_WASH` in `render/sprites.ts`, currently `0.3`) is
+explicitly not decided.** Two live tensions only an eye can resolve:
+
+- The owner rejected the cheaper family-of-recolours option specifically to get 21
+  *recognisable* bodies. A wash heavy enough to read as "this is fire" pushes back toward
+  the flatter, more-recolour-than-body look they turned down.
+- This repo has a named lesson about a tint/scale constant that was correct for one
+  rendering rung becoming wrong on the next without anyone re-measuring (the biome tint
+  that quietly became a 30% wash). `0.3` is a placeholder in the weapon-wash
+  (`ATLAS_WEAPON_WASH = 0.26`) neighbourhood, chosen by analogy, not by measurement against
+  real art — because there isn't any yet.
+
+**Once 56's first PNG lands, render a contact sheet at a few candidate strengths and hand
+the number to 56 and the owner's eye.** Also worth asking 56 directly whether a full-body
+wash is the right carrier at all, or whether a smaller accent/aura in the owner's element
+says "mine, and this element" better — the monsters' own rule is one hot accent per body,
+not a full recolour, and the same instinct may apply here.
+
+## The co-op bug this almost shipped
+
+The wire never carried `unit` before this branch. `net/sync.ts` encoded a minion as
+`[id, owner, x, y, radius, facing, health, maxHealth, windup, hitFlash, element]` and the
+client reconstructed it with `unit: "summon"` hardcoded — harmless while every minion drew
+the same triangle regardless of unit, but it would have made every rung-2 authored sprite
+invisible to anyone but the host the moment 56's first PNG landed. Fixed by sending
+`SUMMON_UNITS.indexOf(m.unit)` and resolving it back through the same array on decode,
+mirroring the registry-index pattern already used for a dropped relic/augment a few lines
+below in the same encoder. Caught before it shipped because the wire was read line by line
+against what the new renderer path actually needs, not assumed unchanged.
+
+**Why the index is safe, stated rather than left implicit:** both ends of a co-op session
+run the identical bundle, so both derive `SUMMON_UNITS` from the identical walk — but the
+stronger reason is that the walk's result is `.sort()`ed before export, so the final array
+is the same *regardless of the order the walk happened to visit units in*. An index means
+the same string on either end by construction, not by an incidental ordering that a future
+refactor to `collectSummonUnits` could quietly disturb. `tools/summonart.ts` asserts this
+directly (`SUMMON_UNITS is sorted`) rather than leaving it as an unstated property of
+today's implementation. An out-of-range index on decode (shouldn't happen, but the render
+path's own rule is that an unrecognised unit draws the triangle rather than breaking)
+resolves to a sentinel string that is never a real unit id, which `chooseMinionArt` falls
+through to the triangle rung for exactly like any other unauthored unit.
+
+## What worldScale/feet do and don't touch
+
+`ATLAS[id].worldScale`/`.feet` (rung 2) and `heroSprite()`'s own `scale`/`feet` (rung 1)
+govern **draw size only**, exactly like every other migrated sprite. `Minion.radius`
+(the physics/collision value) is untouched by any of this, the same way an item's
+`worldScale` never moves its pickup radius.

@@ -19,15 +19,17 @@ import { NAMED_BY_ID } from "../data/named";
 import {
   ATLAS, ATLAS_COSMETICS, ATLAS_WEAPONS, ATLAS_WEAPON_SKINS,
   COSMETIC_MARK_1, COSMETIC_MARK_2, COSMETIC_MARK_3,
-  cosmeticStageXY, heroStage,
+  cosmeticStageXY, heroStage, SUMMON_UNIT_ART,
 } from "./atlas/manifest";
 import {
   type Appearance, type Cosmetic, type WeaponPalette, COSMETICS_BY_ID, defaultAppearance,
 } from "../data/cosmetics";
 import { isWeaponType, type ItemType } from "../data/items";
 import { chooseItemArt, chooseRelicArt, type ArtAvailability, type ItemArtChoice, ATLAS_WEAPON_WASH } from "./itemart";
+import { chooseMinionArt } from "./minionart";
 import { chooseHeroArt, chooseSpriteArt, type SpriteArt } from "./spriteart";
 import type { ClassId } from "../data/classes";
+import { ELEMENT_COLORS, type Element } from "../data/elements";
 import { RARITY_COLORS, type Rarity } from "../data/rarity";
 import type { WeaponFamily } from "../data/weapons";
 import {
@@ -847,6 +849,66 @@ const ART_AVAILABLE: ArtAvailability = {
   hasAtlas: (id) => !!ATLAS[id] && !!atlasCanvas(id),
   hasSprite: (name) => !!atlas && name in atlas,
 };
+
+/**
+ * How hard an authored summon sprite's own colour is washed toward its element — the
+ * mechanism the docket §36 owner ruling asked for (one bespoke body per unit, tinted,
+ * rather than an authored variant per element). **Deliberately not settled by analogy to
+ * `ATLAS_WEAPON_WASH` or `RARITY_WASH`.** Those numbers were each correct for the rung
+ * they were measured on and this repo has a named lesson about inheriting a wash/tint
+ * constant across rungs without re-measuring (`docs/` — the biome tint that quietly
+ * became a 30% wash on the next rendering pass). The owner rejected the cheaper
+ * family-of-recolours option specifically to get 21 *recognisable* bodies; a wash heavy
+ * enough to read as "this is fire" is a wash heavy enough to erode that. This needs a
+ * contact sheet against real authored art and 56's (and the owner's) eye before it ships
+ * — see the design note in `docs/summon-sprite-seam.md`. 0.3 is a placeholder in the
+ * weapon-wash neighbourhood, not a decision.
+ */
+export const SUMMON_ELEMENT_WASH = 0.3;
+
+/** A summon sprite's picture and how big it is in the world — mirrors `ItemSprite`. */
+export interface MinionSprite {
+  readonly canvas: HTMLCanvasElement;
+  readonly worldScale: number;
+  readonly feet: number;
+}
+
+/**
+ * What a summoned minion draws, given its unit id, the element to carry, and (for the
+ * player-copy family only) the hero it copies. `null` means "draw the procedural
+ * triangle" — `drawMinions` in `render/draw.ts` keeps that path exactly as it is today;
+ * this function only ever hands back something *better* than the triangle, never a
+ * replacement for it.
+ *
+ * The player-copy rung deliberately carries no element tint: the whole point of that
+ * family is that it looks exactly like the hero it copies, cosmetics included, and
+ * washing it toward an element would be the one thing that breaks that fidelity.
+ */
+export function minionSprite(
+  unit: string, element: Element, owner: { appearance: Appearance; classId?: ClassId } | undefined,
+): MinionSprite | null {
+  const choice = chooseMinionArt(unit, SUMMON_UNIT_ART[unit] ?? null, ART_AVAILABLE);
+  switch (choice.kind) {
+    case "hero": {
+      if (!owner) return null; // a player-copy unit always has a summoning hero; guards a bad call rather than assuming
+      const hs = heroSprite(owner.appearance, owner.classId);
+      return { canvas: hs.canvas, worldScale: hs.scale, feet: hs.feet };
+    }
+    case "atlas": {
+      const png = atlasCanvas(choice.id);
+      const meta = ATLAS[choice.id];
+      if (!png || !meta) return null; // hasAtlas already said this was drawable; fall to the triangle if it somehow isn't
+      const color = ELEMENT_COLORS[element] ?? "#9fd3ff";
+      return {
+        canvas: tintedCanvas(png, `minion:${choice.id}`, color, SUMMON_ELEMENT_WASH),
+        worldScale: meta.worldScale,
+        feet: meta.feet,
+      };
+    }
+    case "triangle":
+      return null;
+  }
+}
 
 /** The art id a named item asks for, or null — so call sites never touch the registry. */
 export function itemArtId(item: { named: string | null }): string | null {

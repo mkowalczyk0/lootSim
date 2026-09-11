@@ -224,8 +224,11 @@ export interface Snapshot {
    *  names the monster the way the host does (UAT §1 C2). */
   readonly e: number[][];
   /** Summoned combatants (UAT §1 C1): [id, owner, x, y, radius, facing, hp, maxHp,
-   *   windup, hitFlash, elementIndex]. A Necromancer's army was invisible to everyone
-   *  but the host without this. */
+   *   windup, hitFlash, elementIndex, unitIndex]. A Necromancer's army was invisible to
+   *  everyone but the host without this. `unitIndex` indexes `data/summons.ts`'s
+   *  `SUMMON_UNITS` (docket §36) — both ends run the same build, so a client can resolve
+   *  an authored summon sprite the same way it resolves a dropped relic's registry index,
+   *  without a string per minion per snapshot. */
   readonly m: number[][];
   /** Corpses on the floor: [x, y, remaining]. Drawn, and the Necromancer's fuel gauge. */
   readonly c: number[][];
