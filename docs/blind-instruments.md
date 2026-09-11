@@ -884,6 +884,72 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twenty-fifth instance, a new species: a subject that never survives long enough to be measured, passing on the luck of five elites
+
+*(Numbered 25 by the PM session; 22–24 are assigned elsewhere and may land after this.)*
+
+`npm run rewards` has a section that plays a real floor to prove §16's drop axes reach live
+loot: a level-60 swordsman, geared from twelve Elite chests, stands still and presses attack
+for 45 seconds on twelve seeds at depth 12, once with the Challenger dial off and once at
+tier 8, and the check is that **both sides collected at least three drops**. The fixture's
+own comment says why the bar exists: *"a bot that dies in the first ten seconds harvests
+nothing and proves nothing."* On master the hard side read **3**. Exactly the bar. Green.
+
+The Nine Circles re-cut (`docs/nine-circles.md`) changed which biome depth 12 is, which
+moves the shared rng, and the same check read **1**. Measured on both trees over 48 seeds,
+in disjoint 12-seed blocks, with the fixture's dial as the variable:
+
+| dial | tree | kills | elite kills | drops per block | mean survival |
+|---|---|---|---|---|---|
+| 8 | master | 147 | 5 | 3 / 8 / 7 / 4 | 8.3 s, 0 of 48 alive |
+| 8 | the re-cut | 134 | 0 | 1 / 1 / 0 / 1 | 8.4 s, 0 of 48 alive |
+| 5 | master | 343 | — | 16 / 15 / 7 / 9 | 10.8 s |
+| 5 | the re-cut | 362 | — | 9 / 12 / 9 / 14 | 11.5 s |
+| 3 | master | 604 | — | 26 / 17 / 18 / 18 | 18.3 s |
+| 3 | the re-cut | 634 | — | 19 / 18 / 14 / 21 | 18.8 s |
+
+At tier 8 the subject is **dead in eight seconds on every seed of both trees**, with the
+same handful of trash kills — trash drops at a few percent per kill, so a dead-in-eight
+bot harvests roughly nothing from them. Master's 22 drops were the **five elites in 48
+seeds** that happened to walk into its swing before it died; an elite carries a guaranteed
+drop. On the re-cut's depth-12 floor, none happened to. At tiers 5 and 3, where the subject
+lives long enough to kill things, the two trees agree to within noise. So the drop rate did
+not change. The fixture was **never measuring it**: its hard side was the "row pinned at
+0/16" `CLAUDE.md` describes under difficulty philosophy, and a pinned row can only move by
+luck — which it did, in both directions, from 3 to 8 to 1 across blocks with no code change
+between them.
+
+**The species.** Every earlier entry is an instrument that could not see its subject. This
+one *could* see it; the subject simply did not exist for long enough to be seen. The bound
+(three drops) was fine, the scope (twelve seeds, both sides) was fine, the subject (the
+loot a standing character collects) was the right thing — and the character was a corpse
+for 37 of the 45 seconds. A fixture has to be **contested** before it is a measurement: not
+a certain win, not a certain loss. This one was a certain loss whose bar was set where a
+lucky loss could still clear it.
+
+**The distinction that matters for the next reader.** The rng-moving branch did not cause
+this. It **revealed** a defect that had already shipped — master was green on the same
+fixture the same day, by the same luck. A check that goes red on a branch that perturbs
+the shared stream is not evidence against the branch until the check has been shown to be
+contested on master; here it took one 48-seed sweep on each tree to show it was not. Treat
+"this branch moves the rng and a check went red" as a prompt to measure the *check*, not
+as a verdict on the branch.
+
+**The fix**, and why it is not a re-baseline: the dial is 5, chosen because it is where
+the same target lasts long enough to harvest on both trees and every 12-seed block of both
+clears the bar by more than double — not because it makes the branch pass. Nothing the
+section asserts needed tier 8: the "+3 item level" the old dial was picked for stopped
+being a live property when docket §23 made item level track the character, and the
+quantity and variant axes are read off the profile, which climbs at any tier above 0.
+The seeds and the bar are untouched; the measurement is in the fixture's comment.
+
+**How to apply.** Any check that plays the game to harvest a number needs one line of
+output that says whether the subject survived to produce it — seconds alive, kills, alive
+at the end — and a reader should refuse a green from a fixture whose subject was dead
+before the property could occur. If the number sits exactly on its bar, that is not a
+pass; it is the instrument telling you it has no margin, and the next unrelated change
+will flip it.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
