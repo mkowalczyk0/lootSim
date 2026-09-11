@@ -830,6 +830,57 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twentieth instance, and the first where the blind instrument was a design record: a confident wrong diagnosis, load-bearing for weeks
+
+`docs/engineer-ultimate-loop.md` diagnosed docket §27 — the Engineer's self-refilling
+ultimate — as the `fromUltimate` stamp failing to propagate to the constructs the ultimate
+summons, and recommended carrying the stamp onto minions and zones. It is a careful page. It
+sweeps all 21 classes, it corrects an earlier draft of itself in the text, it explains why
+only the Engineer is exposed, and it explicitly declines to propose a number so the owner
+can decide. **Every structural claim in it is wrong**, and the fix it recommends would have
+changed nothing.
+
+It was believed for weeks, it was quoted into a PM's task brief, and an hour of
+implementation work was nearly spent on it — by me — before a measurement contradicted it.
+
+**Three separate errors, and they compound:**
+
+1. **A units error at the top.** `meter 2.0` is read as *"a full meter — the ultimate paid
+   for itself, immediately, and could be cast again."* Every ultimate meter has `max: 100`
+   and `probeUltimate` reads `.value`, not `.fraction`. It is a **2% gain**: a 50x
+   misreading, and the one that makes the entry read as an emergency rather than a rounding
+   error. Nothing downstream questioned it because the page was so obviously careful.
+2. **A mechanism inferred rather than traced.** "The ultimate summons constructs; construct
+   packets carry no stamp; the tag matches; the meter fills" is a coherent chain in which
+   every individual link is true. It is not what happens. Removing the zone step changes
+   nothing; removing the summon step changes nothing. The credit lands in `fireGrant`
+   *before the `ultimateUse` event is emitted* — a `grantEffect` on the `construct` tag,
+   fired by the ultimate's own cast, on a path `resources.ts` never guarded.
+3. **A scope claim that was never counted.** "Of the seven, only the Engineer's ultimate
+   summons anything" — ten ultimates create a persistent thing. The number was asserted from
+   a reading, not from a walk.
+
+**The rule this adds, because the existing entries are all about tools:** a design record is
+an instrument. It is read the way a green check is read — as a measurement someone already
+took — and it has none of a check's properties. It does not re-run. It is not falsified when
+the code moves. Nothing counts what it walked. **Its confidence is authored, not earned**,
+and prose is the one artefact in this repository where a wrong answer and a right answer
+look identical.
+
+The nearest existing sibling is the fourth lesson's *"a correct check can be overruled by
+prose"* (`art/anim/windup-check.py`, talked down by its own docstring). This is the harder
+version: there was no correct check to overrule, and **the prose was the only instrument
+anybody had.**
+
+**How to apply:** before building the fix a design record recommends, **reproduce the
+number the record is built on.** Not the bug — the number. Here that was thirty seconds:
+print the meter's `max` next to the value the record quotes, and the whole entry falls over
+before a line of code is written. If a record states a magnitude, a mechanism and a scope,
+those are three separate claims and the cheap one to check first is always the magnitude,
+because a units error invalidates the other two for free. And when a record turns out to be
+wrong, **correct it in place with the wrongness visible** rather than deleting it — the next
+session needs to know the page was confidently wrong, not merely that it is now right.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

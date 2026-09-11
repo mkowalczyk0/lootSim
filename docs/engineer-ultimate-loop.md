@@ -1,8 +1,43 @@
 # The Engineer's ultimate refills its own meter — on a build nobody had ever tested
 
-Status: **diagnosed, NOT fixed, and deliberately no number is proposed here.** Tightening
-the tag gate versus dropping the rate is a balance decision and it belongs to the owner
-with options attached, not to the commit that found it.
+Status: **FIXED (docket §33, commit `fa77457`) — and the diagnosis below was wrong.**
+
+> **Read this box before the rest of the page.** Everything under "The actual mechanism"
+> is a careful, confident, *incorrect* account, and it survived weeks because it is
+> plausible and nobody re-measured it. It is kept rather than deleted because the way it
+> was wrong is the useful part, but **do not act on it.**
+>
+> **What the page gets wrong, in order:**
+>
+> 1. **`meter 2.0` is not "a full meter".** Every ultimate meter in the game has
+>    `max: 100`, and `probeUltimate` reads `.value`, not `.fraction`. It is a **2% gain** —
+>    a 50x units error, and the one that makes the whole entry read as an emergency.
+> 2. **It is not the constructs, and the stamp is not the problem.** Removing the zone step
+>    from Siege Engine changes nothing; removing the summon step changes nothing. A stack
+>    trace on the pool's own `add` puts the credit in `fireGrant`, *before* the
+>    `ultimateUse` event is even emitted.
+> 3. **The recommended fix would not have worked.** "Propagate the stamp onto minions,
+>    constructs and zones" addresses a path this bug never took.
+>
+> **The actual cause:** `abilities.ts` subscribes a tag-gated `grantEffect` to `skillUse`
+> **and** `ultimateUse`. The Engineer's **"Machine Shop"** foundation node grants
+> `{ resource: "ultimate", delta: 2 }` on the `construct` tag; Siege Engine carries
+> `tags: ["ultimate", "construct", "summon"]`. The ultimate fires its own class's grant
+> into the meter that cast it, never touching the generation-rule path `resources.ts`
+> guards. A roster sweep found **exactly one** grant of that shape in the game.
+>
+> **The fix** is at the one site that adds to a pool: `fireGrant` stamps `fromUltimate` on
+> the context when an `ultimateUse` triggered it, and `runEffect`'s `resource` step refuses
+> to credit an ultimate meter from an ultimate-sourced context. No per-grant field, so a
+> node written tomorrow is covered. All 21 classes verified below the threshold; the smoke
+> pin is emptied.
+>
+> **And the blast radius was measured with a control, which reversed it.** An uncontrolled
+> pass suggested Juggernaut (~6.7%) and Trickster (~12%) also charged from their ultimates'
+> creations. Against a no-cast control on the same seed they charge **less** with the
+> ultimate — -3.44 and -6.70 over 30s — because Citadel shields the Juggernaut out of its
+> own `damageTaken` generation and the Trickster's mirrors take the hits it would have
+> dodged. Nothing but the Engineer was ever affected.
 
 ## The measurement
 
