@@ -250,3 +250,13 @@ commit's own §11 proposed CLAUDE.md wording for the difficulty-philosophy secti
 "not applied — that file goes to the owner directly," which nobody appears to have carried
 forward into `docs/claude-md-pending.md` — a fifth entry that page doesn't have yet, if the
 decision is confirmed still standing.
+
+**Done, same session, per PM instruction:** `docs/reachable-band-decision.md` now carries
+the ruling and the falsification, marked recorded-pending-re-confirmation since neither
+session in this chain witnessed the owner make the call. `docs/reachable-band.md`'s status
+line and its "Options, priced" section now point at that ruling rather than reading as
+still open. `docs/claude-md-pending.md` picked up the §11 wording as entry 5 (not entry 6
+— no map-wipe CLAUDE.md draft was found in this pass to occupy that slot; renumber if one
+turns up), gated explicitly on the same pending re-confirmation. The tooling is closed by
+the paragraph above and by `docs/reachable-band-decision.md`'s own closing section — both
+point at `b70e603` rather than at this branch.

@@ -310,6 +310,64 @@ factually behind the tool that superseded it.
 
 ---
 
+---
+
+## 5. Difficulty philosophy — the reachable band's ruling
+
+**Branch:** `investigate/power-curve2` (`630dfb8`, `2bf2fe1`, not merged to master).
+**Depends on a decision this page can't confirm on its own** — see the caveat below before
+using this.
+
+**Current text** (`CLAUDE.md`, "Difficulty philosophy" section, opening paragraph):
+
+> Pressure, not sponginess. Enemy health grows roughly with the gear curve, but the things
+> that actually make a deep floor frightening are damage (quadratic in depth), speed,
+> count, hazards, and `aggression`/`telegraph` in `DepthProfile`.
+
+**Proposed addition** (as drafted on the branch, §11, verbatim):
+
+> **The Delve has a soft ceiling, and it is deliberate.** Enemy health compounds
+> geometrically with depth while every axis of player power is polynomial or has only
+> eight rarity steps in it, so the two cross — for a character built by the ladder itself,
+> around depth 13–19. That is the intended shape: **depth is a dial you push until it
+> pushes back**, not a track with a finish line, and where your ceiling sits is decided by
+> your gear rather than your level (one rarity step is worth about five depths; a
+> character level is worth about a tenth of one). A player at their ceiling has not run
+> out of game — the rifts, the Tower and the raids are the same curve walked a different
+> way. The bottom of the Delve stays reachable: depth 30, the Proving gate, clears at
+> level 40 in a Legendary set, which makes it a gear goal rather than a wall. **Do not
+> soften `profileFor` to move this line, and do not relocate content into the band to
+> dodge it** — every mode reads that one curve, and `docs/reachable-band.md` already
+> established that a shallower ladder starting past the band re-inherits it. See
+> `docs/power-growth.md`.
+
+**Why:** the current text's "grows roughly with the gear curve" undersells what's actually
+true — past roughly depth 19, enemy health doesn't track the gear curve, it permanently
+outruns it, by the design comment's own admission ("stay ahead of the 2^n rarity ladder").
+That's the whole mechanism behind the reachable band, and CLAUDE.md's difficulty section is
+the natural place to say so once it's a settled design position rather than an open
+question.
+
+**The dependency, stated plainly:** this proposal only makes sense if the ruling it
+describes actually stands. `docs/reachable-band-decision.md` (docket §28's sweep) records
+that the owner chose to accept this shape, but that record itself is marked "recorded,
+pending re-confirmation" — neither the session that wrote this entry nor the one that
+wrote the decision document witnessed the owner make the call; both are working from a
+commit message on a branch that sat unlanded across two PM handovers. **Do not apply this
+proposal, or the decision document it cites, as settled until that confirmation lands.**
+If the owner does not confirm it, this entry and `docs/power-growth.md`'s reasoning still
+have value as a measured mechanism (§8b's falsification is real regardless of what's
+decided about it), but the design-position language above — "it is deliberate," "do not
+soften" — would need to come back out.
+
+**One numbering note for whoever assembles this page next:** this was filed as entry 5
+because that's the next number the page actually has right now (1 through 4 exist above).
+If a map-wipe entry lands separately and is meant to sit at 5, renumber rather than assume
+this one moves — I have no branch or diff for a map-wipe CLAUDE.md draft to check against,
+so I can't tell whether one exists elsewhere and should come first.
+
+---
+
 ## Summary for a fast read
 
 | # | Draft | Source of proposed text | Branch | Reviewed by owner? |
@@ -318,6 +376,7 @@ factually behind the tool that superseded it.
 | 2 | Loot passage A ("per-hero and physical") | **No draft existed** — written fresh this session against `85bdee6` + `docs/shared-loot.md`, verified against `src/game/dungeon.ts` | none | No — flagged as freshly authored, not a found draft |
 | 3 | Loot passage B ("round-robin") | Same as #2 | none | No — same caveat |
 | 4 | Campaign-check thinness paragraph | Reconstructed from `tools/campaignblock.ts`'s landed header | none (no CLAUDE.md diff ever committed) | No — already superseded operationally by the tool header |
+| 5 | Difficulty philosophy — the reachable band's ruling | Found in full, on the branch (§11) | `investigate/power-curve2` (never merged) | No — and gated on `docs/reachable-band-decision.md`'s own pending re-confirmation; don't apply either until that clears |
 
 **On drafts 2 and 3 specifically:** these were reported not-found in the first pass of this
 page, and the PM asked me to write them once it was confirmed nobody had. They are not
