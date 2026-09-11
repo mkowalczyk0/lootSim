@@ -522,6 +522,9 @@ export class TownUI {
      *  background concern owned by `GameState.recordsHook`/`RecordsSubmitter` in
      *  `main.ts` — this screen only ever reads. */
     private readonly records: RecordsClient,
+    /** The logged-in account's own name, so the Leaderboards screen can highlight the
+     *  viewer's own row — the single highest-value thing on any leaderboard. */
+    private readonly username: string,
   ) {
     this.roll = new ChestRoll(this.root.parentElement ?? document.body);
 
@@ -5735,6 +5738,11 @@ export class TownUI {
     if (key !== this.lbKey) {
       this.lbKey = key;
       this.lbError = null;
+      // Drop the outgoing board's rows rather than leaving them on screen relabelled
+      // under the new board's header while the fresh fetch is in flight — a stale
+      // "Record" column read against the wrong board's `formatLbValue` case is worse
+      // than the loading state it would otherwise show.
+      if (board.id === "recent") this.lbRecent = null; else this.lbRows = null;
       this.fetchLeaderboard(board.id, this.lbClassFilter);
     }
 
@@ -5750,20 +5758,22 @@ export class TownUI {
     if (board.id === "recent") {
       const rows = this.lbRecent;
       body = this.lbLoading && !rows ? `<p class="muted">Loading…</p>`
-        : this.lbError ? `<p class="muted">${escapeHtml(this.lbError)}</p>`
+        : this.lbError ? `<p class="muted">Couldn't reach the leaderboard server — ${escapeHtml(this.lbError)}</p>`
         : !rows || rows.length === 0 ? `<p class="muted">Nothing recorded yet — go do something first.</p>`
-        : `<table class="cmp wide"><tr><th>Board</th><th>Who</th><th>Class</th><th></th></tr>${
-          rows.map((r) => `<tr><td>${escapeHtml(lbBoardLabel(r.board))}</td><td>${escapeHtml(r.username)}</td>
+        : `<table class="cmp wide"><tr class="cmp-head"><td>Board</td><td>Who</td><td>Class</td><td></td></tr>${
+          rows.map((r) => `<tr class="${r.username === this.username ? "you" : ""}">
+            <td>${escapeHtml(lbBoardLabel(r.board))}</td><td>${escapeHtml(r.username)}</td>
             <td>${escapeHtml(CLASSES[r.classId as ClassId]?.name ?? r.classId)}</td>
             <td>${escapeHtml(formatLbValue(r.board, r.value, r.tier, r.meta))}</td></tr>`).join("")
         }</table>`;
     } else {
       const rows = this.lbRows;
       body = this.lbLoading && !rows ? `<p class="muted">Loading…</p>`
-        : this.lbError ? `<p class="muted">${escapeHtml(this.lbError)}</p>`
+        : this.lbError ? `<p class="muted">Couldn't reach the leaderboard server — ${escapeHtml(this.lbError)}</p>`
         : !rows || rows.length === 0 ? `<p class="muted">Nobody's on this board yet.</p>`
-        : `<table class="cmp wide"><tr><th>#</th><th>Who</th><th>Class</th><th>Record</th></tr>${
-          rows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.username)}</td>
+        : `<table class="cmp wide"><tr class="cmp-head"><td>#</td><td>Who</td><td>Class</td><td>Record</td></tr>${
+          rows.map((r, i) => `<tr class="${r.username === this.username ? "you" : ""}">
+            <td>${i + 1}</td><td>${escapeHtml(r.username)}</td>
             <td>${escapeHtml(CLASSES[r.classId as ClassId]?.name ?? r.classId)}</td>
             <td>${escapeHtml(formatLbValue(board.id, r.value, r.tier, r.meta))}</td></tr>`).join("")
         }</table>`;
