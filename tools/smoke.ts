@@ -84,6 +84,7 @@ import { RARITIES, rarityIndex, type Rarity } from "../src/data/rarity";
 import { rollItem, type Item } from "../src/game/item";
 import { ITEM_TYPES, MOD_COUNTS } from "../src/data/items";
 import { MAX_TROPHY_CASES, trophyCaseCost } from "../src/data/trophies";
+import { BANNER_STYLES, standardsFor } from "../src/data/standards";
 import { STAT_KEYS } from "../src/data/mods";
 import { Rng } from "../src/core/rng";
 import { InputLog, NetInput, applySnapshot, configFromWire, configToWire, encodeSnapshot, packInput } from "../src/net/sync";
@@ -3373,6 +3374,65 @@ console.log("\n=== gems and the wardrobe ===");
   check("a case past what's bought refuses a placement",
     !cased.assignTrophy(MAX_TROPHY_CASES, cased.inventory[0]!));
   check("gems actually left the account", cased.gems === 0);
+
+  // Standards (docs/gem-sinks.md §4A) make the same promise, checked the same way, plus
+  // the doc's own falsifiable claim stated directly: "buy every banner style ... and
+  // assert the displayable-marks set gains zero entries." A character with several
+  // earned marks flies every one of them, in every bought cloth, and the sheet — and the
+  // set of marks it's even allowed to fly — never moves.
+  const flying = geared(20, 4247, 10);
+  // geared() grants no gems, and buyBannerStyle silently no-ops on an underfunded
+  // account (returns false, same as "already owned") — exactly the difference the
+  // checks below are trying to prove doesn't exist. Fund it for real, off the styles'
+  // own prices rather than a guessed constant, so every purchase below actually happens.
+  flying.gems = BANNER_STYLES.reduce((sum, s) => sum + s.price, 0);
+  flying.player.legendComplete = true;
+  flying.player.delveChallengerBadges[13] = 22;   // tier 14, "Death March IV · Delve 22"
+  flying.player.towerChallengerBadges[4] = 18;     // tier 5
+  flying.player.challengerBadges.abyss = 8;
+  flying.player.planetChallengerBadges.htrae = 3;
+  flying.player.raidChallengerBadges["the-ferryman"] = 2;
+  const marksBefore = JSON.stringify(
+    standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort());
+  const flyingSheetBefore = JSON.stringify(flying.player.mods);
+  // Asserted at the point of purchase, not just funded and trusted: buyBannerStyle
+  // returns false for "underfunded" and false for "already owned" alike, so an ignored
+  // return value here is indistinguishable from a real purchase — which is exactly what
+  // let an unfunded fixture run silently until the wear loop below threw twenty lines
+  // away from the actual cause. The free default (price 0) is skipped on purpose;
+  // buyBannerStyle refuses it by design (nothing to buy), which isn't a failure.
+  for (const style of BANNER_STYLES) {
+    if (style.price <= 0) continue;
+    if (!flying.buyBannerStyle(style.id)) {
+      throw new Error(`should have been able to buy ${style.id} for ${style.price} gems`);
+    }
+  }
+  check("buying every banner style gains zero displayable marks",
+    JSON.stringify(standardsFor(flying.player, flying.player.classId).map((m) => m.id).sort())
+      === marksBefore);
+  const marks = standardsFor(flying.player, flying.player.classId);
+  // Exact, not a floor: one mark banked per family above (legend, delve, tower, abyss,
+  // planet, raid), so anything other than 6 means one of those six silently failed to
+  // attach — a >= bound already let "raid-the-ferryman" (wrong id, zero raid marks) pass
+  // as "5 is at least 5" once. Printing the ids is what makes that visible without
+  // re-deriving it by hand next time.
+  check("this character earned exactly the six marks this fixture set up", marks.length === 6,
+    `${marks.length}: ${marks.map((m) => m.id).join(", ")}`);
+  for (const m of marks) {
+    if (!flying.setFlownStandard(m.id)) throw new Error(`should have been able to fly ${m.id}`);
+  }
+  for (const style of BANNER_STYLES) {
+    if (!flying.setFlownBannerStyle(style.id)) {
+      throw new Error(`should have been able to wear ${style.id} after buying it`);
+    }
+  }
+  flying.player.refresh();
+  check("a character flying an earned mark in a bought cloth has a byte-identical sheet",
+    JSON.stringify(flying.player.mods) === flyingSheetBefore);
+  // The falsification: an id nothing earned (a mode this character never banked, and a
+  // string that never named anything) both have to be refused, not just "usually absent".
+  check("flying a mark this character never earned is refused", !flying.setFlownStandard("mode:vigil"));
+  check("flying a nonsense id is refused", !flying.setFlownStandard("not-a-real-mark"));
 }
 
 console.log("\n=== combat stats overlay: powerless, like cosmetics ===");

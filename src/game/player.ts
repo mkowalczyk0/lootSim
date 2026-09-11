@@ -27,6 +27,7 @@ import {
 import { itemMods, requiredLevel, zeroStats, type Item, type Stats } from "./item";
 import { NAMED_BY_ID } from "../data/named";
 import { RELIC_SLOTS, relicSocketBlocker, wornRelicEffects } from "../data/relics";
+import { DEFAULT_BANNER_STYLE } from "../data/standards";
 
 /** Fraction of max health a level-up restores. Not a full heal — that made deaths rare. */
 const LEVEL_UP_HEAL = 0.6;
@@ -248,6 +249,16 @@ export class Player {
    * a death or a bail-out never rolls it back, because the hit still landed.
    */
   lifetimeMaxHit = 0;
+  /**
+   * Standards (`docs/gem-sinks.md` §4A). `flownStandard` is a `StandardMark` id or null —
+   * never a stored label, so a retired or unearned id just renders nothing rather than a
+   * stale claim; `standardLabel` re-derives the text from the badge fields above on every
+   * read. `flownBannerStyle` is which cloth it renders in, always a real id
+   * (`normalizeFlownStyle` guarantees that on load). Neither field is ever read outside
+   * `render/`/`ui/` — see `tools/standards.ts`.
+   */
+  flownStandard: string | null = null;
+  flownBannerStyle: string = DEFAULT_BANNER_STYLE;
   /** Current HP persists across floors within a dive; a full heal happens in town. */
   health = 150;
   /** Legacy mana pool, kept for the HUD and potions. A class's real casting resource is

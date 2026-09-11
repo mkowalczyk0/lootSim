@@ -161,6 +161,7 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
     // the login screen with nothing of this account left in memory.
     () => { void account.logout().finally(() => window.location.reload()); },
     recordsClient,
+    who.username,
   );
 
   /**

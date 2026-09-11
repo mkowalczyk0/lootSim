@@ -325,6 +325,14 @@ export const COSMETIC_ART: Record<string, CosmeticArt> = {
       "....OOOOOOOOOOOO....",
     ],
   },
+  hatHeadband: {
+    dx: BODY_DX, dy: 3,
+    grid: [
+      "....OOOOOOOOOOOOOO..",
+      "....O111111111111O..",
+      "....OOOOOOOOOOOOOO..",
+    ],
+  },
 
   // --- ears ---
   earsCat: {
@@ -362,6 +370,15 @@ export const COSMETIC_ART: Record<string, CosmeticArt> = {
       "....O2O......O1O....",
       ".....O2O....O1O.....",
       ".....OOO....OOO.....",
+    ],
+  },
+  earsWolf: {
+    dx: BODY_DX, dy: 1,
+    grid: [
+      "......O......O......",
+      ".....O1O....O1O.....",
+      "....O111O..O111O....",
+      "....OOOOO..OOOOO....",
     ],
   },
   earsAntenna: {
