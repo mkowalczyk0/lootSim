@@ -20,9 +20,12 @@ out or genuinely need a decision.
    that lands on `master` hot-reloads and interrupts their session. So: **every session
    works in its own git worktree**, finished gate-green branches **queue rather than
    land**, and you **batch the queue behind a single yes/no** to the owner before merging.
-4. **Delegate by model.** `lootsim-26` and `lootsim-d8` are Opus — give them the longest
-   and hardest work. `lootsim-97`, `lootsim-56`, `lootsim-f1` are Sonnet — generic,
-   well-specified tasks.
+4. **Delegate by model — but check, don't inherit this list.** As of the handover:
+   `lootsim-26` and `lootsim-d8` are Opus (longest and hardest work), `lootsim-97` is
+   Sonnet, and `lootsim-56` is **Fable**, not Sonnet as an earlier version of this
+   document said. The pool composition drifted mid-run without anyone's bookkeeping being
+   wrong, so **ask each session its own model rather than trusting any written roster,
+   including this one.**
 5. **Be frugal.** `/compact` and `/clear` between tasks.
 
 ## Where things stand
@@ -129,9 +132,14 @@ while merges are being sequenced. Say the word when the queue is quiet.
 
 ### 5. Held work
 
-**26 is holding §19** — the four hand-drawn boss poses — behind two conditions they set
-themselves and have not yet settled. **Neither is ceremony, and neither is satisfiable
-after the poses are commissioned**, which is why they are held rather than parallelised:
+**§19 — the four hand-drawn boss poses — is unowned.** This section originally said 26 was
+holding it; **26's context was cleared during the handover and the hold went with it.** The
+work is unassigned now, not held, and that distinction matters: an unowned item waits
+forever while everyone assumes someone has it.
+
+**The two conditions below survive the loss of their owner and are still the right gate.**
+Neither is ceremony, and — this is the load-bearing part — **neither is satisfiable after
+the poses are commissioned**, so they are pre-spend or they are nothing:
 
 - Re-derive the 23-of-35 coverage figure from f1's own cause table, rather than inheriting
   it across three sweeps and a PM handover. The owner chose *four* poses partly on the
@@ -140,7 +148,12 @@ after the poses are commissioned**, which is why they are held rather than paral
   that correctly resolves away from rest. The instrument that diagnoses the defect is
   shaped to flag the fix — the same family as everything in `docs/blind-instruments.md`.
 
-Let them finish; don't hand the poses to someone else.
+Whoever picks this up starts by satisfying both, not by commissioning art.
+
+**A general lesson from how this section went wrong:** a hold that lives only in one
+session's context is not a hold, because a `/clear` erases it and the work silently
+becomes unowned while the handoff still says it's covered. If something is genuinely
+blocked, the block belongs in a file.
 
 ## Mistakes I made, so you don't repeat them
 
