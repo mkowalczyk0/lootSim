@@ -1,5 +1,12 @@
 # Co-op transport: should the relay change? (decision memo, 2026-09-10)
 
+**Status 2026-09-11: the memo's recommendation shipped. Option 1 is on master and the
+transport is unchanged.** The body below was written in the future tense about a branch;
+read ["What landed"](#what-landed-2026-09-11) first — it says which of that future
+happened, what is still open, and what nobody has verified. Everywhere the text says
+"this branch", it means `f1e354e` + `16a577a` + `e6a3957` + `19d12d7`, all of them
+ancestors of `a4cdac6`.
+
 **Short answer: no, not for the delay the owner reported — that delay is built into how
 the client draws things, not into how the packets travel, and this branch fixes the two
 worst cases of it structurally. Keep the dependency-free relay.** A hosted relay is a
@@ -9,6 +16,68 @@ reachability is what the owner actually wants.
 The owner's words: *"Additionally we need to look into a different way to do multiplayer,
 maybe the cloudflare gate? Attacks still have delays, very prevalent when you use
 wards/AOE abilities that follow the player, horrendous delay."*
+
+<a id="what-landed-2026-09-11"></a>
+## What landed (2026-09-11), and the honest remainder
+
+The five reports bundled as `docs/docket.md` §33 were re-triaged on `a4cdac6` by reading
+the code rather than the commit prose, because §33's own status word ("Held by session 56.
+In flight.") had outlived the work by a day — the docket's documented failure mode, and the
+reason the sweep was done as a claim check rather than a citation check.
+
+**All five are fixed on master.** Each row below was confirmed at the source, and every
+hash is an ancestor of `a4cdac6`:
+
+| Report | Where it was fixed | What watches it |
+| --- | --- | --- |
+| Wrong resources in the client UI | `16a577a` — `HeroSnap.rs` carries every `ResourceSpec` pool by position; `applyHero` writes them | `npm run smoke`, as a comparison against a host whose pools were moved off their starting values first |
+| Broken skill cooldowns | `16a577a` — `Dungeon.canCast` reads the wire's `cd` rather than the client's own `hero.rt`, which never casts and so is never on cooldown | `npm run smoke`, with the old read quoted as the negative control |
+| Bosses snapping onto another player mid-telegraph | `19d12d7` — `e.facing` is locked once in `beginAbility` and no longer re-aimed every cast tick, so a `followId`'d cone or line cannot reassign onto a different hero an instant before it lands | `npm run bosstarget` (`18c3853`), in `npm test` |
+| The Tower queuing the Delve | `e6a3957` — `PARTY_PORTAL`, a total `Record<RunModeId, HubStationKind \| null>`, replaced an allowlist that knew the two rifts and defaulted everything else (the Tower included) to the Delve portal | `npm run smoke`, including that the old expression and the table disagree *on the Tower specifically* |
+| Attack delay, worst on wards/AOE that follow the player | `f1e354e` — a zone crosses the wire with its owner index and drift velocity, and `Dungeon.carryZones` anchors it to the client's *predicted* hero after prediction each tick; a client's own swing is drawn the tick it is pressed | `npm run smoke`, with the client's hero walked ahead of the wire and the zone required to be under the walked body |
+
+### (a) The honest remaining half of the attack-delay report
+
+**A skill's or an ultimate's *effect* is still not predicted, and shows RTT + roughly
+60–125 ms after the press.** That is by construction, not by defect: the "What the delay
+actually is" table below applies unchanged to every non-predicted thing, and only
+two things are predicted today — the local hero's movement/dash (`predictStep`) and the
+*look* of its basic attack (`startSwing`). A cast's effects were left alone deliberately
+("too varied to fake safely"), so the owner's *"attacks still have delays"* is closed for
+the case they called prevalent and open for every cast.
+
+This matters more than it reads, because it is the thing most likely to be reported again:
+the follow-zone fix removed the worst offender, and the next-worst is a ward or AOE that is
+*cast* rather than *carried*. **If residual delay comes back, it is prediction work and not
+transport work** — no option 2, 3 or 4 below touches the 60–125 ms cadence-and-interpolation
+term at all, and on a LAN the RTT term they do touch is about a millisecond. Whoever picks
+this up should also read `docs/mp-stuttering.md` first: the last attempt to improve client
+smoothness without prediction was a de-jitter buffer that measured well, played worse, and
+was reverted the same day.
+
+### (b) A client's cooldown and resource readouts step at 20 Hz
+
+`Dungeon.update` returns early for `role === "client"` after reconciling, predicting and
+carrying zones — `hero.resources.tick` and the skill-cooldown decrement never run there. So
+the numbers are correct (they are the host's, which is the fix in the table above) but they
+advance in 50 ms steps rather than sweeping. Cosmetic, and named here only so the next
+person to look at a cooldown ring on a client knows it is a consequence of host authority
+rather than a second bug. Ticking them locally between snapshots would be a prediction, and
+would need the same care as (a).
+
+### What nobody has verified
+
+**Reports 1, 2 and 5 are unverified in a browser.** No Claude session on this machine can
+click through the UI, so every claim above about what the client *displays* is read off the
+source and the headless host-plus-client rig in `tools/smoke.ts`, never seen. The three that
+are claims about pixels — the resource bar, the cooldown ring, and whether a ward now sits
+under the hero on a real link — need the owner's eye to actually close.
+
+**And the memo's own recommended next step was never run.** The no-code experiment below —
+the owner hosts once with the machine quiet and once with a couple of cores loaded, and says
+which felt worse — costs nothing and is still the cheapest way to find out whether host CPU
+starvation, not the network, is what remains. `docs/docket.md` §1 has the full argument for
+why that is the live hypothesis; nothing in this batch tested it.
 
 ## What the relay is today
 
