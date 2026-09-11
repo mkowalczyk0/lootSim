@@ -131,11 +131,21 @@ export const RELIC_ODDS = {
    */
   towerCache: 0.025,
   /**
-   * An artifact from a raid **encounter** (UAT §15) — the most generous artifact source in
-   * the game per floor, on purpose: a raid is one floor with one fight on it, gated behind
-   * a frontier and its own tier ladder, and §15's whole promise is "a reason to repeatedly
-   * farm specific bosses". Still comfortably above `raidRelic` — rule 5's ratio holds
-   * inside a raid the same way it holds inside the Abyss.
+   * An artifact from a raid **encounter** (UAT §15) — the largest single artifact chance
+   * authored anywhere in this table, on purpose: a raid is one floor with one fight on it,
+   * gated behind a frontier and its own tier ladder, and §15's whole promise is "a reason
+   * to repeatedly farm specific bosses". Still comfortably above `raidRelic` — rule 5's
+   * ratio holds inside a raid the same way it holds inside the Abyss.
+   *
+   * **It is not the most generous artifact *source* in the game, and this comment used to
+   * claim it was.** That claim compared per-source chances (0.18 > `abyssBoss` 0.14) and a
+   * per-source chance is not what a player experiences. An Abyssal Rift boss matches
+   * *fourteen* artifact definitions and rolls each independently, so the Abyss pays a
+   * relic-tier item on 92% of tier-1 clears and 99% of tier-8 clears against a raid's 18%
+   * and 39% — and it wins per floor too, ~40% against ~18%, even after normalising the
+   * Abyss's five floors. Measured 2026-09-10; see `docs/relic-economy.md` and
+   * `npm run relicunion`. Left standing as a finding rather than fixed, because the Abyss
+   * is content people are playing and lowering it is a live balance call for the owner.
    *
    * **Paid from the encounter only, and that is what makes this number mean what it says.**
    * A raid floor is its own boss floor, so it pays twice: the encounter and the closing
