@@ -180,3 +180,73 @@ absence above doesn't read as a miss.
 | 2a | `docs/docket.md` §6 | "last monster" marked STILL OPEN | flip to measured/closed, citing `docs/last-monster-search.md` |
 | 2b | `docs/docket.md` §35 | marked "In flight" | mark landed (`fb51a2e`) |
 | 2c | `docs/docket.md` §34 | marked "In flight" | mark built/queued (`66856f8`, pending land) |
+
+---
+
+## Addendum: `investigate/power-curve2` — an orphaned branch, not a stale document
+
+Assessed on request (docket §28's method extends to a claim sitting in git rather than in a
+file: an unlanded branch making a claim nobody has re-checked against current master). Two
+commits (`630dfb8`, `2bf2fe1`), four files (`docs/power-growth.md`, `tools/powercurve.ts`,
+`tools/bot.ts`, `package.json`), branched from `7ce8bef` — well before tonight's batch.
+**Judgment only, nothing built, rebased, or landed.**
+
+**It's a hybrid the three offered categories don't quite fit, and forcing it into one would
+lose the half that matters.**
+
+**The decision recorded in it exists nowhere else and would be lost if the branch is
+discarded.** `docs/reachable-band.md` on master — the document this branch's own commits
+say they're the follow-on to — still reads `Status: measured, not fixed, and deliberately
+not recommended`, exactly as before. The branch's second commit records that **the owner
+was shown four priced routes and chose "accept the slope, write it down"** — the Delve's
+depth 13-19 soft ceiling is intended design, not a defect, gear (not level) decides where a
+player's ceiling sits, and the Proving stays reachable at level 40 in Legendary gear. None
+of that is anywhere on master. This is category 1's shape (a decision, not a fresh
+question) but the opposite of its usual direction: normally a branch is stale because the
+world moved past it; here the branch is the *only* place the world's own decision is
+written down.
+
+**The tooling is superseded, and not a documentation-only rewrite would fix it.**
+`tools/bot.ts`'s `armTrees()` — the branch's own fix for "`geared()` builds an empty
+character" — is byte-for-byte already on master (`b70e603`, "fix(bot): arm both trees in
+geared() and campaign()"), landed through a different, later investigation that found the
+identical defect independently. **Master's version goes further than the branch's own
+architecture**: the branch deliberately kept `armTrees` opt-in specifically so it wouldn't
+"move every campaign and balance number in the acceptance gate at once," and master folded
+it directly into `geared()`/`campaign()` unconditionally instead — a bigger change than
+this branch chose to make, and one an owner call authorised elsewhere (`b70e603`'s own
+message: "scoped exactly as authorised"). Rebasing this branch today would not be a clean
+merge — it would be two `export function armTrees` in one file, a compile error, not a
+silent duplicate. `tools/powercurve.ts` also reads a `damageDealt` field on `FloorResult`
+that only exists on this branch, not on master's `tools/bot.ts`, so the tool would not even
+type-check against current master without that field being reasoned about fresh (does it
+still mean what the branch's own write-up says once `geared()` arms trees by default,
+rather than opt-in?). And the `package.json` line it adds still uses the pre-`run-tool.mjs`
+direct-esbuild pattern every other script migrated off of — the exact concurrent-run hazard
+that migration exists to prevent. None of this is a rebase; it's rework, and probably a
+half-day of it before the instrument could be trusted again.
+
+**What survives the tooling's staleness is the finding, not the instrument.** The branch's
+own account of its methodology (§7 of `docs/power-growth.md`) already treats the
+empty-build defect as something it corrected for locally before drawing any conclusion —
+its numbers were never computed on the broken instrument, they were computed *despite* it,
+using the branch's own now-redundant `armTrees`. So the substance — enemy health geometric
+and unbounded against a player power curve that is polynomial or capped-geometric, one
+rarity step priced at 4.87 depths against a level's ~0.1, the falsification in §8b, and the
+owner's choice of D — does not depend on the instrument that's now duplicated. It was
+measured correctly; it just wasn't measured with the tool that happens to already exist.
+
+**Recommendation, stated as a judgment rather than a task list**: this is closer to
+category 1 than to 2 or 3, but "close the branch with a note saying where the answer
+lives" doesn't apply either, because there *is* nowhere else the answer lives yet. The
+decision in `docs/power-growth.md` §0 is worth landing as its own document, written fresh
+against current master rather than by rebasing this branch's diff — the design record and
+the "owner chose D" fact are the valuable cargo, and neither needs `armTrees` or
+`powercurve.ts` to travel with them. The tooling half (`tools/bot.ts`, `tools/powercurve.ts`,
+the `package.json` line) should be closed as superseded by `b70e603`, with a note pointing
+here so nobody revives it off the branch name in three months believing it's still the
+current fix. Also worth someone's attention, separately and not part of this judgment: the
+commit's own §11 proposed CLAUDE.md wording for the difficulty-philosophy section, marked
+"not applied — that file goes to the owner directly," which nobody appears to have carried
+forward into `docs/claude-md-pending.md` — a fifth entry that page doesn't have yet, if the
+decision is confirmed still standing.
