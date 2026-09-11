@@ -170,6 +170,51 @@ absence above doesn't read as a miss.
 
 ---
 
+## Scope note added 2026-09-10, after the sweep landed: `src/**` comments are the known gap
+
+This sweep's scope was `CLAUDE.md`, `docs/docket.md` and the design records under `docs/`.
+**Source-code comments were never in it**, and §3 above already names one instance that fell
+outside for that reason (`RELIC_ODDS.raidArtifact`'s claim that a raid was the most generous
+artifact source). A second instance turned up the same evening, and it is worth recording
+because it is much stronger evidence than the first that the gap is real rather than
+theoretical.
+
+**What happened.** The `DropPool` type in `src/data/drops.ts` was authored with a doc comment
+describing a "compete for one roll, then a weighted pick" mechanism. That mechanism was
+refused by `npm run relics` about an hour later — it silently removed the Abyssal Rift's
+ability to pay more than one artifact per kill — and replaced. The design record
+(`docs/abyss-odds.md`) was corrected at the time. **The comment sitting directly above the
+type was not**, and it survived until a merge conflict happened to put a human eye on that
+exact region.
+
+Three things make this sharper than the §3 instance:
+
+- **It went stale within hours, not across months.** The usual mental model of stale prose is
+  slow drift as the code moves away from it. This was a comment that was wrong almost
+  immediately, by the same author, in the same session.
+- **The author had already corrected the same claim elsewhere.** The design record was
+  updated and the code comment was missed — so the failure is not "nobody noticed the
+  decision changed", it is "the decision was recorded in one of its two homes".
+- **A comment describing a rejected design is worse than an out-of-date one**, because the
+  next reader implements from it. This one described a mechanism that had failed its own
+  acceptance gate, presented as the design.
+
+**The scope note, then**: this document's findings are a statement about three files and one
+directory. They are **not** evidence that `src/**` is clean, and the two instances now on
+record — one found during the sweep and ruled out of scope, one found hours after it landed —
+are the only two anyone has looked for. A reader treating this sweep as a clean bill of health
+for the codebase's prose would be over-reading it in exactly the direction its own method
+finding warns about.
+
+**Deliberately not commissioned here.** `src/**` is a far larger surface, two instances is not
+a demonstrated pattern, and a sweep nobody has scoped is how a cheap task becomes an
+open-ended one. Recording where the boundary is, and that something was found just past it
+twice, is the useful move. If it is ever taken on, the cheapest first cut is comments sitting
+on **types and constants that a recent branch changed** — both known instances are exactly
+that, and neither would have needed a full read of `src/`.
+
+---
+
 ## Summary for whoever lands fixes off this
 
 | # | File | What's wrong | Fix is |
