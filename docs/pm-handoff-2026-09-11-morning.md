@@ -78,7 +78,8 @@ Worktrees are under `~/Desktop/lootSim-worktrees/<name>`.
 | `feat/relic-level-gate` | `bb01df2` | `relic-levelgate` | `379d062` landed. `b345480` + `af54435` + `bb01df2` remain: a `tools/relics.ts` check, a source comment, and the renumber to entry 24. Needs a gate. |
 | `feat/affix-codex` | `3d84216` | `affix-codex` | Committed at handoff. Glossary, Codex "Affixes & Stats" view, Reforge possibilities panel, Hero screen cursor/hover, two `claude-md-pending.md` corrections, the `wardPower` blind-instruments entry. **Unverified in a browser** — said so in the commit message. Full gate was running: PID 31127, log `/tmp/affix-codex-test2.log`. |
 | `fix/rewards-harvest-dial` | `3f50d6b` | `rewards-dial` | **Already split out — land this first.** `tools/rewards.ts` harvest dial 8 → 5 with the 48-seed measurement in the comment, plus blind-instruments entry 25. `npm run rewards` green (12 plain, 16 hard). Off `cf33abe`. |
-| `art/wave-2` | `f2fbd80` | `art-wave2` | Six new Hell monsters finished, wired, and approved by the owner on sight. Smoke was in flight. Merge-ready once green. |
+| `art/wave-2` | `f2fbd80` | `art-wave2` | **RED — not merge-ready.** Six new Hell monsters finished, wired, approved by the owner on sight. Smoke: 815 ok, **1 FAIL** — "an infused monster stays at least 28 luminance apart from its own sector's floor". The infused Gore-Hound sits 24–25 above three Reliquary floors (Hollow Orchard, Rotting Garden, Unbound Spire) plus 1–2 more roles each. **This is the gate working**: before §1a those roles borrowed the five old bodies and were never measured. Fix is small and belongs in `art/monsters/finish-delve.ts` — darken the named roles' mid-tones a step, rerun the finishing script, re-smoke. **Do not pin the three sectors; that would be pinning a new violation, not a known one.** ~one short session. |
+| `art/summons` | `9c6bfca` | `art-summons` | Docket §36 first pass, off `ebc61cb`. All **21 bespoke summon raws on disk** under `art/summons/` (six rigged bodies at 8 rotations, fifteen free-form south images) plus `art/summons/README.md` with the per-family generator-mode plan, the three decisions agreed with the seam owner, and every PixelLab job id. **Nothing wired** — no ATLAS rows, no PNGs in `src/`, the triangle still draws. Judged at thumbnail only; the ghost deckhand's red-white striped shirt wants muting in the finishing pass, not a reroll. |
 
 Older branches (`fix/boss-xp-hole`, `investigate/*`, `docs/*`) are parked and were not
 part of tonight's work.
@@ -116,7 +117,14 @@ part of tonight's work.
    written in three places in the branches (`docs/nine-circles.md` §7, the fixture's own
    comment, blind-instruments entry 25). `feat/nine-circles` carries a duplicate of this
    commit at `14dd607`; drop it when rebasing.
-5. **Then the assigned work in §6.**
+5. **Extend `npm run chroma`'s scope to `summon.*` ids — PM ruling, not a question.**
+   The repo's rule is that a hot saturated accent is the monsters' "this is looking at you"
+   signal, and the summon art was authored with **no hot accent** so the element tint is the
+   only saturated thing on a minion. Nothing enforces that: `chroma`'s id matching does not
+   cover `summon.*`, so the rule exists in prose and in one session's discipline. That is the
+   "scope had silently emptied" family the blind-instruments file is mostly made of, caught
+   before the art lands rather than after. Do it in whichever branch wires the summon PNGs.
+6. **Then the assigned work in §6.**
 
 ---
 
@@ -217,8 +225,7 @@ back, plus a separate assertion that a genuinely bogus place *is* dropped.
 
 **Art wave 2** — `docs/art-wave-2.md` on `art/wave-2`. The owner chose **Menu B (ambitious)**,
 a **full re-cut** of the Nine Circles environments, and **four poses** for the blow. §1a (six
-Hell monsters) is done and approved. Next was §36 summons, then §2a monster idles. **14
-generations spent, ~1,266 of 1,280 remaining, resets Oct 7** — budget is not the constraint,
+Hell monsters) is done and approved. Next was §36 summons, then §2a monster idles. **35 generations spent (14 on the Hell six, 21 on the summon raws), ~1,245 of 1,280 remaining by the art session's count, unverified against `get_balance`; resets Oct 7** — budget is not the constraint,
 session time is. Two owner rulings recorded in the repo: the Grave Piper ships deliberately
 out of the density band (the in-band candidate loses the egg-sac that makes it read as a
 summoner), and the Bloat-Fiend's accent comes through its belly rather than its eyes as an
