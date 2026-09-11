@@ -46,9 +46,10 @@ import type { ItemRequirement } from "./crafting";
 import type { Element } from "./elements";
 import { legendName } from "./legends";
 import type { MaterialBag } from "./materials";
-import { MODES, RUN_MODES, type RunModeId } from "./modes";
+import { MODES, RUN_MODES, riftConfig, type RunModeId } from "./modes";
 import { PLANETS } from "./planets";
-import { RAID_BY_ID, raidOfBossId } from "./raids";
+import { DELVE_BOTTOM } from "./legends";
+import { RAID_BY_ID, raidConfig, raidOfBossId } from "./raids";
 
 // --- sources ----------------------------------------------------------------
 
@@ -445,6 +446,67 @@ export function riftBossSources(
     ...(minTier !== undefined ? { minTier } : {}),
     ...(pool !== undefined ? { pool } : {}),
   }));
+}
+
+/**
+ * The **easiest** effective depth at which this source can pay out — the floor a player has
+ * to reach to have any chance at it.
+ *
+ * This is the basis of the relic level gate (`relicRequiredLevel`). A relic has no `ilvl`, so
+ * unlike an item it cannot derive a requirement from its own power; what it has instead is a
+ * drop site, and a drop site already carries an authored difficulty. Reading that rather than
+ * authoring a level per definition is the same call `requiredLevel()` makes for gear: derived
+ * cannot drift, and a relic added tomorrow is gated for free with no number to forget.
+ *
+ * Every branch reuses the real configuration rather than restating rift maths — `riftConfig`
+ * and `raidConfig` are asked for the depth they actually produce, so a retuned `baseDepth`
+ * moves the gate with it.
+ *
+ * Returns 1 for a `craft` source, which a relic may never carry, and for anything a query
+ * can reach from the very first floor.
+ */
+export function sourceDepth(src: DropSource): number {
+  switch (src.kind) {
+    case "boss": {
+      if (src.minDepth !== undefined) return src.minDepth;
+      // A Proving is the bottom of the Delve, whatever else its id says.
+      if (src.bossId.startsWith("legend-")) return DELVE_BOTTOM;
+      const mode = src.mode;
+      if (mode !== undefined && MODES[mode]?.isRift) {
+        // The boss is on the rift's last floor, at the lowest tier this source allows.
+        const tier = Math.max(1, src.minTier ?? 1);
+        return riftConfig(mode, tier, MODES[mode].floors).depth;
+      }
+      // A Delve encounter: `bossFor` puts the i-th boss at depth 5*(i+1).
+      const i = BOSSES.findIndex((b) => b.id === src.bossId);
+      return i >= 0 ? (i + 1) * 5 : 1;
+    }
+    case "clearCache": {
+      const mode = src.mode;
+      if (mode !== undefined && MODES[mode]?.isRift && src.minTier !== undefined) {
+        return Math.max(src.minDepth, riftConfig(mode, src.minTier, MODES[mode].floors).depth);
+      }
+      return src.minDepth;
+    }
+    case "worldDrop":
+      return src.minDepth;
+    case "tower":
+      // A height, not a depth — but the Tower walks the Delve's own curve height-for-depth
+      // (UAT §21), so the level a climb wants is the level that depth wants. That identity
+      // is asserted by `npm run world`; this reads it rather than assuming it.
+      return src.minFloor;
+    case "raid": {
+      const spec = RAID_BY_ID[src.raidId];
+      if (!spec) return 1;
+      return raidConfig(spec, Math.max(1, src.minTier ?? 1)).depth;
+    }
+    case "chest":
+      // A chest is bought, not reached. Its tier says nothing about a floor, and no relic
+      // carries one; named items that do are not gated by this.
+      return 1;
+    case "craft":
+      return 1;
+  }
 }
 
 // --- reading a source -----------------------------------------------------------------

@@ -90,8 +90,14 @@ export interface DepthProfile {
  * `recommendedLevel` and `baseRecommendedLevel` can never fork into two derivations of
  * "what level should you be": `profileFor` calls this twice, once at the floor's real
  * `danger` and once at 1, rather than each field authoring its own math.
+ *
+ * Exported because the relic level gate (`relicRequiredLevel` in `data/relics.ts`) asks the
+ * same question about the floor a relic drops on. A relic has no `ilvl` to derive a
+ * requirement from the way an item does, so it derives one from *where it drops* — and the
+ * answer to "what level does that floor want" must be this formula rather than a second one
+ * that can drift away from it.
  */
-function levelAdvice(d: number, danger: number): number {
+export function levelAdvice(d: number, danger: number): number {
   return Math.max(1, Math.round(d * 0.9 * Math.pow(danger, 0.35)));
 }
 
