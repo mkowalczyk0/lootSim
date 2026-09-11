@@ -226,8 +226,25 @@ console.log("\n=== §16's two missing axes actually reach the loot ===");
 
   const seeds = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008, 4009, 4010, 4011, 4012];
   const depth = 12;
-  /** Enough danger for the whole capped bonus (+3 ilvl), gentle enough to survive. */
-  const dial = 8;
+  /**
+   * The hard side's dial, calibrated to where a standing target is still *contested*.
+   *
+   * This was 8 ("enough danger for the whole capped bonus, +3 ilvl") and it sat on its own
+   * bar: measured 2026-09-11 over four disjoint 12-seed blocks, a level-60 swordsman at
+   * depth 12 on Challenger 8 is dead in 8 seconds on every seed, kills ~3 trash, and
+   * harvests 3/8/7/4 drops per block on master — nearly all of them from the 5 elites in
+   * 48 seeds that happened to walk into its swing before it died. The Nine Circles re-cut
+   * changed the floor at depth 12 and that read 1/1/0/1: same kills, same survival, zero
+   * elites reached it. A row that dies in eight seconds is the "pinned at 0/16" instrument
+   * CLAUDE.md warns about — it can only move by luck, and it did.
+   *
+   * At 5 the same target lasts ~11 seconds, kills ~7 per seed, and harvests 16/15/7/9
+   * (master) and 9/12/9/14 (the re-cut) per block — every block on both trees clear of the
+   * bar of 3 by more than double. Nothing this section asserts needs the +3: item level
+   * tracks the character now (docket §23), and the quantity and variant axes are read off
+   * the profile, which climbs at any dial above 0.
+   */
+  const dial = 5;
   const plainDrops = harvest(0, depth, seeds);
   const hardDrops = harvest(dial, depth, seeds);
   const profilePlain = profileFor(depth, delveConfig(depth, 0));
