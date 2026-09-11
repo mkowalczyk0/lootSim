@@ -29,7 +29,7 @@ export const BARD_RHYTHM: ResourceSpec = {
     { on: "skillUse", amount: 14 },
     { on: "block", amount: 4 },
   ],
-  thresholds: [{ at: 80, whileAbove: { cooldownRate: 0.15, wardPower: 0.2 } }],
+  thresholds: [{ at: 80, whileAbove: { cooldownRate: 0.15 } }],
 };
 
 /** Grand Performance is earned when the party *uses* what the Bard gave them, not by the Bard fighting. */
@@ -294,7 +294,7 @@ export const BARD_PROGRESSION: ClassProgression = {
       name: "Minstrel",
       blurb: "The song mends faster than the fight breaks.",
       nodes: [
-        { name: "Gentle Refrain", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.15 } }] },
+        { name: "Gentle Refrain", category: "foundation", effects: [{ kind: "mods", mods: { cooldownRate: 0.06 } }] },
         { name: "Sustained Note", category: "behavior", effects: [{ kind: "mutate", mutation: { id: "mn.sustained_note", label: "your heal-over-time effects last longer", target: { withTag: "heal" }, ops: [{ kind: "zone", scaleDuration: 1.4 }] } }] },
         { name: "Open Hymnal", category: "resource", effects: [{ kind: "resourceRule", resource: "rhythm", patch: { addGeneration: [{ on: "block", amount: 3 }] } }] },
         { name: "Traveling Verse", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "mn.traveling_verse", label: "Restorative Verse becomes a moving heal zone", target: { abilityId: "bard.restorative_verse" }, ops: [{ kind: "addEffect", at: "end", effects: [{ kind: "zone", zone: { radius: 160, duration: 6, tickInterval: 1, follows: true, benefit: "heal" } }] }] } }] },

@@ -207,7 +207,7 @@ const PATHS: readonly UniversalPathDef[] = [
     nodes: [
       { key: "insulation", name: "Insulation", category: "foundation", mods: { fireResist: 8, coldResist: 8, lightningResist: 8 } },
       { key: "grounding", name: "Grounding", category: "behavior", mods: { poisonResist: 8, voidResist: 8, holyResist: 8, arcaneResist: 8, natureResist: 8 }, after: "insulation" },
-      { key: "barrier", name: "Barrier", category: "resource", mods: { wardPower: 0.12 }, after: "grounding" },
+      { key: "barrier", name: "Barrier", category: "resource", mods: { defensePercent: 0.06 }, after: "grounding" },
       { key: "bulwark", name: "Bulwark", category: "behavior", mods: { blockChance: 0.05, defensePercent: 0.08 }, after: "barrier" },
       {
         key: "adamant",
@@ -217,7 +217,7 @@ const PATHS: readonly UniversalPathDef[] = [
         blurb: "Nothing gets through, and nothing you do lands quickly either.",
         mods: {
           fireResist: 12, coldResist: 12, lightningResist: 12, poisonResist: 12, voidResist: 12,
-          holyResist: 12, arcaneResist: 12, natureResist: 12, wardPower: 0.2, attackSpeed: -0.12,
+          holyResist: 12, arcaneResist: 12, natureResist: 12, attackSpeed: -0.12,
         },
       },
     ],

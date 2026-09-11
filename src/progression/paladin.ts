@@ -33,7 +33,7 @@ export const PALADIN_CONVICTION: ResourceSpec = {
     { on: "block", amount: 6 },
     { on: "hitDealt", amount: 2, requireTags: ["holy"] },
   ],
-  thresholds: [{ at: 60, whileAbove: { wardPower: 0.15, healthPercent: 0.05 } }],
+  thresholds: [{ at: 60, whileAbove: { healthPercent: 0.05 } }],
 };
 
 /** Grace — a gentler pool built by healing allies, spent on cleanses and revives. */
@@ -457,7 +457,7 @@ export const PALADIN_PROGRESSION: ClassProgression = {
       name: "Sanctifier",
       blurb: "Draw the safe ground before it is needed and stand your party on it.",
       nodes: [
-        { name: "Hallowed", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.12 } }] },
+        { name: "Hallowed", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.08 } }] },
         {
           name: "Wide Sanctum",
           category: "behavior",

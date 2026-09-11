@@ -358,7 +358,7 @@ export const MOD_POOL: readonly ModRoll[] = [
   { id: "virulent", key: "ailmentChance", kind: "prefix", label: "Virulent", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 1 },
   { id: "caustic", key: "ailmentPotency", kind: "prefix", label: "Caustic", base: 0.1, perTier: 0.35, scale: "linear", where: "any", minTier: 2 },
   { id: "attuned", key: "elementalDamage", kind: "suffix", label: "of Attunement", base: 0.07, perTier: 0.3, scale: "linear", where: "offense", minTier: 2 },
-  { id: "warded", key: "wardPower", kind: "suffix", label: "of Warding", base: 0.1, perTier: 0.3, scale: "linear", where: "defense", minTier: 1 },
+  { id: "warded", key: "defensePercent", kind: "suffix", label: "of Warding", base: 0.1, perTier: 0.3, scale: "linear", where: "defense", minTier: 1 },
   { id: "barbed", key: "thorns", kind: "prefix", label: "Barbed", base: 1.5, perTier: 0, scale: "rarity", where: "defense", minTier: 1 },
 
   // The whole-extra-thing mods. These are the drops people actually shout about.

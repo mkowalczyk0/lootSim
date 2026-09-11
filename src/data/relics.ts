@@ -873,10 +873,10 @@ export const RELICS: readonly RelicDef[] = [
     id: "shard-of-a-broken-throne",
     name: "Shard of a Broken Throne",
     flavor: "A Throne is the law sitting down. This is the part that came off.",
-    description: "Holy damage, a stronger ward, and every ward you raise burns the room a little.",
+    description: "Holy damage, a harder guard, and every ward you raise burns the room a little.",
     art: "relic.shard-of-a-broken-throne",
     effects: [
-      { kind: "mods", mods: { holyDamage: 0.22, wardPower: 0.25, defensePercent: 0.08 } },
+      { kind: "mods", mods: { holyDamage: 0.22, defensePercent: 0.08 } },
       {
         kind: "grantEffect", on: { tag: "shield" },
         note: "Raising a ward scorches everything near you with holy light.",

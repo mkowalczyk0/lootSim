@@ -29,7 +29,7 @@ export const WARDEN_ROOTS: ResourceSpec = {
     { on: "skillUse", amount: 8, requireTags: ["nature"] },
     { on: "hitTaken", amount: 3 },
   ],
-  thresholds: [{ at: 80, whileAbove: { defensePercent: 0.12, wardPower: 0.15 } }],
+  thresholds: [{ at: 80, whileAbove: { defensePercent: 0.12 } }],
 };
 
 /** Ancient Grove is earned by claiming ground — nature skills and terrain, never a kill count. */
@@ -299,7 +299,7 @@ export const WARDEN_PROGRESSION: ClassProgression = {
       name: "Verdant",
       blurb: "Green things, growing fast, between your party and the fight.",
       nodes: [
-        { name: "Green Thumb", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.15 } }] },
+        { name: "Green Thumb", category: "foundation", effects: [{ kind: "mods", mods: { healthPercent: 0.06 } }] },
         { name: "Deep Roots", category: "behavior", effects: [{ kind: "mutate", mutation: { id: "vd.deep_roots", label: "your heal and shelter zones last much longer", target: { withTag: "heal" }, ops: [{ kind: "zone", scaleDuration: 1.5 }] } }] },
         { name: "Photosynthesis", category: "resource", effects: [{ kind: "resourceRule", resource: "roots", patch: { regenPerSec: 4 } }] },
         { name: "Canopy", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "vd.canopy", label: "Verdant Shelter follows the party", target: { abilityId: "warden.verdant_shelter" }, ops: [{ kind: "zone", forceFollows: true, scaleRadius: 1.2 }] } }] },

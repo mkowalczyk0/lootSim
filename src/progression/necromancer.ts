@@ -55,7 +55,7 @@ export const NECROMANCER_SOULS: ResourceSpec = {
     { on: "kill", amount: 6 },
     { on: "summonDeath", amount: 4 },
   ],
-  thresholds: [{ at: 60, whileAbove: { skillDamage: 0.12, wardPower: 0.1 } }],
+  thresholds: [{ at: 60, whileAbove: { skillDamage: 0.12 } }],
 };
 
 export const NECROMANCER_ULTIMATE_METER: ResourceSpec = {
@@ -412,7 +412,7 @@ export const NECROMANCER_PROGRESSION: ClassProgression = {
       name: "Death Knight",
       blurb: "One good soldier is worth ten scarecrows.",
       nodes: [
-        { name: "Iron Bound", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.1, defensePercent: 0.06 } }] },
+        { name: "Iron Bound", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.08 } }] },
         {
           name: "Champion's Share",
           category: "behavior",
@@ -532,7 +532,7 @@ export const NECROMANCER_PROGRESSION: ClassProgression = {
       name: "Bone Lord",
       blurb: "Skip the flesh. Bone does everything flesh does and lasts longer.",
       nodes: [
-        { name: "Calcify", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.12 } }] },
+        { name: "Calcify", category: "foundation", effects: [{ kind: "mods", mods: { healthPercent: 0.06 } }] },
         {
           name: "Spinework",
           category: "behavior",
@@ -675,7 +675,7 @@ export const NECROMANCER_UNLOCKS: readonly PathUnlockDef[] = [
       {
         kind: "resourceRule",
         resource: "souls",
-        patch: { addThresholds: [{ at: 40, whileAbove: { skillDamage: 0.1, wardPower: 0.15 } }] },
+        patch: { addThresholds: [{ at: 40, whileAbove: { skillDamage: 0.1 } }] },
       },
     ],
     ui: { badge: "LCH" },

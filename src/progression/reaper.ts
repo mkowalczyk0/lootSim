@@ -323,7 +323,7 @@ export const REAPER_PROGRESSION: ClassProgression = {
       name: "Soul Warden",
       blurb: "The souls you keep are the ones between you and the floor.",
       nodes: [
-        { name: "Bulwark of the Dead", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.08, wardPower: 0.1 } }] },
+        { name: "Bulwark of the Dead", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.08 } }] },
         { name: "Soul Skin", category: "behavior", effects: [{ kind: "rule", rule: "reaper.sw.soul_skin", note: "Above 10 Souls, incoming damage is reduced by a flat fraction." }] },
         { name: "Reliquary", category: "resource", effects: [{ kind: "resourceRule", resource: "reaped_souls", patch: { max: 25, addGeneration: [{ on: "block", amount: 1 }] } }] },
         { name: "Share the Ward", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "sw.share_the_ward", label: "Soul Shield covers nearby allies", target: { abilityId: "reaper.soul_shield" }, ops: [{ kind: "addEffect", at: "end", effects: [{ kind: "shield", amount: 1.0, scale: "attack", to: "allies", duration: 6 }] }] } }] },

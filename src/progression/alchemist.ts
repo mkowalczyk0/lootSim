@@ -320,7 +320,7 @@ export const ALCHEMIST_PROGRESSION: ClassProgression = {
       name: "Medic",
       blurb: "The best experiment is the one where everyone lives.",
       nodes: [
-        { name: "Field Kit", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.15 } }] },
+        { name: "Field Kit", category: "foundation", effects: [{ kind: "mods", mods: { healthPercent: 0.06 } }] },
         { name: "Triage", category: "behavior", effects: [{ kind: "mutate", mutation: { id: "md.triage", label: "your heals scale up on lower-health allies", target: { withTag: "heal" }, ops: [{ kind: "damagePacket", scaleBase: 1.2 }] } }] },
         { name: "Reserve Stock", category: "resource", effects: [{ kind: "resourceRule", resource: "mana", patch: { max: 140, regenPerSec: 6 } }] },
         { name: "Prescribe", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "md.prescribe", label: "Experimental Serum's outcome is yours to choose", target: { abilityId: "alchemist.experimental_serum" }, ops: [{ kind: "cooldown", scale: 0.8 }] } }] },

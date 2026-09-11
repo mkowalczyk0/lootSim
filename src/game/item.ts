@@ -456,7 +456,7 @@ const MOD_SCORE: Record<ModKey, number> = {
   projectiles: 300, pierce: 150, ailmentChance: 80, ailmentPotency: 70,
   lifeOnHit: 12, manaOnHit: 8, cooldownRate: 90, ultimateRate: 70, ultimatePower: 80,
   skillDamage: 140, meleeDamage: 150, projectileDamage: 120, elementalDamage: 130,
-  wardPower: 50, thorns: 2, ultimateBounces: 200, ultimateProjectiles: 60,
+  thorns: 2, ultimateBounces: 200, ultimateProjectiles: 60,
   healthPercent: 200, defensePercent: 150, manaRegen: 20,
   evasion: 220, blockChance: 160,
   // The universal tree's own knobs (UAT §18). No entry in `MOD_POOL` rolls them, so
