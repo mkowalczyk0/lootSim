@@ -1848,3 +1848,53 @@ number still stands, and now applies to three classes instead of one. "Fix the f
 together" is a ruling about scope, not permission to skip the measurement that the last two
 fixes skipped. The measurement is the part that has failed twice; widening the scope makes
 getting it right more important, not less.
+
+---
+
+## Owner rulings, 2026-09-11 evening — §29 and §27
+
+### §29 — the Paladin gets a cooldown, as originally asked
+
+> "Paladin gets one, as asked."
+
+Build exactly what was reported: a cooldown on the Paladin's ultimate. **Not** the
+twenty-one-class floor, **not** the Paladin-and-Lancer pair. Both were offered and both
+were declined.
+
+**Read this before anyone "corrects" this ruling with a measurement.** Two facts were put
+to the owner alongside the request and neither changed their mind, so neither is grounds
+for reopening it:
+
+1. **All 21 ultimates carry `cooldown: 0`** and are gated purely by their meter. A cooldown
+   on the Paladin makes it the only class in the game gated two ways. That inconsistency is
+   accepted, deliberately.
+2. **`docs/ultimate-uptime.md` ranks the Paladin 16th of 21** at 0.75 ultimates/minute, and
+   fingers the Lancer as the real outlier.
+
+Fact 2 is the one that matters, and it does **not** refute the report. That measurement
+comes from `tools/bot.ts`'s scripted bot, which runs an *empty build* — no tree, no gear, no
+mutations. The owner plays a real Paladin. A number produced by a character structurally
+incapable of expressing the thing being measured cannot overrule someone who played it; that
+is the same error `docs/engineer-ultimate-loop.md` documents, where a fix was verified
+against a character that could not express the bug. This project's standing rule is that a
+defect the owner hit in their own play is established fact.
+
+So: **do not open this by "proving" the Paladin is fine.** If a measurement is wanted, it
+has to be of a built-out Paladin with the tree and gear a player would actually bring, and
+even then it informs the size of the cooldown, not whether there is one.
+
+The `docs/ultimate-uptime.md` finding about the **Lancer** is untouched by this ruling and
+remains open and unassigned. It was explicitly not folded in.
+
+Also carried forward from the same record: **the `under_oath` lead for §29 is disproved.**
+`prevented` is computed before the death-guard clamp, so the loop that item originally
+blamed does not exist. Anyone implementing this starts from the ultimate's own cooldown
+field, not from that rule.
+
+### §27 — assigned, the Engineer loop is being fixed
+
+The armed Engineer's self-refilling ultimate meter is assigned rather than pinned. Diagnosis,
+the 0.0 → 2.0 measurement and the three fix axes are in `docs/engineer-ultimate-loop.md`,
+which deliberately proposes no number. The pin in the gate comes out only when the fix lands,
+and the `warlock.ts` untagged `{ on: "damageDealt", amount: 0.03 }` flagged in §27 stays
+flagged: it passes today, and passing today is not the same as being gated.
