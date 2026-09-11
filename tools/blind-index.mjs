@@ -106,9 +106,22 @@ function sectionEntries() {
 /* ---- side B: the index rows, read from the table -------------------------------- */
 
 const IN_FLIGHT = "*in flight*";
+let indexSpan = "unscanned";
 function indexRows() {
   const rows = [];
-  for (let i = 0; i < lines.length; i++) {
+  // Scope: the index table only, not "every 3-column row in the file whose first cell is a
+  // number". The unscoped version read `rewards-harvest-dial`'s measurement table (a `dial`
+  // column of 8/8/5/5/3/3) as six index rows and reported six duplicate ordinals that do not
+  // exist. A check whose subject is "the whole file" cannot tell the index from a table that
+  // merely looks like one — the scope has to come from the document's structure.
+  const start = lines.findIndex((l) => /^\|\s*#\s*\|/.test(l) || /^\|\s*-+\s*\|/.test(l));
+  let end = lines.length;
+  if (start >= 0) {
+    for (let i = start + 1; i < lines.length; i++) {
+      if (!/^\s*\|/.test(lines[i])) { end = i; break; }
+    }
+  }
+  for (let i = start >= 0 ? start : 0; i < end; i++) {
     const m = /^\|\s*(\d+)\s*\|(.+?)\|(.+?)\|\s*$/.exec(lines[i]);
     if (!m) continue;
     rows.push({
@@ -118,6 +131,7 @@ function indexRows() {
       line: i + 1,
     });
   }
+  indexSpan = start >= 0 ? `${start + 1}-${end}` : "none found";
   return rows;
 }
 
@@ -131,7 +145,7 @@ const entries = [...six.found, ...sections.filter((s) => s.n !== null)];
 const rows = indexRows();
 
 console.log("=== blind-instruments: the index against the entries ===");
-console.log(`  walked ${entries.length} entries (${six.found.length} in "The six", ${sections.length} sections) and ${rows.length} index rows`);
+console.log(`  walked ${entries.length} entries (${six.found.length} in "The six", ${sections.length} sections) and ${rows.length} index rows (index table lines ${indexSpan})`);
 
 // A scope that has emptied. Either side reading zero means this check stopped measuring.
 if (entries.length === 0 || rows.length === 0) {

@@ -46,13 +46,14 @@ proposal for the owner — are deliberately absent from this table.
 | 21 | An aggregate is invariant across the mechanism that changed | "at least one" reading identically under winner-takes-all |
 | 22 | *in flight* | written on a branch, not yet on master |
 | 23 | *in flight* | written on a branch, not yet on master |
-| 24 | *in flight* | written on a branch, not yet on master |
-| 25 | *in flight* | written on a branch, not yet on master |
+| 24 | A real comparison, correctly phrased, green for a reason unrelated to its claim | the relic level gate's own check |
+| 25 | A subject that never survives long enough to be measured | `tools/rewards.ts`'s harvest fixture, dying in 8s on every seed |
 | 26 | *in flight* | written on a branch, not yet on master |
 | 27 | *in flight* | written on a branch, not yet on master |
 | 28 | *in flight* | written on a branch, not yet on master |
 | 29 | *in flight* | written on a branch, not yet on master |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
+| 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1036,7 +1037,7 @@ before the property could occur. If the number sits exactly on its bar, that is 
 pass; it is the instrument telling you it has no margin, and the next unrelated change
 will flip it.
 
-## A twentieth instance (numbering approximate — several land the same night): a stat with no instrument pointed at it at all
+## A thirty-first instance: a stat with no instrument pointed at it at all
 
 Every entry above is a check that ran and returned a wrong or misleading answer about its
 subject. This one inverts the shape completely: **there was no check, because nothing in
