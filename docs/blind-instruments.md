@@ -608,6 +608,69 @@ When a multi-sided harness necessarily holds more than one object that could pla
 "the" state, the harness should say in a comment which one is live and which is inert, so
 the next person extending it doesn't have to re-derive it from the write path.
 
+## An eighteenth instance, and the purest scope defect in the file: a guard that examines one of the forty-one rules it is written over
+
+`tools/smoke.ts`'s "the ultimate meter cannot pay for itself (UAT §10)" is the data-shape
+guard on THE ULTIMATE RULE. It walks all 21 classes and applies two filters to every
+ultimate-meter generation rule:
+
+```ts
+const optOut = rules.filter((r) => r.allowFromUltimate === true);
+const loopy  = rules.filter((r) => r.perUnit === "damage" && !r.requireTags?.length && r.amount > DAMAGE_TOPUP_CAP);
+```
+
+Counted against the live roster, the second filter — the one that is supposed to catch a
+meter refilling itself — **examines 1 of the 41 rules in the game.**
+
+```
+ultimate-meter generation rules in the roster: 41
+  the "loopy" filter actually examines: 1  -> warlock:damageDealt=0.03 (cap 0.05)
+  skipped, perUnit !== "damage": 39
+  skipped, has requireTags:      1  -> engineer:damageDealt[construct]
+```
+
+Two things make this worse than a narrow filter. The single rule it does examine is
+**Warlock's, already tuned safe** at 0.03 under a 0.05 cap — so the check's entire live
+scope is one value that was fixed before the check was written. And the one rule excluded
+by `!r.requireTags?.length` is **the Engineer's** — the class pinned twenty lines further
+down in the same file as a *known, unfixed* self-refilling ultimate (docket §27,
+`docs/engineer-ultimate-loop.md`). The filter meant to catch the exploit skips the one
+confirmed instance of it in the repo, on the strength of a tag the exploit happens to carry.
+
+**The scope came from the two exploits that had already shipped, not from the space of
+loops the resource model permits.** Engineer and Warlock were both untagged
+`{ on: "damageDealt", perUnit: "damage" }` with a fat coefficient, and the filter is a
+transcription of that signature. So it can only ever find the two bugs already found — and
+in fact no longer finds either, because one was fixed and the other acquired a tag.
+
+The prompt was a third class: Paladin's ultimate meter generates
+`{ on: "damagePrevented", amount: 40, perUnit: "maxHealthFraction" }`. Outside the filter
+on `perUnit`, and `on` is not tested at all. The guard passes it without looking.
+
+**This is a scope defect rather than a missed bug, and the distinction is the whole entry.**
+Whether Paladin actually has an exploitable loop is still unmeasured — the first proposed
+mechanism for one turned out not to exist (`prevented` is computed *before* the death-guard
+clamp in `dungeon.ts`, so damage a death-guard absorbs is never counted as prevented at
+all). The guard's blindness does not depend on that answer either way. It would examine one
+rule out of forty-one whether or not a loop was sitting in the other forty, which is exactly
+the property that makes it an instrument problem instead of a bug report.
+
+Note also that it is *green*, and loudly: it prints two `ok` lines per class, 42 of them,
+and 41 of those 42 are a filter matching nothing. This is the same shape as the fourth
+lesson's "every migrated cosmetic fits inside the hero stage" — a check that can only
+conclude what it already assumed, reporting success in volume.
+
+**How to apply:** when a guard is written from the post-mortem of a shipped bug, the
+signature of that bug is a *starting point for the scope, not the scope*. Before trusting
+it, count what it examines against what it walks — `rules.length` versus `filtered.length`,
+printed — and if a filter's live scope is one row, or zero, the check is documentation of
+a fixed bug rather than a defence against the next one. The generalisation to reach for is
+the one the *data model* permits: here, "any rule whose event can be caused by the thing the
+meter casts", which covers `damagePrevented`, `damageTaken`, `statusApplied` and
+`enemyDeath` as readily as `damageDealt`. And a filter clause that excuses a rule for being
+tagged deserves particular suspicion, because a tag is the cheapest thing in the world for a
+new exploit to acquire — as the Engineer's already has.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
