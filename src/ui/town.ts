@@ -44,7 +44,8 @@ import {
   RELICS, RELIC_BY_ID, RELIC_SLOTS, RELIC_TIER_INFO, relicSourceLines, relicsOfTier, type RelicDef,
 } from "../data/relics";
 import {
-  MODES, RIFT_LORE, RUN_MODES, delveConfig, modeUnlocked, riftConfig, type RunConfig, type RunModeId,
+  MODES, RIFT_LORE, RUN_MODES, delveConfig, describeRun, modeUnlocked, riftConfig, type RunConfig,
+  type RunModeId,
 } from "../data/modes";
 import {
   RAIDS, raidConfig, raidLayer, raidTiersOpen, raidUnlocked, type RaidSpec,
@@ -2748,16 +2749,16 @@ export class TownUI {
               <div class="row ${on}" data-index="${i}">
                 <div class="row-main"><span class="name">No portal picked yet</span></div>
                 <div class="row-side warn">${p.isHost
-                  ? "walk into the Delve, a rift or the Reliquary Portal and confirm it"
+                  ? "walk into the Delve, the Tower, a rift, the Reliquary Portal or a Raid Portal and confirm it"
                   : "the host picks by walking into a portal"}</div>
               </div>`);
             break;
           }
           const config = { ...plan.config, players: p.size };
           const profile = profileFor(config.depth, config);
-          const title = config.planet
-            ? `${config.planet.spec.name} T${config.planet.tier}`
-            : config.mode.isRift ? `${config.mode.name} tier ${config.tier}` : `Delve depth ${config.depth}`;
+          // The one naming the flashes use, so the lobby and the deck agree on what the
+          // host picked — this used to be its own copy with a `Delve depth N` fallthrough.
+          const title = describeRun(config);
           rows.push(`
             <div class="row ${on}" data-index="${i}">
               <div class="row-main">

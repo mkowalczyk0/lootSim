@@ -42,7 +42,7 @@ export interface HubStation {
  * and so speaks for the same mode its portal does; the Forge, the Quartermaster and the
  * Comms Relay are not doors to the war and say nothing.
  */
-const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
+export const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   dive: "delve", abyss: "abyss", hoard: "hoard", starmap: "planet", expedition: "planet",
   vigil: "vigil", convergence: "convergence", tower: "tower",
   warTable: "raid", raidPortal: "raid",
@@ -50,6 +50,42 @@ const STATION_MODE: Record<HubStationKind, RunModeId | null> = {
   training: "training",
   forge: null, quartermaster: null, comms: null, trophyHall: null,
 };
+
+/**
+ * The other direction: which portal a party readies up in for a given run mode (UAT §1
+ * D1). The host picks a run and that run's portal becomes everyone's ready spot, so this
+ * is the one answer to "where does the party stand for this mode".
+ *
+ * `Record<RunModeId, …>` on purpose, the same shape as `STATION_MODE` and `STATION_GLYPH`:
+ * a new mode cannot compile without saying where its party stands. It replaced a
+ * hardcoded `mode === "abyss" || mode === "hoard" ? mode : "dive"` in `main.ts`, which
+ * silently sent a Tower party to the Delve portal — the Tower wasn't in the allowlist, so
+ * it fell into the default, and the lobby announced a Delve depth. An allowlist can only
+ * ever be correct for the modes that existed when it was written.
+ *
+ * Null means a party cannot run the mode, and every null here is structural rather than
+ * policy: `RunConfigWire` (`net/protocol.ts`) carries no Memory instance, no Vigil day and
+ * no Convergence week, so `configFromWire` would rebuild any of the three as a bare
+ * rift-shaped floor with nothing on it — the same shape of bug `nextFloorConfig` was
+ * written to stop for planets. `main.ts` refuses all three before this is asked, and
+ * `plan()` refuses again on the null. Training has no run to share. When Memories go
+ * co-op, put the instance on the wire first, then give this row `memoryPortal`.
+ *
+ * Every non-null entry is the *portal* side of a pair, never the terminal (`expedition`
+ * not `starmap`, `raidPortal` not `warTable`), and `npm run smoke` asserts each one maps
+ * back to its own mode through `STATION_MODE`, and that a plan for each one puts that
+ * portal on a deck whose own account has unlocked nothing.
+ */
+export const PARTY_PORTAL: Record<RunModeId, HubStationKind | null> = {
+  delve: "dive", abyss: "abyss", hoard: "hoard", tower: "tower",
+  planet: "expedition", raid: "raidPortal",
+  memory: null, vigil: null, convergence: null, training: null,
+};
+
+/** The portal a party readies in for this mode, or null if the mode has none. */
+export function partyPortalFor(mode: RunModeId): HubStationKind | null {
+  return PARTY_PORTAL[mode];
+}
 
 /** The one line of lore a station's prompt carries, or null for the non-portal stations. */
 export function stationLore(kind: HubStationKind): string | null {
@@ -189,6 +225,17 @@ export class Hub {
     if (this.towerOpen) open.push("tower");
     if (this.vigilOpen) open.push("vigil");
     if (this.weeklyOpen) open.push("convergence");
+    // The party goes where the host goes: the portal the host picked stands on every
+    // member's deck whether or not *their* account has unlocked it, or the ready check
+    // has nowhere to see them and the run never starts. Said once, here, for every mode
+    // — it used to be a hand-written override per mode in `Party.syncHub` (raids, then
+    // the Tower), each added after that mode was found broken in co-op, and the third
+    // was found by nobody reporting it. A *spawned* portal still needs its parameters
+    // mirrored (`setExpedition`, `setRaid` — which sector, which raid, what tier); that
+    // stays in `syncHub`, because those carry data this gate does not.
+    if (this.partyOpen && this.partyTarget && !open.includes(this.partyTarget)) {
+      open.push(this.partyTarget);
+    }
     return open.map(station);
   }
 

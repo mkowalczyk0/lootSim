@@ -414,6 +414,41 @@ export interface RunConfig {
  */
 export const EARLY_EXTRACT_KEEP = 0.15;
 
+/**
+ * One line naming a run — the party's flashes and the lobby row read this, so what the
+ * host is told they picked and what the client is told to stand in are the same words.
+ *
+ * Exhaustive over `RunModeId` by the `never` at the bottom: a new mode cannot compile
+ * without saying how it is named. This replaced two hand-rolled copies (`main.ts` and the
+ * Party tab) whose fallthrough was `Delve depth N` — so a Tower plan announced itself as a
+ * Delve, which is how the owner learned the Tower was "queueing the Delve" in co-op. The
+ * mode's own `short` is used for everything that isn't the Delve or the Tower, so a
+ * renamed mode renames its line with it.
+ */
+export function describeRun(config: RunConfig): string {
+  const mode = config.mode.id;
+  switch (mode) {
+    case "delve": return `Delve depth ${config.depth}`;
+    case "tower": return `Tower height ${config.tower?.height ?? config.depth}`;
+    case "abyss":
+    case "hoard": return `${config.mode.name} tier ${config.tier}`;
+    case "planet": return config.planet
+      ? `${config.planet.spec.name} T${config.planet.tier}`
+      : `${config.mode.short} T${config.tier}`;
+    case "raid": return config.raid
+      ? `${config.raid.spec.name} T${config.raid.tier}`
+      : `${config.mode.short} T${config.tier}`;
+    case "memory": return `${config.mode.short} depth ${config.depth}`;
+    case "vigil": return config.daily ? `${config.mode.short}, day ${config.daily.day}` : config.mode.short;
+    case "convergence": return config.weekly ? `${config.mode.short}, week ${config.weekly.week}` : config.mode.short;
+    case "training": return config.mode.short;
+    default: {
+      const unhandled: never = mode;
+      return String(unhandled);
+    }
+  }
+}
+
 export function delveConfig(depth: number, challengerTier = 0, players = 1): RunConfig {
   const d = Math.max(1, Math.floor(depth));
   return {
