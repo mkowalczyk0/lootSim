@@ -1,0 +1,272 @@
+# CLAUDE.md edits awaiting the owner's word
+
+Four drafts were named in `docs/handoff.md` §4 as written and unlanded. `CLAUDE.md` is the
+owner's own document — no peer session lands an edit to it on another session's say-so, so
+none of these has been applied. This page exists so the owner can read one place and say
+yes or no once, instead of four separate round trips. Nothing here has been merged, edited
+into `CLAUDE.md`, or combined across entries.
+
+For each draft below: the current `CLAUDE.md` text, the proposed replacement, why, and
+which branch it came from — or, where a draft could not actually be located as written
+text anywhere in the repository, a clear statement of that instead of an invented one.
+
+---
+
+## 1. The raids bullet — "raids are no longer solo"
+
+**Branch:** `investigate/raid-party-scaling` (tip `c6baa86`, not merged to master).
+
+**Current text** (`CLAUDE.md`, "Raids: the war's set pieces" section):
+
+> **Solo in v1**, the same call the Vigil and the Proving made, but the seam is *open*: the
+> wire carries `raidId`/`raidTier` and `configFromWire` rebuilds through `raidConfig`, so one
+> branch in `handleHubInteraction` is all that stops a party raid. A co-op attempt was built
+> and measured, then **not shipped**: `partyScale` (tuned for a crowd) doesn't transfer to
+> one enormous body, and neither of the two obvious fixes tried (health, damage) closed the
+> gap without a new regression elsewhere. See `docs/raid-party-scaling.md` — the finding, not
+> the fix, is what landed.
+
+**Proposed text** (as drafted on the branch):
+
+> **Co-op**, after shipping solo the same way the Vigil and the Proving did. The wire
+> always carried `raidId`/`raidTier` (`configFromWire` rebuilds through `raidConfig`), so
+> turning it on was the War Table's callback and the Raid Portal joining the party's
+> ready-spot flow the same way every other portal-picking station already does. What made
+> it safe to flip was measuring first: a real co-op fight (`tools/bot.ts`'s
+> `playFloorParty`, a party sibling of the solo bot) showed the crowd-tuned `partyScale`
+> doesn't transfer to a single enormous body — it trivialised a raid the party could
+> already win and did nothing for one at the edge, because that term's whole shape assumes
+> "more, fatter, barely-harder-hitting monsters" and a boss has no "more" to give.
+> `singleBodyPartyScale` (`data/modes.ts`) is the fix: health scales **linearly** with
+> party size (keeps time-to-kill per player roughly constant, unlike `partyScale`'s
+> sub-linear ×1.65/2.30/2.95), and damage **does not scale with party size at all** — a
+> bigger party's extra danger is already supplied by more bodies that can be caught in a
+> telegraph and by the revive economy, so charging damage on top double-counts it. Wired
+> into `profileFor`, scoped to `run.raid` alone — the reasoning is about the *shape* of a
+> single-body encounter and applies to every boss floor in the game, but retuning an
+> existing boss floor's co-op difficulty is a live balance change to content people have
+> already played, which stays an owner call this pass didn't make.
+
+A second passage changes with it, in the "Planned direction" section:
+
+**Current:**
+
+> - **Party balance is a guess, not a measurement.** `partyScale` was reasoned about and
+>   checked by the smoke test, never by four people actually playing.
+
+**Proposed:**
+
+> - **Party balance is still mostly a guess, not a measurement.** `partyScale` (the crowd
+>   term used by the Delve, every rift and planet expeditions) was reasoned about and
+>   checked by the smoke test, never by four people actually playing. Raids are the one
+>   exception: `tools/bot.ts`'s `playFloorParty` measured a real co-op fight against a raid
+>   boss and found `partyScale` didn't transfer to a single body at all (see the raids
+>   section above), which is exactly the kind of thing this bullet warns nobody has checked
+>   for the rest of the game either — a raid boss floor and the Delve's every-fifth-depth
+>   boss floor are the same *shape* of encounter, and only one of them has been measured.
+
+**Why:** the text on master describes raids as solo with co-op "not shipped." The branch
+contains real, working code (`singleBodyPartyScale`, the War Table callback, the Raid
+Portal joining the party ready-spot flow) that turns co-op raids on — this is not a prose
+correction alone, it is a code branch the prose describes. **Landing this text without also
+landing `investigate/raid-party-scaling` itself would make `CLAUDE.md` describe a feature
+that doesn't exist on master yet.** That is worth flagging explicitly: this is a bundled
+decision (ship the code, then update the doc to match), not a pure documentation fix like
+the other two drafts below.
+
+**Update, checked while writing this page: master's own text is already stale, by a
+different route than this draft.** `feat/coop-raids` (merge `548f218`, authored by 97 —
+this appears to be the same session the handoff credits with the raids bullet) landed
+*after* `investigate/raid-party-scaling` was cut, and it removed the exact gate the current
+CLAUDE.md text names — "the one branch in `handleHubInteraction` [that] is all that stops a
+party raid" is gone; `main.ts:142` says so directly. **So raids are co-op on master right
+now**, but `singleBodyPartyScale` is not: I grepped `src/data/modes.ts` and it isn't there,
+only referenced in a comment in `tools/raid-party-measure.ts` pointing at this still-unlanded
+branch. That means the shipped co-op raid currently uses whatever scaling `profileFor`
+already applies — the ordinary crowd-tuned term this branch's own measurement said
+trivialises a single-body fight — so the balance gap this draft's proposed text describes
+finding is very likely still live in the game today, just reached through the portal-mirror
+fix rather than through this branch. I'm not certain of that last inference — I read the
+code, I did not play a real co-op raid on master to confirm the trivialisation — so treat it
+as a strong flag, not a verified fact. Either way: **master's raids passage needs an update
+regardless of what happens to `investigate/raid-party-scaling`**, because "Solo in v1" is
+now false on its own, independent of this branch's fate. The two things worth deciding
+separately are (a) whether to just fix the "solo" claim to say "co-op" now, today, and (b)
+whether to also land the balance fix and its longer explanation — (a) is a pure doc
+correction; (b) is the bundled decision described above.
+
+---
+
+## 2 & 3. The two co-op loot passages
+
+`docs/handoff.md` §4 names "26's two co-op loot passages" as written and awaiting approval.
+**No such draft exists anywhere in the repository** — checked every unmerged branch's diff
+against master for `CLAUDE.md`, every worktree's working tree and index for an uncommitted
+`CLAUDE.md` change, and every doc file that mentions `CLAUDE.md` by name. Only one
+uncommitted `CLAUDE.md` change exists anywhere in the shared checkout right now, and it's
+unrelated (the map-wipe rule, `fix/no-mapwipe`, docket §30 — not one of these four). The
+"drafts" the handoff pointed to were never written down; only the diagnosis was
+(`docs/docket.md` §28 names the staleness as an instance of its own category, but records a
+finding, not a fix).
+
+**The two proposed passages below are new — drafted by this session (2026-09-10), against
+`85bdee6`'s commit message and `docs/shared-loot.md`'s design record, and never reviewed by
+the owner.** Everything stated as fact was checked directly against `src/game/dungeon.ts`
+(`dropPickup`, `collect`, `credit`, `rollDrop`, `dropFromTables`, `dropClearCache`) rather
+than taken from the commit message alone; anywhere I could not verify against the running
+code, I've said so rather than smoothing it over.
+
+### Passage A
+
+**Current text** (`CLAUDE.md`, "Multiplayer: one simulation, four people"):
+
+> - **Loot is per-hero and physical; XP is shared in full.** Each player banks into their
+>   own save on their own machine.
+
+**Proposed text:**
+
+> - **Loot is shared and instanced; XP is shared in full.** A drop is one physical pickup —
+>   anybody in the run may collect it, and collecting it credits *every hero still in the
+>   run* with their own copy, not just the collector. This is the settled shape of a rule
+>   that went through two owner reversals in one afternoon: first-come (anyone could walk
+>   off with a teammate's loot) was rejected as a bug, the ownership fix that followed it
+>   was then rejected too because it only ever paid the credited killer — "we can both
+>   collectively farm the same stuff." `docs/shared-loot.md` is the design record and the
+>   falsification behind it. For an item, "the same copy" is exact rather than approximate:
+>   every random draw inside `rollItem`/`forgeNamedItem` (name, affix ids, grant, trigger,
+>   variance) is independent of level, so replaying one seed per hero produces an item with
+>   identical everything except the magnitudes and `requiredLevel`, which come from each
+>   hero's own level. Currency, keys, gems, materials, potions, relics and augments are
+>   credited to every present hero the same way, each through their own find multipliers.
+>   Each player still banks into their own save on their own machine — that part never
+>   changed.
+
+**Why:** the current text describes the *first* rejected design (per-hero ownership,
+shipped and reversed the same afternoon `85bdee6` landed) as if it were still the rule.
+
+### Passage B
+
+**Current text** (`CLAUDE.md`, "Every class has its own save", the full paragraph):
+
+> Dropped loot follows the same rule (docket §23): a monster kill's drop, the clear cache,
+> and every named/relic table `Dungeon.dropFromTables` reads item level off the receiving
+> hero's own `Math.max(1, level)`, never `profile.depth` — a level-30 character clearing a
+> depth-45 Memory gets gear at their own level, not the Memory's. Co-op makes "receiving
+> hero" a real question rather than a synonym for `localHero`: a kill's drop rolls off
+> whichever hero's hit is credited (`killEnemy`'s `source`), and the clear cache — one
+> physical pile the whole party can pick from — assigns each item it rolls to a different
+> party member round-robin, so a level 20 and a level 50 in the same party each find
+> something they can wear.
+
+**Proposed text:**
+
+> Dropped loot follows the same rule (docket §23): every copy of a drop — a monster kill's,
+> the clear cache's, a named or relic table's — reads its item level off the *hero that
+> particular copy is being forged for*, never `profile.depth` — a level-30 character
+> clearing a depth-45 Memory gets gear at their own level, not the Memory's. Co-op no longer
+> means picking one "receiving hero" for the whole drop: because a drop is shared (see
+> above), `dropPickup` forges one copy per hero on the run's roster, each at that hero's own
+> level, so a level 20 and a level 50 in the same party each find something they can wear
+> from the *same* drop rather than from different ones handed out in turn. **The round-robin
+> recipient cursor has no successor — it's simply gone**, along with the integer currency
+> split (`shareOut`) it sat beside; there is nothing left in the cache for one person, so
+> there is nothing left to take turns over.
+>
+> What survives from the single-recipient model is narrower than it looks, and both
+> survivors are named as open questions in `docs/shared-loot.md` rather than as settled
+> design: the credited hero (`killEnemy`'s `source` for a kill, `localHero` for the clear
+> cache) still decides which weapon family a shared drop's affinity leans toward, because
+> the party finds *one item* and one item can only carry one affinity roll — a Magician
+> partied with a Berserker sees the Berserker's families more often, and the alternative
+> (each hero's own affinity biasing their own copy) was rejected because it stops the copies
+> being the same item at all. The same credited hero also still decides relic dedup:
+> `rollRelicDrops` skips what *that hero's own account* already owns, even though the relic
+> pays every present hero if it drops — so whether a relic drops at all is judged against
+> one collection, not the party's.
+
+**Why:** the current text describes the clear cache handing out items "round-robin," which
+`85bdee6` explicitly deleted as one of three now-dead mechanisms (along with `shareOut` and
+the faded-teammate's-drop rendering). It also frames "receiving hero" as a single question
+per drop; under the shipped design there's one receiving hero *per copy*, not one per drop.
+
+---
+
+## 4. The campaign-check thinness paragraph replacement
+
+**Branch:** none. No commit anywhere ever diffs `CLAUDE.md`'s existing "third lesson"
+paragraph (searched history with `git log -S` against its exact text and against the
+proposed numbers — both come back empty for `CLAUDE.md`). The content exists only as prose
+in `docs/handoff.md` §4 and, in full, as the header of `tools/campaignblock.ts` (commit
+`83f94dc`, already on master) — the actual sweep this section describes running.
+
+**This one is explicitly deprioritized by the PM's own handoff note**, quoted here rather
+than paraphrased: *"That CLAUDE.md draft is now the least important home for those numbers,
+because they also landed in `tools/campaignblock.ts`'s own header — which is what somebody
+actually reads at the moment the check goes red, rather than a snapshot doc or a draft that
+may never land."* Included below for completeness, since the owner may still want `CLAUDE.md`
+itself corrected, but it is not the operative copy of this information anymore.
+
+**Current text** (`CLAUDE.md`, "A third lesson..." paragraph, in full):
+
+> **A third lesson, and it reaches back and reframes the first (2026-09-09)**: measuring
+> whether the sharp-vs-reckless campaign check had the same thinness, its margin was
+> sampled across five disjoint 12-seed blocks. It read **2.42** on the hardcoded
+> `CAMPAIGN_SEEDS`, then **2.92**, **4.83**, **6.08** — and **−0.33**. That last block is a
+> live inversion... So the check that this whole section is a story about can still invert
+> today, and master's own seeds read comfortably not because the promise holds reliably but
+> because those twelve seeds happen not to be a bad block.
+>
+> ...
+>
+> Deliberately **not fixed**. Widening this one is expensive in a way the telegraph check
+> was not: ~85s per 12-seed block, ~7s per seed-side, so a full 8×8 power sweep here costs
+> hours rather than minutes. That is a cost decision for the owner, not a follow-on to an
+> unrelated change. **What must not happen is someone reading a green campaign check as
+> proof the promise holds** — read this paragraph instead, and if you need the answer, pay
+> for the sweep on purpose.
+
+**Proposed text**, reconstructed faithfully from `tools/campaignblock.ts`'s landed header
+(the sweep this passage said was unpaid has since been run):
+
+> The sweep has been run. Two disjoint 60-seed blocks read margins of **2.55**
+> (`CAMPAIGN_SEEDS` itself) and **2.50** (offset 1000000), agreeing to 0.05, so **the
+> current width sits on the noise floor's plateau** rather than its edge.
+>
+> Sharp and reckless run the *same* `GameState` seeds at different dodge rates, so per-seed
+> differences pair and yield a real standard error: margin **sd ~6.1** — single seeds swing
+> from depth 4 to 20 — giving **SE ~0.78 at n=60**, which puts the gate's bar of 1 just
+> **1.9 SE** below the observed margin.
+>
+> **So the operational consequence, which matters more than the history: a red on that
+> check is ~3% likely to be noise — about 1 run in 30. The first move is one disjoint
+> block, not a regression hunt.** Nudging balance numbers to make it green would be
+> chasing a coin flip.
+>
+> The same arithmetic explains the **-0.33** inversion this section used to record only as
+> an unexplained fact: at the old n=12 that sd gives SE ~1.75, putting the bar **0.9 SE**
+> away. The check inverted because it was thin, not because the design promise failed — and
+> the widening to 60 is what moved the bar from 0.9 SE to 1.9 SE and made a green here mean
+> something. A 3-sigma bar would need ~150 seeds at roughly 2.5x the cost already paid — a
+> real decision for the owner, not a follow-on to an unrelated change, and the only part of
+> this still unpaid.
+
+**Why:** the paragraph on master describes the second sweep as unpaid and expensive
+("hours"); it has since been run and paid for (`83f94dc`), and master's own copy is now
+factually behind the tool that superseded it.
+
+---
+
+## Summary for a fast read
+
+| # | Draft | Source of proposed text | Branch | Reviewed by owner? |
+|---|-------|--------------------------|--------|---------------------|
+| 1 | Raids bullet (co-op + balance fix) | Found in full, on the branch | `investigate/raid-party-scaling` | No. Also: master's "solo" claim is independently stale via `548f218` — see the update in §1 |
+| 2 | Loot passage A ("per-hero and physical") | **No draft existed** — written fresh this session against `85bdee6` + `docs/shared-loot.md`, verified against `src/game/dungeon.ts` | none | No — flagged as freshly authored, not a found draft |
+| 3 | Loot passage B ("round-robin") | Same as #2 | none | No — same caveat |
+| 4 | Campaign-check thinness paragraph | Reconstructed from `tools/campaignblock.ts`'s landed header | none (no CLAUDE.md diff ever committed) | No — already superseded operationally by the tool header |
+
+**On drafts 2 and 3 specifically:** these were reported not-found in the first pass of this
+page, and the PM asked me to write them once it was confirmed nobody had. They are not
+"the missing draft, recovered" — they are new prose with no prior owner-facing version, and
+should be read with that in mind: less scrutiny has touched them than draft 1's, which at
+least passed through whoever wrote it on `investigate/raid-party-scaling`.
