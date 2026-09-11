@@ -56,7 +56,7 @@ proposal for the owner — are deliberately absent from this table.
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
 | 32 | Noise inventing a plateau, read as a mechanism | a false plateau at 1.95s with the stall beat as its ready-made cause |
 | 33 | A bound so cautious it discards a real signal | the execute split's "one packet or several" guard, pooling a per-seed base |
-| 34 | *in flight* |  |
+| 34 | *reserved* | held for the co-op cast-prediction work; §33's triage found nothing to fix and wrote no entry |
 | 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
 | 36 | A silent narrowing, which converts authored content into evidence of its own absence | `GRANTABLE_ABILITY_IDS`' trailing `.filter`, handing every reader the survivors |
 | 37 | A clean merge read as evidence about meaning, when it is only evidence about text | a docket ruling appended 300 lines below the status word it falsified |

@@ -1459,7 +1459,7 @@ new tool, one line in the chain, and the allowlist is the only judgement call in
 
 ---
 
-## 27. An armed Engineer's ultimate refills its own meter — NEEDS AN OWNER CALL
+## 27. An armed Engineer's ultimate refills its own meter — RULED, FOLDED INTO §40
 
 Found by the gate re-baseline (§ `docs/arm-the-trees-rebaseline.md`) on its first run, and
 it is a live UAT §10 violation on a build a real player can make. Full diagnosis, the
@@ -1745,18 +1745,22 @@ failure mode this file's own header warns about, caught only because the status 
 re-checked as a *claim* rather than a citation. Every hash it cited was correct the whole
 time.
 
-> **STATUS 2026-09-11: NOT RECONCILED HERE — being triaged by another session, and its
-> status is theirs to write.** Deliberately left alone by the 2026-09-11 sweep so two
-> sessions don't write contradicting status words onto one item.
+> **STATUS 2026-09-11, RESOLVED AT INTEGRATION: all five reports were already fixed, and
+> §33's own entry above now carries the verdict.** This paragraph is kept rather than deleted
+> because of what it demonstrates.
 >
-> What the sweep can say without taking a position, because it is a citation rather than a
-> claim: `fix/coop-bugs` is an ancestor of `master` (first merged at `09b11c0`, into
-> `integration/batch-three`), and a separate branch **`fix/coop-bug-list` is NOT merged**,
-> tip `9a991a6`, whose commit subject reads *"§33's five reports were already fixed — the
-> status word outlived the work"*. That is an unlanded assertion by the session holding the
-> item, not a verdict from this sweep. The standing question about a different multiplayer
-> transport (`docs/coop-transport-options.md`) is separate again and nothing above speaks to
-> it.
+> The sweep deliberately took no position here, so two sessions would not write contradicting
+> status words onto one item — and it was right to. What it wrote instead was a *citation*:
+> that `fix/coop-bug-list` was **not merged**, tip `9a991a6`, and that its claim was therefore
+> an unlanded assertion rather than a verdict. True when written, on that branch.
+>
+> **It stopped being true the moment this batch merged, and no tool noticed.** The sweep's
+> paragraph and the verdict it declined to endorse sit about forty lines apart in one file;
+> both sides merged clean, because git's conflict detector is a proximity heuristic and
+> semantic contradiction is flat with distance. Neither session was wrong and neither could
+> have prevented it: **the contradiction was created by the merge, not by either branch.**
+> See `docs/blind-instruments.md` entry 37, of which this is the worked example. Reconciled by
+> hand at integration, which is currently the only thing that reconciles it.
 
 ## 34. Named items and relics out of Records into their own stash-like WASD-navigable screen — LANDED
 
