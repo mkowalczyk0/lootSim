@@ -372,14 +372,20 @@ export const MOD_POOL: readonly ModRoll[] = [
   // rarity rule puts "+1 projectile" at epic.
   //
   // **Flat +1, not a rolled +1-3, and that is deliberate.** The brief said "+1-3 Max
-  // Summons", but `modValue`'s `flat` case returns `mod.base` and ignores `perTier`, so a
-  // `perTier` here would be a field nothing reads — the exact defect the `wardPower` ruling
-  // exists to prevent, authored the same day. Every whole-extra-thing mod in this pool is
-  // flat for the same reason: `of Skewering` +1 pierce, `of Splitting` +1 projectile, `of
-  // the Manifold` +2. A player reaches +3 the way they reach +3 projectiles — by wearing
-  // three of them, since `Mods` sums across slots. `where: "any"` rather than `"weapon"` is
-  // what makes that reachable for a summoner, whose weapon slot is not where their build
-  // lives.
+  // Summons", but `modValue`'s `flat` case returns `mod.base` and **ignores `perTier`** — so
+  // a `perTier` here would be a field nothing reads, the exact defect the `wardPower` ruling
+  // exists to prevent, authored the same day it was ruled on.
+  //
+  // That is a fact about `modValue`, and it is cited that way rather than by pointing at a
+  // neighbour, because the neighbours are in motion: `ultimateBounces` and
+  // `ultimateProjectiles` are being removed and re-authored under a separate owner ruling,
+  // so `of the Manifold` two rows below would have rotted as a precedent within the day.
+  // `of Splitting` (+1 projectile) and `of Skewering` (+1 pierce) are the surviving
+  // examples, but check `modValue` rather than either of them.
+  //
+  // A player reaches +3 the way they reach +3 projectiles — by wearing three, since `Mods`
+  // sums across slots. `where: "any"` rather than `"weapon"` is what makes that reachable
+  // for a summoner, whose build does not live in the weapon slot.
   { id: "thronged", key: "maxSummons", kind: "suffix", label: "of the Throng", base: 1, perTier: 0, scale: "flat", where: "any", minTier: 4 },
   { id: "manifold", key: "ultimateProjectiles", kind: "suffix", label: "of the Manifold", base: 2, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
   { id: "rebounding", key: "ultimateBounces", kind: "suffix", label: "of Rebounding", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 5 },
