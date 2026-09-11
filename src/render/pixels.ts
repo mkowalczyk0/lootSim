@@ -849,6 +849,167 @@ export const MOB_CASTER: Grid = [
   "....................",
 ];
 
+// The six UAT §2 roles that drew another role's silhouette until art-wave 2
+// (`docs/art-wave-2.md` §1a). These are the decode-failure fallbacks behind the committed
+// `reliquary.monster.*` PNGs, the same job the five above do — `SpriteName` is closed and
+// `buildSprites` is an exhaustive Record, so a role cannot get its own picture without
+// also getting a grid. Each one is the role's black-silhouette read from the style guide's
+// §10.2 table and nothing more: the shape is the whole point of these existing.
+
+/** Gorehound: horns and a skull thrust forward over a body that is all
+ * shoulder, hindquarters coiled under it. Reads as "about to go". */
+export const MOB_GOREHOUND: Grid = [
+  "..OO..............OO..",
+  ".O11O............O11O.",
+  "..O11OOOOOOOOOOOO11O..",
+  "...O22222222222222O...",
+  "..O2222222222222222O..",
+  "..O22EE22222222EE22O..",
+  "..O2222222222222222O..",
+  "...O22222222222222O...",
+  "..OO2MMMMTMMTMMMM2OO..",
+  ".O333333333333333333O.",
+  "O33333333333333333333O",
+  "O33333333333333333333O",
+  ".O333333333333333333O.",
+  "..O3O3O........O3O3O..",
+  "..O3O3O........O3O3O..",
+  "..OOOOO........OOOOO..",
+];
+
+/** Bloatfiend: a sack of a body split by cracks with the light coming out of
+ * them — the one monster whose accent is its death rather than its gaze. */
+export const MOB_BLOATFIEND: Grid = [
+  "........OOOO........",
+  ".......O1ee1O.......",
+  "......OO1111OO......",
+  "....OO22222222OO....",
+  "...O222222222222O...",
+  "..O22222E222222E2O..",
+  ".O222222EE2222E222O.",
+  ".O2222222E22EEE222O.",
+  "O22222222EEEE22222O.",
+  "O222222EEE22E222222O",
+  "O22222E2222E2222222O",
+  "O2222EE22222EE22222O",
+  "O222E22222222E22222O",
+  ".O22222222222EE222O.",
+  ".O222222222222222O..",
+  "..O22222222222222O..",
+  "...O2222222222222O..",
+  "....OO333OOOO333O...",
+  "......O333O.O333O...",
+  "......OOOOO.OOOOO...",
+];
+
+/** Aegis Thrall: lopsided on purpose — a coffin-lid slab of iron on the left
+ * side taller than the body behind it, and a slit of light in the visor. */
+export const MOB_AEGIS: Grid = [
+  "..............OOOO......",
+  ".............O1111O.....",
+  ".OOOOOOOOO...O1EE1O.....",
+  "O444444444O..O1111O.....",
+  "O455555554O.OO1111OO....",
+  "O455555554OO11111111O...",
+  "O455555554O111111111O...",
+  "O455555554O111111111O...",
+  "O455555554O111111111O...",
+  "O455555554O111111111O...",
+  "O455555554O111111111O...",
+  "O455555554O111111111O...",
+  "O455555554O.O111111O....",
+  "O455555554O.O111111O....",
+  "O455555554O.O111111O....",
+  "O455555554O..O3O3O3O....",
+  "O444444444O..O3O.O3O....",
+  ".OOOOOOOOO...OBO.OBO....",
+  ".............OOO.OOO....",
+];
+
+/** Grave Piper: both arms up, a wrapped skull, and the sac at its hip lit
+ * from inside — the thing to kill first, readable from across the room. */
+export const MOB_PIPER: Grid = [
+  "OO................OO",
+  "O1O..............O1O",
+  "O1O.....OOOO.....O1O",
+  "O1O....O2ee2O....O1O",
+  "O1O....O2222O....O1O",
+  "O1O.....O22O.....O1O",
+  "O11O...O1111O...O11O",
+  ".O11OOO111111OOO11O.",
+  "..O111111111111111O.",
+  "...O11111111111111O.",
+  "....O111111111111O..",
+  "....O111111111111O..",
+  "....O11111111111OEO.",
+  "....O1111111111OEEEO",
+  "....O1111111111OEEEO",
+  "....O11111111111OEO.",
+  "....O111111111111O..",
+  "....O111111111111O..",
+  "...O11111111111111O.",
+  "...O11111111111111O.",
+  "...OOOOOOOOOOOOOOOO.",
+  "....O..O......O..O..",
+];
+
+/** Deadeye: tall, thin, still, one eye far too large for the hood, and the
+ * long bone barrel braced across the body. */
+export const MOB_DEADEYE: Grid = [
+  ".......OO.......",
+  "......O11O......",
+  ".....O1111O.....",
+  ".....O1EE1O.....",
+  ".....O1EE1O.....",
+  ".....O1111O.....",
+  "......O11O......",
+  ".....O1111O.....",
+  "....O111111O....",
+  "....O111111O....",
+  "OOOOOOOOOOOOOOOO",
+  "O44444444444444O",
+  "OOOOOOOOOOOOOOOO",
+  "....O111111O....",
+  "....O111111O....",
+  "....O111111O....",
+  ".....O1111O.....",
+  ".....O1111O.....",
+  ".....O1OO1O.....",
+  ".....O1O.O1O....",
+  ".....O1O.O1O....",
+  ".....O1O.O1O....",
+  ".....O1O.O1O....",
+  ".....OOO.OOO....",
+];
+
+/** Rot Priest: a mitre over a wrapped face, no feet — the vestments trail
+ * off into strands — and a censer swinging in front with the light inside it. */
+export const MOB_ROTPRIEST: Grid = [
+  ".......OOOO.......",
+  "......O1111O......",
+  "......O1111O......",
+  ".....O111111O.....",
+  ".....O2ee2ee2O....",
+  ".....O2222222O....",
+  "......O22222O.....",
+  "....OO1111111OO...",
+  "...O11111111111O..",
+  "...O11111111111O..",
+  "...O1111111111O...",
+  "...O111111111O....",
+  "...O11111111O.....",
+  "...O1111111OO.....",
+  "...O111111O4O.....",
+  "...O111111OEO.....",
+  "...O11111OEEEO....",
+  "...O11111OEEEO....",
+  "....O1111OEEEO....",
+  "....O1111.OEO.....",
+  "....O11O1.OOO.....",
+  "....O1O.O1O.......",
+  "....OO..OO........",
+];
+
 // --- bosses ---------------------------------------------------------------
 //
 // Raid bosses are drawn on a roughly 26x26 field and blown up by `spriteScale` in
@@ -1412,6 +1573,34 @@ export const PALETTES = {
   caster: {
     O: OUTLINE, "1": "#3a2168", "2": "#08031a", E: "#b45cff", W: "#f4e2ff",
     T: "#553099", S: "#d3c6ec",
+  },
+  // The six art-wave-2 roles. Low and dirty apart from `E`, which is the role's element
+  // colour from `data/elements.ts` — the same accent the committed PNG carries.
+  gorehound: {
+    O: OUTLINE, "1": "#6b625a", "2": "#2a1c19", "3": "#1e1412", M: "#120806",
+    T: "#c9bfae", E: "#ff7a2f",
+  },
+  bloatfiend: {
+    O: OUTLINE, "1": "#3d4a34", "2": "#48563e", "3": "#2a3324", e: "#0c1008",
+    E: "#84cc16",
+  },
+  aegis: {
+    O: OUTLINE, "1": "#3a3a42", "3": "#2a2a31", "4": "#26262d", "5": "#3f3f49",
+    // One step deeper than the cold element colour: `#7dd3fc` sits under §1.4's own
+    // saturation line — see `art/monsters/finish-delve.ts`.
+    B: "#1b1b21", E: "#56c8ff",
+  },
+  piper: {
+    // The caster's own violet rather than the void element colour, which sits under §1.4's
+    // saturation line — see `art/monsters/finish-delve.ts`.
+    O: OUTLINE, "1": "#4a4238", "2": "#8a7f6e", e: "#120c10", E: "#b45cff",
+  },
+  deadeye: {
+    O: OUTLINE, "1": "#2e2c33", "4": "#8f8a7a", E: "#fde047",
+  },
+  rotpriest: {
+    O: OUTLINE, "1": "#33402c", "2": "#7a7565", "4": "#3a3a3f", e: "#0c100a",
+    E: "#84cc16",
   },
   warden: {
     O: OUTLINE, "1": "#c9a14a", "2": "#332f42", "4": "#8f97ad", "5": "#e6ebf5",

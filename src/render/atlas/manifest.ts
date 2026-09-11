@@ -184,6 +184,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // 24px × 0.72 ≈ 17.3, slightly bigger and far more legible.
   "reliquary.monster.rot-scuttler": { id: "reliquary.monster.rot-scuttler", w: 31, h: 24, worldScale: 0.72, feet: 0.06 },
 
+  // The six UAT §2 roles that drew another role's silhouette until art-wave 2
+  // (`docs/art-wave-2.md` §1a; `art/monsters/finish-delve.ts` prints these rows and the
+  // per-sprite accent report). World heights are read off each role's `radius` in
+  // `data/enemies.ts` against the five above — a charger at r10 is low-slung, a sniper at
+  // r9 tall and still, a shieldbearer at r12 between grunt and brute. The rot priest floats,
+  // so its `feet` sits up inside the hem like the cult caster's.
+  "reliquary.monster.gore-hound":   { id: "reliquary.monster.gore-hound",   w: 30, h: 54, worldScale: 0.4815, feet: 0.05 },
+  "reliquary.monster.bloat-fiend":  { id: "reliquary.monster.bloat-fiend",  w: 38, h: 57, worldScale: 0.4912, feet: 0.05 },
+  "reliquary.monster.aegis-thrall": { id: "reliquary.monster.aegis-thrall", w: 45, h: 70, worldScale: 0.4571, feet: 0.05 },
+  "reliquary.monster.grave-piper":  { id: "reliquary.monster.grave-piper",  w: 43, h: 83, worldScale: 0.3735, feet: 0.05 },
+  "reliquary.monster.deadeye":      { id: "reliquary.monster.deadeye",      w: 27, h: 66, worldScale: 0.5152, feet: 0.05 },
+  "reliquary.monster.rot-priest":   { id: "reliquary.monster.rot-priest",   w: 36, h: 76, worldScale: 0.4474, feet: 0.12 },
+
   // The Tower (§6) — celestial silhouettes: symmetry, repetition, geometry, matched to the
   // Reliquary roster's own world heights rather than eyeballed (`art/monsters/finish-tower.ts`
   // prints these). Powers/Throne-Bearer generated with zero hot accent (a helm/mask of dark
@@ -626,6 +639,14 @@ export const SPRITE_OVERRIDES: Record<string, string> = {
   brute: "reliquary.monster.iron-brute",
   caster: "reliquary.monster.cult-caster",
   swarmer: "reliquary.monster.rot-scuttler",
+  // The six UAT §2 roles, drawn in art-wave 2 (`docs/art-wave-2.md` §1a,
+  // `art/monsters/finish-delve.ts`). Before this each drew another role's silhouette.
+  charger: "reliquary.monster.gore-hound",
+  bomber: "reliquary.monster.bloat-fiend",
+  shieldbearer: "reliquary.monster.aegis-thrall",
+  summoner: "reliquary.monster.grave-piper",
+  sniper: "reliquary.monster.deadeye",
+  leech: "reliquary.monster.rot-priest",
   boss: "boss.warden",
   bossChoir: "boss.corrupted-saint",
   bossColossus: "boss.gravebound-colossus",
@@ -730,6 +751,16 @@ export const SHARED_MONSTER_SETS: readonly (readonly [string, string])[] = [
   // was asked and closed (docs/art-manifest.md §3.3): a sector is a place, not a
   // population, and per-sector rosters are not coming.
   ["delve", "reliquary"],
+  // TEMPORARY, and the gate below will say when it stops being true. The Tower borrows
+  // the six art-wave-2 roles (charger/bomber/shieldbearer/summoner/sniper/leech) from the
+  // Hell roster until its own celestial six are drawn (`docs/art-wave-2.md` §1b). Listing
+  // the borrow in `MONSTER_SETS.tower` rather than leaving it to the fallback ladder is
+  // what makes the gap *sayable*; declaring it here is what stops the overlap gate calling
+  // it an accident. `tools/monstersets.ts` fails a declaration whose sets no longer share
+  // any art, so landing §1b forces these lines out rather than letting them go stale.
+  // Two lines because the gate declares sharing per pair and `delve` holds the same six.
+  ["tower", "reliquary"],
+  ["tower", "delve"],
 ];
 
 export const MONSTER_SETS: Record<string, Record<string, string>> = {
@@ -743,6 +774,12 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
     brute: "reliquary.monster.iron-brute",
     caster: "reliquary.monster.cult-caster",
     swarmer: "reliquary.monster.rot-scuttler",
+    charger: "reliquary.monster.gore-hound",
+    bomber: "reliquary.monster.bloat-fiend",
+    shieldbearer: "reliquary.monster.aegis-thrall",
+    summoner: "reliquary.monster.grave-piper",
+    sniper: "reliquary.monster.deadeye",
+    leech: "reliquary.monster.rot-priest",
   },
 
   /**
@@ -778,6 +815,12 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
     brute: "reliquary.monster.iron-brute",
     caster: "reliquary.monster.cult-caster",
     swarmer: "reliquary.monster.rot-scuttler",
+    charger: "reliquary.monster.gore-hound",
+    bomber: "reliquary.monster.bloat-fiend",
+    shieldbearer: "reliquary.monster.aegis-thrall",
+    summoner: "reliquary.monster.grave-piper",
+    sniper: "reliquary.monster.deadeye",
+    leech: "reliquary.monster.rot-priest",
   },
 
   /**
@@ -794,6 +837,17 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
     brute: "tower.monster.throne-bearer",
     caster: "tower.monster.dominion-herald",
     swarmer: "tower.monster.halo-fragment",
+    // Borrowed from Hell, on purpose and out loud, until §1b of `docs/art-wave-2.md`
+    // draws the celestial six (a charging Power, a Throne that detonates into judgment, a
+    // Cherub shieldbearer, a Dominion summoner, a Virtue sniper, a Principality leech —
+    // every name the worldbuilding doc's own hierarchy). Declared in `SHARED_MONSTER_SETS`
+    // so the overlap gate knows; replace these six ids and that declaration together.
+    charger: "reliquary.monster.gore-hound",
+    bomber: "reliquary.monster.bloat-fiend",
+    shieldbearer: "reliquary.monster.aegis-thrall",
+    summoner: "reliquary.monster.grave-piper",
+    sniper: "reliquary.monster.deadeye",
+    leech: "reliquary.monster.rot-priest",
   },
 };
 

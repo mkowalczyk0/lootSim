@@ -21,6 +21,7 @@
  */
 
 import { BIOMES } from "../src/data/biomes";
+import { ARCHETYPES } from "../src/data/enemies";
 import { PLANETS } from "../src/data/planets";
 import { TOWER_BIOMES } from "../src/data/tower";
 import { Dungeon } from "../src/game/dungeon";
@@ -57,9 +58,16 @@ section("references");
     ALL_BIOMES.filter((b) => !b.monsterSet).map((b) => b.name).join(", "));
 
   // A set has to cover the archetypes the renderer actually asks it for, or it is a
-  // half-answer that falls back per-monster and reads as a mixed roster.
+  // half-answer that falls back per-monster and reads as a mixed roster. "The archetypes
+  // the renderer asks for" is every rollable trash kind — read off `ARCHETYPES` (weight
+  // > 0, so bosses and the training dummy are out) rather than a list typed here, per
+  // CLAUDE.md's rule that a check's scope must come from somewhere other than the thing
+  // under test. This used to name five roles by hand, which was the whole roster when it
+  // was written and silently stopped being so when the six UAT §2 roles got their own art.
   const covered = Object.keys(SPRITE_OVERRIDES).filter((k) =>
-    ["grunt", "archer", "brute", "caster", "swarmer"].includes(k));
+    ((ARCHETYPES as Record<string, { weight: number } | undefined>)[k]?.weight ?? 0) > 0);
+  check("the coverage list is the rollable roster, not a hardcoded five", covered.length > 5,
+    `${covered.length} roles: ${covered.join(", ")}`);
   for (const [id, set] of Object.entries(MONSTER_SETS)) {
     const missing = covered.filter((k) => !set[k]);
     check(`the "${id}" set covers every trash archetype`, missing.length === 0, missing.join(", "));

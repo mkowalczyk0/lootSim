@@ -34,7 +34,8 @@ import {
   BODY, BODY_DX, BODY_DY, BODY_H, BOSS_GRIDS, CHAR_H, CHAR_W, COSMETIC_ART, HAIR,
   ICON_ARMOR, ICON_CAPSULE, ICON_COIN,
   ICON_GEM, ICON_GLOVES, ICON_KEY, ICON_NECKLACE, ICON_POTION, ICON_RING, ICON_SHIELD,
-  MOB_BRUTE, MOB_CASTER, MOB_CRAWLER, MOB_IMP, MOB_RANGER, PALETTES as P, PROP_BONES,
+  MOB_AEGIS, MOB_BLOATFIEND, MOB_BRUTE, MOB_CASTER, MOB_CRAWLER, MOB_DEADEYE, MOB_GOREHOUND,
+  MOB_IMP, MOB_PIPER, MOB_RANGER, MOB_ROTPRIEST, PALETTES as P, PROP_BONES,
   PROP_CHEST, PROP_CRYSTAL, PROP_MUSHROOM, PROP_ROCK, PROP_TORCH, WEAPON_ART,
   bodyPalette, cosmeticPalette, hairPalette, rarityWeaponPalette, weaponPalette,
   type Grid, type Palette,
@@ -77,6 +78,7 @@ function bake(grid: Grid, palette: Palette): HTMLCanvasElement {
 
 export type SpriteName =
   | "hero" | "grunt" | "archer" | "brute" | "swarmer" | "caster"
+  | "charger" | "bomber" | "shieldbearer" | "summoner" | "sniper" | "leech"
   | "boss" | "bossChoir" | "bossColossus" | "bossHerald" | "bossNameless"
   | "bossFerryman" | "bossWarQueen" | "bossLabyrinth" | "bossTyrant"
   | "towerBossCherub" | "towerBossVirtue" | "towerBossPower" | "towerBossThrone" | "towerBossNameless"
@@ -97,6 +99,14 @@ export function buildSprites(): void {
     brute: bake(MOB_BRUTE, P.brute),
     swarmer: bake(MOB_CRAWLER, P.crawler),
     caster: bake(MOB_CASTER, P.caster),
+    // The six roles that borrowed a silhouette until art-wave 2 (`docs/art-wave-2.md`
+    // §1a). Decode-failure fallbacks behind the committed PNGs, like the five above.
+    charger: bake(MOB_GOREHOUND, P.gorehound),
+    bomber: bake(MOB_BLOATFIEND, P.bloatfiend),
+    shieldbearer: bake(MOB_AEGIS, P.aegis),
+    summoner: bake(MOB_PIPER, P.piper),
+    sniper: bake(MOB_DEADEYE, P.deadeye),
+    leech: bake(MOB_ROTPRIEST, P.rotpriest),
     boss: bake(BOSS_GRIDS.boss!, P.warden),
     bossChoir: bake(BOSS_GRIDS.bossChoir!, P.choir),
     bossColossus: bake(BOSS_GRIDS.bossColossus!, P.colossus),

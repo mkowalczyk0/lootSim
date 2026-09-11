@@ -51,10 +51,12 @@ export const ZOOM = 2.2;
 const ENEMY_SPRITES: Record<string, SpriteName> = {
   grunt: "grunt", archer: "archer", brute: "brute",
   swarmer: "swarmer", caster: "caster", boss: "boss",
-  // New archetype roles (UAT §2) reuse the closest existing silhouette until the art
-  // pipeline lands bespoke ones — mapped by combat shape, not by name.
-  charger: "grunt", bomber: "swarmer", shieldbearer: "brute",
-  summoner: "caster", sniper: "archer", leech: "caster",
+  // The UAT §2 roles. These used to borrow the closest existing silhouette ("mapped by
+  // combat shape, not by name") — a Bloatfiend drew as a Crawler until it detonated, which
+  // is the opposite of what a telegraphed game promises and what style guide §1.5 forbids.
+  // Each has its own sprite since art-wave 2 (`docs/art-wave-2.md` §1a).
+  charger: "charger", bomber: "bomber", shieldbearer: "shieldbearer",
+  summoner: "summoner", sniper: "sniper", leech: "leech",
 };
 
 /** Interpolated position, so motion is smooth between fixed simulation ticks. */

@@ -252,8 +252,10 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
 // sheet**, on a project where the owner judges art by eye and has said the bosses are one
 // of the main attractions.
 {
-  const monsterIds = ["grunt", "archer", "brute", "caster", "swarmer"]
-    .map((n) => SPRITE_OVERRIDES[n]!);
+  const monsterIds = [
+    "grunt", "archer", "brute", "caster", "swarmer",
+    "charger", "bomber", "shieldbearer", "summoner", "sniper", "leech",
+  ].map((n) => SPRITE_OVERRIDES[n]!);
   stripPng(
     monsterIds.map((id) => decodePng(readFileSync(`src/render/atlas/monsters/${id}.png`))),
     3, true, 12,
