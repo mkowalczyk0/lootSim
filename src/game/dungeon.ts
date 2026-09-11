@@ -61,6 +61,7 @@ import "../combat/legacy-ailments";
 import type { Avatar, Body, Corpse, Enemy, GroundZone, Minion, Pickup, Projectile, Telegraph, Totem } from "./entities";
 import {
   MINION_CAP_GLOBAL, MINION_CAP_PER_OWNER, MINION_DEFAULT_INHERIT, MINION_DEFAULT_LIFESPAN,
+  MINION_MAX_HIT_FRACTION,
   MINION_GUARD_LEASH, MINION_LEASH, MINION_SEPARATION, MINION_WINDUP,
 } from "../data/minions";
 import type { Appearance } from "../data/cosmetics";
@@ -2689,7 +2690,11 @@ export class Dungeon implements CombatHost, RuleHost {
     // as it is for a hero, so a summon is not quietly tougher than the player who made it.
     const armor = m.damageReduction * (element === "physical" ? 1 : 0.5);
     const resist = resistFraction(m.resists[element] ?? 0);
-    const dealt = Math.max(1, Math.round(amount * (1 - armor) * (1 - resist)));
+    const mitigated = amount * (1 - armor) * (1 - resist);
+    // §37: the cap is applied last, so the bound on hits-to-kill is exact and does not
+    // move with the owner's gear. See MINION_MAX_HIT_FRACTION for why not before.
+    const cap = m.maxHealth * MINION_MAX_HIT_FRACTION;
+    const dealt = Math.max(1, Math.round(Math.min(mitigated, cap)));
     m.health -= dealt;
     m.hitFlash = 0.12;
     this.events.push({

@@ -36,3 +36,32 @@ export const MINION_GUARD_LEASH = 150;
 
 /** Push-apart radius so a legion spreads into a line instead of stacking on one pixel. */
 export const MINION_SEPARATION = 13;
+
+/**
+ * A summon loses at most this share of its **maximum** health to any one hit, applied
+ * **after** mitigation (docket §37).
+ *
+ * The measured defect was not a small health pool. At depth 10 the median hit landing on a
+ * summon is **508 against ~29 health — seventeen times its pool** — and only 21 hits land
+ * across three whole floors. Summons were not being ground down; they were occasionally
+ * deleted, and nothing in the plausible range of a health buff survives a 17x overkill.
+ * Inheriting the owner's mitigation (also §37) halves that at best. A cap is the only lever
+ * that converts deletion into attrition.
+ *
+ * **After mitigation, not before, and the difference is the whole design.** Capping the raw
+ * hit first and mitigating afterwards would compound: at a level-40 owner's 0.73 damage
+ * reduction a quarter-cap becomes 6.75% of the pool per hit — fifteen hits to kill, which is
+ * the tanking-with-skeletons problem traded in for the one-shot problem. Capping last makes
+ * the bound exact and gear-independent: **a summon always dies in at most `1 / this` hits,
+ * whatever its owner is wearing.** Mitigation keeps doing all the work below the cap, where
+ * the hits are ordinary — at depth 22 the median hit is 49 against 139 health and the cap
+ * never binds — so the two rules divide cleanly: resists govern ordinary damage and scale
+ * with gear, the cap governs deletion and does not.
+ *
+ * 0.25 is four hits. Chosen against the fixed reference above rather than by taste: at three
+ * hits (0.34) a summon still evaporates inside one telegraph's dwell time, and at eight
+ * (0.125) a skeleton outlives the boss ability that hit it. Four is the smallest number that
+ * gives a player a resummon window and it is still short enough that a summon standing in a
+ * raid boss's fire dies to it — `tools/summon-scaling.ts` asserts exactly that.
+ */
+export const MINION_MAX_HIT_FRACTION = 0.25;

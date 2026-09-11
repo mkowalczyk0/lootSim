@@ -107,3 +107,93 @@ per-hit-cap decision above. Adding them now would be two more dead stats.
 - The A/B and the hit-size probe were scratch harnesses. The death/expiry split is taken
   from `despawnMinion`'s own `dead` flag, wrapped, rather than inferred from a health
   reading — an earlier draft guessed, and guessing is what this file's §22 is about.
+
+---
+
+# The per-hit cap — owner-chosen, IMPLEMENTED, NOT VERIFIED (handover state)
+
+The owner picked lever 1 (per-hit cap) over telegraph avoidance and over accepting summons
+as consumable. It is implemented and measured; **it has not been through a gate**, and one
+of its three acceptance questions is still open. Session ended for token reasons mid-task.
+
+## What is built
+
+`MINION_MAX_HIT_FRACTION = 0.25` in `src/data/minions.ts`, applied in `hurtMinion`
+(`src/game/dungeon.ts`) **after** mitigation:
+
+```ts
+const mitigated = amount * (1 - armor) * (1 - resist);
+const cap = m.maxHealth * MINION_MAX_HIT_FRACTION;
+const dealt = Math.max(1, Math.round(Math.min(mitigated, cap)));
+```
+
+### Answered: after mitigation, not before
+
+Capping the raw hit first and mitigating afterwards **compounds**: at a level-40 owner's
+0.73 damage reduction, a quarter-cap becomes 6.75% of the pool per hit — *fifteen* hits to
+kill. That trades the one-shot problem for a tanking-with-skeletons problem. Capping last
+makes the bound exact and gear-independent: **at most `1 / fraction` hits, whatever the
+owner wears.** Mitigation still does all the work below the cap, where hits are ordinary,
+so the two rules divide cleanly — resists govern ordinary damage and scale with gear, the
+cap governs deletion and does not.
+
+### Answered: the share is 0.25, measured against the reference already in this document
+
+At depth 10 the median hit on a summon is **508 against ~29 health, seventeen times the
+pool**. A/B, 8 seeds, exact `despawnMinion` flag:
+
+| row | cap | died | median life | median hits-to-kill |
+|---|---|---|---|---|
+| depth 10, lvl 15 | off | **86%** | 2.0s | **1.0** |
+| depth 10, lvl 15 | **on** | **19%** | 4.9s | **4.0** |
+| depth 22, lvl 40 | off | 20% | 2.7s | 1.0 |
+| depth 22, lvl 40 | **on** | **4%** | 4.9s | 7.0 |
+
+Deletion does become attrition: hits-to-kill goes 1 → 4 at depth 10, which is the bound
+working exactly. At depth 22 it reads 7 because mitigation keeps most hits *below* the cap
+— the cap is a ceiling, not a floor, and that is the intended division of labour.
+
+## THE OPEN QUESTION — 4% at depth 22 may be too survivable
+
+The PM's third condition was: *the cap must not become immortality at the bottom end.*
+**That check has not been run, and the depth-22 row is the reason to take it seriously.** A
+4% death rate means 96% of summons now run out their 12-second lifespan rather than dying.
+That may be correct — a summon that survives its lifespan is a summon that did its job —
+or it may be the tanking-with-skeletons outcome arriving by a different route.
+
+**The specific check still owed:** a summon standing in a raid boss's fire zone must still
+die, and reasonably fast. The zone tick rate is what decides it — at 4 hits minimum and a
+1.5s tick interval that is 6 seconds, which is probably fine; at a 0.3s tick it is 1.2
+seconds, which is certainly fine. **Neither has been measured.** `tools/summon-scaling.ts`
+does not yet assert it. Do this before trusting 0.25.
+
+If 4% proves too low, the lever is the fraction, not the structure: 0.34 gives 3 hits, 0.5
+gives 2. The structure (after mitigation, share of max health) should not change.
+
+## Also not built
+
+- **`summonDamage` and `maxSummons`.** The owner approved them and the cap now gives them
+  a live read to attach to, which is what the `wardPower` ruling required. Neither is
+  written. `summonDamage` reads in `spawnMinion`'s `power`; `maxSummons` reads in its
+  `MINION_CAP_PER_OWNER` clamp. Both need a `Mods` key, a `MOD_POOL` row with a `minTier`
+  (`maxSummons` is projectile-count-shaped and should be gated like one), and a Forge entry.
+- **The Engineer-with-inheritance assertion.** Owed as a real check, not a one-off: with
+  summon inheritance on, the Engineer must stay below the `meterRightAfter >= 1` threshold.
+  The two rules live in the same seam — §33 stops a hero's creation crediting the ultimate
+  meter, §37 makes hero stats flow *to* creations — and the second must not reopen the first.
+- **No gate has been run on any of this.**
+
+## The ruling on inheritance scope (not this branch's scope — the standing rule)
+
+Recorded here so the next person adding a mod key has somewhere to look.
+
+**Inherited:** `damageReduction`, elemental `resists`, and the already-inherited
+`attackElement` and `attackDamage`.
+
+**Not inherited, deliberately:** triggers and granted skills (an item's on-kill nova firing
+from eight skeletons is a separate system, not a scaling knob); leech (a summon healing its
+owner is a new mechanic, not inheritance); and anything describing the player's *own body* —
+move speed, dash charges, pickup radius, coin and gem find.
+
+**Deferred, not refused:** crit chance/damage and elemental damage percentages, which belong
+alongside `summonDamage` where there is a live read to attach them to.
