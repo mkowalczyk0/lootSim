@@ -1604,7 +1604,30 @@ Five reports bundled as one item, plus a standing question:
 
 Plus: **"look into a different way to do multiplayer, maybe the cloudflare gate."**
 
-**Held by session 56. In flight.**
+**Status 2026-09-11: all five are fixed and on master; the question is answered. Design
+record `docs/coop-transport-options.md`, which now carries the landed table and the
+remainder.** Resources and cooldowns `16a577a`, the boss aim-lock `19d12d7` with its gate
+`18c3853` (`npm run bosstarget`, in `npm test`), the Tower's portal `e6a3957`, follow-zones
+and the client's own swing `f1e354e` — every one an ancestor of `a4cdac6`, and every one
+re-checked at the source rather than by its commit message. The transport question was
+answered by that memo before the fixes landed and the answer did not move: keep the
+dependency-free relay, because no transport touches the 60-125 ms cadence-and-interpolation
+term the delay is actually made of.
+
+**Two things are open and neither is a regression.** (a) A skill's or ultimate's *effect*
+is still unpredicted and shows RTT + ~60-125 ms — the honest remaining half of the owner's
+attack-delay report, and prediction work rather than transport work if it is reported again.
+(b) A client's cooldown and resource readouts step at 20 Hz, because `Dungeon.update`
+returns early for a client and never ticks them; cosmetic. **Reports 1, 2 and 5 are
+unverified in a browser** — no session on this machine can click through the UI, so the
+claims about what the client displays are read off the source and the headless host-client
+rig, never seen. And the memo's own no-code next step (the owner hosts once quiet, once
+loaded) has still not been run.
+
+**This entry read "Held by session 56. In flight." for a day after the work landed** — the
+failure mode this file's own header warns about, caught only because the status word was
+re-checked as a *claim* rather than a citation. Every hash it cited was correct the whole
+time.
 
 ## 34. Named items and relics out of Records into their own stash-like WASD-navigable screen
 
