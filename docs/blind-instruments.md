@@ -830,13 +830,15 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
-## A twentieth instance, and a new species: a real comparison, correctly phrased, green for a reason unrelated to its claim
+## A twenty-fourth instance, and a new species: a real comparison, correctly phrased, green for a reason unrelated to its claim
 
-> **On the number.** Two earlier sections are both headed "a nineteenth instance", so by
-> count this is the twenty-first. The label is kept at twenty rather than renumbering another
-> session's entry after the fact — but the collision is real, and whoever adds the next one
-> should fix it rather than compound it. (Docket §17 is about exactly this: counting is what
-> catches a silent loss, and it only works if the count is right.)
+> **On the number.** This entry was first written as "a twentieth instance", derived from the
+> highest ordinal visible on its own branch — and that was wrong, in precisely the way entry 17
+> above describes. Sessions working in parallel each derived the correct next number from what
+> they could see, more than one arrived at the same one, and git merged the prose cleanly in
+> between, because a duplicate heading is a collision that leaves no markers. The numbering is
+> now assigned by whoever is integrating rather than derived per branch: the entries that landed
+> first hold 20 through 23, and this one is 24. Don't derive the next one either — ask.
 
 Found 2026-09-10 on `feat/relic-level-gate`, by falsifying seven ways a brand-new set of
 checks could be wrong. **Five went red. Two went green, and neither was a code defect — both
