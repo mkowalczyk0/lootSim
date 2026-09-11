@@ -954,7 +954,7 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
    * so is removing one. The Lancer sat here unexamined for the life of the project.
    */
   const REVIEWED_ALONE: Readonly<Record<string, string>> = {
-    "lancer move 0.6/distance": "UNDER REVIEW §31 — measured at 51.7 ultimates/min, one every 1.2s: 0.6 fills the meter every 167 units walked. Owner-approved fix to 0.06 lands in the next commit; this line changes with it.",
+    "lancer move 0.06/distance": "reviewed §31 — was 0.6, which filled the meter every 167 units walked (51.7 ultimates/min measured, ~21x the roster median). 0.06 makes a full meter roughly a floor's traverse.",
     "magician manaSpent 40/manaFraction": "reviewed §31: gated on spending the class's own finite, slowly-regenerating pool",
   };
   for (const l of lonely) {
