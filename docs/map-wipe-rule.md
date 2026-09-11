@@ -139,6 +139,9 @@ scope that silently empties is visible rather than green. The reach changes wort
 | `reaper.pale_hook`, `corsair.powder_keg` | whole floor | 260 | `range` |
 | 5 traps/mines (snare, explosive, shock mine, mirror trap, painted target) | whole floor, centred on the player | 140–200, centred on the trap | `range` |
 | 9 self-targeted reprisals and auras | whole floor | 320 | `DEFAULT` |
+| `alchemist.unstable_reaction` | whole floor | 320 | authored (see below) |
+| `engineer.remote_detonation` | whole floor | 320 | authored (see below) |
+| **`alchemist.unstable_reaction` with Mad Scientist allocated** | whole floor | **416** | a dead tree node waking up — see below |
 
 ### Declared field-wide — two, and both ultimates
 
@@ -171,6 +174,51 @@ Both now carry an explicit `shape: { radius: 320 }` rather than falling through 
 default. That is deliberate: the Mad Scientist path's `{ kind: "targeting", scaleRadius: 1.3 }`
 mutation on Unstable Reaction had nothing to scale — the ability had no shape — so the node
 was a no-op. Authoring the radius makes that tree node live for the first time.
+
+### A dead tree node woke up, and it is now the largest non-ultimate reach in the game
+
+Giving Unstable Reaction an explicit `shape: { radius: 320 }` had a consequence worth
+stating in the player-visible list rather than burying: the Mad Scientist path's
+`ms.overpressure` carries `{ kind: "targeting", scaleRadius: 1.3 }`, which had **nothing to
+scale** because the ability had no shape. **A player who has spent a point there gets
+something tonight they have never had**, and 1.3 × 320 = **416** — larger than any authored
+radius in the game, including both ultimates that declare one (350 and 400).
+
+This is the same species as the `projectile.onExpire` seam held back above — an inert thing
+becoming live, changing behaviour nobody requested — and it differs in degree rather than in
+kind. It is recorded here on that basis, not defended as too small to mention.
+
+**Does 416 undermine the property the 320 calibration was chosen for?** No, and the
+distinction is worth being precise about. The property is *"omitting a shape can never buy
+more reach than declaring one"*, and it governs the **authoring default**: `DEFAULT_ENEMY_REACH`
+(320) sits below the largest declared radius (400), so an ability that says nothing never
+out-reaches one that does. Unstable Reaction now *declares* 320; it is on the declaring side
+of that line. What takes it to 416 is a **mutation**, and exceeding an authored base is what
+mutations are for — the precedent is already live on master, where
+`swordsman.sword_saint.eclipse` takes Sword Eclipse from 160 to 200.
+
+So the property holds. What is *new*, and is a balance observation rather than a structural
+one, is that **a non-ultimate on a 16-second cooldown now has a larger radius than any
+ultimate in the game.** Whether that is acceptable is an owner call. The cheapest lever if it
+is not: author 300 instead of 320 on this one ability, putting the mutated value at 390, just
+under Astral Collapse's 400. That was deliberately *not* done here, because picking a number
+to dodge a conversation is how the 320 calibration would stop meaning anything.
+
+### Four of the six `scaleRadius` mutations in the game are dead
+
+Found while checking the above, and reported by `npm run mapwipe` every run so it cannot
+quietly change. `{ kind: "targeting", scaleRadius: n }` multiplies `shape.radius`; four of
+the six mutations that use it target abilities that have no `shape.radius` at all —
+`marauder.heavy_grip` (every `heavy` ability), `tr.cluster_charge` (Explosive Trap),
+`sl.full_circle` (Reaping Arc), `sa.cluster_mine` (Shock Mine). Before §30 only one of the
+six did anything; now two do.
+
+**The §30 ladder does not fix this and is not trying to.** It *derives* a reach without
+writing one, so an ability bounded by its `range` still has no `shape.radius` for a mutation
+to scale. Those four nodes were dead before this change and are dead after it — not a
+regression, but a real finding, and the obvious long-run answer (have the ladder write its
+result back onto the ability so mutations have a field to act on) is a change to mutation
+semantics that deserves its own branch.
 
 ### Open tuning questions, recorded rather than decided
 

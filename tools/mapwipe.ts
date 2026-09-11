@@ -167,6 +167,47 @@ for (const classId of CLASS_IDS) {
 countAdded(RELICS);
 countAdded(NAMED_ITEMS);
 
+// --- pass 1b: what a mutation can do to an authored radius ----------
+
+/**
+ * `{ kind: "targeting", scaleRadius: n }` multiplies `shape.radius`, so a bound this file
+ * asserts can be moved by a tree node after the fact. Printed rather than merely checked,
+ * because the interesting half is how many of these are **dead**: `scaleRadius` scales a
+ * field that most of its targets do not have, and the §30 ladder does not help — the
+ * ladder derives a reach without writing one, so an ability bounded by `range` still has
+ * no `shape.radius` for a mutation to scale.
+ */
+interface ScaleHit { cls: string; mutId: string; target: string; scale: number; base?: number }
+const scaleHits: ScaleHit[] = [];
+function walkMutations(o: unknown, cls: string): void {
+  if (!o || typeof o !== "object") return;
+  if (Array.isArray(o)) { for (const v of o) walkMutations(v, cls); return; }
+  const rec = o as Record<string, unknown> & { ops?: unknown[]; target?: Record<string, unknown>; id?: string };
+  if (Array.isArray(rec.ops) && rec.target) {
+    for (const raw of rec.ops) {
+      const op = raw as { kind?: string; scaleRadius?: number };
+      if (op?.kind === "targeting" && typeof op.scaleRadius === "number") {
+        const t = rec.target as { abilityId?: string; all?: boolean; withTag?: string };
+        scaleHits.push({
+          cls, mutId: rec.id ?? "?", scale: op.scaleRadius,
+          target: t.abilityId ?? (t.all ? "ALL" : `tag:${t.withTag ?? "?"}`),
+        });
+      }
+    }
+  }
+  for (const v of Object.values(rec)) walkMutations(v, cls);
+}
+for (const classId of CLASS_IDS) {
+  const def = CLASS_BY_ID[classId];
+  if (!def) continue;
+  walkMutations(def.progression, classId);
+  walkMutations(def.unlocks, classId);
+}
+for (const h of scaleHits) {
+  const def = CLASS_BY_ID[h.cls as ClassId];
+  h.base = def?.abilities.find((a) => a.id === h.target)?.shape?.radius;
+}
+
 // --- assertions -------------------------------------------------------
 
 // 3. scope: the walk has to have found something, across every class.
@@ -185,6 +226,15 @@ for (const s of sites) {
     failures.push(`${s.owner}/${s.abilityId} ${s.where} — non-finite reach`);
   } else if (s.reach >= FLOOR_SPAN) {
     failures.push(`${s.owner}/${s.abilityId} ${s.where} — reach ${s.reach} >= a floor's span ${FLOOR_SPAN}`);
+  }
+}
+
+// 1b. a mutation may enlarge an authored radius, but never off the floor.
+for (const h of scaleHits) {
+  if (h.base === undefined) continue;
+  const scaled = h.base * h.scale;
+  if (scaled >= FLOOR_SPAN) {
+    failures.push(`${h.cls}/${h.mutId} scales ${h.target} to ${scaled.toFixed(0)} — past a floor's span`);
   }
 }
 
@@ -214,6 +264,13 @@ for (const s of bounded) if (!byAbility.has(s.abilityId)) byAbility.set(s.abilit
 console.log(`--- bounded (${byAbility.size} abilities, ${bounded.length} steps) ---`);
 for (const s of [...byAbility.values()].sort((a, b) => (b.reach as number) - (a.reach as number))) {
   console.log(`  ${String(s.reach).padStart(5)}  via ${s.via.padEnd(12)} ${s.abilityId}`);
+}
+
+const liveScales = scaleHits.filter((h) => h.base !== undefined);
+console.log(`\n--- targeting.scaleRadius mutations (${scaleHits.length}; ${liveScales.length} live, ${scaleHits.length - liveScales.length} no-ops) ---`);
+for (const h of scaleHits) {
+  const scaled = h.base !== undefined ? (h.base * h.scale).toFixed(0) : "no-op (target has no shape.radius)";
+  console.log(`  ${h.cls.padEnd(11)} ${h.mutId.padEnd(28)} ${h.target.padEnd(30)} x${h.scale.toFixed(2)} -> ${scaled}`);
 }
 
 console.log(`\n--- declared field-wide (${declared.size}) ---`);
