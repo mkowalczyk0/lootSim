@@ -59,10 +59,15 @@ row in the same commit.**
 don't derive it from the highest one you can see.** Both halves are load-bearing. An index that
 quietly stops tracking the file is a scope that has silently emptied, reporting a completeness
 it no longer has; and a locally-derived ordinal is item 17 reproduced by this document's own
-numbering, which is how two of these entries ended up sharing a number. Nothing enforces either
-today — a check comparing this table's row count against the entry headings below would be
-cheap, and is deliberately not built here, because an unverified change to a gate tool is worse
-than the gap it closes.
+numbering, which is how two of these entries ended up sharing a number.
+
+`npm run blindindex` enforces the first half and half of the second: it parses the entries from
+the prose and the rows from the table — **independently, so the table cannot satisfy the check
+by agreeing with itself** — and fails on an entry with no row, a filled row with no entry, a
+landed entry whose row still reads *in flight*, a gap in the numbering, and two entries claiming
+one number. That last one is the collision git merges cleanly and `markers` cannot see. What no
+check can enforce is that the number was *assigned* rather than derived: a locally-derived
+ordinal that happens not to collide is indistinguishable from an assigned one. Ask anyway.
 
 ## The six
 
@@ -453,6 +458,25 @@ actually handed. This document's own catching question — *would this instrumen
 be different if the defect were true?* — doesn't apply here, because nothing measured this
 at all; a person looking is the only reason this entry exists, which is evidence for
 needing that habit, not evidence that any instrument already in place would have caught it.
+
+**A recurrence, 2026-09-11, by someone who had just read this item.** Verifying the docs
+change that added this file's index, the first command run was `npm run markers --silent
+2>&1 | tail -5; echo "exit=$?"`. That `$?` is `tail`'s. It printed `exit=0` about a command
+whose result it had never seen — this item, verbatim, typed forty minutes after reading it
+and while editing the paragraphs above it. Caught the same way the original was, by
+re-reading the command rather than by anything going red; the re-run with no pipeline is
+where the real zero came from.
+
+It is recorded here rather than as a new entry because it is **not a new species** — it is
+this one. An index whose stated purpose is to let an author check that before claiming
+otherwise would be badly served by its own author doing the opposite. What the recurrence
+adds is evidence about the *remedy* rather than the fault: item 6 already describes its own
+author symlinking a `node_modules` within the hour of writing the rule against it, and this
+is the second such recurrence in the file, in a different domain, by the person then
+holding the write-up in working memory. **Knowing a rule and holding it while typing one
+specific command are different states, and only the second one protects anything** — which
+is the argument, stated twice now from first-hand evidence, for preferring a rule that
+cannot be violated to a rule everyone has read.
 
 ## A thirteenth instance, the far end of item 6's family: nobody had enumerated which worktrees could even run a gate
 
