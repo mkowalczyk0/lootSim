@@ -106,7 +106,11 @@ const PLAYER_RADIUS = 9;
  *  visibly without ever running it out — `damageEnemy` clamps it at 1, the same way a
  *  death-guarded hero never quite hits 0. */
 const DUMMY_HEALTH = 500_000;
-const DASH_SPEED = 470;
+/**
+ * Exported for `tools/bossvariety.ts`: a bullet-hell bolt has to be slower than a dash,
+ * asserted as a comparison against this number rather than as a bound on the pattern.
+ */
+export const DASH_SPEED = 470;
 const DASH_TIME = 0.14;
 const DASH_COOLDOWN = 0.75;
 const SWING_TIME = 0.13;
@@ -1173,6 +1177,7 @@ export class Dungeon implements CombatHost, RuleHost {
         actionTimer: BOSS_ACTION_GAP,
         ability: null,
         crescendo: 0,
+        pattern: null, patternTurn: 1,
         castTimer: 0,
         castTotal: 0,
         cooldowns: {},
@@ -4039,11 +4044,15 @@ export class Dungeon implements CombatHost, RuleHost {
   spawnEnemyBolt(
     x: number, y: number, angle: number, speed: number,
     damage: number, element: Element, ailment = AILMENT_CHANCE,
+    // A bullet-hell pattern (`game/boss.ts`) sizes its bolts per pattern and gives a
+    // `bloom` seed a lifetime equal to the moment it opens; everything else takes the
+    // defaults every turret and caster always had.
+    opts: { readonly radius?: number; readonly life?: number } = {},
   ): void {
     this.projectiles.push({
-      x, y, px: x, py: y, radius: 5,
+      x, y, px: x, py: y, radius: opts.radius ?? 5,
       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      damage, friendly: false, life: 4,
+      damage, friendly: false, life: opts.life ?? 4,
       color: ELEMENT_COLORS[element],
       element, pierce: 0, hits: new Set(), ailment, basic: false, owner: -1,
     });

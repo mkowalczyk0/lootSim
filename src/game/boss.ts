@@ -26,13 +26,14 @@
 
 import { clamp, dist, TAU } from "../core/math";
 import {
-  BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, type BossAbility, type BossAbilityId,
+  BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, PATTERNS, isPattern,
+  type BossAbility, type BossAbilityId, type PatternId,
 } from "../data/bosses";
 import { ELEMENT_COLORS } from "../data/elements";
 import { raidThreatRate } from "../data/raids";
 import { resolveCircle } from "./level";
 import type { Dungeon } from "./dungeon";
-import type { BossState, Enemy } from "./entities";
+import type { BossState, Enemy, PatternState } from "./entities";
 
 /** Shortest wind-up a deep floor is allowed to squeeze an ability down to. */
 const MIN_CAST = 0.45;
@@ -88,6 +89,16 @@ export const SANCTUARY_NEAR_REACH = 120;
  * wrong direction turns the ability back into a flat melee-uptime tax and goes red.
  */
 export const SANCTUARY_FAR_MIN = 280;
+/**
+ * Ailment odds on a pattern bolt. Low on purpose: a field of forty bolts that each rolled
+ * a full-odds burn would be a status engine rather than a movement test.
+ */
+const PATTERN_AILMENT = 0.12;
+/** How far behind the body a `curtain` starts, and how far a `bloom` seed is drawn. */
+const CURTAIN_SETBACK = 60;
+const BLOOM_SEED_RADIUS = 8;
+/** A marker's size when a pattern comes from the body itself. */
+const PATTERN_MARKER_RADIUS = 70;
 
 /**
  * Advances one boss. Returns true when the brain has taken over movement for this tick,
@@ -106,6 +117,10 @@ export function updateBoss(d: Dungeon, e: Enemy, dt: number): boolean {
     b.buffTimer = Math.max(0, b.buffTimer - dt);
     if (b.buffTimer === 0) { b.buffDamageMult = 1; b.buffHasteMult = 1; }
   }
+
+  // A pattern keeps firing while the boss does other things, exactly as the meteor rain
+  // does — the wind-up was the lock; the emission is the field the player threads.
+  advancePattern(d, e, dt);
 
   // Staggered drops (the meteor rain) keep landing while the boss does other things.
   if (b.pendingDrops > 0) {
@@ -179,6 +194,9 @@ function beginAbility(d: Dungeon, e: Enemy): void {
   const ready = phase.abilities.filter((id) => {
     const a = BOSS_ABILITIES[id];
     if ((b.cooldowns[id] ?? 0) > 0) return false;
+    // One pattern at a time. Two fields at once is a screen, not a question; one field
+    // under an ordinary circle is a busier room, which is what a later phase is for.
+    if (isPattern(id) && b.pattern) return false;
     return range >= a.minRange && range <= a.maxRange;
   });
   if (ready.length === 0) {
@@ -216,6 +234,14 @@ function beginAbility(d: Dungeon, e: Enemy): void {
 
 /** Puts the ability's danger zone on the floor for the whole wind-up. */
 function paintTelegraph(d: Dungeon, e: Enemy, ability: BossAbility, cast: number): void {
+  // A pattern has no shape of its own to paint — its bolts are the shape — but its
+  // wind-up still has to say where it will come from and which way it will go, or the
+  // opening frames are a surprise rather than a tell. So it paints a *marker*: no
+  // damage, never resolves against anybody, drawn in the element's colour.
+  if (isPattern(ability.id)) {
+    paintPatternMarker(d, e, ability.id, cast);
+    return;
+  }
   if (ability.shape === "none") return;
   const b = e.boss!;
   const element = b.spec.element;
@@ -408,6 +434,12 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
   const element = b.spec.element;
   const damage = e.damage * ability.damage * b.buffDamageMult * crescendoDamage(b);
 
+  if (isPattern(id)) {
+    startPattern(d, e, id, damage);
+    d.emit({ kind: "shake", amount: 7 });
+    return;
+  }
+
   switch (id) {
     case "volley": {
       // A ring of bolts with one deliberate gap in it: there is always a way out.
@@ -527,6 +559,227 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
           ? 12 : 5,
       });
       break;
+  }
+}
+
+// --- the bullet-hell patterns -------------------------------------------------
+//
+// One emitter for all seven. A pattern is a stream of ordinary hostile bolts fired over
+// `PATTERNS[id].duration` seconds in steps of `tick`; what differs per pattern is where
+// each step's bolts start and which way they go. The bolts are `spawnEnemyBolt`'s, so
+// they die on walls, cross the co-op wire as every projectile does, and hit through
+// `hurtPlayer` — a dodgeable hit, which a dash beats outright and which grants the
+// ordinary invulnerability window afterwards. That window is deliberate: it is what turns
+// "you are in the field" from a death sentence into a cost, and makes threading it a
+// skill with a margin rather than a purity test.
+
+/** The wind-up's tell for a pattern: where it comes from, and which way it turns. */
+function paintPatternMarker(d: Dungeon, e: Enemy, id: PatternId, cast: number): void {
+  const b = e.boss!;
+  const element = b.spec.element;
+  const color = ELEMENT_COLORS[element];
+  const spec = PATTERNS[id];
+  b.patternTurn = d.rng.chance(0.5) ? 1 : -1;
+  const marker = {
+    total: cast, damage: 0, element, color,
+    hitsPlayer: false, hitsEnemies: false, linger: 0,
+  };
+  switch (id) {
+    case "stream":
+      // The line it will pour along, from the body toward you.
+      d.addTelegraph({
+        ...marker, shape: "line", x: e.x, y: e.y, angle: e.facing,
+        radius: 520, inner: 0, arc: 0, width: 10, followId: e.id,
+      });
+      return;
+    case "sweep":
+      // The ray's starting position: a quarter-turn short of you, on the side it turns
+      // from. Where it ends up is the other side of you, and that is the tell.
+      d.addTelegraph({
+        ...marker, shape: "line", x: e.x, y: e.y,
+        angle: e.facing - b.patternTurn * Math.PI / 2,
+        angleOffset: -b.patternTurn * Math.PI / 2,
+        radius: 420, inner: 0, arc: 0, width: 8, followId: e.id,
+      });
+      return;
+    case "noose":
+      // The ring that is about to appear around where you are standing.
+      d.addTelegraph({
+        ...marker, shape: "donut", x: b.aimX, y: b.aimY, angle: 0,
+        radius: spec.reach, inner: spec.reach - 18, arc: 0, width: 0, followId: null,
+      });
+      return;
+    case "curtain": {
+      // The edge the weather comes in from: a line across the arena behind the body.
+      const back = e.facing + Math.PI;
+      const bx = e.x + Math.cos(back) * CURTAIN_SETBACK;
+      const by = e.y + Math.sin(back) * CURTAIN_SETBACK;
+      for (const side of [1, -1]) {
+        d.addTelegraph({
+          ...marker, shape: "line", x: bx, y: by,
+          angle: e.facing + side * Math.PI / 2,
+          radius: spec.reach, inner: 0, arc: 0, width: 8, followId: null,
+        });
+      }
+      return;
+    }
+    default:
+      // `spiral`, `rings`, `bloom`: it comes out of the body, in every direction.
+      d.addTelegraph({
+        ...marker, shape: "circle", x: e.x, y: e.y, angle: 0,
+        radius: PATTERN_MARKER_RADIUS, inner: 0, arc: 0, width: 0, followId: e.id,
+      });
+      return;
+  }
+}
+
+/** The wind-up has resolved: the field starts. */
+function startPattern(d: Dungeon, e: Enemy, id: PatternId, damage: number): void {
+  const b = e.boss!;
+  const spec = PATTERNS[id];
+  const turn = b.patternTurn;
+  let angle: number;
+  switch (id) {
+    // The first door is where you are; the doors after it walk away from you.
+    case "rings": angle = e.facing; break;
+    // A quarter-turn short of you, so the ray crosses your spot midway.
+    case "sweep": angle = e.facing - turn * Math.PI / 2; break;
+    // The axis the weather travels along, locked with the facing at the wind-up.
+    case "curtain": angle = e.facing; break;
+    default: angle = d.rng.angle(); break;
+  }
+  b.pattern = {
+    id, remaining: spec.duration, timer: 0, step: 0,
+    angle, turn, damage, pending: [], elapsed: 0,
+  };
+}
+
+/** Advances the pattern in flight, firing every step that has come due. */
+function advancePattern(d: Dungeon, e: Enemy, dt: number): void {
+  const b = e.boss!;
+  const p = b.pattern;
+  if (!p) return;
+  const spec = PATTERNS[p.id];
+  p.elapsed += dt;
+  p.remaining -= dt;
+  p.timer -= dt;
+  // Emission stops when the duration is spent — `remaining` counts that down and nothing
+  // may push it back up (an earlier draft let `bloom` extend it per seed, and a pattern
+  // that extends its own window on every step never ends). The state itself outlives
+  // emission only for `bloom`, until its last seed has opened.
+  while (p.timer <= 0 && p.remaining > 0) {
+    p.timer += spec.tick;
+    emitStep(d, e, p);
+    p.step++;
+  }
+  openSeeds(d, e, p);
+  if (p.remaining <= 0 && p.pending.length === 0) b.pattern = null;
+}
+
+/** One emission step of one pattern. */
+function emitStep(d: Dungeon, e: Enemy, p: PatternState): void {
+  const spec = PATTERNS[p.id];
+  const ability = BOSS_ABILITIES[p.id];
+  const element = e.boss!.spec.element;
+  const fire = (x: number, y: number, angle: number, speed = spec.bulletSpeed, opts?: { radius?: number; life?: number }) =>
+    d.spawnEnemyBolt(x, y, angle, speed, p.damage, element, PATTERN_AILMENT,
+      { radius: spec.bulletRadius, ...opts });
+
+  switch (p.id) {
+    case "spiral": {
+      // `count` arms, wheeling at `spin`. Each step fires one bolt per arm.
+      for (let i = 0; i < ability.count; i++) fire(e.x, e.y, p.angle + (i / ability.count) * TAU);
+      p.angle += p.turn * spec.spin * spec.tick;
+      return;
+    }
+    case "rings": {
+      // One ring per step, `count` bolts around, a gap of `gap` of the turn centred on
+      // `angle`; then the gap walks `spin` for the next ring.
+      const n = ability.count;
+      const gapBolts = Math.max(1, Math.round(n * spec.gap));
+      for (let i = 0; i < n; i++) {
+        if (i < gapBolts) continue;
+        fire(e.x, e.y, p.angle + ((i - (gapBolts - 1) / 2) / n) * TAU);
+      }
+      p.angle += p.turn * spec.spin;
+      return;
+    }
+    case "stream": {
+      // Aimed fresh every step at where you are now — the bolts *are* the re-aim, and
+      // every one of them is visible. Scatter of `gap` radians keeps it a stream.
+      const at = d.aimAvatar(e.x, e.y);
+      const aim = Math.atan2(at.y - e.y, at.x - e.x) + d.rng.range(-spec.gap, spec.gap);
+      fire(e.x, e.y, aim);
+      return;
+    }
+    case "curtain": {
+      // `count` bolts per step, spawned anywhere along a line `reach` either side of the
+      // axis behind the body, all travelling the same way down the axis.
+      const back = p.angle + Math.PI;
+      const bx = e.x + Math.cos(back) * CURTAIN_SETBACK;
+      const by = e.y + Math.sin(back) * CURTAIN_SETBACK;
+      const perp = p.angle + Math.PI / 2;
+      for (let i = 0; i < ability.count; i++) {
+        const off = d.rng.range(-spec.reach, spec.reach);
+        fire(bx + Math.cos(perp) * off, by + Math.sin(perp) * off, p.angle);
+      }
+      return;
+    }
+    case "bloom": {
+      // A slow seed toward you with some scatter, alive exactly until it opens; where it
+      // will be when it does is booked now, so the ring lands where the seed was seen
+      // going — not where a re-read would put it.
+      const at = d.aimAvatar(e.x, e.y);
+      const aim = Math.atan2(at.y - e.y, at.x - e.x) + d.rng.range(-0.9, 0.9);
+      const seedSpeed = spec.reach;
+      const open = spec.gap;
+      fire(e.x, e.y, aim, seedSpeed, { radius: BLOOM_SEED_RADIUS, life: open });
+      p.pending.push({
+        x: e.x + Math.cos(aim) * seedSpeed * open,
+        y: e.y + Math.sin(aim) * seedSpeed * open,
+        at: p.elapsed + open,
+      });
+      return;
+    }
+    case "sweep": {
+      // One fast bolt down the ray per step; the ray turns `spin` per second.
+      fire(e.x, e.y, p.angle);
+      p.angle += p.turn * spec.spin * spec.tick;
+      return;
+    }
+    case "noose": {
+      // A ring `reach` out from wherever you are *now*, closing inward, with a gap of
+      // `gap` of the turn centred on `angle`; the next ring's gap is `spin` further on.
+      const at = d.aimAvatar(e.x, e.y);
+      const n = ability.count;
+      const gapBolts = Math.max(1, Math.round(n * spec.gap));
+      for (let i = 0; i < n; i++) {
+        if (i < gapBolts) continue;
+        const a = p.angle + ((i - (gapBolts - 1) / 2) / n) * TAU;
+        fire(at.x + Math.cos(a) * spec.reach, at.y + Math.sin(a) * spec.reach, a + Math.PI);
+      }
+      p.angle += p.turn * spec.spin;
+      return;
+    }
+  }
+}
+
+/** `bloom`: every seed whose moment has come opens into a ring where it was going. */
+function openSeeds(d: Dungeon, e: Enemy, p: PatternState): void {
+  if (p.pending.length === 0) return;
+  const spec = PATTERNS[p.id];
+  const ability = BOSS_ABILITIES[p.id];
+  const element = e.boss!.spec.element;
+  for (let i = p.pending.length - 1; i >= 0; i--) {
+    const seed = p.pending[i]!;
+    if (seed.at > p.elapsed) continue;
+    p.pending.splice(i, 1);
+    const spin = d.rng.angle();
+    for (let k = 0; k < ability.count; k++) {
+      d.spawnEnemyBolt(seed.x, seed.y, spin + (k / ability.count) * TAU, spec.bulletSpeed,
+        p.damage, element, PATTERN_AILMENT, { radius: spec.bulletRadius });
+    }
+    d.emit({ kind: "nova", x: seed.x, y: seed.y, radius: 40 });
   }
 }
 

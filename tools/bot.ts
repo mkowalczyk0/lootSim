@@ -125,6 +125,35 @@ export function escapeAngleFor(d: Dungeon, a: Pos): number | null {
         return Math.atan2(a.y - t.y, a.x - t.x);
     }
   }
+  // A bullet-hell *field* is the same problem with no fuse at all: it is already moving.
+  // On a boss floor with several hostile bolts in the air, read each bolt's path over the
+  // next third of a second and step off the side of the first one that would arrive —
+  // perpendicular to its travel, on whichever side the bot is already nearer. This is what
+  // "reads the floor" means once the floor has a pattern crossing it
+  // (docs/boss-bullet-hell.md); the reckless bot never asks.
+  //
+  // Scoped to a field, deliberately. The first draft read every hostile bolt everywhere,
+  // and since escaping outranks casting in the loop below, a trash floor's archers kept
+  // the bot flinching for the whole run and it never cast a thing — `npm run abilityfx`
+  // caught it ("0 tracers emitted"). A lone arrow is not a field; the bot takes it the way
+  // it always did, so every non-boss floor plays out exactly as before this existed.
+  const LOOK = 0.35;
+  const FIELD_MIN = 6;
+  let hostile = 0;
+  for (const p of d.projectiles) if (!p.friendly) hostile++;
+  const field = hostile >= FIELD_MIN && d.enemies.some((e) => e.boss);
+  for (const p of field ? d.projectiles : []) {
+    if (p.friendly) continue;
+    const rx = a.x - p.x, ry = a.y - p.y;
+    const v2 = p.vx * p.vx + p.vy * p.vy;
+    if (v2 <= 0) continue;
+    const t = Math.max(0, Math.min(LOOK, (rx * p.vx + ry * p.vy) / v2));
+    const cx = p.x + p.vx * t - a.x, cy = p.y + p.vy * t - a.y;
+    if (Math.hypot(cx, cy) > a.radius + p.radius + 12) continue;
+    const perp = Math.atan2(p.vy, p.vx) + Math.PI / 2;
+    const side = rx * -p.vy + ry * p.vx;
+    return side >= 0 ? perp : perp + Math.PI;
+  }
   // Burning ground is the same problem with a longer fuse.
   for (const g of d.ground) {
     if (Math.hypot(a.x - g.x, a.y - g.y) <= g.radius + a.radius) {

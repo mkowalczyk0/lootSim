@@ -38,10 +38,10 @@
  */
 
 import {
-  BOSSES, BOSS_ABILITIES, HUNT_SPEED, type BossAbilityId, type BossSpec,
+  BOSSES, BOSS_ABILITIES, HUNT_SPEED, PATTERNS, PATTERN_IDS, isPattern, type BossAbilityId, type BossSpec,
 } from "../src/data/bosses";
 import { CLASSES, CLASS_IDS } from "../src/data/classes";
-import { PLAYER_SPEED } from "../src/game/dungeon";
+import { DASH_SPEED, PLAYER_SPEED } from "../src/game/dungeon";
 import { SANCTUARY_FAR_MIN, SANCTUARY_NEAR_REACH } from "../src/game/boss";
 import { LEGENDS, legendBossSpec } from "../src/data/legends";
 import { PLANETS, planetBossSpec } from "../src/data/planets";
@@ -305,6 +305,40 @@ check(
 check(
   SANCTUARY_NEAR_REACH < SANCTUARY_FAR_MIN,
   `a sanctuary always offers a disc nearer than any scattered one (${SANCTUARY_NEAR_REACH} < ${SANCTUARY_FAR_MIN})`,
+);
+
+// 7. The bullet-hell patterns (docs/boss-bullet-hell.md). Three comparisons, none a bound:
+//    a dash always beats them, so no pattern's bolt may be as fast as a dash; a ring's
+//    gap has to be wide enough to walk a hero through at the distance it is fired; and
+//    "every boss got new cards" is a claim about every encounter, so it is walked.
+const HERO_RADIUS = 10; // `Avatar.radius` in `game/dungeon.ts`
+const tooFast = PATTERN_IDS.filter((id) => PATTERNS[id].bulletSpeed >= DASH_SPEED);
+check(
+  tooFast.length === 0,
+  `every pattern's bolts are slower than a dash (${PATTERN_IDS.map((id) => `${id} ${PATTERNS[id].bulletSpeed}`).join(", ")} < ${DASH_SPEED})`,
+);
+// A ring's gap, measured at the radius the ring is at when it matters: a `noose` at the
+// distance it is spawned, a `rings` ring by the time it has crossed a hero's own reach.
+const gapAt = (id: "rings" | "noose", radius: number) => {
+  const n = BOSS_ABILITIES[id].count;
+  const bolts = Math.max(1, Math.round(n * PATTERNS[id].gap));
+  // The angular hole is the gap's bolt slots plus the half-slot either side of them.
+  return ((bolts + 1) / n) * 2 * Math.PI * radius - 2 * PATTERNS[id].bulletRadius;
+};
+const need = 2 * HERO_RADIUS + 8;
+check(
+  gapAt("noose", PATTERNS.noose.reach) > need && gapAt("rings", 60) > need,
+  `a ring's door is wider than a hero (noose ${gapAt("noose", PATTERNS.noose.reach).toFixed(0)}u at ${PATTERNS.noose.reach}, rings ${gapAt("rings", 60).toFixed(0)}u at 60; hero needs ${need})`,
+);
+const noPattern = entries.filter((e) => !e.spec.phases[e.spec.phases.length - 1]!.abilities.some(isPattern));
+check(
+  noPattern.length === 0,
+  `every encounter deals at least one pattern by its last phase (${noPattern.map((e) => e.label).join(", ") || "all " + entries.length})`,
+);
+const inEveryTemplate = PATTERN_IDS.filter((id) => BOSSES.every((b) => b.phases.some((p) => p.abilities.includes(id))));
+check(
+  inEveryTemplate.length === 0,
+  `no pattern is dealt into every template (${inEveryTemplate.join(", ") || "none"})`,
 );
 
 console.log("");
