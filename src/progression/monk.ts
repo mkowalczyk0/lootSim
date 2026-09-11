@@ -66,7 +66,7 @@ export const MONK_STATUSES: readonly StatusSpec[] = [STATUS_FLOW];
 
 // --- abilities --------------------------------------------------------
 
-export const MONK_PALM_STRIKE: Ability = {
+export const MONK_PALM_STRIKE = {
   id: "monk.palm_strike",
   classId: "monk",
   name: "Palm Strike",
@@ -81,9 +81,9 @@ export const MONK_PALM_STRIKE: Ability = {
     { kind: "damage", damage: { base: 0.6, scale: "attack", type: "physical", canCrit: true }, to: "target" },
     { kind: "status", status: "flow", chance: 1, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_RISING_PALM: Ability = {
+export const MONK_RISING_PALM = {
   id: "monk.rising_palm",
   classId: "monk",
   name: "Rising Palm",
@@ -99,9 +99,9 @@ export const MONK_RISING_PALM: Ability = {
     { kind: "status", status: "stunned", chance: 0.7, to: "target" },
     { kind: "status", status: "flow", chance: 1, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_CRANE_SWEEP: Ability = {
+export const MONK_CRANE_SWEEP = {
   id: "monk.crane_sweep",
   classId: "monk",
   name: "Crane Sweep",
@@ -118,9 +118,9 @@ export const MONK_CRANE_SWEEP: Ability = {
     { kind: "status", status: "rooted", chance: 0.6, to: "allTargets" },
     { kind: "status", status: "flow", chance: 1, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_BREATH_CONTROL: Ability = {
+export const MONK_BREATH_CONTROL = {
   id: "monk.breath_control",
   classId: "monk",
   name: "Breath Control",
@@ -136,9 +136,9 @@ export const MONK_BREATH_CONTROL: Ability = {
     { kind: "cleanse", category: "debuff", to: "self" },
     { kind: "cleanse", category: "cc", to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_FLYING_KNEE: Ability = {
+export const MONK_FLYING_KNEE = {
   id: "monk.flying_knee",
   classId: "monk",
   name: "Flying Knee",
@@ -155,9 +155,9 @@ export const MONK_FLYING_KNEE: Ability = {
     { kind: "status", status: "stunned", chance: 0.5, to: "target" },
     { kind: "status", status: "flow", chance: 1, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_SEVEN_POINT_COMBO: Ability = {
+export const MONK_SEVEN_POINT_COMBO = {
   id: "monk.seven_point_combo",
   classId: "monk",
   name: "Seven-Point Combo",
@@ -177,9 +177,9 @@ export const MONK_SEVEN_POINT_COMBO: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "seven_point_combo.channel", kind: "targeting", note: "Infinite Sequence lets the combo loop while Flow holds." }],
-};
+} as const satisfies Ability;
 
-export const MONK_EMPTY_HAND: Ability = {
+export const MONK_EMPTY_HAND = {
   id: "monk.empty_hand",
   classId: "monk",
   name: "Empty Hand",
@@ -194,9 +194,9 @@ export const MONK_EMPTY_HAND: Ability = {
     { kind: "status", status: "flow", chance: 1, stacks: 3, to: "self" },
   ],
   mutationHooks: [{ id: "empty_hand.rule", kind: "damagePacket", note: "Master path turns this into a counter window." }],
-};
+} as const satisfies Ability;
 
-export const MONK_AFTERIMAGE_STEP: Ability = {
+export const MONK_AFTERIMAGE_STEP = {
   id: "monk.afterimage_step",
   classId: "monk",
   name: "Afterimage Step",
@@ -213,9 +213,9 @@ export const MONK_AFTERIMAGE_STEP: Ability = {
     { kind: "damage", damage: { base: 1.2, scale: "attack", type: "physical", canCrit: true }, to: "target" },
   ],
   mutationHooks: [{ id: "afterimage_step.summon", kind: "summon", note: "Water Step spawns an afterimage on every dash." }],
-};
+} as const satisfies Ability;
 
-export const MONK_INNER_CALM: Ability = {
+export const MONK_INNER_CALM = {
   id: "monk.inner_calm",
   classId: "monk",
   name: "Inner Calm",
@@ -230,9 +230,9 @@ export const MONK_INNER_CALM: Ability = {
     { kind: "heal", amount: 0.25, scale: "attack", to: "self", overTime: { duration: 2 } },
     { kind: "resource", resource: "chi", delta: 8, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const MONK_HEAVENLY_FIST: Ability = {
+export const MONK_HEAVENLY_FIST = {
   id: "monk.heavenly_fist",
   classId: "monk",
   name: "Heavenly Fist",
@@ -255,9 +255,9 @@ export const MONK_HEAVENLY_FIST: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "heavenly_fist.followup", kind: "followUp", note: "Infinite Motion lets the Monk keep comboing on landing." }],
-};
+} as const satisfies Ability;
 
-export const MONK_ABILITIES: readonly Ability[] = [
+export const MONK_ABILITIES = [
   MONK_PALM_STRIKE,
   MONK_RISING_PALM,
   MONK_CRANE_SWEEP,
@@ -268,7 +268,7 @@ export const MONK_ABILITIES: readonly Ability[] = [
   MONK_AFTERIMAGE_STEP,
   MONK_INNER_CALM,
   MONK_HEAVENLY_FIST,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

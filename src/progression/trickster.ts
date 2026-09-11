@@ -67,7 +67,7 @@ export const TRICKSTER_STATUSES: readonly StatusSpec[] = [STATUS_MISDIRECTED];
 
 // --- abilities --------------------------------------------------------
 
-export const TRICKSTER_FALSE_STEP: Ability = {
+export const TRICKSTER_FALSE_STEP = {
   id: "trickster.false_step",
   classId: "trickster",
   name: "False Step",
@@ -83,9 +83,9 @@ export const TRICKSTER_FALSE_STEP: Ability = {
     { kind: "summon", unit: "trickster_decoy", count: 1, duration: 6, command: { behavior: "guardPoint" } },
   ],
   mutationHooks: [{ id: "false_step.summon", kind: "summon", note: "Many Faces leaves a decoy on every dash." }],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_MIRROR_TRAP: Ability = {
+export const TRICKSTER_MIRROR_TRAP = {
   id: "trickster.mirror_trap",
   classId: "trickster",
   name: "Mirror Trap",
@@ -103,9 +103,9 @@ export const TRICKSTER_MIRROR_TRAP: Ability = {
       { kind: "status", status: "blinded", chance: 0.6, to: "enemies" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_BACKSTAB: Ability = {
+export const TRICKSTER_BACKSTAB = {
   id: "trickster.backstab",
   classId: "trickster",
   name: "Backstab",
@@ -122,9 +122,9 @@ export const TRICKSTER_BACKSTAB: Ability = {
     { kind: "damage", damage: { base: 2.6, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.25 }, to: "target" },
   ],
   mutationHooks: [{ id: "backstab.packet", kind: "damagePacket", note: "Death From Nowhere makes the strike from stealth a guaranteed crit." }],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_SLEIGHT_OF_HAND: Ability = {
+export const TRICKSTER_SLEIGHT_OF_HAND = {
   id: "trickster.sleight_of_hand",
   classId: "trickster",
   name: "Sleight of Hand",
@@ -139,9 +139,9 @@ export const TRICKSTER_SLEIGHT_OF_HAND: Ability = {
     { kind: "move", style: "teleport", toTarget: true },
     { kind: "status", status: "misdirected", chance: 1, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_VANISH: Ability = {
+export const TRICKSTER_VANISH = {
   id: "trickster.vanish",
   classId: "trickster",
   name: "Vanish",
@@ -155,9 +155,9 @@ export const TRICKSTER_VANISH: Ability = {
     { kind: "status", status: "stealth", chance: 1, to: "self" },
     { kind: "resource", resource: "deception", delta: 20, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_PAINTED_TARGET: Ability = {
+export const TRICKSTER_PAINTED_TARGET = {
   id: "trickster.painted_target",
   classId: "trickster",
   name: "Painted Target",
@@ -172,9 +172,9 @@ export const TRICKSTER_PAINTED_TARGET: Ability = {
     { kind: "summon", unit: "trickster_lure", count: 1, duration: 8, command: { behavior: "guardPoint" } },
     { kind: "status", status: "misdirected", chance: 1, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_KNIFE_RAIN: Ability = {
+export const TRICKSTER_KNIFE_RAIN = {
   id: "trickster.knife_rain",
   classId: "trickster",
   name: "Knife Rain",
@@ -190,9 +190,9 @@ export const TRICKSTER_KNIFE_RAIN: Ability = {
     { kind: "move", style: "dash", distance: 60, iframes: 0.1 },
     { kind: "projectile", projectile: { damage: { base: 0.5, scale: "attack", type: "physical", canCrit: true }, speed: 480, radius: 6, life: 0.6, count: 7, spread: 0.7, behavior: "line" } },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_DOUBLE_DOWN: Ability = {
+export const TRICKSTER_DOUBLE_DOWN = {
   id: "trickster.double_down",
   classId: "trickster",
   name: "Double Down",
@@ -207,9 +207,9 @@ export const TRICKSTER_DOUBLE_DOWN: Ability = {
     { kind: "resource", resource: "deception", delta: 15, to: "self" },
   ],
   mutationHooks: [{ id: "double_down.rule", kind: "damagePacket", note: "Gambler path swings the payout and the penalty." }],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_CHAOS_STEP: Ability = {
+export const TRICKSTER_CHAOS_STEP = {
   id: "trickster.chaos_step",
   classId: "trickster",
   name: "Chaos Step",
@@ -226,9 +226,9 @@ export const TRICKSTER_CHAOS_STEP: Ability = {
       { weight: 1, effects: [{ kind: "move", style: "teleport", distance: 90 }, { kind: "summon", unit: "trickster_decoy", count: 1, duration: 5, command: { behavior: "guardPoint" } }] },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_HALL_OF_MIRRORS: Ability = {
+export const TRICKSTER_HALL_OF_MIRRORS = {
   id: "trickster.hall_of_mirrors",
   classId: "trickster",
   name: "Hall of Mirrors",
@@ -246,9 +246,9 @@ export const TRICKSTER_HALL_OF_MIRRORS: Ability = {
     { kind: "status", status: "misdirected", chance: 1, to: "enemies" },
   ],
   mutationHooks: [{ id: "hall_of_mirrors.summon", kind: "summon", note: "Reality Killer lets Backstab fire from any of the copies." }],
-};
+} as const satisfies Ability;
 
-export const TRICKSTER_ABILITIES: readonly Ability[] = [
+export const TRICKSTER_ABILITIES = [
   TRICKSTER_FALSE_STEP,
   TRICKSTER_MIRROR_TRAP,
   TRICKSTER_BACKSTAB,
@@ -259,7 +259,7 @@ export const TRICKSTER_ABILITIES: readonly Ability[] = [
   TRICKSTER_DOUBLE_DOWN,
   TRICKSTER_CHAOS_STEP,
   TRICKSTER_HALL_OF_MIRRORS,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

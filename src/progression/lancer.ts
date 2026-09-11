@@ -95,7 +95,7 @@ export const LANCER_STATUSES: readonly StatusSpec[] = [STATUS_SKEWERED];
 
 // --- base abilities the tree rewrites -------------------------------
 
-export const LANCER_IMPALING_THRUST: Ability = {
+export const LANCER_IMPALING_THRUST = {
   id: "lancer.impaling_thrust",
   classId: "lancer",
   name: "Impaling Thrust",
@@ -115,9 +115,9 @@ export const LANCER_IMPALING_THRUST: Ability = {
     { id: "impaling_thrust.packet", kind: "damagePacket", note: "Impaler path scales and adds a wound rider." },
     { id: "impaling_thrust.reach", kind: "targeting", note: "Long Point / Through Flesh extend the line." },
   ],
-};
+} as const satisfies Ability;
 
-export const LANCER_METEOR_LANCE: Ability = {
+export const LANCER_METEOR_LANCE = {
   id: "lancer.meteor_lance",
   classId: "lancer",
   name: "Meteor Lance",
@@ -137,9 +137,9 @@ export const LANCER_METEOR_LANCE: Ability = {
   mutationHooks: [
     { id: "meteor_lance.trail", kind: "followUp", note: "Comet Vanguard leaves an ally trail behind the charge." },
   ],
-};
+} as const satisfies Ability;
 
-export const LANCER_VAULTING_SPEAR: Ability = {
+export const LANCER_VAULTING_SPEAR = {
   id: "lancer.vaulting_spear",
   classId: "lancer",
   name: "Vaulting Spear",
@@ -157,9 +157,9 @@ export const LANCER_VAULTING_SPEAR: Ability = {
     { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true, knockback: 40 }, to: "enemies" },
   ],
   mutationHooks: [{ id: "vaulting_spear.landing", kind: "movement", note: "Vaultmaster clears larger bodies and pays Momentum." }],
-};
+} as const satisfies Ability;
 
-export const LANCER_DRAGOON_LINE: Ability = {
+export const LANCER_DRAGOON_LINE = {
   id: "lancer.dragoon_line",
   classId: "lancer",
   name: "Dragoon Line",
@@ -176,9 +176,9 @@ export const LANCER_DRAGOON_LINE: Ability = {
     { kind: "pull", force: 120, to: "allTargets" },
     { kind: "damage", damage: { base: 1.1, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const LANCER_PHALANX_BRACE: Ability = {
+export const LANCER_PHALANX_BRACE = {
   id: "lancer.phalanx_brace",
   classId: "lancer",
   name: "Phalanx Brace",
@@ -193,9 +193,9 @@ export const LANCER_PHALANX_BRACE: Ability = {
     { kind: "interrupt", radius: 70 },
   ],
   mutationHooks: [{ id: "phalanx_brace.wall", kind: "replaceEffect", note: "Impalement Wall turns the brace into a standing spear barrier." }],
-};
+} as const satisfies Ability;
 
-export const LANCER_SKEWER_STEP: Ability = {
+export const LANCER_SKEWER_STEP = {
   id: "lancer.skewer_step",
   classId: "lancer",
   name: "Skewer Step",
@@ -217,9 +217,9 @@ export const LANCER_SKEWER_STEP: Ability = {
       { kind: "damage", damage: { base: 1.2, scale: "attack", type: "physical" }, to: "allTargets" },
     ],
   },
-};
+} as const satisfies Ability;
 
-export const LANCER_CRESCENT_SWEEP: Ability = {
+export const LANCER_CRESCENT_SWEEP = {
   id: "lancer.crescent_sweep",
   classId: "lancer",
   name: "Crescent Sweep",
@@ -233,9 +233,9 @@ export const LANCER_CRESCENT_SWEEP: Ability = {
   range: 90,
   shape: { length: 90, arc: Math.PI * 0.9 },
   effects: [{ kind: "damage", damage: { base: 1.5, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" }],
-};
+} as const satisfies Ability;
 
-export const LANCER_HEAVENFALL: Ability = {
+export const LANCER_HEAVENFALL = {
   id: "lancer.heavenfall",
   classId: "lancer",
   name: "Heavenfall",
@@ -252,9 +252,9 @@ export const LANCER_HEAVENFALL: Ability = {
     { kind: "damage", damage: { base: 2.2, scale: "attack", type: "physical", canCrit: true, knockback: 90 }, to: "allTargets" },
     { kind: "status", status: "stunned", chance: 0.4, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const LANCER_REDLINE_CHARGE: Ability = {
+export const LANCER_REDLINE_CHARGE = {
   id: "lancer.redline_charge",
   classId: "lancer",
   name: "Redline Charge",
@@ -277,9 +277,9 @@ export const LANCER_REDLINE_CHARGE: Ability = {
     { id: "redline_charge.route", kind: "movement", note: "Living Projectile makes the route invulnerable and piercing." },
     { id: "redline_charge.packet", kind: "damagePacket", note: "Momentum spend empowers the finishing thrust." },
   ],
-};
+} as const satisfies Ability;
 
-export const LANCER_BANNER_FIRST_STEP: Ability = {
+export const LANCER_BANNER_FIRST_STEP = {
   id: "lancer.banner_first_step",
   classId: "lancer",
   name: "Banner of the First Step",
@@ -295,9 +295,9 @@ export const LANCER_BANNER_FIRST_STEP: Ability = {
     { kind: "terrain", piece: "anchor", duration: 10, hp: 0 },
   ],
   mutationHooks: [{ id: "banner.follow", kind: "zone", note: "Banner of Advance makes the banner follow the Lancer." }],
-};
+} as const satisfies Ability;
 
-export const LANCER_ABILITIES: readonly Ability[] = [
+export const LANCER_ABILITIES = [
   LANCER_IMPALING_THRUST,
   LANCER_VAULTING_SPEAR,
   LANCER_DRAGOON_LINE,
@@ -308,7 +308,7 @@ export const LANCER_ABILITIES: readonly Ability[] = [
   LANCER_REDLINE_CHARGE,
   LANCER_BANNER_FIRST_STEP,
   LANCER_METEOR_LANCE,
-];
+] as const satisfies readonly Ability[];
 
 /** @deprecated use `LANCER_ABILITIES` — kept for the progression reference test. */
 export const LANCER_BASE_ABILITIES: readonly Ability[] = [LANCER_IMPALING_THRUST, LANCER_METEOR_LANCE];

@@ -65,7 +65,7 @@ export const REAPER_STATUSES: readonly StatusSpec[] = [STATUS_REAPED];
 
 // --- abilities --------------------------------------------------------
 
-export const REAPER_REAPING_ARC: Ability = {
+export const REAPER_REAPING_ARC = {
   id: "reaper.reaping_arc",
   classId: "reaper",
   name: "Reaping Arc",
@@ -82,9 +82,9 @@ export const REAPER_REAPING_ARC: Ability = {
     { kind: "damage", damage: { base: 1.4, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.2 }, to: "allTargets" },
   ],
   mutationHooks: [{ id: "reaping_arc.targeting", kind: "targeting", note: "Scythe Lord widens this to a full circle." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_SOUL_BRAND: Ability = {
+export const REAPER_SOUL_BRAND = {
   id: "reaper.soul_brand",
   classId: "reaper",
   name: "Soul Brand",
@@ -100,9 +100,9 @@ export const REAPER_SOUL_BRAND: Ability = {
     { kind: "status", status: "reaped", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "soul_brand.status", kind: "status", note: "Endless Harvest spreads the brand on death." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_GRAVE_SWEEP: Ability = {
+export const REAPER_GRAVE_SWEEP = {
   id: "reaper.grave_sweep",
   classId: "reaper",
   name: "Grave Sweep",
@@ -118,9 +118,9 @@ export const REAPER_GRAVE_SWEEP: Ability = {
     { kind: "move", style: "dash", distance: 120, iframes: 0.15 },
     { kind: "damage", damage: { base: 1.2, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const REAPER_WRAITH_DASH: Ability = {
+export const REAPER_WRAITH_DASH = {
   id: "reaper.wraith_dash",
   classId: "reaper",
   name: "Wraith Dash",
@@ -135,9 +135,9 @@ export const REAPER_WRAITH_DASH: Ability = {
     { kind: "move", style: "blink", distance: 200, iframes: 0.5 },
   ],
   mutationHooks: [{ id: "wraith_dash.movement", kind: "movement", note: "Wraith path lengthens the incorporeal window." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_HARVEST_LIFE: Ability = {
+export const REAPER_HARVEST_LIFE = {
   id: "reaper.harvest_life",
   classId: "reaper",
   name: "Harvest Life",
@@ -151,9 +151,9 @@ export const REAPER_HARVEST_LIFE: Ability = {
   effects: [
     { kind: "heal", amount: 1.2, scale: "attack", to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const REAPER_PALE_HOOK: Ability = {
+export const REAPER_PALE_HOOK = {
   id: "reaper.pale_hook",
   classId: "reaper",
   name: "Pale Hook",
@@ -169,9 +169,9 @@ export const REAPER_PALE_HOOK: Ability = {
     { kind: "pull", force: 180, to: "enemies" },
     { kind: "status", status: "reaped", chance: 1, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const REAPER_EXECUTIONERS_STEP: Ability = {
+export const REAPER_EXECUTIONERS_STEP = {
   id: "reaper.executioners_step",
   classId: "reaper",
   name: "Executioner's Step",
@@ -187,9 +187,9 @@ export const REAPER_EXECUTIONERS_STEP: Ability = {
     { kind: "damage", damage: { base: 2.0, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.5 }, to: "target" },
   ],
   mutationHooks: [{ id: "executioners_step.packet", kind: "damagePacket", note: "Final Sentence raises the execute threshold." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_SOUL_SHIELD: Ability = {
+export const REAPER_SOUL_SHIELD = {
   id: "reaper.soul_shield",
   classId: "reaper",
   name: "Soul Shield",
@@ -204,9 +204,9 @@ export const REAPER_SOUL_SHIELD: Ability = {
     { kind: "shield", amount: 2.0, scale: "attack", to: "self", duration: 6 },
   ],
   mutationHooks: [{ id: "soul_shield.shield", kind: "zone", note: "Soul Fortress projects the shield to allies." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_MARCH_OF_THE_REAPED: Ability = {
+export const REAPER_MARCH_OF_THE_REAPED = {
   id: "reaper.march_of_the_reaped",
   classId: "reaper",
   name: "March of the Reaped",
@@ -220,9 +220,9 @@ export const REAPER_MARCH_OF_THE_REAPED: Ability = {
   effects: [
     { kind: "summon", unit: "reaped_wraith", count: 3, duration: 12, command: { behavior: "follow", inheritPower: 0.5 } },
   ],
-};
+} as const satisfies Ability;
 
-export const REAPER_DEATH_COMES_DUE: Ability = {
+export const REAPER_DEATH_COMES_DUE = {
   id: "reaper.death_comes_due",
   classId: "reaper",
   name: "Death Comes Due",
@@ -250,9 +250,9 @@ export const REAPER_DEATH_COMES_DUE: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "death_comes_due.packet", kind: "damagePacket", note: "The Final Harvest raises the threshold and pays out Souls per kill." }],
-};
+} as const satisfies Ability;
 
-export const REAPER_ABILITIES: readonly Ability[] = [
+export const REAPER_ABILITIES = [
   REAPER_REAPING_ARC,
   REAPER_SOUL_BRAND,
   REAPER_GRAVE_SWEEP,
@@ -263,7 +263,7 @@ export const REAPER_ABILITIES: readonly Ability[] = [
   REAPER_SOUL_SHIELD,
   REAPER_MARCH_OF_THE_REAPED,
   REAPER_DEATH_COMES_DUE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

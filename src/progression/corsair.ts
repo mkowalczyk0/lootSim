@@ -77,7 +77,7 @@ export const CORSAIR_STATUSES: readonly StatusSpec[] = [STATUS_HOOKED, STATUS_BO
 
 // --- abilities --------------------------------------------------------
 
-export const CORSAIR_HOOKSHOT: Ability = {
+export const CORSAIR_HOOKSHOT = {
   id: "corsair.hookshot",
   classId: "corsair",
   name: "Hookshot",
@@ -93,9 +93,9 @@ export const CORSAIR_HOOKSHOT: Ability = {
     { kind: "status", status: "hooked", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "hookshot.movement", kind: "movement", note: "Boarding Hook chains straight into Boarding Cut." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_BOARDING_CUT: Ability = {
+export const CORSAIR_BOARDING_CUT = {
   id: "corsair.boarding_cut",
   classId: "corsair",
   name: "Boarding Cut",
@@ -112,9 +112,9 @@ export const CORSAIR_BOARDING_CUT: Ability = {
       { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true }, to: "target" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_CHAIN_DRAG: Ability = {
+export const CORSAIR_CHAIN_DRAG = {
   id: "corsair.chain_drag",
   classId: "corsair",
   name: "Chain Drag",
@@ -131,9 +131,9 @@ export const CORSAIR_CHAIN_DRAG: Ability = {
     { kind: "pull", force: 60, to: "target" },
   ],
   mutationHooks: [{ id: "chain_drag.status", kind: "status", note: "Chainmaster path lets you drag several at once." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_POWDER_KEG: Ability = {
+export const CORSAIR_POWDER_KEG = {
   id: "corsair.powder_keg",
   classId: "corsair",
   name: "Powder Keg",
@@ -147,9 +147,9 @@ export const CORSAIR_POWDER_KEG: Ability = {
   effects: [
     { kind: "projectile", projectile: { damage: { base: 2.4, scale: "attack", type: "fire", canCrit: true, knockback: 130 }, speed: 220, radius: 90, life: 1.6, behavior: "line", onExpire: [{ kind: "status", status: "burn", chance: 0.7, to: "enemies" }] } },
   ],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_GRAPPLE_SWING: Ability = {
+export const CORSAIR_GRAPPLE_SWING = {
   id: "corsair.grapple_swing",
   classId: "corsair",
   name: "Grapple Swing",
@@ -164,9 +164,9 @@ export const CORSAIR_GRAPPLE_SWING: Ability = {
     { kind: "move", style: "dash", distance: 220, iframes: 0.35 },
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true }, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_DIRTY_TRICK: Ability = {
+export const CORSAIR_DIRTY_TRICK = {
   id: "corsair.dirty_trick",
   classId: "corsair",
   name: "Dirty Trick",
@@ -181,9 +181,9 @@ export const CORSAIR_DIRTY_TRICK: Ability = {
   effects: [
     { kind: "status", status: "blinded", chance: 1, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_DECKHANDS_CALL: Ability = {
+export const CORSAIR_DECKHANDS_CALL = {
   id: "corsair.deckhands_call",
   classId: "corsair",
   name: "Deckhand's Call",
@@ -198,9 +198,9 @@ export const CORSAIR_DECKHANDS_CALL: Ability = {
     { kind: "summon", unit: "ghost_deckhand", count: 1, duration: 16, command: { behavior: "aggroNearest", inheritPower: 0.5 } },
   ],
   mutationHooks: [{ id: "deckhands_call.summon", kind: "summon", note: "Ghost Crew keeps a permanent standing complement." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_RICOCHET_SHOT: Ability = {
+export const CORSAIR_RICOCHET_SHOT = {
   id: "corsair.ricochet_shot",
   classId: "corsair",
   name: "Ricochet Shot",
@@ -215,9 +215,9 @@ export const CORSAIR_RICOCHET_SHOT: Ability = {
     { kind: "projectile", projectile: { damage: { base: 1.5, scale: "attack", type: "physical", canCrit: true }, speed: 620, radius: 8, life: 1.4, pierce: 0, count: 1, behavior: "boomerang" } },
   ],
   mutationHooks: [{ id: "ricochet_shot.projectile", kind: "projectile", note: "Six Shooter adds bounces and a reload burst." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_PLUNDER: Ability = {
+export const CORSAIR_PLUNDER = {
   id: "corsair.plunder",
   classId: "corsair",
   name: "Plunder",
@@ -234,9 +234,9 @@ export const CORSAIR_PLUNDER: Ability = {
     { kind: "resource", resource: "crew", delta: 1, to: "self" },
   ],
   mutationHooks: [{ id: "plunder.status", kind: "status", note: "Black Market path compounds the payout." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_BROADSIDE: Ability = {
+export const CORSAIR_BROADSIDE = {
   id: "corsair.broadside",
   classId: "corsair",
   name: "Broadside",
@@ -260,9 +260,9 @@ export const CORSAIR_BROADSIDE: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "broadside.followup", kind: "followUp", note: "Dread Admiral has the ghost crew fire a second volley." }],
-};
+} as const satisfies Ability;
 
-export const CORSAIR_ABILITIES: readonly Ability[] = [
+export const CORSAIR_ABILITIES = [
   CORSAIR_HOOKSHOT,
   CORSAIR_BOARDING_CUT,
   CORSAIR_CHAIN_DRAG,
@@ -273,7 +273,7 @@ export const CORSAIR_ABILITIES: readonly Ability[] = [
   CORSAIR_RICOCHET_SHOT,
   CORSAIR_PLUNDER,
   CORSAIR_BROADSIDE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

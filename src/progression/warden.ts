@@ -83,7 +83,7 @@ export const WARDEN_STATUSES: readonly StatusSpec[] = [STATUS_ENTANGLED, STATUS_
 
 // --- abilities --------------------------------------------------------
 
-export const WARDEN_THORNSTRIKE: Ability = {
+export const WARDEN_THORNSTRIKE = {
   id: "warden.thornstrike",
   classId: "warden",
   name: "Thornstrike",
@@ -97,9 +97,9 @@ export const WARDEN_THORNSTRIKE: Ability = {
   effects: [
     { kind: "projectile", projectile: { damage: { base: 1.2, scale: "attack", type: "nature", canCrit: true, inflict: { status: "rooted", chance: 1 } }, speed: 480, radius: 8, life: 0.9 } },
   ],
-};
+} as const satisfies Ability;
 
-export const WARDEN_LIVING_WALL: Ability = {
+export const WARDEN_LIVING_WALL = {
   id: "warden.living_wall",
   classId: "warden",
   name: "Living Wall",
@@ -116,9 +116,9 @@ export const WARDEN_LIVING_WALL: Ability = {
     { kind: "zone", zone: { radius: 60, duration: 12, tickInterval: 1, follows: false, damage: { base: 0.3, scale: "attack", type: "nature", channel: "periodic" }, status: { id: "rooted", chance: 0.3 } } },
   ],
   mutationHooks: [{ id: "living_wall.terrain", kind: "zone", note: "Thornkeeper path makes the wall lash out." }],
-};
+} as const satisfies Ability;
 
-export const WARDEN_BEAR_ASPECT: Ability = {
+export const WARDEN_BEAR_ASPECT = {
   id: "warden.bear_aspect",
   classId: "warden",
   name: "Bear Aspect",
@@ -133,9 +133,9 @@ export const WARDEN_BEAR_ASPECT: Ability = {
     { kind: "threat", op: "generate", radius: 150, amount: 40, to: "enemies" },
   ],
   mutationHooks: [{ id: "bear_aspect.status", kind: "status", note: "Beast path sharpens the form and adds a swipe." }],
-};
+} as const satisfies Ability;
 
-export const WARDEN_VINE_SNARE: Ability = {
+export const WARDEN_VINE_SNARE = {
   id: "warden.vine_snare",
   classId: "warden",
   name: "Vine Snare",
@@ -152,9 +152,9 @@ export const WARDEN_VINE_SNARE: Ability = {
     { kind: "damage", damage: { base: 0.8, scale: "attack", type: "nature", canCrit: true }, to: "allTargets" },
     { kind: "status", status: "entangled", chance: 1, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const WARDEN_VERDANT_SHELTER: Ability = {
+export const WARDEN_VERDANT_SHELTER = {
   id: "warden.verdant_shelter",
   classId: "warden",
   name: "Verdant Shelter",
@@ -170,9 +170,9 @@ export const WARDEN_VERDANT_SHELTER: Ability = {
     { kind: "zone", zone: { radius: 120, duration: 10, tickInterval: 1, follows: false, benefit: "heal" } },
   ],
   mutationHooks: [{ id: "verdant_shelter.zone", kind: "zone", note: "Verdant path makes the shelter follow the party." }],
-};
+} as const satisfies Ability;
 
-export const WARDEN_NATURES_REPRISAL: Ability = {
+export const WARDEN_NATURES_REPRISAL = {
   id: "warden.natures_reprisal",
   classId: "warden",
   name: "Nature's Reprisal",
@@ -188,9 +188,9 @@ export const WARDEN_NATURES_REPRISAL: Ability = {
       { kind: "status", status: "rooted", chance: 1, to: "enemies" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const WARDEN_WILD_CHARGE: Ability = {
+export const WARDEN_WILD_CHARGE = {
   id: "warden.wild_charge",
   classId: "warden",
   name: "Wild Charge",
@@ -206,9 +206,9 @@ export const WARDEN_WILD_CHARGE: Ability = {
     { kind: "move", style: "charge", distance: 240, iframes: 0.3 },
     { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true, knockback: 120 }, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const WARDEN_REGROWTH: Ability = {
+export const WARDEN_REGROWTH = {
   id: "warden.regrowth",
   classId: "warden",
   name: "Regrowth",
@@ -224,9 +224,9 @@ export const WARDEN_REGROWTH: Ability = {
     { kind: "summon", unit: "healing_bloom", count: 1, duration: 14, command: { behavior: "guardPoint" } },
     { kind: "heal", amount: 0.3, scale: "attack", to: "lowestHealthAlly", overTime: { duration: 6 } },
   ],
-};
+} as const satisfies Ability;
 
-export const WARDEN_OVERGROWTH: Ability = {
+export const WARDEN_OVERGROWTH = {
   id: "warden.overgrowth",
   classId: "warden",
   name: "Overgrowth",
@@ -242,9 +242,9 @@ export const WARDEN_OVERGROWTH: Ability = {
     { kind: "status", status: "entangled", chance: 0.6, to: "enemies" },
   ],
   mutationHooks: [{ id: "overgrowth.rule", kind: "zone", note: "Ancient path makes Overgrowth permanent within the arena." }],
-};
+} as const satisfies Ability;
 
-export const WARDEN_ANCIENT_GROVE: Ability = {
+export const WARDEN_ANCIENT_GROVE = {
   id: "warden.ancient_grove",
   classId: "warden",
   name: "Ancient Grove",
@@ -262,9 +262,9 @@ export const WARDEN_ANCIENT_GROVE: Ability = {
     { kind: "zone", zone: { radius: 280, duration: 14, tickInterval: 1, follows: false, benefit: "heal" } },
   ],
   mutationHooks: [{ id: "ancient_grove.zone", kind: "zone", note: "The Wildwood makes the grove permanent and mobile." }],
-};
+} as const satisfies Ability;
 
-export const WARDEN_ABILITIES: readonly Ability[] = [
+export const WARDEN_ABILITIES = [
   WARDEN_THORNSTRIKE,
   WARDEN_LIVING_WALL,
   WARDEN_BEAR_ASPECT,
@@ -275,7 +275,7 @@ export const WARDEN_ABILITIES: readonly Ability[] = [
   WARDEN_REGROWTH,
   WARDEN_OVERGROWTH,
   WARDEN_ANCIENT_GROVE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

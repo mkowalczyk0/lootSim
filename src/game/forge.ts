@@ -176,7 +176,7 @@ export function augment(item: Item, rng: Rng): Item {
 
 /** The granted skills this item could end up carrying — never the one it already has. */
 export function inscribePool(item: Item): readonly string[] {
-  return (GRANTABLE_ABILITY_IDS as readonly string[]).filter((id) => id !== item.grant);
+  return GRANTABLE_ABILITY_IDS.filter((id) => id !== item.grant);
 }
 
 /** Inscribe a skill onto an item without one, or rescribe a different one onto an item that has one. */

@@ -114,7 +114,7 @@ export const NECROMANCER_STATUSES: readonly StatusSpec[] = [STATUS_SOUL_BRAND, S
 
 // --- abilities (9 + 1) --------------------------------------------
 
-export const NECROMANCER_RAISE_SKELETON: Ability = {
+export const NECROMANCER_RAISE_SKELETON = {
   id: "necromancer.raise_skeleton",
   classId: "necromancer",
   name: "Raise Skeleton",
@@ -133,9 +133,9 @@ export const NECROMANCER_RAISE_SKELETON: Ability = {
     { kind: "summon", unit: "skeleton_warrior", count: 1, duration: 45, fromCorpses: 1, command: { behavior: "aggroNearest", inheritPower: 0.5 } },
   ],
   mutationHooks: [{ id: "raise_skeleton.count", kind: "summon", note: "Legion Commander raises two at a time, weaker each." }],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_BONE_SPEAR: Ability = {
+export const NECROMANCER_BONE_SPEAR = {
   id: "necromancer.bone_spear",
   classId: "necromancer",
   name: "Bone Spear",
@@ -162,9 +162,9 @@ export const NECROMANCER_BONE_SPEAR: Ability = {
       },
     },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_CORPSE_BOMB: Ability = {
+export const NECROMANCER_CORPSE_BOMB = {
   id: "necromancer.corpse_bomb",
   classId: "necromancer",
   name: "Corpse Bomb",
@@ -189,9 +189,9 @@ export const NECROMANCER_CORPSE_BOMB: Ability = {
     { id: "corpse_bomb.detonation", kind: "damagePacket", note: "Grave Industry scales the blast." },
     { id: "corpse_bomb.bone_structure", kind: "replaceEffect", note: "Bone Structure: the corpse raises a turret instead of exploding." },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_GRAVE_GUARD: Ability = {
+export const NECROMANCER_GRAVE_GUARD = {
   id: "necromancer.grave_guard",
   classId: "necromancer",
   name: "Grave Guard",
@@ -211,9 +211,9 @@ export const NECROMANCER_GRAVE_GUARD: Ability = {
     { kind: "summon", unit: "grave_guard", count: 1, duration: 30, fromCorpses: 1, command: { behavior: "guardPoint", inheritPower: 0.7 } },
     { kind: "threat", op: "taunt", radius: 140, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_BLOOD_SERVANT: Ability = {
+export const NECROMANCER_BLOOD_SERVANT = {
   id: "necromancer.blood_servant",
   classId: "necromancer",
   name: "Blood Servant",
@@ -228,9 +228,9 @@ export const NECROMANCER_BLOOD_SERVANT: Ability = {
     { kind: "summon", unit: "blood_servant", count: 1, duration: 12, command: { behavior: "follow", inheritPower: 0.2 } },
     { kind: "heal", amount: 0.3, scale: "spell", to: "self", overTime: { duration: 12 } },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_CORPSE_WALK: Ability = {
+export const NECROMANCER_CORPSE_WALK = {
   id: "necromancer.corpse_walk",
   classId: "necromancer",
   name: "Corpse Walk",
@@ -246,9 +246,9 @@ export const NECROMANCER_CORPSE_WALK: Ability = {
     { kind: "move", style: "teleport", leaveAnchor: true, iframes: 0.3 },
     { kind: "summon", unit: "decoy_husk", count: 1, duration: 4, command: { behavior: "guardPoint", inheritPower: 0 } },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_COMMAND_RAVAGE: Ability = {
+export const NECROMANCER_COMMAND_RAVAGE = {
   id: "necromancer.command_ravage",
   classId: "necromancer",
   name: "Command: Ravage",
@@ -266,9 +266,9 @@ export const NECROMANCER_COMMAND_RAVAGE: Ability = {
     { kind: "status", status: "exposed", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "command_ravage.behavior", kind: "summon", note: "Death Knight makes the order a frenzy buff, not just a target swap." }],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_OSSUARY_WALL: Ability = {
+export const NECROMANCER_OSSUARY_WALL = {
   id: "necromancer.ossuary_wall",
   classId: "necromancer",
   name: "Ossuary Wall",
@@ -287,9 +287,9 @@ export const NECROMANCER_OSSUARY_WALL: Ability = {
     { kind: "terrain", piece: "wall", length: 160, duration: 8, hp: 260 },
   ],
   mutationHooks: [{ id: "ossuary_wall.pieces", kind: "replaceEffect", note: "Ossuary keystone makes the wall bristle with bone spikes." }],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_DEATH_PACT: Ability = {
+export const NECROMANCER_DEATH_PACT = {
   id: "necromancer.death_pact",
   classId: "necromancer",
   name: "Death Pact",
@@ -310,9 +310,9 @@ export const NECROMANCER_DEATH_PACT: Ability = {
       ],
     },
   ],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_KINGDOM_OF_BONES: Ability = {
+export const NECROMANCER_KINGDOM_OF_BONES = {
   id: "necromancer.kingdom_of_bones",
   classId: "necromancer",
   name: "Kingdom of Bones",
@@ -329,9 +329,9 @@ export const NECROMANCER_KINGDOM_OF_BONES: Ability = {
     { kind: "heal", amount: 0.5, scale: "spell", to: "summons" },
   ],
   mutationHooks: [{ id: "kingdom.scaling", kind: "summon", note: "Soul Legion converts the raise into Soul ammunition on demand." }],
-};
+} as const satisfies Ability;
 
-export const NECROMANCER_ABILITIES: readonly Ability[] = [
+export const NECROMANCER_ABILITIES = [
   NECROMANCER_RAISE_SKELETON,
   NECROMANCER_BONE_SPEAR,
   NECROMANCER_CORPSE_BOMB,
@@ -342,7 +342,7 @@ export const NECROMANCER_ABILITIES: readonly Ability[] = [
   NECROMANCER_OSSUARY_WALL,
   NECROMANCER_DEATH_PACT,
   NECROMANCER_KINGDOM_OF_BONES,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree ---------------------------------------------------
 

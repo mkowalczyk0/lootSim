@@ -66,7 +66,7 @@ export const SWORDSMAN_STATUSES: readonly StatusSpec[] = [STATUS_SWORD_PARRY];
 
 // --- abilities --------------------------------------------------------
 
-export const SWORDSMAN_THREEFOLD_CUT: Ability = {
+export const SWORDSMAN_THREEFOLD_CUT = {
   id: "swordsman.threefold_cut",
   classId: "swordsman",
   name: "Threefold Cut",
@@ -85,9 +85,9 @@ export const SWORDSMAN_THREEFOLD_CUT: Ability = {
     { kind: "damage", damage: { base: 1.1, scale: "attack", type: "physical", canCrit: true }, to: "target" },
   ],
   mutationHooks: [{ id: "threefold_cut.packet", kind: "damagePacket", note: "Weapon Rhythm scales each hit." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_CROSSGUARD: Ability = {
+export const SWORDSMAN_CROSSGUARD = {
   id: "swordsman.crossguard",
   classId: "swordsman",
   name: "Crossguard",
@@ -102,9 +102,9 @@ export const SWORDSMAN_CROSSGUARD: Ability = {
     { kind: "status", status: "sword_parry", to: "self", chance: 1 },
   ],
   mutationHooks: [{ id: "crossguard.window", kind: "trigger", note: "Riposte bolts a counter onto a successful block." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_RISING_EDGE: Ability = {
+export const SWORDSMAN_RISING_EDGE = {
   id: "swordsman.rising_edge",
   classId: "swordsman",
   name: "Rising Edge",
@@ -121,9 +121,9 @@ export const SWORDSMAN_RISING_EDGE: Ability = {
     { kind: "status", status: "stunned", chance: 0.5, to: "allTargets" },
     { kind: "interrupt", radius: 80 },
   ],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_SEVERING_ARC: Ability = {
+export const SWORDSMAN_SEVERING_ARC = {
   id: "swordsman.severing_arc",
   classId: "swordsman",
   name: "Severing Arc",
@@ -145,9 +145,9 @@ export const SWORDSMAN_SEVERING_ARC: Ability = {
     { kind: "status", status: "bleed", chance: 0.6, to: "allTargets" },
   ],
   mutationHooks: [{ id: "severing_arc.execute", kind: "damagePacket", note: "Finish deepens the execute rider." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_TWIN_TEMPO: Ability = {
+export const SWORDSMAN_TWIN_TEMPO = {
   id: "swordsman.twin_tempo",
   classId: "swordsman",
   name: "Twin Tempo",
@@ -164,9 +164,9 @@ export const SWORDSMAN_TWIN_TEMPO: Ability = {
     { kind: "resource", resource: "technique", delta: 10, to: "self" },
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true, knockback: 30 }, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_SWORDFLASH: Ability = {
+export const SWORDSMAN_SWORDFLASH = {
   id: "swordsman.swordflash",
   classId: "swordsman",
   name: "Swordflash",
@@ -182,9 +182,9 @@ export const SWORDSMAN_SWORDFLASH: Ability = {
     { kind: "damage", damage: { base: 1.5, scale: "attack", type: "physical", canCrit: true }, to: "target" },
   ],
   mutationHooks: [{ id: "swordflash.reset", kind: "trigger", note: "Passing Judgment resets this on an execution." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_IRON_WALTZ: Ability = {
+export const SWORDSMAN_IRON_WALTZ = {
   id: "swordsman.iron_waltz",
   classId: "swordsman",
   name: "Iron Waltz",
@@ -200,9 +200,9 @@ export const SWORDSMAN_IRON_WALTZ: Ability = {
   effects: [
     { kind: "damage", damage: { base: 0.5, scale: "attack", type: "physical", canCrit: true, channel: "periodic" }, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_KINGS_CHALLENGE: Ability = {
+export const SWORDSMAN_KINGS_CHALLENGE = {
   id: "swordsman.kings_challenge",
   classId: "swordsman",
   name: "King's Challenge",
@@ -219,9 +219,9 @@ export const SWORDSMAN_KINGS_CHALLENGE: Ability = {
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "kings_challenge.mark", kind: "status", note: "King's Challenge duration and riders." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_MASTERSTROKE: Ability = {
+export const SWORDSMAN_MASTERSTROKE = {
   id: "swordsman.masterstroke",
   classId: "swordsman",
   name: "Masterstroke",
@@ -240,9 +240,9 @@ export const SWORDSMAN_MASTERSTROKE: Ability = {
     { id: "masterstroke.packet", kind: "damagePacket", note: "Spellblade Execution detonates elemental effects here." },
     { id: "masterstroke.crit", kind: "trigger", note: "Ruthless makes the auto-crit unconditional." },
   ],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_SWORD_ECLIPSE: Ability = {
+export const SWORDSMAN_SWORD_ECLIPSE = {
   id: "swordsman.sword_eclipse",
   classId: "swordsman",
   name: "Sword Eclipse",
@@ -265,9 +265,9 @@ export const SWORDSMAN_SWORD_ECLIPSE: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "sword_eclipse.finish", kind: "followUp", note: "Sword Saint adds the omnidirectional finisher." }],
-};
+} as const satisfies Ability;
 
-export const SWORDSMAN_ABILITIES: readonly Ability[] = [
+export const SWORDSMAN_ABILITIES = [
   SWORDSMAN_THREEFOLD_CUT,
   SWORDSMAN_CROSSGUARD,
   SWORDSMAN_RISING_EDGE,
@@ -278,7 +278,7 @@ export const SWORDSMAN_ABILITIES: readonly Ability[] = [
   SWORDSMAN_KINGS_CHALLENGE,
   SWORDSMAN_MASTERSTROKE,
   SWORDSMAN_SWORD_ECLIPSE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

@@ -78,7 +78,7 @@ export const RANGER_STATUSES: readonly StatusSpec[] = [STATUS_QUARRY, STATUS_PIN
 
 // --- abilities --------------------------------------------------------
 
-export const RANGER_SPLITSHOT: Ability = {
+export const RANGER_SPLITSHOT = {
   id: "ranger.splitshot",
   classId: "ranger",
   name: "Splitshot",
@@ -100,9 +100,9 @@ export const RANGER_SPLITSHOT: Ability = {
     },
   ],
   mutationHooks: [{ id: "splitshot.projectile", kind: "projectile", note: "Broadheads / Full Draw scale the shot." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_BARBED_ARROW: Ability = {
+export const RANGER_BARBED_ARROW = {
   id: "ranger.barbed_arrow",
   classId: "ranger",
   name: "Barbed Arrow",
@@ -116,9 +116,9 @@ export const RANGER_BARBED_ARROW: Ability = {
   effects: [
     { kind: "projectile", projectile: { damage: { base: 0.9, scale: "attack", type: "physical", canCrit: true, inflict: { status: "bleed", chance: 1 } }, speed: 480, radius: 8, life: 0.9, pierce: 1 } },
   ],
-};
+} as const satisfies Ability;
 
-export const RANGER_SNARE_TRAP: Ability = {
+export const RANGER_SNARE_TRAP = {
   id: "ranger.snare_trap",
   classId: "ranger",
   name: "Snare Trap",
@@ -135,9 +135,9 @@ export const RANGER_SNARE_TRAP: Ability = {
     { kind: "delay", seconds: 0, effects: [{ kind: "status", status: "pinned", chance: 1, to: "enemies" }] },
   ],
   mutationHooks: [{ id: "snare_trap.status", kind: "status", note: "Trapper path chains and re-arms." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_EXPLOSIVE_TRAP: Ability = {
+export const RANGER_EXPLOSIVE_TRAP = {
   id: "ranger.explosive_trap",
   classId: "ranger",
   name: "Explosive Trap",
@@ -156,9 +156,9 @@ export const RANGER_EXPLOSIVE_TRAP: Ability = {
       { kind: "status", status: "burn", chance: 0.6, to: "enemies" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const RANGER_FALCON_DIVE: Ability = {
+export const RANGER_FALCON_DIVE = {
   id: "ranger.falcon_dive",
   classId: "ranger",
   name: "Falcon Dive",
@@ -175,9 +175,9 @@ export const RANGER_FALCON_DIVE: Ability = {
     { kind: "summon", unit: "falcon", count: 1, duration: 12, command: { behavior: "follow", inheritPower: 0.5 } },
   ],
   mutationHooks: [{ id: "falcon_dive.summon", kind: "summon", note: "Beastmaster evolves the companion." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_PINNING_SHOT: Ability = {
+export const RANGER_PINNING_SHOT = {
   id: "ranger.pinning_shot",
   classId: "ranger",
   name: "Pinning Shot",
@@ -191,9 +191,9 @@ export const RANGER_PINNING_SHOT: Ability = {
   effects: [
     { kind: "projectile", projectile: { damage: { base: 1.2, scale: "attack", type: "physical", canCrit: true, knockback: 90, inflict: { status: "pinned", chance: 1 } }, speed: 500, radius: 8, life: 0.9 } },
   ],
-};
+} as const satisfies Ability;
 
-export const RANGER_HUNTERS_CACHE: Ability = {
+export const RANGER_HUNTERS_CACHE = {
   id: "ranger.hunters_cache",
   classId: "ranger",
   name: "Hunter's Cache",
@@ -208,9 +208,9 @@ export const RANGER_HUNTERS_CACHE: Ability = {
     { kind: "resource", resource: "prep", delta: 3, to: "self" },
     { kind: "terrain", piece: "cover", duration: 15, hp: 0 },
   ],
-};
+} as const satisfies Ability;
 
-export const RANGER_DEADEYE: Ability = {
+export const RANGER_DEADEYE = {
   id: "ranger.deadeye",
   classId: "ranger",
   name: "Deadeye",
@@ -226,9 +226,9 @@ export const RANGER_DEADEYE: Ability = {
     { kind: "resource", resource: "ultimate", delta: 6, to: "self" },
   ],
   mutationHooks: [{ id: "deadeye.packet", kind: "damagePacket", note: "Perfect Shot makes the held shot an execute." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_PREDATORS_TRAIL: Ability = {
+export const RANGER_PREDATORS_TRAIL = {
   id: "ranger.predators_trail",
   classId: "ranger",
   name: "Predator's Trail",
@@ -251,9 +251,9 @@ export const RANGER_PREDATORS_TRAIL: Ability = {
     },
   ],
   mutationHooks: [{ id: "predators_trail.zone", kind: "zone", note: "Run and Gun lets the trail follow you." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_THE_LAST_HUNT: Ability = {
+export const RANGER_THE_LAST_HUNT = {
   id: "ranger.the_last_hunt",
   classId: "ranger",
   name: "The Last Hunt",
@@ -291,9 +291,9 @@ export const RANGER_THE_LAST_HUNT: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "the_last_hunt.packet", kind: "damagePacket", note: "Winter's Quarry freezes the quarry before the volley." }],
-};
+} as const satisfies Ability;
 
-export const RANGER_ABILITIES: readonly Ability[] = [
+export const RANGER_ABILITIES = [
   RANGER_SPLITSHOT,
   RANGER_BARBED_ARROW,
   RANGER_SNARE_TRAP,
@@ -304,7 +304,7 @@ export const RANGER_ABILITIES: readonly Ability[] = [
   RANGER_DEADEYE,
   RANGER_PREDATORS_TRAIL,
   RANGER_THE_LAST_HUNT,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

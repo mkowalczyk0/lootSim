@@ -12,6 +12,7 @@
     "check:tools": "tsc --noEmit -p tsconfig.tools.json",
     "markers": "! git grep -nE '^(<{7}|={7}|>{7}) ' -- ':!*.lock' || (echo 'conflict markers committed' && exit 1)",
     "harness": "node tools/check-scripts.mjs",
+    "gate": "node tools/gate.mjs",
     "blindindex": "node tools/blind-index.mjs",
     "smoke": "node tools/run-tool.mjs smoke",
     "vocab": "node tools/run-tool.mjs vocab",

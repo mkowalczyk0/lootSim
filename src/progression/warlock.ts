@@ -98,7 +98,7 @@ export const WARLOCK_STATUSES: readonly StatusSpec[] = [STATUS_HEX, STATUS_DAMNE
 
 // --- abilities --------------------------------------------------------
 
-export const WARLOCK_BLACK_BOLT: Ability = {
+export const WARLOCK_BLACK_BOLT = {
   id: "warlock.black_bolt",
   classId: "warlock",
   name: "Black Bolt",
@@ -114,9 +114,9 @@ export const WARLOCK_BLACK_BOLT: Ability = {
     { kind: "projectile", projectile: { damage: { base: 1.2, scale: "spell", type: "void", canCrit: true }, speed: 460, radius: 10, life: 0.9 } },
   ],
   mutationHooks: [{ id: "black_bolt.packet", kind: "damagePacket", note: "Corruptor path adds a hex rider." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_SOUL_TAX: Ability = {
+export const WARLOCK_SOUL_TAX = {
   id: "warlock.soul_tax",
   classId: "warlock",
   name: "Soul Tax",
@@ -133,9 +133,9 @@ export const WARLOCK_SOUL_TAX: Ability = {
     { kind: "status", status: "weakened", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "soul_tax.status", kind: "status", note: "Soul Eater turns the tax into a straight resource drain." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_RUPTURE_VEIN: Ability = {
+export const WARLOCK_RUPTURE_VEIN = {
   id: "warlock.rupture_vein",
   classId: "warlock",
   name: "Rupture Vein",
@@ -154,9 +154,9 @@ export const WARLOCK_RUPTURE_VEIN: Ability = {
       { kind: "spreadStatus", status: "hex", radius: 120, to: "target" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_DREAD_SIGIL: Ability = {
+export const WARLOCK_DREAD_SIGIL = {
   id: "warlock.dread_sigil",
   classId: "warlock",
   name: "Dread Sigil",
@@ -172,9 +172,9 @@ export const WARLOCK_DREAD_SIGIL: Ability = {
     { kind: "zone", zone: { radius: 110, duration: 10, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.3, scale: "spell", type: "void", channel: "periodic" }, status: { id: "corruption", chance: 0.5 } } },
   ],
   mutationHooks: [{ id: "dread_sigil.zone", kind: "zone", note: "Riftwalker lets you step between sigils." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_LIFE_LEECH: Ability = {
+export const WARLOCK_LIFE_LEECH = {
   id: "warlock.life_leech",
   classId: "warlock",
   name: "Life Leech",
@@ -191,9 +191,9 @@ export const WARLOCK_LIFE_LEECH: Ability = {
     { kind: "damage", damage: { base: 0.5, scale: "spell", type: "void", channel: "periodic" }, to: "target" },
     { kind: "heal", amount: 0.2, scale: "spell", to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_MALEDICT: Ability = {
+export const WARLOCK_MALEDICT = {
   id: "warlock.maledict",
   classId: "warlock",
   name: "Maledict",
@@ -211,9 +211,9 @@ export const WARLOCK_MALEDICT: Ability = {
     { kind: "damage", damage: { base: 0.7, scale: "spell", type: "void", canCrit: true }, to: "target" },
   ],
   mutationHooks: [{ id: "maledict.status", kind: "status", note: "Total Corruption makes the wound permanent at 3 stacks, not 5." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_GRASP_BEYOND: Ability = {
+export const WARLOCK_GRASP_BEYOND = {
   id: "warlock.grasp_beyond",
   classId: "warlock",
   name: "Grasp Beyond",
@@ -230,9 +230,9 @@ export const WARLOCK_GRASP_BEYOND: Ability = {
     { kind: "damage", damage: { base: 0.9, scale: "spell", type: "void", canCrit: true }, to: "allTargets" },
     { kind: "status", status: "rooted", chance: 1, to: "allTargets", durationMult: 1.5 },
   ],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_PACT_OF_POWER: Ability = {
+export const WARLOCK_PACT_OF_POWER = {
   id: "warlock.pact_of_power",
   classId: "warlock",
   name: "Pact of Power",
@@ -247,9 +247,9 @@ export const WARLOCK_PACT_OF_POWER: Ability = {
     { kind: "resource", resource: "soul_debt", delta: 30, to: "self" },
   ],
   mutationHooks: [{ id: "pact_of_power.rule", kind: "resource", note: "Forbidden Pact scales the trade further." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_SOUL_DETONATION: Ability = {
+export const WARLOCK_SOUL_DETONATION = {
   id: "warlock.soul_detonation",
   classId: "warlock",
   name: "Soul Detonation",
@@ -266,9 +266,9 @@ export const WARLOCK_SOUL_DETONATION: Ability = {
     { kind: "damage", damage: { base: 3.4, scale: "spell", type: "void", canCrit: true }, to: "allTargets" },
     { kind: "spreadStatus", status: "hex", radius: 180, to: "marked" },
   ],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_DAMNATION: Ability = {
+export const WARLOCK_DAMNATION = {
   id: "warlock.damnation",
   classId: "warlock",
   name: "Damnation",
@@ -285,9 +285,9 @@ export const WARLOCK_DAMNATION: Ability = {
     { kind: "damage", damage: { base: 1.4, scale: "spell", type: "void", canCrit: true, channel: "ultimate" }, to: "enemiesEverywhere" },
   ],
   mutationHooks: [{ id: "damnation.status", kind: "status", note: "The Reckoning makes the brand a Doom that culminates in a wipe pulse." }],
-};
+} as const satisfies Ability;
 
-export const WARLOCK_ABILITIES: readonly Ability[] = [
+export const WARLOCK_ABILITIES = [
   WARLOCK_BLACK_BOLT,
   WARLOCK_SOUL_TAX,
   WARLOCK_RUPTURE_VEIN,
@@ -298,7 +298,7 @@ export const WARLOCK_ABILITIES: readonly Ability[] = [
   WARLOCK_PACT_OF_POWER,
   WARLOCK_SOUL_DETONATION,
   WARLOCK_DAMNATION,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

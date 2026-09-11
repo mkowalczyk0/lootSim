@@ -76,7 +76,7 @@ export const ENGINEER_STATUSES: readonly StatusSpec[] = [STATUS_TAGGED];
 
 // --- abilities --------------------------------------------------------
 
-export const ENGINEER_AUTO_TURRET: Ability = {
+export const ENGINEER_AUTO_TURRET = {
   id: "engineer.auto_turret",
   classId: "engineer",
   name: "Auto-Turret",
@@ -92,9 +92,9 @@ export const ENGINEER_AUTO_TURRET: Ability = {
     { kind: "summon", unit: "auto_turret", count: 1, duration: 20, command: { behavior: "guardPoint", inheritPower: 0.6 } },
   ],
   mutationHooks: [{ id: "auto_turret.summon", kind: "summon", note: "Gunner path adds turrets and fire rate." }],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_MORTAR_POD: Ability = {
+export const ENGINEER_MORTAR_POD = {
   id: "engineer.mortar_pod",
   classId: "engineer",
   name: "Mortar Pod",
@@ -110,9 +110,9 @@ export const ENGINEER_MORTAR_POD: Ability = {
     { kind: "summon", unit: "mortar_pod", count: 1, duration: 18, command: { behavior: "guardPoint", inheritPower: 0.7 } },
     { kind: "zone", zone: { radius: 100, duration: 18, tickInterval: 2, follows: false, damage: { base: 1.4, scale: "attack", type: "fire", channel: "periodic" } } },
   ],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_REPAIR_DRONE: Ability = {
+export const ENGINEER_REPAIR_DRONE = {
   id: "engineer.repair_drone",
   classId: "engineer",
   name: "Repair Drone",
@@ -127,9 +127,9 @@ export const ENGINEER_REPAIR_DRONE: Ability = {
     { kind: "summon", unit: "repair_drone", count: 1, duration: 20, command: { behavior: "follow" } },
     { kind: "shield", amount: 1.0, scale: "attack", to: "allies", duration: 6 },
   ],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_SHOCK_MINE: Ability = {
+export const ENGINEER_SHOCK_MINE = {
   id: "engineer.shock_mine",
   classId: "engineer",
   name: "Shock Mine",
@@ -149,9 +149,9 @@ export const ENGINEER_SHOCK_MINE: Ability = {
       { kind: "status", status: "tagged", chance: 1, to: "enemies" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_REINFORCED_BARRICADE: Ability = {
+export const ENGINEER_REINFORCED_BARRICADE = {
   id: "engineer.reinforced_barricade",
   classId: "engineer",
   name: "Reinforced Barricade",
@@ -167,9 +167,9 @@ export const ENGINEER_REINFORCED_BARRICADE: Ability = {
     { kind: "terrain", piece: "barricade", length: 140, duration: 15, hp: 250 },
   ],
   mutationHooks: [{ id: "reinforced_barricade.terrain", kind: "zone", note: "Quartermaster path lets the wall carry an ammo cache." }],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_SCRAP_MAGNET: Ability = {
+export const ENGINEER_SCRAP_MAGNET = {
   id: "engineer.scrap_magnet",
   classId: "engineer",
   name: "Scrap Magnet",
@@ -183,9 +183,9 @@ export const ENGINEER_SCRAP_MAGNET: Ability = {
     { kind: "resource", resource: "scrap", delta: 3, to: "self" },
     { kind: "shield", amount: 1.8, scale: "attack", to: "self", duration: 8 },
   ],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_OVERCLOCK: Ability = {
+export const ENGINEER_OVERCLOCK = {
   id: "engineer.overclock",
   classId: "engineer",
   name: "Overclock",
@@ -200,9 +200,9 @@ export const ENGINEER_OVERCLOCK: Ability = {
     { kind: "resource", resource: "ultimate", delta: 8, to: "self" },
   ],
   mutationHooks: [{ id: "overclock.rule", kind: "summon", note: "Mechanic path makes Overclock free and near-permanent." }],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_REMOTE_DETONATION: Ability = {
+export const ENGINEER_REMOTE_DETONATION = {
   id: "engineer.remote_detonation",
   classId: "engineer",
   name: "Remote Detonation",
@@ -222,9 +222,9 @@ export const ENGINEER_REMOTE_DETONATION: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "remote_detonation.packet", kind: "damagePacket", note: "Saboteur path chains the detonation and re-lays the mines." }],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_EMERGENCY_ASSEMBLY: Ability = {
+export const ENGINEER_EMERGENCY_ASSEMBLY = {
   id: "engineer.emergency_assembly",
   classId: "engineer",
   name: "Emergency Assembly",
@@ -240,9 +240,9 @@ export const ENGINEER_EMERGENCY_ASSEMBLY: Ability = {
     { kind: "summon", unit: "shield_generator", count: 1, duration: 12, command: { behavior: "guardPoint" } },
     { kind: "zone", zone: { radius: 120, duration: 12, tickInterval: 1, follows: false, benefit: "shield" } },
   ],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_SIEGE_ENGINE: Ability = {
+export const ENGINEER_SIEGE_ENGINE = {
   id: "engineer.siege_engine",
   classId: "engineer",
   name: "Siege Engine",
@@ -260,9 +260,9 @@ export const ENGINEER_SIEGE_ENGINE: Ability = {
     { kind: "zone", zone: { radius: 160, duration: 16, tickInterval: 1.5, follows: true, damage: { base: 1.6, scale: "attack", type: "fire", channel: "ultimate" } } },
   ],
   mutationHooks: [{ id: "siege_engine.summon", kind: "summon", note: "The Foundry keeps the machine and lets it build more." }],
-};
+} as const satisfies Ability;
 
-export const ENGINEER_ABILITIES: readonly Ability[] = [
+export const ENGINEER_ABILITIES = [
   ENGINEER_AUTO_TURRET,
   ENGINEER_MORTAR_POD,
   ENGINEER_REPAIR_DRONE,
@@ -273,7 +273,7 @@ export const ENGINEER_ABILITIES: readonly Ability[] = [
   ENGINEER_REMOTE_DETONATION,
   ENGINEER_EMERGENCY_ASSEMBLY,
   ENGINEER_SIEGE_ENGINE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

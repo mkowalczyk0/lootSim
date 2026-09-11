@@ -86,7 +86,7 @@ export const ASSASSIN_STATUSES: readonly StatusSpec[] = [STATUS_CONTRACT, STATUS
 
 // --- abilities --------------------------------------------------------
 
-export const ASSASSIN_GARROTE: Ability = {
+export const ASSASSIN_GARROTE = {
   id: "assassin.garrote",
   classId: "assassin",
   name: "Garrote",
@@ -102,9 +102,9 @@ export const ASSASSIN_GARROTE: Ability = {
     { kind: "status", status: "bleed", chance: 1, stacks: 3, to: "target" },
     { kind: "status", status: "silenced", chance: 1, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_AMBUSH: Ability = {
+export const ASSASSIN_AMBUSH = {
   id: "assassin.ambush",
   classId: "assassin",
   name: "Ambush",
@@ -121,9 +121,9 @@ export const ASSASSIN_AMBUSH: Ability = {
     { kind: "damage", damage: { base: 2.8, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.15 }, to: "target" },
   ],
   mutationHooks: [{ id: "ambush.packet", kind: "damagePacket", note: "Never Seen makes Ambush from stealth a guaranteed crit." }],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_MARK_FOR_DEATH: Ability = {
+export const ASSASSIN_MARK_FOR_DEATH = {
   id: "assassin.mark_for_death",
   classId: "assassin",
   name: "Mark for Death",
@@ -139,9 +139,9 @@ export const ASSASSIN_MARK_FOR_DEATH: Ability = {
     { kind: "status", status: "contract", chance: 1, to: "target" },
   ],
   mutationHooks: [{ id: "mark_for_death.status", kind: "status", note: "Death Sentence extends the Contract to the killer's next target on a kill." }],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_POISON_NEEDLE: Ability = {
+export const ASSASSIN_POISON_NEEDLE = {
   id: "assassin.poison_needle",
   classId: "assassin",
   name: "Poison Needle",
@@ -156,9 +156,9 @@ export const ASSASSIN_POISON_NEEDLE: Ability = {
     { kind: "projectile", projectile: { damage: { base: 0.7, scale: "attack", type: "poison", canCrit: true, inflict: { status: "poison", chance: 1 } }, speed: 560, radius: 6, life: 0.7 } },
   ],
   mutationHooks: [{ id: "poison_needle.status", kind: "status", note: "Venom path deepens and speeds the stacks." }],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_VANISHING_CUT: Ability = {
+export const ASSASSIN_VANISHING_CUT = {
   id: "assassin.vanishing_cut",
   classId: "assassin",
   name: "Vanishing Cut",
@@ -174,9 +174,9 @@ export const ASSASSIN_VANISHING_CUT: Ability = {
     { kind: "damage", damage: { base: 1.6, scale: "attack", type: "physical", canCrit: true }, to: "target" },
     { kind: "status", status: "stealth", chance: 1, to: "self", durationMult: 0.5 },
   ],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_EXPOSE_WEAKNESS: Ability = {
+export const ASSASSIN_EXPOSE_WEAKNESS = {
   id: "assassin.expose_weakness",
   classId: "assassin",
   name: "Expose Weakness",
@@ -192,9 +192,9 @@ export const ASSASSIN_EXPOSE_WEAKNESS: Ability = {
     { kind: "status", status: "exposed", chance: 1, to: "target", durationMult: 1.6 },
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_BLOOD_TRAIL: Ability = {
+export const ASSASSIN_BLOOD_TRAIL = {
   id: "assassin.blood_trail",
   classId: "assassin",
   name: "Blood Trail",
@@ -208,9 +208,9 @@ export const ASSASSIN_BLOOD_TRAIL: Ability = {
     { kind: "status", status: "bloodscent", chance: 1, to: "self" },
     { kind: "resource", resource: "shadow", delta: 15, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_SILENT_STEP: Ability = {
+export const ASSASSIN_SILENT_STEP = {
   id: "assassin.silent_step",
   classId: "assassin",
   name: "Silent Step",
@@ -225,9 +225,9 @@ export const ASSASSIN_SILENT_STEP: Ability = {
     { kind: "status", status: "stealth", chance: 1, to: "self" },
     { kind: "resource", resource: "shadow", delta: 25, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_EXECUTION: Ability = {
+export const ASSASSIN_EXECUTION = {
   id: "assassin.execution",
   classId: "assassin",
   name: "Execution",
@@ -243,9 +243,9 @@ export const ASSASSIN_EXECUTION: Ability = {
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true, executeMissingHealth: 0.6 }, to: "target" },
   ],
   mutationHooks: [{ id: "execution.packet", kind: "damagePacket", note: "Critical Weakness raises the boss slice; Death Spiral chains it." }],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_CONTRACT_FULFILLED: Ability = {
+export const ASSASSIN_CONTRACT_FULFILLED = {
   id: "assassin.contract_fulfilled",
   classId: "assassin",
   name: "Contract Fulfilled",
@@ -273,9 +273,9 @@ export const ASSASSIN_CONTRACT_FULFILLED: Ability = {
     { kind: "damage", damage: { base: 3.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 0.4 }, to: "target" },
   ],
   mutationHooks: [{ id: "contract_fulfilled.followup", kind: "followUp", note: "The Perfect Contract chains to the next priority target on a kill." }],
-};
+} as const satisfies Ability;
 
-export const ASSASSIN_ABILITIES: readonly Ability[] = [
+export const ASSASSIN_ABILITIES = [
   ASSASSIN_GARROTE,
   ASSASSIN_AMBUSH,
   ASSASSIN_MARK_FOR_DEATH,
@@ -286,7 +286,7 @@ export const ASSASSIN_ABILITIES: readonly Ability[] = [
   ASSASSIN_SILENT_STEP,
   ASSASSIN_EXECUTION,
   ASSASSIN_CONTRACT_FULFILLED,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

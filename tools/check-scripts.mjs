@@ -159,5 +159,46 @@ if (undefined_.length > 0) {
 }
 
 console.log(`  ok   no step runs twice, and every step is a defined script`);
+
+/**
+ * The cheap gate must stay DERIVED from the test chain, never a copy of it.
+ *
+ * `npm run gate` runs the test chain minus `smoke` — the split the owner approved so a
+ * branch can be checked in a minute instead of twenty. The way that goes wrong is not
+ * subtle and it is not hypothetical: someone finds the derivation indirect, pastes the
+ * current 41 steps into `package.json` as a literal, and from that moment every step any
+ * later branch adds is silently skipped. This project has already shipped exactly that
+ * defect once, in the very tool built to save time — a branch's derived chain was 37
+ * steps and its frozen literal was 36, and the missing one was that branch's own new
+ * check, the single step nothing else in the repo had ever run.
+ *
+ * So the gate script may be one command and nothing else. A chained `&&` here means the
+ * steps have been written down, which is the defect itself rather than a symptom of it.
+ */
+const gate = pkg.scripts?.gate;
+if (typeof gate !== "string" || !gate.includes("tools/gate.mjs")) {
+  console.error("");
+  console.error("  FAIL  the `gate` script does not route through tools/gate.mjs.");
+  console.error(`        it is: ${gate === undefined ? "(not defined)" : gate}`);
+  console.error("");
+  console.error("  `npm run gate` must DERIVE its steps from scripts.test at run time, so");
+  console.error("  that a branch adding a check runs that check. Anything else is a frozen");
+  console.error("  copy wearing the derivation's name.");
+  console.error("");
+  console.error('        "gate": "node tools/gate.mjs"');
+  console.error("");
+  process.exit(1);
+}
+if (gate.includes("&&")) {
+  console.error("");
+  console.error("  FAIL  the `gate` script chains commands — the steps have been written down:");
+  console.error(`        ${gate}`);
+  console.error("");
+  console.error("  A literal list here skips every step a later branch adds, which is the");
+  console.error("  step most worth running. Derive it instead: `node tools/gate.mjs`.");
+  console.error("");
+  process.exit(1);
+}
+console.log(`  ok   the cheap gate is derived, not copied — ${gate}`);
 console.log("");
 console.log("ALL HARNESS CHECKS PASSED");

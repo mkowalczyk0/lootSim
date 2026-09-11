@@ -54,6 +54,12 @@ proposal for the owner — are deliberately absent from this table.
 | 29 | Two honest detectors that agree on the rule and disagree on the pixel | §1.4's saturation gate vs `chroma`'s scale, on the auto-turret's cream-gold |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
+| 32 | *in flight* |  |
+| 33 | *in flight* |  |
+| 34 | *in flight* |  |
+| 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
+| 36 | A silent narrowing, which converts authored content into evidence of its own absence | `GRANTABLE_ABILITY_IDS`' trailing `.filter`, handing every reader the survivors |
+| 37 | A clean merge read as evidence about meaning, when it is only evidence about text | a docket ruling appended 300 lines below the status word it falsified |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1635,6 +1641,231 @@ forever if the second had not been pointed at the first's output. The scope exte
 `summon.*` was a PM ruling on the grounds that a rule living in prose is a rule nobody
 measures; it paid for itself on its first run, and what it found was not a bad sprite but
 a gap between two good detectors.
+
+## A thirty-fifth instance: a derivation frozen into a copy, which then stops deriving
+
+Every entry above is an instrument that reads the wrong thing. This one is an instrument that
+read the **right** thing once, was then written down, and kept reporting that one reading
+forever. It is the shape a shortcut takes when it succeeds.
+
+The setup is the acceptance gate. `npm test` is 43 steps, of which `npm run smoke` alone is
+15–19 minutes — roughly 95% of the wall clock. The owner approved splitting it: a branch runs
+the cheap steps, and the full chain is reserved for the single integration gate on the merged
+result. The natural way to express "the test chain minus smoke" is to derive it:
+
+```
+scripts.test.split(" && ").filter((s) => !/\bsmoke\b/.test(s)).join(" && ")
+```
+
+The natural way to express it a *second* time, an hour later, when the one-liner is tiresome to
+retype, is to paste the 42 steps it printed. The two are indistinguishable on the day they are
+written — same steps, same order, same green — and they diverge the moment anybody adds a step
+to the chain. Which is to say: they diverge on exactly the branches where the gate matters
+most, because **a branch's own new check is the one step nothing else in the repo has ever
+run.** A frozen copy skips it and reports 42 green steps, and the number 42 is not wrong in any
+way a reader can see.
+
+This is reported to have already happened here, in the tool built to save the time: on one
+branch the derived chain came to 37 steps and the hand-frozen literal to 36, and the missing
+one was that branch's own new gate. It was caught by *comparing the two counts*, not by reading
+either of them — a single count is a plausible number, which is this document's entire subject.
+
+**The cure was a rule, not a check, and then a check behind the rule.** `tools/gate.mjs` reads
+`scripts.test` at run time and has no list in it; `tools/check-scripts.mjs` fails if
+`scripts.gate` ever stops routing through that file or grows an `&&`, because chaining is the
+defect itself rather than a symptom of it. The copy cannot come back by editing `package.json`,
+which is the only place it would come back.
+
+**Falsified before being believed**, per the rule at the foot of this file. A throwaway step was
+prepended to `scripts.test`:
+
+```
+  scripts.test has 44 steps; running 43, deferring 1
+--- gate step 1/43: npm run __canary
+CANARY RAN
+  gate: step exited 3 — npm run __canary
+```
+
+43 rather than the 42 it runs without the canary, the step's own output on stdout, and exit 3
+arriving intact at the shell — the addition was picked up, executed, and its failure propagated.
+Then the rule was falsified from the other side by freezing `scripts.gate` into the literal
+42-step chain, which went red at `npm run harness` with the whole frozen line printed back.
+
+**The rule.** When you write something down because deriving it is tedious, you have converted a
+question into an answer, and the answer has no way to notice that the question changed. Ask what
+would have to happen for the copy to become wrong, and then ask whether anything at all would
+say so. If the honest answer is "nothing, it would just quietly do less" — that is this entry,
+and the fix is to make the copy impossible rather than to promise to refresh it.
+
+## A thirty-sixth instance: a silent narrowing, which makes the evidence agree with itself
+
+`GRANTABLE_ABILITY_IDS` in `src/progression/index.ts` is the pool an epic-or-better weapon,
+ring or necklace rolls its **granted skill** from — one of the few things in the game that
+legitimately crosses class lines. Twelve classes were named in it. It ended like this:
+
+```ts
+  "warden.vine_snare",
+].filter((id) => id in ABILITY_BY_ID);
+```
+
+Five of the twelve ids had been renamed out from under the list at some earlier point. The
+filter discarded them without a word, and the pool players actually rolled from was seven.
+Ranger, Shaman, Warlock, Berserker and Stormcaller abilities had stopped appearing on
+granted-skill gear entirely — five of twenty-one classes contributing nothing — and nothing in
+the repo was red.
+
+## Why this is not simply "a list went stale"
+
+The stale list is the defect. The entry is about how the defect **defended itself**.
+
+This work was assigned with a brief that said, in good faith: *all 7 currently resolve, so
+there is NO live defect; this is a latent shape, not a bug hunt.* That sentence is correct and
+it is blind, and the two facts are the same fact. **Anyone who reads
+`GRANTABLE_ABILITY_IDS` — a person, a probe, a future gate — is handed the output of the
+filter.** The survivors are all that exists by the time the name resolves. So every possible
+reading of the live value concludes that the entries in it resolve, which is true, complete,
+reproducible, and says nothing whatsoever about the question being asked.
+
+That is this file's founding rule wearing an unfamiliar coat: **the check's scope came from
+the thing under test.** Not a hardcoded seed list, not a fixture, not a threshold — a
+`.filter` in the value's own definition, quietly making the population match the assertion.
+
+And the population was *knowable*. The declaration sits five lines above the filter; the count
+going in is twelve and the count coming out is seven. **No line anywhere compared the two.**
+The defect was one subtraction away from visible for its entire life, which is the part worth
+sitting with — it was not hidden behind a simulation or a statistical margin. It was hidden
+behind nobody having a reason to look, and that reason was removed by the filter.
+
+## Why nothing downstream noticed
+
+A curated list has no length anyone remembers. Nothing in the game says "granted skills should
+draw from twelve classes" — the only statement of intent is the prose comment above the list
+("one flashy, self-contained ability per class"), and prose is not an instrument. A player
+finding a granted skill got a real, working ability every time; the five that never appeared
+left no gap to notice, because an absence in a random pool looks exactly like luck.
+
+This is the failure mode of every defensive filter over authored content. It cannot distinguish
+*retired on purpose* from *misspelled* from *renamed and nobody followed*, and it resolves all
+three identically: delete the content, continue, say nothing. It reads as a safety net and it
+is the thing that hides the fall.
+
+**The rule.** A filter that can only ever discard authored input is not a guard, it is a
+silencer — and if the filtered value is what everyone reads, it also destroys the evidence that
+anything was discarded. Where you must filter, count both sides and say so out loud. Better,
+make the discard impossible: the list is now `readonly AbilityId[]` against a union derived from
+the 210 authored abilities, so a renamed ability is a TS2322 on the line that names it, and the
+filter is gone with a comment saying it must not return.
+
+## The falsification, which is the half this project skips
+
+Getting to a real compile error took three attempts, and **the first two compiled**:
+
+1. `function abilityTable<const T extends readonly Ability[]>(list: T): T` — a `const` type
+   parameter preserves literals for values written inline. These abilities are already-annotated
+   consts, so it preserved nothing.
+2. `} satisfies Ability;` without `as const` — `satisfies` supplies the contextual type during
+   inference, so `id: "ranger.splitshot"` widens against the interface's `id: string` exactly as
+   the annotation it replaced did.
+
+Both produced a green `tsc` and a plausible-looking derived type. Both were caught by the same
+one-line move: assign `"definitely.not.real"` to the derived type and **demand a red**. Only the
+third attempt (`} as const satisfies Ability;`) gave one, naming the full union — and then gave
+the same error for all five real stale ids.
+
+Neither blind attempt would have been caught by reading it, by review, or by the gate. A type
+that has silently widened to `string` looks identical at every call site to one that has not.
+**A derived type is an instrument, and an instrument you have never watched go red is one you
+have not tested** — which is precisely the line this file proposes for `CLAUDE.md` below.
+
+## A thirty-seventh instance: git's conflict detector is a proximity heuristic, not a semantic one
+
+Every entry above is a check someone built. This one is a check nobody built, that everybody
+relies on many times a day, and that most people do not think of as a check at all: **a merge
+or a rebase completing without conflicts.**
+
+The reading it invites is "nothing I did contradicts anything anyone else did." What it
+actually reports is narrower by a wide margin: *no two people edited the same lines.* Those
+are different claims, and the distance between them is measured in lines of text — which is to
+say, in a quantity that has nothing to do with whether two statements can both be true.
+
+## The instance
+
+`docs/docket.md` item §29 was reconciled on the morning of 2026-09-11 and given the status
+**STILL OPEN — needs an owner call before anyone builds it**, cited to its design record and
+to the code.
+
+That evening, the owner ruled on §29. The ruling was appended at the foot of the same file,
+roughly 300 lines below the status word it falsified. Rebasing onto it produced
+`Successfully rebased and updated refs/heads/...` with no conflicts and nothing to resolve,
+because the two edits were nowhere near each other. Git was not wrong; git was answering a
+different question. The branch would have landed carrying "needs an owner call" for an item
+the owner had already called.
+
+It was caught by reading the incoming commit rather than by any signal in the rebase — and it
+was read only because its subject line happened to name the item. That is luck standing in for
+a process.
+
+## The same species, twice, in one batch — with the distance made larger
+
+Recorded as one-offs at the time, and they are the same failure:
+
+- **A pin that outlived its subject.** `tools/modkeys.ts` pinned `ultimateBounces` and
+  `ultimateProjectiles` as known-dead keys "awaiting an owner call". A different branch
+  *deleted those keys from the vocabulary entirely*. Different files, zero conflict markers.
+  The pin then named keys that no longer existed — and the check's own "still dead" logic
+  reads a vanished key as **now live**, so a stale pin does not fail quietly, it fails
+  backwards.
+- **Codex copy for stats that were being removed.** `src/data/affix-glossary.ts` arrived as a
+  *new file* describing two stats another branch was deleting. **A new file cannot textually
+  conflict with a deletion**, so there was nothing for git to flag at any distance.
+
+Both were caught by `npm run check` and by luck. Neither was caught by `markers`, which is
+correct to have missed them: there were no markers. That tool's own name for this is already
+in this file at entry 17 — *"no conflict markers" is not "no conflict"* — and entry 37 is that
+observation generalised. The variable is **distance**: same lines conflict, 300 lines apart do
+not, different files never do, and a new file against a deletion cannot. Semantic contradiction
+is flat across all four; git's detection falls off a cliff after the first.
+
+## Why it belongs in this file, and why this instance is the sharp one
+
+**It happened to a reconciliation sweep.** The one artefact in the repository whose entire
+purpose is to make status words true — written specifically because §6 had sat wrong for hours
+— went stale inside its own file within two hours of being written, by a mechanism that
+reports success.
+
+So the lesson is not "sweeps don't work." It is:
+
+> A sweep does not inoculate a status word, it only resets the clock.
+
+Which is the same shape as this document's founding rule, arriving from an unexpected side:
+**the check's subject came from somewhere other than the thing under test.** The subject of a
+clean merge is the diff. The thing under test is whether the file now says true things. Those
+coincide only when the contradicting edits happen to be adjacent, and nothing arranges for them
+to be.
+
+## What would have caught it — and this half is not a tool
+
+Plainly: **nothing automatic would have.** It is worth resisting the reflex to end this entry
+with a check, because the honest answer here is a habit.
+
+A linter over status words is the obvious proposal and it is a bad one. It would have to know
+that a `## Owner rulings` section at the foot of a file speaks to a `## 29.` heading 300 lines
+above it, that "ruled" supersedes "needs an owner call", and that a *record's* status line
+outranks a *docket's* — all of which is the semantic judgement the merge could not make,
+relocated into a regex. This project has shipped that mistake: entry 26 is a process rule with
+a blind grep inside it.
+
+The process fix, offered by the PM about their own work:
+
+> Whoever appends a RULING to a file owns re-reading what that file already says about the
+> same item.
+
+It is cheap, it is specific to the moment where the contradiction is *created* rather than
+where it is later discovered, and it puts the obligation on the person who has the semantic
+knowledge — the one who knows the ruling settles §29 — instead of on a resolver who has only
+two hunks of text. The general form, for anyone landing work into a long-lived document:
+**a clean merge tells you your edit applied; it never tells you your edit is still true. Go
+read what the file already says about your subject.**
 
 ## Proposed for the owner, not adopted here
 
