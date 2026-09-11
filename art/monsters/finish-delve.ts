@@ -53,6 +53,27 @@
  *   pass has something to hold on to.
  * - **Deadeye** came back clean: 10 px of amber eye. Recoloured to the lightning accent so
  *   the element reads, nothing else touched.
+ *
+ * ## The floor (smoke's "an infused monster stays ≥ 28 luminance apart from its own sector's
+ * floor"), measured rather than assumed — and the sign of the fix
+ *
+ * The first finish of this batch went red on that check in three Reliquary sectors (Rotting
+ * Garden, Unbound Spire, Hollow Orchard), and the brief that reached the fixing session said
+ * "darken the mid-tones a step". Reproducing the check per role (`infusion-matrix.ts`, next to
+ * this file) showed every one of the nine collisions was the same three sprites — Gore-Hound,
+ * Aegis Thrall, Rot Priest — sitting **above** the floor by 22–27. Darkening would have moved
+ * all three *toward* the floor and widened the red. The same wrong-sign lesson
+ * `docs/ashen-wastes-infusion-fix.md` records for the floor side.
+ *
+ * The cause is that those three generated darker than anything shipped: raw mean luminance
+ * 32.6 / 34.4 / 38.2 against the roster's darkest body, the Rot Imp at 41.2 — which itself
+ * clears the Spire by 0.6. So the fix is `liftMid`: brighten every opaque pixel that is
+ * neither outline nor accent into the roster's own band (raw mean 43–45, the Imp-to-Archer
+ * range), a fixed reference the check cannot move. The accent is provably untouched rather
+ * than argued untouched: hot pixels are skipped, a lifted pixel that would cross §1.4's hot
+ * line is held under it, and the hot count printed after the lift is the same 6 / 10 / 22 it
+ * was before. The Piper and the Bloat-Fiend are not lifted — both carry owner rulings and
+ * neither collides anywhere.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -245,6 +266,53 @@ function eraseShadow(img: Img, rgb: [number, number, number], fromRow: number): 
   return n;
 }
 
+/** Mean luminance of the opaque (alpha ≥ 128) pixels — the quantity smoke's infusion check
+ * washes and compares against the floor, before the wash. */
+function meanLum(img: Img): number {
+  let sum = 0, n = 0;
+  for (let i = 0; i < img.w * img.h; i++) {
+    if (img.rgba[i * 4 + 3]! < 128) continue;
+    sum += lum(img.rgba[i * 4]!, img.rgba[i * 4 + 1]!, img.rgba[i * 4 + 2]!); n++;
+  }
+  return n ? sum / n : 0;
+}
+
+/**
+ * Multiply every opaque pixel that is neither outline (luminance < 16 — the single-colour
+ * black line every generation in this batch carries) nor already hot by `k`. Multiplying
+ * keeps hue and HSV saturation exactly, so the palette stays as dirty as it was, just less
+ * murky. A lifted pixel that would cross §1.4's hot line (saturation > 0.55 and a channel
+ * over 90 — the Gore-Hound's dried-blood ruff sits right at it) is scaled back to a top
+ * channel of 90 so the lift can never mint a second accent. Returns the counts so the log
+ * shows what moved; the caller prints the mean before and after.
+ */
+function liftMid(img: Img, k: number): { lifted: number; held: number } {
+  let lifted = 0, held = 0;
+  for (let y = 0; y < img.h; y++) for (let x = 0; x < img.w; x++) {
+    const i = (y * img.w + x) * 4;
+    if (img.rgba[i + 3]! < 8) continue;
+    const r = img.rgba[i]!, g = img.rgba[i + 1]!, b = img.rgba[i + 2]!;
+    if (lum(r, g, b) < 16 || isHot(r, g, b)) continue;
+    let nr = Math.min(255, Math.round(r * k)), ng = Math.min(255, Math.round(g * k)), nb = Math.min(255, Math.round(b * k));
+    if (isHot(nr, ng, nb)) {
+      const f = 90 / Math.max(nr, ng, nb);
+      nr = Math.floor(nr * f); ng = Math.floor(ng * f); nb = Math.floor(nb * f);
+      held++;
+    }
+    img.rgba[i] = nr; img.rgba[i + 1] = ng; img.rgba[i + 2] = nb;
+    lifted++;
+  }
+  return { lifted, held };
+}
+
+/** `liftMid` with the log line every lifted sprite prints, so the before/after mean and the
+ * hot count are in the record next to the accent report. */
+function liftIntoBand(img: Img, k: number): void {
+  const before = meanLum(img);
+  const { lifted, held } = liftMid(img, k);
+  console.log(`  lifted ${lifted}px of body ×${k} (${held} held under the hot line): raw mean L${before.toFixed(1)} -> L${meanLum(img).toFixed(1)}`);
+}
+
 /** The §1.4 report: hot-pixel share and hue buckets, same method the style guide describes. */
 function accentReport(img: Img): string {
   let total = 0, hot = 0;
@@ -310,6 +378,9 @@ const MONSTERS: readonly Spec[] = [
       const ruff = muteHot(img, [eyes], hex("#3a1f1a"));
       const lit = recolorWhere(img, eyes, isHot, FIRE);
       console.log(`  muted ${ruff}px of ruff toward dried blood, recoloured ${lit}px of eye to the fire accent`);
+      // Raw mean 32.6, the darkest body in the batch; ×1.4 lands 43.7 (see the header). The
+      // ruff is the one place the hold engages — it sits on the hot line by design.
+      liftIntoBand(img, 1.4);
     },
   },
   {
@@ -339,6 +410,8 @@ const MONSTERS: readonly Spec[] = [
         const { h, s } = hsv(r, g, b); return s > 0.4 && h > 180 && h < 225 && Math.max(r, g, b) > 120;
       }, COLD);
       console.log(`  recoloured ${n}px of visor slit to the cold accent`);
+      // Raw mean 34.4; ×1.3 lands 44.1.
+      liftIntoBand(img, 1.3);
     },
   },
   {
@@ -376,6 +449,8 @@ const MONSTERS: readonly Spec[] = [
         const { h, s } = hsv(r, g, b); return s > 0.3 && h >= 70 && h <= 130 && Math.max(r, g, b) > 90;
       }, POISON);
       console.log(`  erased ${shadow}px of painted ground shadow, darkened ${dark}px of amber eye, lifted ${lit}px of censer glow into the poison accent`);
+      // Raw mean 38.2; ×1.2 lands 44.8. After the shadow erase, so the disc doesn't count.
+      liftIntoBand(img, 1.2);
     },
   },
   {
