@@ -97,6 +97,47 @@ wash is the right carrier at all, or whether a smaller accent/aura in the owner'
 says "mine, and this element" better — the monsters' own rule is one hot accent per body,
 not a full recolour, and the same instinct may apply here.
 
+### The study (2026-09-11, `art/summon-wire`) — a picture, not a decision
+
+All 21 PNGs are in. `art/summons/wash-study.py` (with `floor-export.ts` for the game's
+own graded floor tile) stands eleven summons on the Training Grounds floor at true world
+scale, between the hero and two monsters, and repeats the row per treatment: wash 0 /
+0.15 / 0.30 / 0.45 (`tintedCanvas`'s exact arithmetic), an **outline accent** (only the
+opaque cells touching transparency blended 70% toward the element, body untouched), and a
+**ground ring** (the windup ring `drawMinions` already draws, made permanent). One image
+per element under `art/summons/study/`; `wash-study-side-by-side.png` is fire and cold
+together, the loud and the pale case.
+
+What the pictures show, for the owner's eye to confirm or overrule:
+
+- **A body wash at 0.30 is the elite treatment.** `drawEnemy` draws an elite monster as
+  `spriteFrameTinted(..., RARITY_COLORS[e.elite], 0.35)` — a 0.35 body wash toward a
+  colour. A summon at 0.30 toward its element is the same operation in a different hue,
+  and on the sheet it reads that way: bone, iron and cloth all become one terracotta (fire)
+  or one ice-blue (cold). That is precisely the "family of recolours" look the owner paid
+  21 bespoke bodies to avoid, arriving through the renderer instead of the generator.
+- **0.15 keeps the bodies and loses the element on fire.** Cold still reads (a faint
+  blue on the skeleton); fire is a warm cast you would not name without the label.
+  0.45 is a silhouette in the element's colour.
+- **The outline accent keeps every body intact and still says both things.** The element
+  is legible at a glance on every figure including the 12-unit healing spirit, and
+  "mine" is carried by the same visual grammar ARPGs already use for an allied or
+  selected unit — an edge, not a gaze. It does not collide with §1.4: the monsters'
+  signal is a hot point that is looking at you; a rim is a different vocabulary. Its
+  cost is that it breaks the `ink`-outline convention (§17.2) for this one family, at
+  runtime rather than in the PNGs (`npm run chroma` measures the files, which stay
+  accent-free either way).
+- **The ground ring is the cleanest "mine" and the weakest "element".** It says
+  ownership clearly and the colour is legible, but eight skeletons are eight rings on the
+  floor, it fights the health bar and the windup ring for the same real estate, and a
+  flying unit's ring has nowhere honest to sit.
+
+**Recommendation to put to the owner, not a ruling:** carry the element on the **outline
+at ~0.6-0.7**, body wash **0**; second choice wash 0.15 if the ink-outline convention is
+held to be non-negotiable. `SUMMON_ELEMENT_WASH = 0.3` stays in the code, unchanged, until
+that call is made — the study exists so the number is chosen against real art rather than
+by analogy to the weapon wash, which is how 0.3 got there.
+
 ## The co-op bug this almost shipped
 
 The wire never carried `unit` before this branch. `net/sync.ts` encoded a minion as
