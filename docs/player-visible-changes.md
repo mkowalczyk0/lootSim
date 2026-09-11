@@ -58,6 +58,10 @@ different when you play."
   no artwork of its own at all and was falling back to a flat ash bake. It is now its own
   tileset: a dark floor under bright walls, which is the inversion of every other place in
   the game.
+- **The Tower works in co-op now.** Trying to climb with a friend used to drop both of you
+  into an ordinary Delve floor instead — the lobby and the on-screen prompt even said
+  "Delve depth N," not "Tower." The party now actually goes wherever whoever's hosting
+  picked.
 
 ## Fighting things
 
@@ -80,6 +84,30 @@ different when you play."
   awkward — so it would sit there for the rest of the floor while you hunted for it. This
   is the "one last monster stuck behind a wall" problem, and it was a real bug rather than
   a missing indicator.
+- **A boss commits to its swing instead of quietly re-aiming at the last second.** Six
+  abilities — a cleave, a charge, a beam, a spinning strike, a star-shaped burst and a
+  sweeping slash — used to keep tracking whoever was closest right up to the moment they
+  landed, even after the telegraph had already shown you where they were going. In co-op
+  this looked like the boss snapping onto a different player at the last instant. Playing
+  solo, it meant sidestepping a telegraphed line or cone during the wind-up sometimes did
+  nothing, because the attack was still quietly following you the whole time it looked
+  like it had already committed. Now it hasn't moved once the wind-up starts, so stepping
+  out of it during the wind-up actually works.
+- **Most abilities that used to hit the entire floor now only reach the room you're
+  standing in.** Roughly twenty abilities across sixteen classes — a paladin's charge, a
+  juggernaut's taunt and his ultimate, a warden's stance, a stormcaller's ultimate, a
+  reaper's hook, a corsair's powder keg, and a string of self-cast auras and reprisals —
+  used to instantly hit every monster on the floor regardless of distance. They now reach
+  about a room's width. Five traps and mines also used to catch things standing near
+  *you*, even long after you'd planted them and walked away; they now catch things
+  standing near the trap, which is where a trap should be watching. Two abilities still
+  hit the whole floor on purpose — both are ultimates now, down from four, and both say so
+  in their own description. **One thing to watch for that nobody asked for:** a tree
+  upgrade for one class had quietly done nothing since it was added, because the ability
+  it was supposed to widen had no reach of its own to widen. Giving that ability a real
+  reach to build on means the upgrade finally works — and it now makes that ability's
+  area the single largest of any non-ultimate skill in the game. That's a buff, not a fix,
+  and it landed as a side effect of closing the bug above.
 
 ## The heads-up display
 
@@ -130,6 +158,30 @@ different when you play."
   people. It was left uncompressed on purpose rather than stretched to look more
   interesting — see the note below.
 - **There is a "recent records" ticker** so you can see what other people just did.
+
+## Named items and relics
+
+- **Named items and relics/artifacts have their own screen now, called Collection.** They
+  used to be two lists buried in the Quartermaster's Records tab; they're a proper grid
+  now, browsed and navigated with WASD the same way the Stash is. Everything shows up
+  whether you've found it yet or not, so you can still see what a piece does and where it
+  comes from before you've ever seen one drop — that was always the point of listing them,
+  and it's why they moved rather than getting deleted from Records.
+
+## What raids and the Abyssal Rift pay
+
+- **A raid hands you a relic or artifact about half as often as it used to.** A bug meant
+  a raid clear was quietly rolling for one twice instead of once. This is a real cut, not
+  a rounding fix — if raids felt generous with these before, they're going to feel
+  noticeably less so now.
+- **The Abyssal Rift hands one out far less often too, and this is the bigger of the two
+  changes tonight.** It used to be close to a sure thing on every single clear, no matter
+  how deep you'd already gone into a run. Most clears won't have one any more. Nobody ever
+  actually decided a relic should be nearly guaranteed there — it crept up on its own,
+  a little more each time a new one was added to the game, until pulling one apart became
+  almost the expected outcome rather than the reason to go. Early in building a
+  collection you'll still see them fairly often; the rate drops off the more of the
+  roster you already own, the same as it always did.
 
 ## Nothing you can see, but worth knowing
 

@@ -1,9 +1,16 @@
 # The reachable band — one curve, four sightings, and an inventory nobody had made
 
-Status: **measured, not fixed, and deliberately not recommended.** This is not a fourth
-appendix to `docs/reliquary-reachability.md`. That document is about the Reliquary. This
-one is about the shared difficulty curve every mode in the game stands on
-(`src/data/depth.ts`'s `profileFor`), and what currently sits past the point where it
+Status: **measured and, per `docs/reachable-band-decision.md`, ruled on — see that
+document, which is recorded but still pending the owner's re-confirmation.** This page's
+own analysis stays below unedited: it was true when written and is the reasoning the
+owner was shown before choosing. Don't read "Options, priced — not recommended" below as
+still open — option 3 ("accept the band as correct") is what was chosen, and
+`reachable-band-decision.md` is the record of that plus the follow-on mechanism work that
+priced *why* the band exists in the first place.
+
+This is not a fourth appendix to `docs/reliquary-reachability.md`. That document is about
+the Reliquary. This one is about the shared difficulty curve every mode in the game stands
+on (`src/data/depth.ts`'s `profileFor`), and what currently sits past the point where it
 stops being winnable by ordinary same-level play. The Reliquary sectors were the fourth
 time this project tripped over that fact. This document is the first time anyone wrote
 down that it was the same fact each time.
@@ -198,6 +205,10 @@ launder a derived number into the same confidence as a measured one.
   priced," not as a second confirmed sighting.
 
 ## Options, priced — not recommended
+
+**Kept as written for the record; option 3 is what was chosen.** See the status line at
+the top and `docs/reachable-band-decision.md` for the ruling and why it holds — pending
+the owner re-confirming it, per that document.
 
 Three shapes an answer could take. This section prices what each one touches; it does not
 pick one. That is the owner's call, stated as one because it changes what the game

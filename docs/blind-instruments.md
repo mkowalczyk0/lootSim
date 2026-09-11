@@ -744,6 +744,25 @@ outside. This is the same defect as a one-sided threshold and it is *cheaper to 
 because a probe that silently stops doing anything looks exactly like a probe reporting
 success.
 
+**And the sharper half, added 2026-09-10 after a rebase that exercised it: `npm run check`
+catches a *compile* break but not a silent *semantic loss*.** The two are different failures
+and only the first has an instrument. When a rebase brought two drop-table branches together,
+`src/data/drops.ts` and `tools/relics.ts` conflicted loudly and were resolved by hand — but
+`src/data/relics.ts` **auto-merged with no conflict at all**, carrying one branch's eight
+`event: "encounter"` tags and the other's twenty-six pool references on different lines of
+the same file. Had a hunk dropped one of those tags, the file would still have compiled
+perfectly: `tsc` has nothing to say about an optional field that is simply absent, and the
+resulting build would have quietly paid a raid's artifact at twice its authored odds again.
+
+So the step that actually closes this gap is not another tool, it is **counting the things
+that should be there**: eight event tags, twenty-six pool references, both raid call sites
+still routed through `raidDropQueries`. Thirty seconds of `grep -c` against numbers you knew
+before the merge. Run the typecheck first because it is instant and it catches the duplicate
+declaration this entry is about — then count, because the typecheck cannot see the other
+half. **A clean merge of two branches that both edited the same file is a claim about text,
+and the only cheap way to turn it into a claim about meaning is to enumerate what each side
+was supposed to contribute and check that it is still there.**
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

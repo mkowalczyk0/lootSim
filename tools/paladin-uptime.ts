@@ -58,30 +58,40 @@ interface Row {
   classId: ClassId;
   seconds: number;
   casts: number;
-  chargedTicks: number;
   guardedTicks: number;
   ticks: number;
+  cleared: boolean;
 }
 
 function run(classId: ClassId, seed: number): Row {
   const state = geared(LEVEL, seed, 14, classId);
   let casts = 0;
-  let chargedTicks = 0;
   let guardedTicks = 0;
   let ticks = 0;
-  let wasCharged = false;
+  let subscribed = false;
+  /**
+   * Counted off the combat bus's own `ultimateUse`, not off a meter edge.
+   *
+   * The first version of this counted a fall from charged to not-charged, which looked
+   * equivalent and is not: a meter that sits near full and oscillates across the threshold
+   * registers an edge per oscillation. It reported the **Lancer at 58 ultimates a minute**
+   * — one a second — which is what sent me to check rather than to publish. `ultimateUse`
+   * is emitted once per cast in `runtime.ts` and cannot count an oscillation.
+   *
+   * `playFloor` drains `d.drainEvents()` itself inside its own loop, so the run-event
+   * stream is not available to a caller; the typed bus is, and it is the better subject
+   * anyway.
+   */
   const onTick = (d: Dungeon): void => {
+    if (!subscribed) {
+      subscribed = true;
+      d.bus.on("ultimateUse", (e) => { if (e.actorId === d.localHero.index) casts += 1; });
+    }
     ticks += 1;
-    const charged = d.specialCharge >= 1;
-    if (charged) chargedTicks += 1;
-    // A fall from charged to not-charged is a cast. Reading the meter rather than the
-    // event keeps this identical across classes with different ultimate effects.
-    if (wasCharged && !charged) casts += 1;
-    wasCharged = charged;
     if (d.localHero.sc.has("under_oath")) guardedTicks += 1;
   };
   const r = playFloor(state, delveConfig(DEPTH), 300, seed, 0.55, onTick);
-  return { classId, seconds: r.seconds, casts, chargedTicks, guardedTicks, ticks };
+  return { classId, seconds: r.seconds, casts, guardedTicks, ticks, cleared: r.d.phase === "cleared" };
 }
 
 const rows = new Map<ClassId, Row[]>();
@@ -92,23 +102,23 @@ for (const classId of CLASSES) {
 }
 
 console.log(`Paladin ultimate uptime — depth ${DEPTH}, level ${LEVEL}, ${SEEDS.length} seeds, dodge 0.55\n`);
-console.log("class          fight(s)   ult casts   casts/min   charged%   under_oath%");
+console.log("class          fight(s)  cleared   ult casts   casts/min   under_oath%");
 const summary = new Map<ClassId, { perMin: number; guardPct: number }>();
 for (const classId of CLASSES) {
   const list = rows.get(classId)!;
   const secs = list.reduce((a, r) => a + r.seconds, 0);
   const casts = list.reduce((a, r) => a + r.casts, 0);
   const ticks = list.reduce((a, r) => a + r.ticks, 0);
-  const charged = list.reduce((a, r) => a + r.chargedTicks, 0);
+  const cleared = list.filter((r) => r.cleared).length;
   const guarded = list.reduce((a, r) => a + r.guardedTicks, 0);
   const perMin = secs > 0 ? (casts / secs) * 60 : 0;
   const guardPct = ticks > 0 ? (guarded / ticks) * 100 : 0;
   summary.set(classId, { perMin, guardPct });
   console.log(
     `${classId.padEnd(13)} ${(secs / list.length).toFixed(1).padStart(7)}` +
+    ` ${`${cleared}/${list.length}`.padStart(8)}` +
     ` ${String(casts).padStart(11)} ${perMin.toFixed(2).padStart(11)}` +
-    ` ${(ticks > 0 ? (charged / ticks) * 100 : 0).toFixed(1).padStart(9)}%` +
-    ` ${guardPct.toFixed(1).padStart(11)}%`,
+    ` ${guardPct.toFixed(1).padStart(12)}%`,
   );
 }
 
