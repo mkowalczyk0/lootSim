@@ -1077,6 +1077,108 @@ remove `wardPower` rather than wire it up or document it as inert — see docket
 branch — which makes this entry a record of how the gap was found, not a description of a
 stat that still exists.
 
+## A twenty-fourth instance, and a new species: a real comparison, correctly phrased, green for a reason unrelated to its claim
+
+> **On the number.** This entry was first written as "a twentieth instance", derived from the
+> highest ordinal visible on its own branch — and that was wrong, in precisely the way entry 17
+> above describes. Sessions working in parallel each derived the correct next number from what
+> they could see, more than one arrived at the same one, and git merged the prose cleanly in
+> between, because a duplicate heading is a collision that leaves no markers. The numbering is
+> now assigned by whoever is integrating rather than derived per branch: the entries that landed
+> first hold 20 through 23, and this one is 24. Don't derive the next one either — ask.
+
+Found 2026-09-10 on `feat/relic-level-gate`, by falsifying seven ways a brand-new set of
+checks could be wrong. **Five went red. Two went green, and neither was a code defect — both
+were the checks themselves measuring something other than what they said.**
+
+Every earlier entry in this file is about an instrument that could not see: a bound derived
+from its own subject, a scope that had emptied, a filter over a set that never contained the
+thing. These two are different, and worse to spot, because **they are comparisons** — the
+remedy `CLAUDE.md` prescribes for the one-sided-bound family. Both compared two real numbers
+produced by the code under test. Both were phrased exactly as the design promise they were
+asserting. Both were green because something *other than the asserted variable* was carrying
+the difference.
+
+### The dangerous one: nothing tested the search at all
+
+`sourceFloor` takes a drop source to the shallowest floor that can pay it out, and for a rift
+boss that means **searching the tier ladder for the tier whose floor actually spawns that
+encounter** — `riftBossSources` writes all five Delve bosses out per rift, so "the Nameless,
+in the Abyss" is a far deeper ask (31) than "the Choir, in the Abyss" (11).
+
+Injection: delete the search, return the lowest allowed tier's floor for every boss.
+
+```
+ALL RELIC CHECKS PASSED
+```
+
+Every check in the file agreed, while five artifacts' level requirements had silently
+collapsed toward their rift's cheapest tier. The section had checks about depth, about danger,
+about the grace, about both directions at the boundary, about the migration — and not one of
+them varied *which encounter a source named*, so the entire search was untested code.
+
+The control that catches it holds everything else still: two sources naming **different
+encounters** in the **same rift** at the **same `minTier`**, so the mode and the tier cannot
+carry the result and the encounter is the only thing left.
+
+```
+FAIL  in one rift at one tier floor, naming a deeper encounter asks for more — nameless → 11, choir → 11
+```
+
+### The instructive one: the check named danger and measured depth
+
+The gate reads a source's `danger` as well as its depth, because a rift tier is part of *where*
+a thing drops. The check written for it:
+
+> a tier-8 Abyss source asks for more than a tier-1 one — tier 8 → 37, tier 1 → 11
+
+A real comparison, between two real configurations, on the exact axis in question. Injection:
+divide danger back out of `sourceLevel` entirely.
+
+```
+ALL RELIC CHECKS PASSED
+```
+
+Because `MODES.abyss.depthPerTier` is 2.2. **Climbing the tier ladder raises the depth as well
+as the danger**, so tier 8 out-ranks tier 1 whether danger is read or not — by 37 to 11 with
+it, and by 25 to 11 without. The comparison could never have failed, and the number it printed
+looked like evidence.
+
+The control is to hold the depth still and vary only danger — ask the same formula about the
+**same depth at danger 1**:
+
+```
+FAIL  ...and danger carries part of that on its own: the same depth at danger 1 asks less
+      — depth 28 at danger 3.00 → 25, the same depth at danger 1 → 25
+```
+
+Note that the *original* check is still worth keeping and was kept. "Climbing the ladder asks
+for more" is a true and useful promise about the thing a player actually walks up. It simply
+is not the promise about danger, and it was being read as one.
+
+### The rule
+
+`CLAUDE.md`'s campaign lesson says: assert a design promise as a **comparison**, not a
+one-sided bound. That is necessary and it is still right. The refinement this instance adds:
+
+> **A comparison needs a control.** Two numbers that differ are not evidence that the thing
+> you named is what makes them differ. The comparison must vary *only* the variable being
+> asserted — everything else held still — or it will report whichever confound is largest and
+> you will read the confound as your result.
+
+This is the same disease as the one-sided bound wearing better clothes. A bound is satisfied
+by a constant; an uncontrolled comparison is satisfied by *any* correlated quantity, and there
+is usually one, because the systems we compare across are tuned to move together. `depthPerTier`
+and `dangerPerTier` both climb with tier **on purpose** — that is the design — which is exactly
+what makes a tier comparison unable to tell them apart.
+
+**How to apply.** Before believing a comparison, name the variable it claims to be about, then
+ask what *else* differs between the two sides. If anything does, and it plausibly moves the
+result in the same direction, the comparison is not yet evidence — hold that thing still and
+compare again. And when a function has a branch nobody's check varies over (a search, a
+lookup, a fallback), stub the branch out and watch: if everything stays green, that branch has
+no watcher at all.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
