@@ -231,11 +231,20 @@ The line that has been proposed and not yet ruled on: **gems buy choice, never q
 Cap the number of purchases per period; let gems change *what is on offer*, never *how much
 a player may take*.
 
-## 3. More gem sinks — SHORTLIST WRITTEN, AWAITING AN OWNER CALL
+## 3. More gem sinks — STANDARDS + WARDROBE LANDED (the owner took both, not either/or)
 
-**2026-09-10: `docs/gem-sinks.md` is the shortlist §3 asks for** — six candidates with
-gem prices, a pay-to-win verdict and a build cost each, plus one recommendation. Nothing
-built. Three things in it are worth knowing without opening it:
+**2026-09-10, later: the owner approved Standards (§4A) and a wardrobe expansion, both.**
+`src/data/standards.ts`, three render sites (lobby, in-run nameplate, Trophy Hall),
+SAVE_VERSION 34, `tools/smoke.ts` extended with both structural safety proofs. Two new
+recolored auras, a hat and an ears item added to the wardrobe on the cheap slots; no new
+weapon skin, per the owner's standing rule that a new skin is its own authored weapon.
+Deliberately not built: the 8-slot escalating "standard mount" ladder from §4A's price
+table — the Hall shows the class's one live flown mark instead, a clean scope cut rather
+than an oversight; see `docs/gem-sinks.md`'s implementation note and the branch commit.
+
+**2026-09-10, original: `docs/gem-sinks.md` is the shortlist §3 asked for** — six
+candidates with gem prices, a pay-to-win verdict and a build cost each, plus one
+recommendation. Three things in it are worth knowing without opening it:
 
 - **The safety test is structural, so the "is this only a small advantage?" argument never
   has to be had.** A gem sink is safe iff what it buys is **never read by `game/`** — the
@@ -1509,3 +1518,94 @@ comment on a symbol whose definition changed after the comment's last edit. Each
 proxy and each has a false-positive rate. **The value of this entry is the category, not a
 proposed check** — and a check for this must not be waved through on the strength of the
 category being real. See `docs/blind-instruments.md`.
+
+---
+
+## New from the owner, 2026-09-10 night — ASSIGNED, ALL IN FLIGHT
+
+Added verbatim by the incoming PM so they survive a session ending, per this file's own
+purpose statement at the top. **No outcomes recorded below — nothing has landed yet.**
+
+## 29. Paladin needs a cooldown on his ultimate
+
+> "Paladin needs a cooldown on his ultimate."
+
+**Held by session 26. In flight.**
+
+**Lead handed over by the PM (`lootsim-9f`), reported not verified — 26 may yet find this
+wrong.** If true, this is a third instance of a known exploit family, not a fresh bug:
+
+- Conviction generates from `{ on: "damagePrevented", amount: 50, perUnit:
+  "maxHealthFraction" }`, and Last Light's `under_oath` is a damage-prevention state — so
+  the ultimate would be charging the meter that casts it. Engineer and Warlock both
+  shipped the same loop earlier as untagged `{ on: "damageDealt", perUnit: "damage" }`
+  rules with fat coefficients.
+- **THE ULTIMATE RULE doesn't reach this shape.** `src/combat/resources.ts:257` refuses
+  generation from an ultimate-*sourced* event, but not from a state the ultimate left
+  behind that goes on to charge the meter itself — a limitation already stated in that
+  guard's own comment in `tools/smoke.ts`, known and written down when the first two
+  instances were fixed.
+- **The existing data-shape guard is blind to this instance too.** "The ultimate meter
+  cannot pay for itself" only checks untagged `damageDealt`, damage-scaled rules against a
+  0.05 cap. `damagePrevented` on `maxHealthFraction` is out of scope on both axes, so it
+  passes clean regardless of whether the bug is real.
+- **Cross-reference §27.** If 26's fix closes this structurally it may resolve the
+  Engineer item too, which is currently awaiting an owner call — flag that rather than
+  quietly closing §27 as a side effect of this one.
+
+**An eighteenth `docs/blind-instruments.md` entry may be owed here** — the data-shape
+guard passing a shape it was never built to see is that book's exact pattern — but it
+belongs to whoever confirms the diagnosis, not to whoever relayed it. Placeholder only
+until 26 verifies.
+
+## 30. No skill should be able to wipe the entire map — sweep every skill
+
+> "No skill should be able to wipe the entire map."
+
+Framed as a sweep across the class roster, not a single-ability fix — find every skill
+capable of clearing a full floor's spawn and bring it in line.
+
+**Held by session 26. In flight.**
+
+## 31. Artifact/relic drop rates are way too high in raids
+
+> "Artifact/relic drop rates are way too high in raids."
+
+**Held by session d8. In flight.**
+
+## 32. Artifacts/relics should be unique to each class
+
+> "Artifacts/relics should be unique to each class."
+
+**Held by session d8. Design memo first, per the PM's instruction — no implementation
+before the memo. In flight.**
+
+## 33. The multiplayer bug list
+
+Five reports bundled as one item, plus a standing question:
+
+- Wrong resources shown in the client UI.
+- Broken skill cooldowns.
+- Bosses snapping onto a different player mid-telegraph.
+- The Tower queuing the Delve.
+- Attack delay worst on wards/AOE that follow the player.
+
+Plus: **"look into a different way to do multiplayer, maybe the cloudflare gate."**
+
+**Held by session 56. In flight.**
+
+## 34. Named items and relics out of Records into their own stash-like WASD-navigable screen
+
+> Move named items and relics out of the Records tab into their own stash-like,
+> WASD-navigable screen.
+
+**Held by session 97, building a new Collection tab in `src/ui/town.ts`. In flight.**
+
+## 35. Leaderboards UI cleanup
+
+> "Leaderboards are fine, though the UI could use a clean up."
+
+Function is right; scope is presentation only — `src/net/recordsClient.ts` and
+`src/net/records.ts` should not need to change. `renderLeaderboards` in `src/ui/town.ts`.
+
+**Held by this session, on branch `ui/leaderboards-cleanup`. In flight.**

@@ -147,6 +147,8 @@ export const COSMETICS: readonly Cosmetic[] = [
     ["#fde68a", "#fbbf24", "#ffffff"], "Earned on a technicality."),
   look("hatUnspoken", "Crown of the Unspoken", "hat", "divine", "hatCrown",
     ["#ff1493", "#831843", "#ffffff"], "Everyone who has seen it agrees not to mention it."),
+  look("hatHeadband", "Plain Headband", "hat", "common", "hatHeadband",
+    ["#6b7280", "#374151", "#9ca3af"], "Keeps the hair out of the way. That is genuinely all."),
 
   // --- ears ---
   look("earsCat", "Cat Ears", "ears", "uncommon", "earsCat",
@@ -159,6 +161,8 @@ export const COSMETICS: readonly Cosmetic[] = [
     ["#84cc16", "#bef264", "#bef264"], "They twitch near hazards. Probably a coincidence."),
   look("earsHorn", "Small Horns", "ears", "epic", "earsHorn",
     ["#dc2626", "#7f1d1d", "#fca5a5"], "Grown, not bought. The vendor did not ask."),
+  look("earsWolf", "Wolf Ears", "ears", "rare", "earsWolf",
+    ["#57534e", "#a8a29e", "#a8a29e"], "Bigger than the fox ears. Nobody has measured either."),
 
   // --- face ---
   look("faceBlush", "Permanent Blush", "face", "common", "faceBlush",
@@ -199,6 +203,10 @@ export const COSMETICS: readonly Cosmetic[] = [
     "There is no sky down here either. Same answer."),
   aura("auraQuiet", "The Quiet", "unspoken", "void", "#ff1493",
     "It arrived with you. It has not said why."),
+  aura("auraAsh", "Drifting Ash", "rare", "ember", "#9ca3af",
+    "The same embers, gone cold. Nobody agreed on when."),
+  aura("auraMoonlight", "Moonlight", "epic", "star", "#bae6fd",
+    "Colder than the starlight one. Otherwise identical, allegedly."),
 
   // --- weapon skins ---
   skin("skinBone", "Bonecarved", "rare",

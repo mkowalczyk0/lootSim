@@ -428,6 +428,11 @@ html, body {
    can't fit shouldn't run off it. */
 .cmp.trophies td:not(:first-child) { font-size: 10px; line-height: 1.8; }
 
+/* The Leaderboards screen (docket §35): the viewer's own row on any board or the recent
+   ticker, so finding yourself in a list of strangers doesn't mean reading every name. */
+.list.records .cmp.wide tr.you td { background: var(--panel-2); color: var(--accent); }
+.list.records .cmp.wide tr.you td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
 /* --- footer ---------------------------------------------------------- */
 
 .town-foot {
