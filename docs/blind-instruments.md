@@ -608,6 +608,47 @@ When a multi-sided harness necessarily holds more than one object that could pla
 "the" state, the harness should say in a comment which one is live and which is inert, so
 the next person extending it doesn't have to re-derive it from the write path.
 
+## A seventeenth instance, a sibling to the sixth and the fifteenth: git's own merge is blind to a collision that leaves no markers
+
+Enabling co-op raids (`feat/coop-raids`), two sessions independently wrote the same fix to
+`Party.syncHub` in `src/net/party.ts` — a missing raid-propagation branch, same shape,
+different wording — and one landed to master first (`ccf24ef`). When the second merged
+master into their branch (`ec9dd64`), `git status` came back clean and there was nothing
+between `<<<<<<<` and `>>>>>>>` anywhere in the file. `npm run markers` — which greps for
+literal conflict markers, and runs first in `npm test` specifically because two merges
+once shipped live markers — passed for the same reason: there were none to find. What the
+merge had actually produced was two declarations of `const raid =
+this.plan?.config.raid;` back to back in the same scope, a duplicate-identifier error.
+Only `npm run check`, the typecheck, caught it, immediately.
+
+Git's line-based merge algorithm did exactly what it is built to do: two insertions at
+the same location in non-overlapping hunks aren't a *textual* conflict, so it concatenated
+them in sequence rather than flagging anything. **"No conflict markers" and "no conflict"
+are different claims, and this is the case where they come apart** — the collision is
+semantic (two declarations of the same name in one scope), and nothing about a line-level
+diff algorithm is positioned to see a semantic relationship between two blocks of text it
+never has to compare to each other.
+
+**Worth naming as a sibling to two existing entries, because it's the same shape as both
+and identical to neither.** It's item 6's shape (two sessions independently doing the same
+work and colliding) but the blind instrument here isn't a shared filesystem path — it's
+git's own merge algorithm, plus `npm run markers`'s literal-marker grep, both confidently
+reporting a clean result over a file that no longer compiled. It's also item 15's shape (a
+place a compile-time guarantee quietly stops applying) but inverted: item 15 found a cast
+that fed `tsc` a stale declaration so the typechecker went blind; here `tsc` is exactly
+what worked, immediately, and the blind instruments were the two checks that ran *before*
+it and both said nothing was wrong.
+
+**How to apply:** after merging in a fix from master that touches a function another
+session was also working on, don't read a clean `git status` and a passing `npm run
+markers` as proof the merge is *semantically* sound — both only prove the textual merge
+had no overlapping hunks. Run the typecheck immediately, before trusting either signal,
+whenever a merge combines two branches' independent fixes to the same narrow gap; a
+duplicate declaration, a doubled side effect, or two conflicting one-line edits to
+adjacent-but-not-identical lines are all invisible to a marker grep and only sometimes
+caught by `tsc`, depending on whether the collision happens to be a type error rather than,
+say, a silently-doubled runtime effect.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
