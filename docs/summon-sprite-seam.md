@@ -71,7 +71,28 @@ archers, anything that logically aims or moves in four directions) already accep
 south-plus-flip with nobody treating it as a defect. Adding a second rotation for five
 units would be a genuine new special case for a benefit nothing else in the roster gets.
 
-## The element carrier: tint pass, strength undecided
+## The element carrier: an outline accent, by owner ruling
+
+**Ruled 2026-09-11, against the study below: the element rides on the summon's OUTLINE,
+body wash zero.** `SUMMON_ELEMENT_OUTLINE = 0.65` in `render/sprites.ts`; the mechanism is
+`render/grade.ts#accentEdges` (pure — only opaque pixels with a transparent 4-neighbour
+move, interior and alpha never, pinned as a property in `npm run summonart` on a synthetic
+sprite whose answer is known by construction) applied by `outlinedCanvas`. 0.65 is the
+middle of the 0.6–0.7 band the study rendered; the three read the same at world scale, so
+the middle was chosen and the choice is stated rather than implied. `SUMMON_ELEMENT_WASH`
+is retired, not set to 0 — a wash of 0 would still describe the wrong mechanism.
+
+**This is a deliberate, owner-approved exception to §17.2's ink-outline convention.** Every
+other sprite in the game keeps an `ink` outline at runtime; a summon's is pulled toward its
+owner's element. The cost was stated to the owner as the price of the carrier and accepted.
+It is runtime-only: the committed PNGs are ink-outlined and accent-free, and `npm run
+chroma` measures the files, so the §1.4 rule for the art is untouched. If you find a summon
+outlined in colour, that is the ruling, not a bug.
+
+The section below is the history — the placeholder, why it was a placeholder, and the study
+that replaced it.
+
+### The placeholder, as it was: tint pass, strength undecided
 
 Item #3 of the brief: whatever replaces the triangle still has to say "this is mine, and
 it is my element" — the tint is currently doing that job alone. Mechanism: a tint pass
@@ -96,6 +117,48 @@ the number to 56 and the owner's eye.** Also worth asking 56 directly whether a 
 wash is the right carrier at all, or whether a smaller accent/aura in the owner's element
 says "mine, and this element" better — the monsters' own rule is one hot accent per body,
 not a full recolour, and the same instinct may apply here.
+
+### The study (2026-09-11, `art/summon-wire`) — a picture, not a decision
+
+All 21 PNGs are in. `art/summons/wash-study.py` (with `floor-export.ts` for the game's
+own graded floor tile) stands eleven summons on the Training Grounds floor at true world
+scale, between the hero and two monsters, and repeats the row per treatment: wash 0 /
+0.15 / 0.30 / 0.45 (`tintedCanvas`'s exact arithmetic), an **outline accent** (only the
+opaque cells touching transparency blended 70% toward the element, body untouched), and a
+**ground ring** (the windup ring `drawMinions` already draws, made permanent). One image
+per element under `art/summons/study/`; `wash-study-side-by-side.png` is fire and cold
+together, the loud and the pale case.
+
+What the pictures show, for the owner's eye to confirm or overrule:
+
+- **A body wash at 0.30 is the elite treatment.** `drawEnemy` draws an elite monster as
+  `spriteFrameTinted(..., RARITY_COLORS[e.elite], 0.35)` — a 0.35 body wash toward a
+  colour. A summon at 0.30 toward its element is the same operation in a different hue,
+  and on the sheet it reads that way: bone, iron and cloth all become one terracotta (fire)
+  or one ice-blue (cold). That is precisely the "family of recolours" look the owner paid
+  21 bespoke bodies to avoid, arriving through the renderer instead of the generator.
+- **0.15 keeps the bodies and loses the element on fire.** Cold still reads (a faint
+  blue on the skeleton); fire is a warm cast you would not name without the label.
+  0.45 is a silhouette in the element's colour.
+- **The outline accent keeps every body intact and still says both things.** The element
+  is legible at a glance on every figure including the 12-unit healing spirit, and
+  "mine" is carried by the same visual grammar ARPGs already use for an allied or
+  selected unit — an edge, not a gaze. It does not collide with §1.4: the monsters'
+  signal is a hot point that is looking at you; a rim is a different vocabulary. Its
+  cost is that it breaks the `ink`-outline convention (§17.2) for this one family, at
+  runtime rather than in the PNGs (`npm run chroma` measures the files, which stay
+  accent-free either way).
+- **The ground ring is the cleanest "mine" and the weakest "element".** It says
+  ownership clearly and the colour is legible, but eight skeletons are eight rings on the
+  floor, it fights the health bar and the windup ring for the same real estate, and a
+  flying unit's ring has nowhere honest to sit.
+
+**Recommendation put to the owner:** carry the element on the **outline at ~0.6-0.7**,
+body wash **0**; second choice wash 0.15 if the ink-outline convention is held to be
+non-negotiable. **Taken** — see the ruling at the top of this section. The study exists so
+the number was chosen against real art rather than by analogy to the weapon wash, which is
+how 0.3 got there; the decisive fact was not "0.3 looks like a lot" but what 0.3 already
+meant elsewhere in the renderer.
 
 ## The co-op bug this almost shipped
 

@@ -264,6 +264,13 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
     .filter((id) => id.startsWith("boss.") || id.startsWith("tower.boss."))
     .sort();
   stripPng(bossIds.map((id) => frameZero(id, `bosses/${id}.png`)), 2, true, 14);
+
+  // Docket §36 — the 21 summon bodies, shown as authored. The game pulls each one's edge
+  // pixels toward its owner's element (`SUMMON_ELEMENT_OUTLINE` in `render/sprites.ts`,
+  // owner ruling: outline accent, body wash zero) and there is no single element to show
+  // here, so the sheet shows the ink-outlined art the accent sits on.
+  const summonIds = Object.keys(ATLAS).filter((id) => id.startsWith("summon.")).sort();
+  stripPng(summonIds.map((id) => decodePng(readFileSync(`src/render/atlas/summons/${id}.png`))), 3, true, 12);
 }
 
 // The procedural monster/boss grids stay reachable behind one flag rather than being
