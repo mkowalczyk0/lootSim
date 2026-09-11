@@ -763,10 +763,64 @@ half. **A clean merge of two branches that both edited the same file is a claim 
 and the only cheap way to turn it into a claim about meaning is to enumerate what each side
 was supposed to contribute and check that it is still there.**
 
-## A nineteenth instance, and a new species: a measurement that was correct, complete, and still blind
+## A twentieth instance, and it is the check on the check: a falsification that could not falsify
 
-*(An eighteenth — the ultimate-meter guard whose scope was derived from the two exploits
-already found — is landing on a parallel branch. The numbering assumes it arrives first.)*
+Building `tools/bosstarget.ts` (the boss aim-lock rule, `fix/boss-target-lock`), the
+falsification step itself — checking out the pre-fix `boss.ts`/`dungeon.ts` and confirming
+the new check goes red — came back green on five of its six cases, against code known,
+by construction, to be broken.
+
+The probe worked like this: position hero A near the boss, capture the boss's facing the
+instant it begins a wind-up, move hero B to become the new nearest hero, and compare
+facing at commit against facing at resolve. Hero B's new position was closer to the boss
+than hero A's — but at the *same angle*, due east, just nearer. A boss correctly locked
+onto hero A and a boss silently reassigned onto hero B both read as "facing due east" from
+that geometry, because the only thing that changed was distance, and distance never
+entered the comparison. The check couldn't distinguish its two hypotheses, so of course it
+agreed with whichever one it was pointed at — it would have agreed with the fix being
+broken just as readily, and briefly did, before the fix was even reverted, since the
+initial version of the geometry produced this every time.
+
+**Every other entry in this file is a check that couldn't see its own subject. This one is
+the instrument whose entire job is to prove another check has teeth, being blind in
+exactly that job.** It is worse than an ordinary blind instrument for the reason CLAUDE.md
+already states about a design-promise comparison: a check that always passes gets trusted
+indefinitely, while a check that always fails announces itself in minutes. The wave
+director's spawn timing — an earlier version of this same probe looked for the boss
+synchronously at construction and missed one hundred percent of the time — is the benign
+version of this exact mistake: loud, obvious, fixed before anyone believed the number.
+This one was quiet. It reported the fix *working* against code the very next command was
+about to prove was broken, which is the green that would have retired the whole question
+if the falsification step hadn't been run at all, or had been trusted on its first result.
+
+**It was only caught because red was expected and green arrived instead** — a prediction
+recorded before the run, the same discipline `docs/shared-loot.md`'s two injections and
+this file's own falsification entries already use. Had the fix itself been subtly wrong
+rather than deliberately reverted wholesale, this same blind probe would have blessed it,
+and nothing about the resulting green would have looked any different from a correct one.
+
+**The rule is already written down, in a different domain, and this is the same rule
+restated rather than a new one.** CLAUDE.md's determinism section: *"the violation has to
+actually consume or reorder the shared `Rng` stream ... a real behavior change that only
+reaches something the run doesn't compare ... passes the check while proving nothing."*
+Swap the domain and the sentence is unchanged: the injection has to move the quantity the
+check reads. There, the shared quantity is the rng stream and the injection has to touch
+it. Here, the read quantity is *angle* and the injection moved *distance* — a real,
+deliberate change to the test's own state that the comparison was nonetheless structurally
+incapable of seeing. Two people, two domains, the same shape, arrived at independently —
+which is the evidence that the rule is general rather than a fact about random numbers.
+
+**How to apply:** when a falsification returns the *expected* red, that is evidence about
+the subject. When it returns an *unexpected* green — pass against code you deliberately
+broke — that is not yet evidence about the subject at all. It is a result about the
+injection, and the injection has to be shown to move the specific value the check reads
+before the green means anything. Here that meant re-examining the geometry (a fixed
+angular offset between "still locked" and "reassigned") rather than the lock code a second
+time. Fixed by moving the second hero to a *different* angle from the boss, not just a
+different distance, so the two hypotheses read roughly ninety degrees apart and the
+comparison finally had something to distinguish.
+
+## A twenty-first instance, and a new species: a measurement that was correct, complete, and still blind
 
 Every entry above is an instrument that could not see its subject: a bound taken from the
 thing under test, a scope that had silently emptied, a cast that blinded the typechecker, a
@@ -829,6 +883,102 @@ shape.
 would return if the mechanism were wrong in the way you have not thought of yet. If the
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
+
+## A twenty-eighth instance: the guard was correct, stayed correct, and could never have seen the thing it was guarding
+
+Ordinal assigned by the PM so several sessions writing into this file at once do not collide;
+entries 22–27 belong to other branches and are not on master yet.
+
+`art/wave-2` added six monsters and then lifted three of their bodies out of the floor's
+luminance band so they would read against the sector tilesets (`a247a07`). That is a change to
+the pixels of art the owner had already approved on sight, so the question on the table was
+the obvious one: **did the lift cost any of them its menace?** The gate that was run, reported
+and treated as the answer was `npm run chroma`.
+
+`chroma` is a good check. It is the subject of no complaint in this file. It measures a
+sprite's *accent* — the maximum chroma over any colour covering two or more pixels — and
+asserts as a comparison, not a bound, that the hero's stays below every committed monster's,
+because §1.4 says the one hot colour is the monsters' "this is looking at you" signal. It was
+built after five hero passes were rejected and a colour-count screen missed a saturated gold
+buckle. It even carries its own falsification section. It was green across the lift, on every
+one of the thirty committed sprites, with the three lifted bodies present by name in its
+output.
+
+And it is **structurally incapable of answering the question it was being asked.** A brighten
+pass moves the *body*. `chroma` reads the *accent*. The two quantities are disjoint: a monster
+whose body is brightened until it stops reading as menacing passes `npm run chroma` green,
+every time, because the accent never moved. Nobody mis-aimed it — that is entry sixteen's
+species and this is not that. It was aimed exactly where it belongs, at its own property, and
+it was then read as evidence about a different property that happened to be nearby.
+
+The other instrument in the room had the same shape from the other side.
+`art/monsters/infusion-matrix.ts` measures each sprite's contrast **against the floor it
+stands on**, and it is what justified the lift. It supplies a *lower* bound: it can tell you a
+body is too dark to see. It cannot tell you a body has been brightened past the cast it
+belongs to. So the change had a floor, and a green accent check, and **no ceiling at all** —
+the entire upper half of the risk was uncovered by anything.
+
+What actually stood in that gap was a person looking at a contact sheet. Which brings the
+second half, and it is the part worth the file's space:
+
+**A description is not a measurement, and this file is the wrong place to be precious about
+it.** The eye report that came back said the gore hound had gone "from a near-black blob to a
+readable purple-grey bull" and the rot priest "from a black-robed lurker to a mid-grey-green
+figure." The PM rendered both commits at 6× side by side and the pixels disagreed: the gore
+hound was *already* a readable purple-grey bull before the lift, the rot priest was *already*
+mid-grey-green, and the whole pass was a modest step. The reviewer had compared a native-trim
+thumbnail against a 6×-rendered strip and attributed the difference to the commit. That
+report was one relay away from reaching the owner as a regression that the pixels do not
+contain.
+
+So the sequence was: a correct check, green, guarding nothing relevant; a second correct
+check, bounding only the safe direction; and prose standing in for the missing third. Each
+link individually defensible.
+
+**The fix is the missing ceiling, written as `npm run bodylum`.** A sprite's body luminance is
+the **median** Rec. 709 luminance over its opaque pixels — median specifically, because a hot
+accent is by design a tiny minority of pixels and a median is structurally insensitive to it,
+where a mean would be dragged by exactly the pixels the check must ignore. The bound is not
+"all committed monsters", which would include the six sprites under test and let brightening
+all six carry the band up with them — the `heroStage` defect, entry one's species. It is a
+frozen list of the five Reliquary monsters that predate art-wave 2 and that this branch never
+touches. The Tower roster is excluded because Heaven is bright by design and folding it in
+would widen the ceiling until nothing could fail.
+
+Two things fell out of it on the first honest run, and the second is the better lesson.
+
+The first: the three lifted bodies land at 44.4, 44.9 and 32.9 against a 68.3 ceiling, with
+16–35 points of headroom. That is real evidence for what had previously been an adjective —
+the lift did not take them out of their own cast.
+
+The second: `reliquary.monster.bloat-fiend` came in at **86.0, over the ceiling**, and it is
+not one of the lifted three. The obvious explanation was ready to hand — its owner-approved
+belly glow is large, so surely the accent is dragging the median. **That explanation was
+written, then measured, and it is false.** Only 3.5% of the Bloat-Fiend's opaque pixels (50 of
+1415) carry chroma ≥ 45, and excluding them outright still leaves the body at 62.0. The belly
+is not a small hot spot; it is a large *pale* one — low-chroma enough to count as body on this
+instrument and bright enough to carry the median over the cast's ceiling. It is pinned, with
+that reason rather than the plausible one, because the belly is an owner ruling (style guide
+§10.2: the Exploder is the roster's one approved exception to the accent being the gaze) and a
+gate that reads approved art as a defect and corrects it is a failure this file already has
+several names for.
+
+Nearly shipping a pin justified by a mechanism that does not hold is the same error as the
+thumbnail comparison, twice in one hour, from the same hands. Both were caught by measuring
+the thing the sentence claimed.
+
+**The rule.** Ask what your check reads, then ask what your change moves, and say the two out
+loud next to each other. If they are different quantities, the check is not evidence about the
+change however green it is and however well built it is — its correctness is not the issue and
+arguing about its quality is a distraction from the fact that it is pointed somewhere else.
+The dangerous version of this is not a bad check; it is a *good* check, adjacent to your
+change, that everyone including you is glad to see go green.
+
+**How to apply.** When a change is guarded by a check you did not write for it, that is the
+signal, not a reassurance. Name the quantity the change moves, grep for the check that reads
+*that*, and if there is not one, you have found the work. And when your only instrument is
+your own eye, say so plainly and render the comparison at matched scale before putting an
+adjective in front of anyone who will act on it.
 
 ## Proposed for the owner, not adopted here
 
