@@ -1010,6 +1010,14 @@ export function relicRequiredLevel(def: RelicDef): number {
   for (const src of def.sources) {
     // A `craft` source would answer 1 and flatten the gate — and `relicProblems` already
     // refuses one on a relic, so skipping it here is belt-and-braces rather than policy.
+    //
+    // A `chest` source would flatten it the same way, for the same reason (a chest is
+    // bought, not reached, so it has no floor to derive from) and is *not* skipped here —
+    // because it cannot occur. §2 of `tools/relics.ts` already refuses a chest on a
+    // relic-tier definition outright, and confines an artifact's sources to a raid or the
+    // Abyss by allowlist. Silently skipping it here would hide a definition that broke
+    // those rules behind a plausible number; letting it flatten the gate makes the real
+    // check the one that fails, which is where the decision belongs.
     if (!isLiveSource(src)) continue;
     cheapest = Math.min(cheapest, sourceLevel(src));
   }
