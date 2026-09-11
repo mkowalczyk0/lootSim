@@ -73,7 +73,7 @@ Worktrees are under `~/Desktop/lootSim-worktrees/<name>`.
 |---|---|---|---|
 | `fix/ultimate-uptime` | `ec5ee37` | `ult-pass` | **Needs a full gate — none has ever been run on any of it.** Past batch three's cut: the Engineer grant-path fix with its pin emptied, doc rewrites, blind-instruments 22 & 23, the `meter X/100` units print, and the §37 summon work (mitigation inheritance and the per-hit cap). `npm run check` green. The two §37 commits are the only untested balance changes in it. |
 | `feat/nine-circles` | `14dd607` | `nine-circles` | Built on `ebc61cb`, green through `deadpaths`, smoke was still running (PID 61086; log `/private/tmp/claude-501/-Users-martinkowalczyk-Desktop-lootSim/099ec789-4356-4a7b-89c5-dc8315649446/tasks/by47o7xws.output`, read for `CHAIN_EXIT=` and a ` FAIL ` count). `SAVE_VERSION` **36**. **Next: `git reset --hard 6a67250` to drop the duplicated rewards-dial commit, `git rebase cf33abe` (expect a conflict in `src/core/save.ts`'s version list — master has 35, keep 36), then a fresh gate.** |
-| `feat/summon-sprite-seam` | `c063d6a` | `summon-sprites` | Complete. Hardening landed after its gate started, so **it needs one more full run**. |
+| `feat/summon-sprite-seam` | `9e0925a` | `summon-sprites` | Complete, working tree clean. **Needs one full gate** — the only run it ever had started before the hardening existed. The hardening *is* committed, verified on disk: the total decode (`SUMMON_UNITS[i] ?? "__unknown_unit__"` in `src/net/sync.ts`, falling through to the triangle) and the sorted-table assertion in `tools/summonart.ts` are both folded into `ee75b9f`. The facing convention and the `SUMMON_ELEMENT_WASH = 0.3` placeholder are documented in `docs/summon-sprite-seam.md`. |
 | `docs/blind-instruments-index` | `fb99597` | `relic-levelgate` (branch present, not checked out) | Index, `npm run blindindex`, `harness` duplicate- and undefined-step detection, and **`docs/batch-four-union.md`** — the union-order reasoning written for someone with no context. Never run inside a full chain. **Merge this first in batch four** — see §4. |
 | `feat/relic-level-gate` | `bb01df2` | `relic-levelgate` | `379d062` landed. `b345480` + `af54435` + `bb01df2` remain: a `tools/relics.ts` check, a source comment, and the renumber to entry 24. Needs a gate. |
 | `feat/affix-codex` | `3d84216` | `affix-codex` | Committed at handoff. Glossary, Codex "Affixes & Stats" view, Reforge possibilities panel, Hero screen cursor/hover, two `claude-md-pending.md` corrections, the `wardPower` blind-instruments entry. **Unverified in a browser** — said so in the commit message. Full gate was running: PID 31127, log `/tmp/affix-codex-test2.log`. |
@@ -104,8 +104,9 @@ part of tonight's work.
    **Two answers are already in**: `blindindex` is free (node builtins and one markdown file;
    preferred second because it is instant), and `ultfloor` is free with a soft preference for
    *after* `check` (a type error makes its failure unreadable) and *before* `smoke` (~20s
-   against several minutes, same subsystem). Neither is a constraint. **`summonart` and the
-   affix-codex branch were never asked.**
+   against several minutes, same subsystem). Neither is a constraint. `summonart` is also **free** — it bundles fresh per run into its own
+   temp dir, never touches `dist/`, imports only DOM-free `src/` modules, and reads no file
+   another step writes. **Only the affix-codex branch was never asked.**
 4. **Land `fix/rewards-harvest-dial` first — it is already split out.** It fixes a check
    that is blind on master *today*: the `rewards` harvest fixture runs at a difficulty dial
    where its level-60 subject dies in eight seconds on every seed, and passes only when
