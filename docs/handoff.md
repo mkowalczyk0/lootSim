@@ -87,8 +87,13 @@ load by CPU (`ps aux | awk '$3 > 15'`), never by expected command name.**
 
 - **The Engineer's self-refilling ultimate** (docket §27, pinned) — a live meter loop
   found when the trees were armed.
-- **Shared-loot affinity residue** — a leftover from the instancing pass.
-- **Relic dedup.**
+- **Shared-loot affinity residue** and **relic dedup** — both written up in
+  `docs/shared-loot.md` and deliberately left unresolved. These are tuning calls on a
+  feature the owner has now actually played, which is exactly when they are worth asking.
+  Note on the first: the alternative doesn't trade off against the current behaviour, it
+  collapses the design into independent rolls — so present it as a design choice, not a
+  fix. On the second: dedup still follows the credited hero, which is the one place kill
+  credit survived the instancing pass.
 - **Fog of war.**
 - **Whether to push ~394 commits to GitHub `origin`.** Nothing has been pushed all
   project; this is the owner's call and worth asking plainly.
@@ -111,6 +116,13 @@ land an edit to it on a peer session's say-so.** They are:
   ~150 seeds at 2.5× the cost — a real decision for the owner and the only part still
   unpaid.
 
+That CLAUDE.md draft is now the *least* important home for those numbers, because they
+also landed in `tools/campaignblock.ts`'s own header — which is what somebody actually
+reads at the moment the check goes red, rather than a snapshot doc or a draft that may
+never land. **If you read nothing else about that check: a red is ~3% likely to be noise,
+so the first move is one disjoint block, not a regression hunt, and never nudge balance
+numbers to make it green.**
+
 26 also offered a one-line `"campaignblock"` entry in `package.json` to make that harness
 discoverable; it was deliberately not added because `package.json` is a conflict magnet
 while merges are being sequenced. Say the word when the queue is quiet.
@@ -118,9 +130,17 @@ while merges are being sequenced. Say the word when the queue is quiet.
 ### 5. Held work
 
 **26 is holding §19** — the four hand-drawn boss poses — behind two conditions they set
-themselves and have not yet settled: re-deriving the 23-of-35 figure from f1's cause
-table, and proving the 54–70%-against-idle measure won't reject a correct pose. Let them
-finish; don't hand the poses to someone else.
+themselves and have not yet settled. **Neither is ceremony, and neither is satisfiable
+after the poses are commissioned**, which is why they are held rather than parallelised:
+
+- Re-derive the 23-of-35 coverage figure from f1's own cause table, rather than inheriting
+  it across three sweeps and a PM handover. The owner chose *four* poses partly on the
+  leverage that number implied.
+- Settle in writing, on pose one, that a measure taken **against idle** won't reject a pose
+  that correctly resolves away from rest. The instrument that diagnoses the defect is
+  shaped to flag the fix — the same family as everything in `docs/blind-instruments.md`.
+
+Let them finish; don't hand the poses to someone else.
 
 ## Mistakes I made, so you don't repeat them
 
