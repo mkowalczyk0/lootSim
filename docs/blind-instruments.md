@@ -884,7 +884,7 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
-## A twenty-second instance: two gates that agree on the rule and disagree on the pixel
+## A twenty-ninth instance: two gates that agree on the rule and disagree on the pixel
 
 The art style guide's §1.4 gives a hand rule for a hot pixel — HSV saturation above 0.55
 and a channel above 90 — and every `art/*/finish.ts` script measures its own output with
