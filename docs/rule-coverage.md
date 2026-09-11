@@ -284,12 +284,12 @@ rewrites N abilities.
 - `ranger.sk.run_and_gun` [keystone] companions:[none] — Predator's Trail follows you, and moving along your own trail refunds Prep.
 - `ranger.ch.cull_the_weak` [behavior] companions:[none] — Chilled and quarried enemies take execute damage from every shot.
 - `ranger.ch.winters_predator` [keystone] companions:[none] — Killing a frozen quarry drops a frost nova that quarries everything it chills.
-- `ranger.hybrid.perfect_ambush` [hybrid] companions:[+1mutations] — A shot fired from stealth or Deadeye that hits a trapped enemy always executes.
+- `ranger.hybrid.perfect_ambush` [hybrid] companions:[+3mutations] — A shot fired from stealth or Deadeye that hits a trapped enemy always executes.
 - `ranger.hybrid.hunting_party` [hybrid] companions:[none] — Your traps also arm your companion — it drags trapped enemies back onto the field.
 - `ranger.hybrid.run_and_aim` [hybrid] companions:[+1mutations] — Deadeye no longer roots you — you keep its bonuses at a walk.
 - `ranger.hybrid.frozen_ground` [hybrid] companions:[+1mutations] — Trap zones freeze over — enemies inside are chilled, and a trigger shatters them.
 - `ranger.hybrid.pack_hunter` [hybrid] companions:[grantEffect] — Dashing past an enemy sics the companion on it and refunds a Prep charge.
-- `ranger.hybrid.winter_execution` [hybrid] companions:[+1mutations] — A held Deadeye shot on a frozen target is a guaranteed one-shot on anything but an elite.
+- `ranger.hybrid.winter_execution` [hybrid] companions:[+3mutations] — A held Deadeye shot on a frozen target is a guaranteed one-shot on anything but an elite.
 - `ranger.mythic.winters_quarry` [mythic] companions:[+1mutations] — The Last Hunt opens with a freezing pulse: every quarry is frozen solid before the volley, and each shot that lands on a frozen target chains a shattering nova to the next quarry over.
 
 ### Juggernaut

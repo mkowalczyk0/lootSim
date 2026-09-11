@@ -1678,6 +1678,17 @@ move — but they fail in opposite directions, and only one of them is loud. A b
 too loose manufactures a green check somebody eventually trips over. A bound that is too
 tight prints `—` and looks like diligence.
 
+**The reusable half, and it is bigger than the guard.** The tool this guard sits in exists
+because of a related blindness worth stating as its own rule: **when a value is composed
+from many sources, an instrument that prints the authored value is printing a number no code
+path uses.** `executeMissingHealth` is authored on 14 packets and *added* by 17 tree nodes,
+mutations and a relic. Every surface in the repo — the packet, the design records, the
+acceptance tool that pins the rider's properties — reported the authored `0.2`, correctly.
+The game cast with `0.95`. Three fixes in a row reasoned soundly about the wrong quantity,
+and nothing contradicted them because **nothing anywhere printed the effective value**. So:
+*print the composed value, not the authored one*, and where a value can be added to from N
+places, treat "what does it resolve to?" as a question the instrument owes an answer to.
+
 **The cheap tell.** A refusal is a result, and it deserves the same suspicion as a number.
 When an instrument declines to report, check whether its *premise* holds on the smallest
 possible sample before widening — here, one seed. If the guard passes on one and fails on

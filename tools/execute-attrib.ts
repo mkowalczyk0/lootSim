@@ -69,6 +69,8 @@
  *   npm run execute-attrib -- --seeds=24 --level=30 --classes=ranger
  *
  * Args: `--seeds=N --level=N --tier=N --raid=<id> --depth=N --classes=a,b --dodge=N --floor=boss|trash|both`
+ *       `--roster` — the static whole-game sweep of every execute rider, no simulation
+ *       `--seed0=N` — first seed of the block, for running disjoint blocks
  */
 
 import { EXECUTE_THRESHOLD } from "../src/combat/damage";
@@ -76,6 +78,8 @@ import type { ClassId } from "../src/data/classes";
 import { delveConfig } from "../src/data/modes";
 import { RAIDS, raidConfig } from "../src/data/raids";
 import { ALL_CLASSES } from "../src/progression";
+import { mutationMatches, type SkillMutation } from "../src/progression/mutations";
+import type { Ability } from "../src/combat/ability";
 import { Dungeon } from "../src/game/dungeon";
 import type { RunConfig } from "../src/data/modes";
 import { geared, playFloor } from "./bot";
@@ -92,6 +96,12 @@ const TIER = Number(arg("tier", "1"));
 const RAID_ID = arg("raid", "the-ferryman");
 const DEPTH = Number(arg("depth", "18"));
 const DODGE = Number(arg("dodge", "0.7"));
+/**
+ * First seed of the block. Disjoint blocks are the point: CLAUDE.md's campaign-comparison
+ * lesson is that a margin read once can sit on the edge of the noise floor rather than its
+ * plateau, and only a second, entirely disjoint sweep at the same size tells you which.
+ */
+const SEED0 = Number(arg("seed0", "4000"));
 const FLOOR = arg("floor", "both");
 
 /**
@@ -347,7 +357,7 @@ function sweep(subject: { id: ClassId; ult: string }, config: Config, run: RunCo
   const agg = emptyAgg();
   try {
     for (let i = 0; i < SEEDS; i++) {
-      const r = runFloor(subject.id, 4000 + i * 131, run, isBoss);
+      const r = runFloor(subject.id, SEED0 + i * 131, run, isBoss);
       const ultThisRun: Hit[] = [];
       agg.runs++;
       if (r.cleared) agg.cleared++;
@@ -595,7 +605,84 @@ function reportFloor(title: string, subject: { id: ClassId; ult: string; note: s
   console.log("    rather than by damage, so the ACCOUNTING above is the signal there, not `secs`.");
 }
 
+/**
+ * `--roster` — the whole-game static sweep, no simulation and no seeds.
+ *
+ * The fight measurement above found that The Last Hunt casts with 4.75x the coefficient
+ * written on its packet, because two hybrid unlocks target `withTag: "projectile"` and the
+ * ultimate carries that tag. The obvious next question is whether that is one ability's
+ * accident or a shape the game repeats, and it cannot be answered by measuring the Ranger
+ * harder. So this walks every class, resolves every mutation against every ability through
+ * `mutationMatches` — **the game's own matcher, not a reimplementation of it** — and prints
+ * what each execute rider actually resolves to.
+ *
+ * The column that matters is the source list: `(id)` is a node that named this ability
+ * deliberately, `(tag:x)` is a node that named a tag this ability happens to carry.
+ */
+function rosterSweep(): void {
+  interface Row { line: string; ratio: number }
+  const rows: Row[] = [];
+
+  const authoredOn = (a: Ability): number => {
+    let total = 0;
+    walk(a.effects, (o) => {
+      if (typeof o.executeMissingHealth === "number") total += o.executeMissingHealth;
+    });
+    return total;
+  };
+
+  for (const cls of ALL_CLASSES) {
+    // Every mutation this class declares, wherever it was authored — tree node, hybrid
+    // unlock or Mythic archetype. A mutation is the shape `{ id, target, ops }`.
+    const muts: SkillMutation[] = [];
+    walk(cls, (o) => {
+      if (o.target && Array.isArray(o.ops) && typeof o.id === "string") muts.push(o as unknown as SkillMutation);
+    });
+
+    for (const ability of cls.abilities) {
+      const authored = authoredOn(ability);
+      let added = 0;
+      const sources: string[] = [];
+      for (const mut of muts) {
+        if (!mutationMatches(mut, ability)) continue;
+        for (const op of mut.ops as unknown as Record<string, unknown>[]) {
+          const v = op.addExecuteMissingHealth;
+          if (typeof v !== "number" || v === 0) continue;
+          added += v;
+          const t = mut.target as unknown as Record<string, unknown>;
+          const how = t.abilityId ? "id" : `tag:${String(t.withTag ?? t.withAllTags)}`;
+          sources.push(`${mut.id}+${v}(${how})`);
+        }
+      }
+      if (authored === 0 && added === 0) continue;
+      const effective = authored + added;
+      const ratio = authored > 0 ? effective / authored : Infinity;
+      const name = ability.id + (ability.isUltimate ? " [ULT]" : "");
+      rows.push({
+        ratio,
+        line: `${name.padEnd(40)}${authored.toFixed(2).padStart(9)}${added.toFixed(2).padStart(8)}`
+          + `${effective.toFixed(2).padStart(11)}${(authored > 0 ? `${ratio.toFixed(2)}x` : "new").padStart(8)}   ${sources.join(" ")}`,
+      });
+    }
+  }
+
+  rows.sort((a, b) => b.ratio - a.ratio);
+  console.log("\nROSTER SWEEP — every execute rider in the game, as it actually resolves\n");
+  console.log(`  ${"ability".padEnd(40)}${"authored".padStart(9)}${"added".padStart(8)}${"effective".padStart(11)}${"ratio".padStart(8)}   sources`);
+  console.log(`  ${"-".repeat(114)}`);
+  for (const r of rows) console.log(`  ${r.line}`);
+  console.log(`\n  ${rows.length} packets carry an execute rider by some route.`);
+  console.log("  `(id)` means a node named this ability. `(tag:x)` means it named a tag the");
+  console.log("  ability happens to carry — which is the Ranger's 4.75x, and worth a look");
+  console.log("  wherever else it lands on an ultimate.\n");
+}
+
 // --- main --------------------------------------------------------------------
+
+if (argv.includes("--roster")) {
+  rosterSweep();
+  process.exit(0);
+}
 
 const only = arg("classes", "");
 const list = only ? SUBJECTS.filter((s) => only.split(",").includes(s.id)) : SUBJECTS;
