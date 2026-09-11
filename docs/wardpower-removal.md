@@ -94,6 +94,13 @@ finally does something. This is the `normalizeAppearance` house style the save h
 documents, and it sits directly above the legacy-essence rewrite that does the same job for
 a different retirement. **No version number was needed and none was claimed.**
 
+> **Post-merge note.** That table moved out of `state.ts` into `data/items.ts`, where it is
+> now shared with the ultimate-key retirement — which needed the *opposite* treatment, a
+> recomputed magnitude rather than a carried one. `wardPower`'s entry is
+> `{ kind: "rename", to: "defensePercent" }`, and the discriminant is what makes "keeps its
+> rolled number" above a typechecked property instead of a convention a later retirement
+> could quietly break. See the merge note at the end of `docs/ultimate-mods-removal.md`.
+
 ## What the branch leaves behind
 
 `npm run modkeys` asserts the rule directly: **no mod key may be authored without a live

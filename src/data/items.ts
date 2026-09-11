@@ -331,7 +331,23 @@ export const RESERVED_ELEMENTAL_MODS: readonly ModRoll[] = RESERVED_ELEMENTS.fla
  * extra projectile simply does not exist below epic, and an extra ultimate bounce
  * doesn't exist below mythic.
  */
-export const MOD_POOL: readonly ModRoll[] = [
+/**
+ * The hand-authored affix rows, kept as a `const` tuple so their ids survive as literal
+ * types rather than widening to `string`.
+ *
+ * This exists because of a crash, not a preference. `data/augments.ts` holds
+ * `AFFIX_MOD_IDS`, a list of ids into this pool, and looked them up with
+ * `modRollById(id)!`. Retiring an affix row therefore turned that non-null assertion into
+ * a module-load `TypeError: Cannot read properties of undefined` — the game would not
+ * boot — and it typechecked perfectly on the way in, because a `readonly string[]`
+ * annotation switches the compiler off for exactly the question being asked. Reading the
+ * code found nothing; only executing it did.
+ *
+ * `MOD_POOL` keeps its `readonly ModRoll[]` type for every consumer. The only thing that
+ * changed is that the ids are now recoverable as `ModPoolId`, so a list of them can be
+ * typed and a deleted row becomes a **compile error** instead of a runtime one.
+ */
+const AUTHORED_MODS = [
   { id: "keen", key: "attack", kind: "prefix", label: "Keen", base: 2.5, perTier: 0, scale: "rarity", where: "offense", minTier: 0 },
   { id: "brutal", key: "attack", kind: "prefix", label: "Brutal", base: 4, perTier: 0, scale: "rarity", where: "weapon", minTier: 1 },
   { id: "guarded", key: "defense", kind: "prefix", label: "Guarded", base: 3, perTier: 0, scale: "rarity", where: "defense", minTier: 0 },
@@ -364,11 +380,101 @@ export const MOD_POOL: readonly ModRoll[] = [
   // The whole-extra-thing mods. These are the drops people actually shout about.
   { id: "piercing", key: "pierce", kind: "suffix", label: "of Skewering", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 3 },
   { id: "splitting", key: "projectiles", kind: "suffix", label: "of Splitting", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
-  { id: "manifold", key: "ultimateProjectiles", kind: "suffix", label: "of the Manifold", base: 2, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
-  { id: "rebounding", key: "ultimateBounces", kind: "suffix", label: "of Rebounding", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 5 },
+  // `of the Manifold` (ultimateProjectiles, tier 4) and `of Rebounding` (ultimateBounces,
+  // tier 5) stood here and were retired — see RETIRED_MOD_KEYS below and
+  // docs/ultimate-mods-removal.md. This block is deliberately two entries thinner at the
+  // top end as a result; that is the cost of the removal, not an oversight.
 
+] as const satisfies readonly ModRoll[];
+
+/**
+ * Every id in the hand-authored pool, as a union. Type an id list against this and the
+ * compiler refuses a name that is not a row — including one that used to be.
+ *
+ * Deliberately covers the authored rows only. `ELEMENTAL_MODS` is generated, so its ids
+ * are `string` by construction and folding it in would widen the union straight back to
+ * `string` and silently undo the whole point. A check that has quietly become vacuous is
+ * worse than no check; this one is narrow and says so.
+ */
+export type ModPoolId = (typeof AUTHORED_MODS)[number]["id"];
+
+export const MOD_POOL: readonly ModRoll[] = [
+  ...AUTHORED_MODS,
   ...ELEMENTAL_MODS,
 ];
+
+/**
+ * Affix keys that no longer exist, and what a *already-rolled* copy becomes on load.
+ *
+ * `ItemMod` persists the rolled `key`, and `normalizeItem` drops any mod whose key is not
+ * in `MOD_KEYS`. So retiring a key naively **silently deletes the affix off every item
+ * already in a stash** — no crash, just quietly smaller gear. This table is the rewrite
+ * that runs *ahead* of that filter, the same shape `normalizeAppearance` uses for retired
+ * cosmetics and the legacy-essence rewrite uses for a different retirement. It is
+ * version-agnostic by construction — an old save and a new one take the same path — which
+ * is why retiring a key needs no `SAVE_VERSION` bump.
+ *
+ * **A retirement is one of exactly two things, and it has to say which.** That is the
+ * `kind` discriminant, and it exists because the two are *opposites* and the wrong one
+ * silently damages somebody's gear either way:
+ *
+ *  - A **rename** means the live key says the same thing in the same units, so the number
+ *    the player rolled moves across untouched. `wardPower` → `defensePercent` is this one:
+ *    the `of Warding` row kept its exact `base`/`perTier` and only swapped the key (see
+ *    docs/wardpower-removal.md), so an item in a stash keeps its affix, its rolled number
+ *    and its name, and finally does something. Recomputing here would throw that number
+ *    away — the very defect that branch existed to prevent.
+ *  - A **rewrite** means it does not, so the stored magnitude is meaningless in the live
+ *    key and a fresh one is derived from the item's own tier. Both ultimate keys are this:
+ *    they stored flat counts (`of the Manifold` 2 ultimate projectiles, `of Rebounding` 1
+ *    ultimate bounce) and land on a percentage, where a stored 2 reads as +200% ultimate
+ *    damage.
+ *
+ * The union is deliberate rather than an optional `value` callback or a `value(tier, old)`
+ * signature that a rename ignores. Both of those let a future retirement be wrong by
+ * *omission* — forget the parameter and a rename quietly recomputes; forget the callback
+ * and a rewrite quietly carries a flat count into a percentage. Here neither case
+ * typechecks without the author stating which one it is, which is this repo's standing
+ * preference for a rule that cannot be violated over a check that notices it was.
+ *
+ * **What a rewrite derives from is the point.** Not a number chosen here — the magnitude is read
+ * off `cataclysmic`, the game's own surviving `ultimatePower` affix, evaluated at the
+ * item's own tier through the same `base * (1 + tier * perTier)` every linear roll uses.
+ * That row is untouched by this change and is looked up by id rather than copied, so if it
+ * is ever retuned the rewrite follows it instead of drifting away from it. A retired affix
+ * is worth exactly what the live affix for the same stat is worth on the same item.
+ *
+ * `ultimatePower` was chosen over the nearer-looking `projectiles`/`pierce` deliberately.
+ * Those are the game's named whole-extra-thing pillars ("+1 projectile doesn't exist below
+ * epic"), and granting one to every existing holder of a retired affix would be a real,
+ * uncommanded power injection across every stash in the game — landing on exactly the
+ * pillar this change is retiring. `ultimatePower` keeps the two suffixes' own ultimate
+ * theme, preserves the item's affix count so nothing visibly shrinks, and is a percentage,
+ * so its magnitude can be sized to a peer rather than to a headline.
+ */
+export type RetiredMod =
+  /** The live key means the same thing in the same units; the rolled value is carried. */
+  | { readonly kind: "rename"; readonly to: ModKey }
+  /** It doesn't; the stored magnitude is discarded and a new one derived from the tier. */
+  | { readonly kind: "rewrite"; readonly to: ModKey; readonly value: (tier: number) => number };
+
+export const RETIRED_MOD_KEYS: Readonly<Record<string, RetiredMod>> = {
+  wardPower: { kind: "rename", to: "defensePercent" },
+  ultimateProjectiles: { kind: "rewrite", to: "ultimatePower", value: (tier) => ultimatePowerAt(tier) },
+  ultimateBounces: { kind: "rewrite", to: "ultimatePower", value: (tier) => ultimatePowerAt(tier) },
+};
+
+/**
+ * What the surviving `ultimatePower` affix rolls on a tier-`tier` item. Looked up from
+ * `MOD_POOL` rather than restated, so this cannot drift from the row it claims to match.
+ */
+function ultimatePowerAt(tier: number): number {
+  const row = MOD_POOL.find((m) => m.id === "cataclysmic");
+  // MOD_POOL is a module constant and `cataclysmic` is in it; the fallback exists so a
+  // future edit that removes the row degrades to a sane number instead of throwing on load.
+  if (!row) return 0.09;
+  return Math.round(row.base * (1 + tier * row.perTier) * 1000) / 1000;
+}
 
 /** Slot group a type belongs to, for deciding which affixes may land on it. */
 export function whereFor(type: ItemType): Exclude<ModWhere, "any"> {

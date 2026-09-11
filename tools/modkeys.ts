@@ -27,14 +27,16 @@
  *  - **Its bound is a fixed reference the code under test cannot move.** "Is it read?" is
  *    answered against the simulation directories, not against the authoring data that
  *    declares the key — a grant can never satisfy this check by being a grant.
- *  - **Known-dead keys are PINNED, not filtered.** `ultimateBounces` and
- *    `ultimateProjectiles` are in exactly `wardPower`'s position — authored on Stormcaller
- *    and on the "of Rebounding" / "of the Manifold" suffixes, never read. They are
- *    recorded below rather than excluded, on the `tools/legends.ts` precedent: a NEW dead
- *    key fails, and so does silently fixing a pinned one. Whether those two get the same
- *    treatment `wardPower` got is an owner call and a separate branch — "+1 ultimate
- *    bounce doesn't exist below mythic" is a named design pillar in CLAUDE.md, so it is
- *    not a decision to make as a side effect of this one.
+ *  - **Known-dead keys are PINNED, not filtered.** On the `tools/legends.ts` precedent: a
+ *    NEW dead key fails, and so does silently fixing a pinned one. `ultimateBounces` and
+ *    `ultimateProjectiles` were pinned here when this landed — in exactly `wardPower`'s
+ *    position, authored on Stormcaller and on the "of Rebounding" / "of the Manifold"
+ *    suffixes, never read — because whether they got the same treatment was an owner call
+ *    and a separate branch. That call was made the same way (`fix/ultimate-mod-retirement`,
+ *    docs/ultimate-mods-removal.md) and both keys are gone from the vocabulary, so the pin
+ *    list is now empty. That is the pin doing its job at the end of its life rather than a
+ *    filter quietly emptying: the branch that removed the keys had to come here and say so,
+ *    because a pin naming a key that no longer exists reads as "now live" and fails.
  *
  * The instrument's honest limit: a "read" is the key's identifier appearing in a
  * simulation file. A key consumed only through a computed property name would read as
@@ -70,8 +72,16 @@ const NOT_A_READ = new Set(["src/game/item.ts"]);
  * an owner decision, not a commit — see the header.
  */
 const PINNED_DEAD: Record<string, string> = {
-  ultimateBounces: "authored on Stormcaller + 'of Rebounding'; never read. Owner call pending.",
-  ultimateProjectiles: "authored on 'of the Manifold'; never read. Owner call pending.",
+  // `ultimateBounces` and `ultimateProjectiles` were pinned here. The owner call they were
+  // waiting on was made — remove and re-author, the same ruling `wardPower` got — and both
+  // keys are now gone from `MOD_KEYS` entirely (docs/ultimate-mods-removal.md). Unpinned
+  // deliberately and as part of that retirement, not silently: a pin naming a key that no
+  // longer exists is a scope pointing at nothing, and the "still dead" check below reads a
+  // vanished key as "now live" and fails, which is exactly what it did here.
+  //
+  // Empty is the honest state — every key in the vocabulary has a live read. The check
+  // below prints the count, so if it is ever empty for the *wrong* reason the output says
+  // `0 pinned` rather than passing quietly.
 };
 
 function tsFilesUnder(dir: string): string[] {

@@ -32,7 +32,7 @@ export const STORMCALLER_STORM_CHARGE: ResourceSpec = {
     { on: "ailmentInflicted", amount: 4, requireTags: ["lightning"] },
     { on: "move", amount: 0.3, perUnit: "distance" },
   ],
-  thresholds: [{ at: 60, whileAbove: { lightningDamage: 0.15, ultimateBounces: 1 } }],
+  thresholds: [{ at: 60, whileAbove: { lightningDamage: 0.15 } }],
 };
 
 export const STORMCALLER_ULTIMATE_METER: ResourceSpec = {
@@ -352,7 +352,7 @@ export const STORMCALLER_PROGRESSION: ClassProgression = {
       name: "Thunder God",
       blurb: "Every bolt should touch as many bodies as physically possible.",
       nodes: [
-        { name: "Charged Air", category: "foundation", effects: [{ kind: "mods", mods: { lightningDamage: 0.14, ultimateBounces: 1 } }] },
+        { name: "Charged Air", category: "foundation", effects: [{ kind: "mods", mods: { lightningDamage: 0.14 } }] },
         {
           name: "Arc Everything",
           category: "behavior",
@@ -642,7 +642,7 @@ export const STORMCALLER_UNLOCKS: readonly PathUnlockDef[] = [
       {
         kind: "resourceRule",
         resource: "storm_charge",
-        patch: { addThresholds: [{ at: 90, whileAbove: { lightningDamage: 0.25, ultimateBounces: 2 } }] },
+        patch: { addThresholds: [{ at: 90, whileAbove: { lightningDamage: 0.25 } }] },
       },
     ],
     ui: { badge: "SPC" },

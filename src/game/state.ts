@@ -29,7 +29,7 @@ import {
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
-import { isWeaponType, slotForType } from "../data/items";
+import { isWeaponType, slotForType, RETIRED_MOD_KEYS } from "../data/items";
 import { emptyMaterials, type MaterialBag } from "../data/materials";
 import {
   NAMED_BY_ID, craftRecipeFor, isNamedId, rollNamedDrops, type NamedItemDef,
@@ -49,7 +49,7 @@ import {
   shopPeriod, shopRerollCost, shopStock, SHOP_TIERS, SHOP_TIER_IDS,
   type ShopListing, type ShopTierId,
 } from "../data/shop";
-import { RARITIES, type Rarity } from "../data/rarity";
+import { RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MAX_TROPHY_CASES, trophyCaseCost } from "../data/trophies";
 import { MOD_KEYS, type ModKey } from "../data/mods";
@@ -1878,23 +1878,35 @@ function normalizeItem(raw: Item): Item {
   const family = isWeaponType(type) ? type : null;
 
   // Version-agnostic, the `normalizeAppearance` house style: a saved affix whose key has
-  // since been retired is rewritten to the live key that replaced it, *before* the filter
-  // below drops unknown keys. `wardPower` is the case this was written for — it was a mod
-  // key eleven class nodes and the "of Warding" suffix granted and the simulation never
-  // read, so it was retired rather than implemented (see docs/wardpower-removal.md). The
-  // suffix now rolls `defensePercent` at the identical base/perTier, so an item already in
-  // somebody's stash keeps its affix, its rolled number and its name, and finally does
-  // something. Dropping it instead would quietly shrink gear people already own.
-  const RETIRED_MOD_KEYS: Record<string, ModKey> = { wardPower: "defensePercent" };
-  const mods: ItemMod[] = Array.isArray(raw.mods)
-    ? raw.mods
-        .filter((m): m is ItemMod => !!m && typeof m.value === "number")
-        .map((m) => {
-          const live = RETIRED_MOD_KEYS[m.key as string];
-          return live ? { ...m, key: live } : m;
-        })
-        .filter((m) => (MOD_KEYS as readonly string[]).includes(m.key))
+  // since been retired is rewritten onto the live key that replaced it, *before* the
+  // filter below drops unknown keys — which would otherwise delete it silently and leave
+  // gear people already own quietly smaller. No `SAVE_VERSION` bump is needed for a key
+  // retirement, the same way the legacy-essence rewrite below needs none.
+  //
+  // `RETIRED_MOD_KEYS` in data/items.ts says what each key becomes AND which of the two
+  // retirements it is, and the difference decides the number: a `rename` carries the
+  // rolled value across untouched because the live key means the same thing in the same
+  // units (`wardPower` → `defensePercent`, the "of Warding" suffix keeping its exact
+  // base/perTier), while a `rewrite` derives a fresh magnitude from the item's tier
+  // because it doesn't (the two ultimate keys stored flat counts and land on a
+  // percentage). Getting that backwards damages an item either way, which is why the
+  // table makes it a stated, typechecked property rather than a convention.
+  const tier = rarityIndex(raw.rarity);
+  const rewritten: ItemMod[] = Array.isArray(raw.mods)
+    ? raw.mods.map((m) => {
+        if (!m || typeof m.value !== "number") return m;
+        const retired = RETIRED_MOD_KEYS[m.key as string];
+        if (!retired) return m;
+        return {
+          ...m,
+          key: retired.to,
+          value: retired.kind === "rename" ? m.value : retired.value(tier),
+        };
+      })
     : [];
+
+  const mods: ItemMod[] = rewritten.filter((m): m is ItemMod =>
+    !!m && typeof m.value === "number" && (MOD_KEYS as readonly string[]).includes(m.key));
 
   const essence = legacy.essence;
   if (mods.length === 0 && essence && typeof essence.value === "number") {

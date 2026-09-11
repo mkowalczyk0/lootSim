@@ -157,8 +157,9 @@ const COMBAT_EXPLANATIONS: Partial<Record<CombatModKey, Explanation>> = {
       + "scales every element you're carrying at once, so a themed build compounds.",
   },
   thorns: { what: "Whenever you're hit, everything close enough to you takes this much damage back." },
-  ultimateBounces: { what: "Your ultimate, if it can chain or bounce, does it one more time." },
-  ultimateProjectiles: { what: "Your ultimate, if it fires projectiles, fires more of them." },
+  // The two ultimate keys had entries here and were retired with the keys themselves
+  // (docs/ultimate-mods-removal.md) — they described a mechanic the simulation never had.
+  // A glossary line is not a place to keep explaining a stat that no longer exists.
   healthPercent: { what: "A percentage increase to your maximum health, on top of the flat number." },
   defensePercent: { what: "A percentage increase to your defense, on top of the flat number." },
   manaRegen: { what: "Extra mana restored every second, on top of the passive trickle everyone has." },
