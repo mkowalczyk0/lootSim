@@ -127,10 +127,18 @@ content, covers all three slots rather than one, and needs no fiction.
 
 Two things to confirm with the owner before building:
 
-1. **Does a relic above your level still drop?** Yes, I would say — it drops and waits, which
-   is exactly how the shared stash already behaves for gear an alt will want. This is the
-   same question already answered "yes" under the old framing, and it survives the reframe.
-2. **Grace.** Gear gets one level. Relics probably want the same for the same reason.
+1. **Does a relic above your level still drop?** **Yes — it drops and waits**, which is
+   exactly how the shared stash already behaves for gear an alt will want. The owner
+   effectively answered this already under the old framing ("it still drops, for classes
+   you've unlocked"). **Note the "for classes you've unlocked" qualifier becomes moot here:**
+   it was a consequence of relics being class-bound, and under a level gate nothing is
+   class-bound, so the condition has no subject. It is dropped rather than carried forward —
+   and with it the §5 alt-inventory question and the whole "unlocked class" concept, which
+   §5 established does not exist in the save anyway.
+2. **Grace.** **Yes, one level**, for the stash's own reason: a floor's XP lands as its
+   monsters die, so clearing depth *N* often dings a character to level *N* only partway
+   through. Without the grace, even a single-class playthrough would routinely find its own
+   newest relics locked for a floor.
 
 **The co-op credit question is deferred** and mostly evaporates under a level gate: everyone
 is credited, some cannot wear it yet, and that needs no new rule because it is how the stash
