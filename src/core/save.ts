@@ -192,6 +192,12 @@
 // what a new account has. Claimed as 33 while 31 and 32 were still in flight and
 // assigned that number at merge; the claim list below did its job twice in one day.
 //
+// 34 (2026-09-10): Standards (`docs/gem-sinks.md` §4A) — `GameState.ownedBannerStyles`
+// (account-wide) and `Player.flownStandard`/`flownBannerStyle` (per class). Nothing to
+// migrate: an older save owns no banner style beyond the free default and flies nothing,
+// which is what a fresh account already looks like — `normalizeOwnedStyles` and
+// `normalizeFlownStyle` both hand back that exact state rather than throwing.
+//
 // --- CLAIMED, NOT YET MERGED ------------------------------------------------
 // Bumping the version? Add your number to this list in the SAME commit that starts the
 // work, before you write anything else. Two branches claimed 31 on 2026-09-10 because
@@ -203,7 +209,7 @@
 //
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.
-export const SAVE_VERSION = 33;
+export const SAVE_VERSION = 34;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

@@ -14,6 +14,9 @@ import {
 } from "../data/cosmetics";
 import type { WeaponFamily } from "../data/weapons";
 import {
+  bannerStyle, normalizeFlownStyle, normalizeOwnedStyles, standardsFor, styleOwned,
+} from "../data/standards";
+import {
   CRAFTABLE_RARITIES, CRAFT_TYPES, craftBulkCost, craftEssenceCost, reforgeCoinCost,
   type CraftCategory,
 } from "../data/crafting";
@@ -279,6 +282,13 @@ export class GameState {
    * read by the simulation, which is what keeps display power-free by construction.
    */
   trophyItems: (Item | null)[] = [];
+  /**
+   * Standards (`docs/gem-sinks.md` §4A): which banner styles this account has bought,
+   * account-wide like `cosmetics` — the cloth is a look, not a character stat, so there is
+   * no reason to lock it to one class. The free default (`DEFAULT_BANNER_STYLE`) is never
+   * stored here; `styleOwned` treats a zero-price style as owned by construction.
+   */
+  ownedBannerStyles: string[] = [];
   /** What the character looks like. Read by the renderer and the wardrobe, nothing else. */
   appearance: Appearance = defaultAppearance();
   /**
@@ -564,6 +574,43 @@ export class GameState {
   clearTrophy(index: number): void {
     if (index < 0 || index >= this.trophyCasesUnlocked) return;
     this.trophyItems[index] = null;
+  }
+
+  /**
+   * Buys one banner style, account-wide, `docs/gem-sinks.md` §4A's 250 gems. Refuses the
+   * free default (nothing to buy) and a style already owned, both silently — a UI that
+   * only ever offers what's actually purchasable never has to check twice.
+   */
+  buyBannerStyle(id: string): boolean {
+    const style = bannerStyle(id);
+    if (style.price <= 0 || this.ownedBannerStyles.includes(style.id)) return false;
+    if (this.gems < style.price) return false;
+    this.gems -= style.price;
+    this.ownedBannerStyles.push(style.id);
+    return true;
+  }
+
+  /** Sets the active class's flown banner style. Refuses one that isn't owned rather
+   *  than flying a style nobody paid for. */
+  setFlownBannerStyle(id: string): boolean {
+    const style = bannerStyle(id);
+    if (!styleOwned(style, this.ownedBannerStyles)) return false;
+    this.player.flownBannerStyle = style.id;
+    return true;
+  }
+
+  /**
+   * Sets (or clears, with `null`) the active class's flown Standard. Validated against
+   * `standardsFor` on the way in, not just on load — the structural half of "never
+   * display a badge you didn't earn": there is no code path that can set an id this
+   * character hasn't actually earned, so nothing downstream needs to re-check it.
+   */
+  setFlownStandard(markId: string | null): boolean {
+    if (markId !== null && !standardsFor(this.player, this.activeClassId).some((m) => m.id === markId)) {
+      return false;
+    }
+    this.player.flownStandard = markId;
+    return true;
   }
 
   /**
@@ -1373,6 +1420,7 @@ export class GameState {
       cosmetics: this.cosmetics,
       trophyCasesUnlocked: this.trophyCasesUnlocked,
       trophyItems: this.trophyItems,
+      ownedBannerStyles: this.ownedBannerStyles,
       appearance: this.appearance,
       maxUnlockedDepth: this.maxUnlockedDepth,
       maxUnlockedHeight: this.maxUnlockedHeight,
@@ -1479,6 +1527,9 @@ export class GameState {
         ? (d.trophyItems as unknown[]).slice(0, MAX_TROPHY_CASES)
           .map((it) => (it && typeof it === "object" ? it as Item : null))
         : [];
+      // Version 34 added Standards; an older save owns no banner style beyond the free
+      // default, which needs no entry here at all.
+      state.ownedBannerStyles = normalizeOwnedStyles(d.ownedBannerStyles);
       state.maxUnlockedDepth = Number(d.maxUnlockedDepth ?? 1);
       // A save from before the Tower has climbed nothing, which is the fresh value anyway.
       state.maxUnlockedHeight = Number(d.maxUnlockedHeight ?? 1);
@@ -1659,6 +1710,11 @@ export function playerToJSON(p: Player) {
     // The leaderboards' "highest recorded max damage" board (`docs/leaderboards.md`)
     // reads this straight off the character sheet, same as every other record there.
     lifetimeMaxHit: p.lifetimeMaxHit,
+    // Standards (`docs/gem-sinks.md` §4A). On the wire for the same reason every other
+    // display-only field on this sheet is: an ally's flown mark reaching the host's
+    // screen is free once it's here, and nothing on either side reads it for power.
+    flownStandard: p.flownStandard,
+    flownBannerStyle: p.flownBannerStyle,
   };
 }
 
@@ -1743,6 +1799,14 @@ function applyPlayerJSON(
   // A save from before this field has never landed a recorded hit — true, same reasoning
   // as `challengerBadges` above.
   p.lifetimeMaxHit = Number(raw.lifetimeMaxHit ?? 0);
+  // Standards (SAVE_VERSION 34). Re-validated against the badges just loaded above rather
+  // than trusted — a hand-edited or stale save cannot fly a mark this character didn't
+  // earn; it silently falls back to nothing flown, the same "drop rather than crash"
+  // rule every other retired reference in this function follows.
+  const flownId = typeof raw.flownStandard === "string" ? raw.flownStandard : null;
+  p.flownStandard = flownId && standardsFor(p, p.classId).some((m) => m.id === flownId)
+    ? flownId : null;
+  p.flownBannerStyle = normalizeFlownStyle(raw.flownBannerStyle);
   p.xp = Number(raw.xp ?? 0);
   const equipment = { ...emptyEquipment(), ...(raw.equipment as object) };
   for (const slot of Object.keys(equipment) as EquipSlot[]) {

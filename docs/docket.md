@@ -231,11 +231,20 @@ The line that has been proposed and not yet ruled on: **gems buy choice, never q
 Cap the number of purchases per period; let gems change *what is on offer*, never *how much
 a player may take*.
 
-## 3. More gem sinks — SHORTLIST WRITTEN, AWAITING AN OWNER CALL
+## 3. More gem sinks — STANDARDS + WARDROBE LANDED (the owner took both, not either/or)
 
-**2026-09-10: `docs/gem-sinks.md` is the shortlist §3 asks for** — six candidates with
-gem prices, a pay-to-win verdict and a build cost each, plus one recommendation. Nothing
-built. Three things in it are worth knowing without opening it:
+**2026-09-10, later: the owner approved Standards (§4A) and a wardrobe expansion, both.**
+`src/data/standards.ts`, three render sites (lobby, in-run nameplate, Trophy Hall),
+SAVE_VERSION 34, `tools/smoke.ts` extended with both structural safety proofs. Two new
+recolored auras, a hat and an ears item added to the wardrobe on the cheap slots; no new
+weapon skin, per the owner's standing rule that a new skin is its own authored weapon.
+Deliberately not built: the 8-slot escalating "standard mount" ladder from §4A's price
+table — the Hall shows the class's one live flown mark instead, a clean scope cut rather
+than an oversight; see `docs/gem-sinks.md`'s implementation note and the branch commit.
+
+**2026-09-10, original: `docs/gem-sinks.md` is the shortlist §3 asked for** — six
+candidates with gem prices, a pay-to-win verdict and a build cost each, plus one
+recommendation. Three things in it are worth knowing without opening it:
 
 - **The safety test is structural, so the "is this only a small advantage?" argument never
   has to be had.** A gem sink is safe iff what it buys is **never read by `game/`** — the

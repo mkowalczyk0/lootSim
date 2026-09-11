@@ -5,6 +5,7 @@ import { ELEMENT_COLORS } from "../data/elements";
 import { RARITY_COLORS } from "../data/rarity";
 import { AUGMENT_BY_ID } from "../data/augments";
 import { RELIC_BY_ID } from "../data/relics";
+import { bannerStyle, standardLabel } from "../data/standards";
 import { getStatusSpec } from "../combat/status";
 import { REVIVE_TIME, type Dungeon, type Hero } from "../game/dungeon";
 import type { Body, Enemy, GroundZone, Pickup, Telegraph } from "../game/entities";
@@ -565,6 +566,17 @@ export class WorldRenderer {
       ctx.font = "7px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.fillText(hero.name.toUpperCase(), x, y - 30);
+      // Standards (`docs/gem-sinks.md` §4A): a second, smaller line under the name for
+      // whatever this hero has chosen to fly — never read for anything but the pixels it
+      // draws. `standardLabel` re-derives the text from this hero's own badge fields, so
+      // a stale or unearned id can't render here even if one somehow reached the wire.
+      const mark = standardLabel(hero.player, hero.player.classId, hero.player.flownStandard);
+      if (mark) {
+        ctx.globalAlpha = hero.local ? 0.5 : 0.8;
+        ctx.fillStyle = bannerStyle(hero.player.flownBannerStyle).color;
+        ctx.font = "6px ui-monospace, monospace";
+        ctx.fillText(mark.toUpperCase(), x, y - 22);
+      }
       ctx.restore();
     }
 
