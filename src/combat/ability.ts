@@ -109,7 +109,19 @@ export type EffectTargetSel =
   | "self"
   | "caster"
   | "allies"
+  /**
+   * Every hostile **within the ability's reach** — see `enemyReach` in `runtime.ts`.
+   * Bounded by construction: an ability that paints no circle still does not reach the
+   * whole floor. THE MAP-WIPE RULE (docket §30).
+   */
   | "enemies"
+  /**
+   * Every hostile on the floor, no matter how far away. The deliberate opt-in, and the
+   * only selector that can do this — a room-wide ultimate (Damnation, Death Comes Due)
+   * says so here rather than getting it by forgetting to author a shape. Adding a site
+   * is a real design decision: `npm run mapwipe` pins the roster and fails on a new one.
+   */
+  | "enemiesEverywhere"
   | "point"
   | "marked"
   | "lowestHealthAlly"

@@ -213,9 +213,9 @@ export const ENGINEER_REMOTE_DETONATION: Ability = {
   cooldown: 16,
   targeting: "self",
   effects: [
-    { kind: "damage", damage: { base: 2.4, scale: "attack", type: "fire", canCrit: true, knockback: 100 }, to: "enemies" },
-    { kind: "consumeStatus", status: "tagged", to: "enemies", then: [
-      { kind: "damage", damage: { base: 2.0, scale: "attack", type: "fire", canCrit: true, channel: "execute" }, to: "enemies" },
+    { kind: "damage", damage: { base: 2.4, scale: "attack", type: "fire", canCrit: true, knockback: 100 }, to: "enemiesEverywhere" },
+    { kind: "consumeStatus", status: "tagged", to: "enemiesEverywhere", then: [
+      { kind: "damage", damage: { base: 2.0, scale: "attack", type: "fire", canCrit: true, channel: "execute" }, to: "enemiesEverywhere" },
     ] },
   ],
   mutationHooks: [{ id: "remote_detonation.packet", kind: "damagePacket", note: "Saboteur path chains the detonation and re-lays the mines." }],

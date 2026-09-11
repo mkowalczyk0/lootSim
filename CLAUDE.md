@@ -778,6 +778,38 @@ does reduce the middle of the health band for every rider, including the classes
 reported.** Their coefficients and their kill-moment payoff are untouched; the middle of
 their band is not.
 
+**THE MAP-WIPE RULE: `to: "enemies"` is bounded, and unbounded is something you say.**
+`selectActorIds` bounded an enemy selection by the *ability's* `shape.radius` and, when the
+ability authored no shape, fell through to **every hostile on the floor**. So unbounded was
+what you got for not thinking about reach — the owner reported it twice, in two classes
+(the Ranger's ultimate, then Paladin's Aegis Rush), and a skill written tomorrow would have
+inherited it.
+
+The fix is the execute rule's shape and for the execute rule's reason: **the majority of
+`to: "enemies"` sites in the repo are not on an ability's effect list at all** (63 there,
+**64** more added by tree nodes, hybrids, archetypes, relics and named items), so a required
+per-packet radius would be ~95 authored numbers on classes nobody reported *and* satisfiable
+with `99999` — the original bug spelled explicitly. So the rule lives at the one site that
+resolves the selection. `to: "enemies"` is now **always** bounded, by `enemyReach`, a ladder
+of numbers the ability already supplies (`step.radius` → `shape.radius` → `shape.length` →
+its own largest zone → `range` → `DEFAULT_ENEMY_REACH`). **There is no field to omit**, so a
+new ability is bounded for free.
+
+A genuinely room-wide ability declares `to: "enemiesEverywhere"` — four do, each because its
+own description says "the field", and `npm run mapwipe` pins that roster so a fifth is a
+design decision rather than a merge. Two of the four are *not* ultimates and are an open
+owner question; see `docs/map-wipe-rule.md`, which also records what a player will notice,
+the one invented number (320, calibrated against the repo's own authored radii — above every
+non-ultimate that declares one, below both ultimates that do, so omitting a shape can never
+buy more reach than declaring one), and the routes that were checked and are *not* open
+(`to: "allies"`, pierce, projectile count).
+
+Two dead fields turned up underneath it: **`threat.radius` was authored on three taunts and
+read by nothing** (Fortress Call said "nearby enemies" and taunted the floor) — it is rung 1
+of the ladder now; and **`projectile.onExpire` never reaches the host**, so three sites are
+inert. The second is deliberately *not* fixed here, because landing that seam before the
+bound existed would have created three new map-wipes.
+
 ### Every class has its own save
 
 `GameState.players: Record<ClassId, Player>` — each class keeps a fully independent

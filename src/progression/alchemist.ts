@@ -207,9 +207,9 @@ export const ALCHEMIST_UNSTABLE_REACTION: Ability = {
   cooldown: 16,
   targeting: "self",
   effects: [
-    { kind: "damage", damage: { base: 2.6, scale: "spell", type: "fire", canCrit: true, knockback: 90 }, to: "enemies" },
-    { kind: "status", status: "burn", chance: 0.7, to: "enemies" },
-    { kind: "status", status: "corroded", chance: 0.7, to: "enemies" },
+    { kind: "damage", damage: { base: 2.6, scale: "spell", type: "fire", canCrit: true, knockback: 90 }, to: "enemiesEverywhere" },
+    { kind: "status", status: "burn", chance: 0.7, to: "enemiesEverywhere" },
+    { kind: "status", status: "corroded", chance: 0.7, to: "enemiesEverywhere" },
   ],
   mutationHooks: [{ id: "unstable_reaction.packet", kind: "damagePacket", note: "Mad Scientist path randomises and amplifies the yield." }],
 };
