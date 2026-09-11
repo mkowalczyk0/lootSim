@@ -336,7 +336,12 @@ const ELEMENT_AUGMENTS: readonly AugmentDraft[] = ELEMENTS.filter((e) => e !== "
  */
 const AFFIX_MOD_IDS: readonly string[] = [
   "deadly", "savage", "frenzied", "quickened", "fleet",
-  "bloodthirsty", "titanic", "vast", "splitting", "rebounding",
+  "bloodthirsty", "titanic", "vast", "splitting",
+  // "rebounding" stood here until `of Rebounding` was retired with the `ultimateBounces`
+  // key it rolled (docs/ultimate-mods-removal.md). An augment that guarantees an affix
+  // cannot outlive the affix, so it retired with it and this list is nine rather than ten.
+  // `affix-rebounding` is dropped from a save by the `isAugmentId` filter in `state.ts`,
+  // the same way a retired cosmetic id is — so an owned copy is lost rather than crashing.
 ];
 
 export function modRollById(id: string): ModRoll | undefined {
@@ -349,7 +354,16 @@ export function affixMinRarity(mod: ModRoll): Rarity {
 }
 
 const AFFIX_AUGMENTS: readonly AugmentDraft[] = AFFIX_MOD_IDS.map((modId) => {
-  const mod = modRollById(modId)!;
+  const mod = modRollById(modId);
+  // Non-null assertion removed deliberately: this list is ids into MOD_POOL, so retiring
+  // an affix row used to take the whole module down at import with an unrelated-looking
+  // `Cannot read properties of undefined`. Say what actually happened instead.
+  if (!mod) {
+    throw new Error(
+      `augments: AFFIX_MOD_IDS names "${modId}", which is not in MOD_POOL. ` +
+      "If an affix was retired, remove its id here too (see docs/ultimate-mods-removal.md).",
+    );
+  }
   // One rung above what the roll needs: guaranteeing an affix is worth more than
   // reaching the rarity that merely makes it possible.
   const grade = RARITIES[Math.min(rarityIndex(affixMinRarity(mod)) + 2, RARITIES.length - 1)]!;

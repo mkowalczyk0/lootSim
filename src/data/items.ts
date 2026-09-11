@@ -364,11 +364,62 @@ export const MOD_POOL: readonly ModRoll[] = [
   // The whole-extra-thing mods. These are the drops people actually shout about.
   { id: "piercing", key: "pierce", kind: "suffix", label: "of Skewering", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 3 },
   { id: "splitting", key: "projectiles", kind: "suffix", label: "of Splitting", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
-  { id: "manifold", key: "ultimateProjectiles", kind: "suffix", label: "of the Manifold", base: 2, perTier: 0, scale: "flat", where: "weapon", minTier: 4 },
-  { id: "rebounding", key: "ultimateBounces", kind: "suffix", label: "of Rebounding", base: 1, perTier: 0, scale: "flat", where: "weapon", minTier: 5 },
+  // `of the Manifold` (ultimateProjectiles, tier 4) and `of Rebounding` (ultimateBounces,
+  // tier 5) stood here and were retired — see RETIRED_MOD_KEYS below and
+  // docs/ultimate-mods-removal.md. This block is deliberately two entries thinner at the
+  // top end as a result; that is the cost of the removal, not an oversight.
 
   ...ELEMENTAL_MODS,
 ];
+
+/**
+ * Affix keys that no longer exist, and what a *already-rolled* copy becomes on load.
+ *
+ * `ItemMod` persists the rolled `key`, and `normalizeItem` drops any mod whose key is not
+ * in `MOD_KEYS`. So retiring a key naively **silently deletes the affix off every item
+ * already in a stash** — no crash, just quietly smaller gear. This table is the rewrite
+ * that runs *ahead* of that filter, the same shape `normalizeAppearance` uses for retired
+ * cosmetics and the legacy-essence rewrite uses for a different retirement. It is
+ * version-agnostic by construction — an old save and a new one take the same path — which
+ * is why retiring a key needs no `SAVE_VERSION` bump.
+ *
+ * **The replacement value is recomputed, never inherited.** Both retired keys stored flat
+ * counts (`of the Manifold` 2 ultimate projectiles, `of Rebounding` 1 ultimate bounce) and
+ * the live key they land on is a percentage, so carrying the stored number across would
+ * read a flat 2 as +200% ultimate damage. `value` therefore ignores the old magnitude
+ * entirely and derives a new one.
+ *
+ * **What it derives from is the point.** Not a number chosen here — the magnitude is read
+ * off `cataclysmic`, the game's own surviving `ultimatePower` affix, evaluated at the
+ * item's own tier through the same `base * (1 + tier * perTier)` every linear roll uses.
+ * That row is untouched by this change and is looked up by id rather than copied, so if it
+ * is ever retuned the rewrite follows it instead of drifting away from it. A retired affix
+ * is worth exactly what the live affix for the same stat is worth on the same item.
+ *
+ * `ultimatePower` was chosen over the nearer-looking `projectiles`/`pierce` deliberately.
+ * Those are the game's named whole-extra-thing pillars ("+1 projectile doesn't exist below
+ * epic"), and granting one to every existing holder of a retired affix would be a real,
+ * uncommanded power injection across every stash in the game — landing on exactly the
+ * pillar this change is retiring. `ultimatePower` keeps the two suffixes' own ultimate
+ * theme, preserves the item's affix count so nothing visibly shrinks, and is a percentage,
+ * so its magnitude can be sized to a peer rather than to a headline.
+ */
+export const RETIRED_MOD_KEYS: Readonly<Record<string, { to: ModKey; value: (tier: number) => number }>> = {
+  ultimateProjectiles: { to: "ultimatePower", value: (tier) => ultimatePowerAt(tier) },
+  ultimateBounces: { to: "ultimatePower", value: (tier) => ultimatePowerAt(tier) },
+};
+
+/**
+ * What the surviving `ultimatePower` affix rolls on a tier-`tier` item. Looked up from
+ * `MOD_POOL` rather than restated, so this cannot drift from the row it claims to match.
+ */
+function ultimatePowerAt(tier: number): number {
+  const row = MOD_POOL.find((m) => m.id === "cataclysmic");
+  // MOD_POOL is a module constant and `cataclysmic` is in it; the fallback exists so a
+  // future edit that removes the row degrades to a sane number instead of throwing on load.
+  if (!row) return 0.09;
+  return Math.round(row.base * (1 + tier * row.perTier) * 1000) / 1000;
+}
 
 /** Slot group a type belongs to, for deciding which affixes may land on it. */
 export function whereFor(type: ItemType): Exclude<ModWhere, "any"> {

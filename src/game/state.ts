@@ -29,7 +29,7 @@ import {
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
 import { ELEMENT_DAMAGE_KEY, ELEMENT_RESIST_KEY } from "../data/mods";
-import { isWeaponType, slotForType } from "../data/items";
+import { isWeaponType, slotForType, RETIRED_MOD_KEYS } from "../data/items";
 import { emptyMaterials, type MaterialBag } from "../data/materials";
 import {
   NAMED_BY_ID, craftRecipeFor, isNamedId, rollNamedDrops, type NamedItemDef,
@@ -49,7 +49,7 @@ import {
   shopPeriod, shopRerollCost, shopStock, SHOP_TIERS, SHOP_TIER_IDS,
   type ShopListing, type ShopTierId,
 } from "../data/shop";
-import { RARITIES, type Rarity } from "../data/rarity";
+import { RARITIES, rarityIndex, type Rarity } from "../data/rarity";
 import { normalizeSettings, type Settings } from "../data/settings";
 import { MAX_TROPHY_CASES, trophyCaseCost } from "../data/trophies";
 import { MOD_KEYS, type ModKey } from "../data/mods";
@@ -1877,10 +1877,23 @@ function normalizeItem(raw: Item): Item {
   const type = ((raw.type as string) === "weapon" ? "sword" : raw.type) as Item["type"];
   const family = isWeaponType(type) ? type : null;
 
-  const mods: ItemMod[] = Array.isArray(raw.mods)
-    ? raw.mods.filter((m): m is ItemMod =>
-        !!m && typeof m.value === "number" && (MOD_KEYS as readonly string[]).includes(m.key))
+  // Retired affix keys are rewritten onto their live replacement BEFORE the filter below,
+  // which would otherwise drop them silently and leave the item quietly smaller. See
+  // RETIRED_MOD_KEYS in data/items.ts for what each becomes and why the value is
+  // recomputed rather than carried across. Version-agnostic on purpose — no SAVE_VERSION
+  // bump is needed for a key retirement, the same way the legacy-essence rewrite below
+  // needs none.
+  const tier = rarityIndex(raw.rarity);
+  const rewritten: ItemMod[] = Array.isArray(raw.mods)
+    ? raw.mods.map((m) => {
+        if (!m || typeof m.value !== "number") return m;
+        const retired = RETIRED_MOD_KEYS[m.key as string];
+        return retired ? { ...m, key: retired.to, value: retired.value(tier) } : m;
+      })
     : [];
+
+  const mods: ItemMod[] = rewritten.filter((m): m is ItemMod =>
+    !!m && typeof m.value === "number" && (MOD_KEYS as readonly string[]).includes(m.key));
 
   const essence = legacy.essence;
   if (mods.length === 0 && essence && typeof essence.value === "number") {

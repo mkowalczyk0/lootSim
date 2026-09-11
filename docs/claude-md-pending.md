@@ -502,3 +502,31 @@ page, and the PM asked me to write them once it was confirmed nobody had. They a
 "the missing draft, recovered" — they are new prose with no prior owner-facing version, and
 should be read with that in mind: less scrutiny has touched them than draft 1's, which at
 least passed through whoever wrote it on `investigate/raid-party-scaling`.
+
+---
+
+## Pending edit: the "+1 ultimate bounce" line is now dead
+
+**Branch:** `fix/ultimate-mod-retirement`. **Design record:** `docs/ultimate-mods-removal.md`.
+
+`CLAUDE.md`'s "Items are modifier lists, not stat blocks" section currently reads:
+
+> - `+1 projectile` doesn't exist below **epic**; `+1 ultimate bounce` doesn't below **mythic**.
+
+On the owner's ruling to retire `ultimateBounces` and `ultimateProjectiles` the same way
+`wardPower` was retired, the affix that line describes (`of Rebounding`) no longer exists.
+**The second clause is fully dead rather than merely imprecise** — there is no ultimate-bounce
+affix at any rarity now. The first clause is untouched and still true.
+
+Suggested replacement, which keeps the point the sentence was making (rarity gates the
+whole-extra-thing affixes) without naming a retired one:
+
+> - `+1 projectile` doesn't exist below **epic**; `+1 pierce` doesn't below **rare**.
+
+Worth knowing when reading it: the same change leaves the tier-4/5 weapon affix pool two of
+six whole-extra-thing entries thinner at the top end. That is a real consequence of the
+removal, priced and accepted, not an accident — if the owner wants that pool refilled, it is
+its own piece of work.
+
+Not edited on the branch, per the standing rule that `CLAUDE.md` changes come here for one
+owner read instead.
