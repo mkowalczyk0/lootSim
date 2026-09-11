@@ -59,6 +59,7 @@ proposal for the owner — are deliberately absent from this table.
 | 34 | *in flight* |  |
 | 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
 | 36 | A silent narrowing, which converts authored content into evidence of its own absence | `GRANTABLE_ABILITY_IDS`' trailing `.filter`, handing every reader the survivors |
+| 37 | A clean merge read as evidence about meaning, when it is only evidence about text | a docket ruling appended 300 lines below the status word it falsified |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1775,6 +1776,96 @@ Neither blind attempt would have been caught by reading it, by review, or by the
 that has silently widened to `string` looks identical at every call site to one that has not.
 **A derived type is an instrument, and an instrument you have never watched go red is one you
 have not tested** — which is precisely the line this file proposes for `CLAUDE.md` below.
+
+## A thirty-seventh instance: git's conflict detector is a proximity heuristic, not a semantic one
+
+Every entry above is a check someone built. This one is a check nobody built, that everybody
+relies on many times a day, and that most people do not think of as a check at all: **a merge
+or a rebase completing without conflicts.**
+
+The reading it invites is "nothing I did contradicts anything anyone else did." What it
+actually reports is narrower by a wide margin: *no two people edited the same lines.* Those
+are different claims, and the distance between them is measured in lines of text — which is to
+say, in a quantity that has nothing to do with whether two statements can both be true.
+
+## The instance
+
+`docs/docket.md` item §29 was reconciled on the morning of 2026-09-11 and given the status
+**STILL OPEN — needs an owner call before anyone builds it**, cited to its design record and
+to the code.
+
+That evening, the owner ruled on §29. The ruling was appended at the foot of the same file,
+roughly 300 lines below the status word it falsified. Rebasing onto it produced
+`Successfully rebased and updated refs/heads/...` with no conflicts and nothing to resolve,
+because the two edits were nowhere near each other. Git was not wrong; git was answering a
+different question. The branch would have landed carrying "needs an owner call" for an item
+the owner had already called.
+
+It was caught by reading the incoming commit rather than by any signal in the rebase — and it
+was read only because its subject line happened to name the item. That is luck standing in for
+a process.
+
+## The same species, twice, in one batch — with the distance made larger
+
+Recorded as one-offs at the time, and they are the same failure:
+
+- **A pin that outlived its subject.** `tools/modkeys.ts` pinned `ultimateBounces` and
+  `ultimateProjectiles` as known-dead keys "awaiting an owner call". A different branch
+  *deleted those keys from the vocabulary entirely*. Different files, zero conflict markers.
+  The pin then named keys that no longer existed — and the check's own "still dead" logic
+  reads a vanished key as **now live**, so a stale pin does not fail quietly, it fails
+  backwards.
+- **Codex copy for stats that were being removed.** `src/data/affix-glossary.ts` arrived as a
+  *new file* describing two stats another branch was deleting. **A new file cannot textually
+  conflict with a deletion**, so there was nothing for git to flag at any distance.
+
+Both were caught by `npm run check` and by luck. Neither was caught by `markers`, which is
+correct to have missed them: there were no markers. That tool's own name for this is already
+in this file at entry 17 — *"no conflict markers" is not "no conflict"* — and entry 37 is that
+observation generalised. The variable is **distance**: same lines conflict, 300 lines apart do
+not, different files never do, and a new file against a deletion cannot. Semantic contradiction
+is flat across all four; git's detection falls off a cliff after the first.
+
+## Why it belongs in this file, and why this instance is the sharp one
+
+**It happened to a reconciliation sweep.** The one artefact in the repository whose entire
+purpose is to make status words true — written specifically because §6 had sat wrong for hours
+— went stale inside its own file within two hours of being written, by a mechanism that
+reports success.
+
+So the lesson is not "sweeps don't work." It is:
+
+> A sweep does not inoculate a status word, it only resets the clock.
+
+Which is the same shape as this document's founding rule, arriving from an unexpected side:
+**the check's subject came from somewhere other than the thing under test.** The subject of a
+clean merge is the diff. The thing under test is whether the file now says true things. Those
+coincide only when the contradicting edits happen to be adjacent, and nothing arranges for them
+to be.
+
+## What would have caught it — and this half is not a tool
+
+Plainly: **nothing automatic would have.** It is worth resisting the reflex to end this entry
+with a check, because the honest answer here is a habit.
+
+A linter over status words is the obvious proposal and it is a bad one. It would have to know
+that a `## Owner rulings` section at the foot of a file speaks to a `## 29.` heading 300 lines
+above it, that "ruled" supersedes "needs an owner call", and that a *record's* status line
+outranks a *docket's* — all of which is the semantic judgement the merge could not make,
+relocated into a regex. This project has shipped that mistake: entry 26 is a process rule with
+a blind grep inside it.
+
+The process fix, offered by the PM about their own work:
+
+> Whoever appends a RULING to a file owns re-reading what that file already says about the
+> same item.
+
+It is cheap, it is specific to the moment where the contradiction is *created* rather than
+where it is later discovered, and it puts the obligation on the person who has the semantic
+knowledge — the one who knows the ruling settles §29 — instead of on a resolver who has only
+two hunks of text. The general form, for anyone landing work into a long-lived document:
+**a clean merge tells you your edit applied; it never tells you your edit is still true. Go
+read what the file already says about your subject.**
 
 ## Proposed for the owner, not adopted here
 
