@@ -1533,7 +1533,7 @@ category being real. See `docs/blind-instruments.md`.
 
 ---
 
-## New from the owner, 2026-09-10 night — RECONCILED 2026-09-11; four landed, one open, one superseded
+## New from the owner, 2026-09-10 night — RECONCILED 2026-09-11; four landed, one ruled but unbuilt, one superseded
 
 Added verbatim by the incoming PM so they survive a session ending, per this file's own
 purpose statement at the top.
@@ -1558,7 +1558,12 @@ The second sweep is the one that mattered. §29 names no branch at all, and git 
 to say about it — its record turns out to have **overturned the diagnosis in the entry
 below**, which no amount of hash-checking would have surfaced.
 
-## 29. Paladin needs a cooldown on his ultimate — STILL OPEN, and the lead below was disproved
+**And then §29 moved again the same evening**, when the owner ruled on it. The sweep's own
+status word for that item was accurate for about two hours. That is not an argument against
+sweeping; it is the reason each status below cites the thing it was read from, so the next
+reader can check the source rather than trust the word.
+
+## 29. Paladin needs a cooldown on his ultimate — RULED, NOT YET BUILT; the lead below was disproved
 
 > "Paladin needs a cooldown on his ultimate."
 
@@ -1567,7 +1572,8 @@ below**, which no amount of hash-checking would have surfaced.
 **Lead handed over by the PM (`lootsim-9f`), reported not verified — 26 may yet find this
 wrong.**
 
-> **STATUS 2026-09-11: STILL OPEN — measured, and the diagnosis below was disproved.**
+> **STATUS 2026-09-11 evening: RULED BY THE OWNER, NOT YET BUILT — and the diagnosis
+> below was disproved along the way.**
 > **Design record: `docs/ultimate-uptime.md`** (landed on `master`, merge `3f3ce23`). No
 > branch was ever named for this item, so there is nothing for `--is-ancestor` to check;
 > this status comes from that record and from the code.
@@ -1586,14 +1592,32 @@ wrong.**
 > are hit, because the meter is fed by `damagePrevented` per `maxHealthFraction`.
 >
 > **Nothing is implemented.** `paladin.last_light` is still `cooldown: 0` — read on
-> `master` today — and so are all 21 ultimates in the game, which is why the record argues a
-> Paladin-only cooldown would be a roster inconsistency rather than a fix. The record's
-> recommendation is `STATUS_UNDER_OATH.baseDuration` (6s) as the one lever that moves the
-> reported thing and nothing else. **This needs an owner call before anyone builds it.**
+> `master` today — and so are all 21 ultimates in the game.
 >
-> Two live cross-references, both raised by the record and neither closed: it names the
-> **Lancer** as the roster's actual outlier and the thing worth the owner's attention first,
-> and §27 (the Engineer) is still awaiting its own owner call. If true, this is a third instance of a known exploit family, not a fresh bug:
+> **The owner has ruled, and the ruling goes against the measurement above — read
+> "Owner rulings, 2026-09-11 evening" at the foot of this file before acting on anything in
+> this entry.** *"Paladin gets one, as asked."* Build the cooldown that was originally
+> reported: not a twenty-one-class floor, not the Paladin-and-Lancer pair, both of which were
+> offered and declined. The record's own recommendation — `STATUS_UNDER_OATH.baseDuration`
+> — was **not** what was chosen; start from the ultimate's `cooldown` field.
+>
+> **So do not reopen this with the 16-of-21 ranking above.** It was put to the owner and did
+> not change their mind, for a stated reason: it comes from `tools/bot.ts`'s scripted bot
+> running an *empty build* — no tree, no gear, no mutations — and a character structurally
+> incapable of expressing the thing being measured cannot overrule someone who played it.
+> The 0.75/min and 12% figures stay on this page because they are honest readings of what
+> they measured; they are simply not evidence about a built-out Paladin.
+>
+> **This paragraph is itself the point.** The status block above was written earlier on
+> 2026-09-11 and ended "this needs an owner call before anyone builds it". It was true for
+> about two hours. A reconciliation sweep does not inoculate a status word against going
+> stale — it only resets the clock — which is why the ruling is linked here rather than
+> summarised and left to drift a second time.
+>
+> One live cross-reference remains: the record names the **Lancer** as the roster's actual
+> outlier, and the owner's ruling explicitly did not fold it in, so it is open and
+> unassigned. §27 (the Engineer) is no longer awaiting a call — it was assigned in the same
+> ruling; see `docs/engineer-ultimate-loop.md`. If true, this is a third instance of a known exploit family, not a fresh bug:
 
 - Conviction generates from `{ on: "damagePrevented", amount: 50, perUnit:
   "maxHealthFraction" }`, and Last Light's `under_oath` is a damage-prevention state — so
