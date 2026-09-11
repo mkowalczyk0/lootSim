@@ -29,7 +29,14 @@ export type BossAbilityId =
   //
   // The animation tag for a boss ability **is** its id here, by convention, so adding a
   // row to this union is the whole of declaring one (see docs/boss-abilities.md).
-  | "hunt" | "drift" | "sunder" | "blink" | "sanctuary" | "judgment" | "mark" | "crescendo";
+  | "hunt" | "drift" | "sunder" | "blink" | "sanctuary" | "judgment" | "mark" | "crescendo"
+  // The seven bullet-hell patterns. Every card above — all twenty-three of them — asks
+  // the player to read one shape and make one movement decision. These ask a question
+  // none of them can: **thread a moving field over time**, where the answer is a path
+  // rather than a step. See `PATTERNS` for what each one is, and
+  // docs/boss-bullet-hell.md for why they answer the "every boss feels the same" report
+  // where another circle would not.
+  | "spiral" | "rings" | "stream" | "curtain" | "bloom" | "sweep" | "noose";
 
 /** Shape of the danger zone the ability paints on the floor before it resolves. */
 export type TelegraphShape = "circle" | "donut" | "cone" | "line" | "none";
@@ -273,6 +280,87 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     shape: "circle", radius: 118, inner: 0, arc: 0, width: 0, count: 3, linger: 0,
     minRange: 0, maxRange: 999, onSelf: false,
   },
+  // --- the seven bullet-hell patterns ---------------------------------------
+  //
+  // Each of these resolves into a *pattern*: a stream of ordinary hostile bolts fired
+  // over several seconds by the emitter in `game/boss.ts`, tuned by its row in
+  // `PATTERNS` below. `count` is bolts per emission step; `damage` is per bolt. The rules
+  // hold the same way they hold for `volley`: the wind-up locks the body and paints a
+  // marker where the pattern will come from, every bolt is a visible thing crossing the
+  // floor at a speed a walk can beat, a bolt is an ordinary dodgeable hit so a dash beats
+  // it outright and one landed hit buys the usual invulnerability window — which is what
+  // makes a dense field survivable to *thread* rather than only to leave.
+  //
+  // Threat per card, since that is what a kit's difficulty is made of (docs/
+  // boss-abilities.md): a pattern occupies the player for its whole duration and keeps
+  // asking, where a circle asks once. Fully eaten, a three-second pattern lands the
+  // invulnerability-capped maximum of roughly one hit every 0.65s — four or five bolts,
+  // two to three slams' worth. Threaded, it lands nothing. That spread is the point.
+
+  spiral: {
+    // **Move with the turn.** Arms of bolts wheel out of the body; the safe lanes
+    // between them are wide but they drift sideways for the whole pattern, so the answer
+    // is to keep stepping around the boss at the wheel's own pace. Stand still and an
+    // arm walks into you; run the wrong way round and you close on the next arm faster.
+    id: "spiral", name: "Wheel Within Wheel", cast: 1.3, cooldown: 15, damage: 0.55,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 3, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: true,
+  },
+  rings: {
+    // **Follow the door.** Ring after ring, each with one gap in it, and the gap is in a
+    // different place every ring — it walks around the circle a fixed step at a time,
+    // starting on you. `volley` is one ring and one decision; this is five decisions
+    // that have to be made in sequence, moving, each one where the last one pointed.
+    id: "rings", name: "Each Door Elsewhere", cast: 1.4, cooldown: 16, damage: 0.6,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 18, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: true,
+  },
+  stream: {
+    // **Lead it.** A steady stream aimed at where you are, every tenth of a second, for
+    // two and a half seconds. Keep walking in one direction and every bolt lands a step
+    // behind you; stop, or turn back into the line you just drew, and they catch up.
+    // The one pattern that punishes *reversing* rather than standing.
+    id: "stream", name: "It Knows Where You Were", cast: 1.2, cooldown: 13, damage: 0.4,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 1, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: false,
+  },
+  curtain: {
+    // **Weave.** A curtain of bolts falls across the arena, from behind the boss toward
+    // you, the whole width at once, for four seconds — no aim, no ring, just weather with
+    // gaps in it. Nothing here is decided by where the boss is; the question is reading
+    // holes in a field as it arrives, which is the plainest form of the family.
+    id: "curtain", name: "The Weather Here", cast: 1.5, cooldown: 18, damage: 0.55,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 2, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: true,
+  },
+  bloom: {
+    // **Read the second stage.** Slow seeds drift out toward you and, a moment later,
+    // each bursts into a ring. Where a seed *is* is safe until it isn't, and where it is
+    // going to be when it opens is the thing to read — the safe ground at stage one is
+    // the danger at stage two.
+    id: "bloom", name: "Late Flowering", cast: 1.4, cooldown: 17, damage: 0.5,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 10, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: true,
+  },
+  sweep: {
+    // **Stay ahead of it, or go through it.** A ray of fast bolts swings a half-turn
+    // around the boss, starting a quarter-turn short of you and passing over where you
+    // stand. Circle away from it and it never arrives; circle into it and it does; a
+    // dash through the ray is the third answer and the fastest.
+    id: "sweep", name: "The Lighthouse", cast: 1.25, cooldown: 14, damage: 0.5,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 1, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: true,
+  },
+  noose: {
+    // **Leave through the gap, in time.** A ring of bolts appears around *you* and
+    // closes inward, with one opening in it; then another, on wherever you have got to,
+    // with the opening a third of a turn on. `ringOut` asks you to get in; this asks you
+    // to get out, through one door, before the door reaches you.
+    id: "noose", name: "Room to Leave", cast: 1.45, cooldown: 16, damage: 0.6,
+    shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 26, linger: 0,
+    minRange: 0, maxRange: 999, onSelf: false,
+  },
+
   crescendo: {
     // **The fight gets worse the longer you take.** `enrage` is a window: four seconds
     // harder and faster, then back to normal, and waiting it out is a legitimate answer.
@@ -287,6 +375,64 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 0, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
+};
+
+/** The seven pattern cards, in one place so the emitter and the audits agree on the set. */
+export const PATTERN_IDS = ["spiral", "rings", "stream", "curtain", "bloom", "sweep", "noose"] as const;
+export type PatternId = (typeof PATTERN_IDS)[number];
+export function isPattern(id: BossAbilityId): id is PatternId {
+  return (PATTERN_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * How a pattern is emitted, once its wind-up has resolved. Tuning lives here, not in the
+ * emitter, per the house rule that numbers live in `data/`.
+ *
+ * `bulletSpeed` is the number that decides whether a pattern is a mechanic or a damage
+ * tick, and it is held to two comparisons in `tools/bossvariety.ts` rather than a bound:
+ * every pattern's bolts are slower than a dash (a dash always beats them), and every
+ * ring's gap at the moment it is fired is wide enough for a hero to pass through.
+ */
+export interface PatternSpec {
+  /** Seconds the pattern keeps firing after the wind-up resolves. */
+  readonly duration: number;
+  /** Seconds between emission steps. */
+  readonly tick: number;
+  readonly bulletSpeed: number;
+  readonly bulletRadius: number;
+  /** Radians per second the pattern's own angle advances (spiral arms, the sweep ray). */
+  readonly spin: number;
+  /** Fraction of a full turn left open in a ring, or the spread of a fan, per pattern. */
+  readonly gap: number;
+  /** Units a ring is spawned from its centre, or a curtain from its axis. */
+  readonly reach: number;
+}
+
+export const PATTERNS: Record<PatternId, PatternSpec> = {
+  // Three arms, one full turn every ~3.3s. At 190 u/s a bolt crosses the arena in a few
+  // seconds; the lane between arms at melee range is ~2/3 of a turn wide and drifts at
+  // the spin, which a walking hero at 155 u/s keeps up with at any radius under ~80.
+  spiral: { duration: 3.0, tick: 0.08, bulletSpeed: 190, bulletRadius: 6, spin: 1.9, gap: 0, reach: 0 },
+  // Five rings half a second apart. The gap is three bolts wide (`gap` of the turn) and
+  // walks a sixth of a turn each ring.
+  rings: { duration: 2.3, tick: 0.5, bulletSpeed: 200, bulletRadius: 6, spin: Math.PI / 3, gap: 1 / 6, reach: 0 },
+  // Aimed every 0.07s for 2.5s, with a little scatter so the line reads as a stream and
+  // not a laser. The slowest-fired pattern per bolt and the lowest damage per bolt.
+  stream: { duration: 2.5, tick: 0.07, bulletSpeed: 250, bulletRadius: 5, spin: 0, gap: 0.06, reach: 0 },
+  // Two bolts every 0.06s spawned along a line 1100 wide behind the boss, all moving the
+  // same way at 165 u/s: ~130 bolts over four seconds, thin enough to walk between.
+  curtain: { duration: 4.0, tick: 0.06, bulletSpeed: 165, bulletRadius: 7, spin: 0, gap: 0, reach: 550 },
+  // A seed every 0.35s, drifting at 120 u/s, opening after 1.1s into a ten-bolt ring at
+  // 210 u/s. `reach` is the seed's flight before it opens.
+  bloom: { duration: 2.1, tick: 0.35, bulletSpeed: 210, bulletRadius: 5, spin: 0, gap: 1.1, reach: 120 },
+  // A half-turn in 2.4s; the ray is a bolt every 0.05s at 450 u/s — fast enough to read
+  // as a beam, and under the dash's 470 like every other bolt, so nothing in the game
+  // outruns a dash (`tools/bossvariety.ts`). The first draft had it at 520 and the gate
+  // caught it; the ray reads the same.
+  sweep: { duration: 2.4, tick: 0.05, bulletSpeed: 450, bulletRadius: 5, spin: Math.PI / 2.4, gap: 0, reach: 0 },
+  // Three rings 0.9s apart, spawned 260 out from wherever the hero is, closing at
+  // 110 u/s — 2.4s to reach the centre, so a walk reaches the gap from anywhere inside.
+  noose: { duration: 1.9, tick: 0.9, bulletSpeed: 110, bulletRadius: 6, spin: (2 * Math.PI) / 3, gap: 0.16, reach: 260 },
 };
 
 export interface BossPhase {
@@ -331,6 +477,14 @@ export interface BossSpec {
  * Five encounters. They're picked by depth, so the fifth is only ever seen by people
  * who have earned it, and rifts reach it from the tier ladder instead.
  */
+/**
+ * The five templates each deal in two or three of the seven patterns, strictly
+ * cumulatively (a card dealt in a phase stays for every phase after it), and no pattern
+ * is in every template — `tools/bossvariety.ts` fails a card that is in every kit. Every
+ * derived encounter (sector, Tower, raid, Proving) inherits its template's patterns
+ * through `variantPhases`/`raidPhases`/`provingPhases`, which is how "every boss" gets
+ * new cards without thirty-one bespoke kits (docs/boss-bullet-hell.md §3).
+ */
 export const BOSSES: readonly BossSpec[] = [
   {
     id: "warden", name: "Warden of the First Seal", title: "It has been standing here a while.",
@@ -338,8 +492,8 @@ export const BOSSES: readonly BossSpec[] = [
     health: 72, damage: 2.4, speed: 0.62, radius: 44, spriteScale: 3.85, selfResist: 120,
     phases: [
       { at: 1.0, name: "Rousing", abilities: ["cleave", "slam"], haste: 1, speed: 1, addsOnEnter: 0 },
-      { at: 0.66, name: "Awake", abilities: ["cleave", "slam", "quake", "summon", "windmill"], haste: 0.85, speed: 1.1, addsOnEnter: 3 },
-      { at: 0.3, name: "Unsealed", abilities: ["slam", "quake", "ringOut", "cleave", "summon", "windmill", "enrage"], haste: 0.68, speed: 1.25, addsOnEnter: 4 },
+      { at: 0.66, name: "Awake", abilities: ["cleave", "slam", "quake", "summon", "windmill", "sweep"], haste: 0.85, speed: 1.1, addsOnEnter: 3 },
+      { at: 0.3, name: "Unsealed", abilities: ["slam", "quake", "ringOut", "cleave", "summon", "windmill", "enrage", "sweep", "noose"], haste: 0.68, speed: 1.25, addsOnEnter: 4 },
     ],
   },
   {
@@ -351,9 +505,9 @@ export const BOSSES: readonly BossSpec[] = [
     // load; it still governs the procedural `BOSS_CHOIR` grid the smoke test walks.
     health: 80, damage: 2.5, speed: 0.8, radius: 40, spriteScale: 3.54, selfResist: 160,
     phases: [
-      { at: 1.0, name: "First Verse", abilities: ["volley", "slam"], haste: 1, speed: 1, addsOnEnter: 0 },
-      { at: 0.7, name: "Second Verse", abilities: ["volley", "ringOut", "summon", "beam", "starLance"], haste: 0.85, speed: 1.05, addsOnEnter: 4 },
-      { at: 0.35, name: "Crescendo", abilities: ["volley", "beam", "ringOut", "quake", "summon", "starLance", "wall"], haste: 0.62, speed: 1.15, addsOnEnter: 5 },
+      { at: 1.0, name: "First Verse", abilities: ["volley", "slam", "rings"], haste: 1, speed: 1, addsOnEnter: 0 },
+      { at: 0.7, name: "Second Verse", abilities: ["volley", "ringOut", "summon", "beam", "starLance", "rings", "spiral"], haste: 0.85, speed: 1.05, addsOnEnter: 4 },
+      { at: 0.35, name: "Crescendo", abilities: ["volley", "beam", "ringOut", "quake", "summon", "starLance", "wall", "rings", "spiral", "bloom"], haste: 0.62, speed: 1.15, addsOnEnter: 5 },
     ],
   },
   {
@@ -362,8 +516,8 @@ export const BOSSES: readonly BossSpec[] = [
     health: 105, damage: 2.6, speed: 0.55, radius: 54, spriteScale: 5.15, selfResist: 150,
     phases: [
       { at: 1.0, name: "Lumbering", abilities: ["slam", "charge"], haste: 1, speed: 1, addsOnEnter: 0 },
-      { at: 0.72, name: "Unearthed", abilities: ["slam", "charge", "quake", "meteor", "corruption"], haste: 0.88, speed: 1.15, addsOnEnter: 3 },
-      { at: 0.32, name: "Collapsing", abilities: ["charge", "quake", "meteor", "slam", "summon", "corruption", "backlash"], haste: 0.7, speed: 1.35, addsOnEnter: 5 },
+      { at: 0.72, name: "Unearthed", abilities: ["slam", "charge", "quake", "meteor", "corruption", "curtain"], haste: 0.88, speed: 1.15, addsOnEnter: 3 },
+      { at: 0.32, name: "Collapsing", abilities: ["charge", "quake", "meteor", "slam", "summon", "corruption", "backlash", "curtain", "noose"], haste: 0.7, speed: 1.35, addsOnEnter: 5 },
     ],
   },
   {
@@ -371,9 +525,9 @@ export const BOSSES: readonly BossSpec[] = [
     element: "fire", sprite: "bossHerald",
     health: 96, damage: 2.7, speed: 0.9, radius: 44, spriteScale: 4.23, selfResist: 170,
     phases: [
-      { at: 1.0, name: "Announcement", abilities: ["meteor", "cleave", "volley"], haste: 1, speed: 1, addsOnEnter: 0 },
-      { at: 0.7, name: "Proclamation", abilities: ["meteor", "volley", "beam", "ringOut", "wall"], haste: 0.82, speed: 1.1, addsOnEnter: 4 },
-      { at: 0.33, name: "The Word Itself", abilities: ["meteor", "beam", "ringOut", "quake", "volley", "summon", "wall", "enrage"], haste: 0.6, speed: 1.25, addsOnEnter: 6 },
+      { at: 1.0, name: "Announcement", abilities: ["meteor", "cleave", "volley", "stream"], haste: 1, speed: 1, addsOnEnter: 0 },
+      { at: 0.7, name: "Proclamation", abilities: ["meteor", "volley", "beam", "ringOut", "wall", "stream", "sweep"], haste: 0.82, speed: 1.1, addsOnEnter: 4 },
+      { at: 0.33, name: "The Word Itself", abilities: ["meteor", "beam", "ringOut", "quake", "volley", "summon", "wall", "enrage", "stream", "sweep", "rings"], haste: 0.6, speed: 1.25, addsOnEnter: 6 },
     ],
   },
   {
@@ -381,10 +535,10 @@ export const BOSSES: readonly BossSpec[] = [
     element: "void", sprite: "bossNameless",
     health: 145, damage: 3.0, speed: 0.85, radius: 52, spriteScale: 4.31, selfResist: 220,
     phases: [
-      { at: 1.0, name: "Regard", abilities: ["slam", "volley", "beam"], haste: 0.95, speed: 1, addsOnEnter: 2 },
-      { at: 0.75, name: "Attention", abilities: ["slam", "volley", "beam", "ringOut", "meteor", "windmill"], haste: 0.8, speed: 1.1, addsOnEnter: 5 },
-      { at: 0.45, name: "Interest", abilities: ["beam", "ringOut", "quake", "meteor", "charge", "summon", "starLance", "corruption"], haste: 0.66, speed: 1.2, addsOnEnter: 6 },
-      { at: 0.2, name: "Displeasure", abilities: ["quake", "ringOut", "beam", "volley", "meteor", "slam", "summon", "windmill", "starLance", "wall", "backlash", "enrage"], haste: 0.5, speed: 1.35, addsOnEnter: 8 },
+      { at: 1.0, name: "Regard", abilities: ["slam", "volley", "beam", "spiral"], haste: 0.95, speed: 1, addsOnEnter: 2 },
+      { at: 0.75, name: "Attention", abilities: ["slam", "volley", "beam", "ringOut", "meteor", "windmill", "spiral", "bloom"], haste: 0.8, speed: 1.1, addsOnEnter: 5 },
+      { at: 0.45, name: "Interest", abilities: ["beam", "ringOut", "quake", "meteor", "charge", "summon", "starLance", "corruption", "spiral", "bloom", "curtain"], haste: 0.66, speed: 1.2, addsOnEnter: 6 },
+      { at: 0.2, name: "Displeasure", abilities: ["quake", "ringOut", "beam", "volley", "meteor", "slam", "summon", "windmill", "starLance", "wall", "backlash", "enrage", "spiral", "bloom", "curtain", "stream"], haste: 0.5, speed: 1.35, addsOnEnter: 8 },
     ],
   },
 ];

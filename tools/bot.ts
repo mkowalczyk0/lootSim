@@ -125,6 +125,24 @@ export function escapeAngleFor(d: Dungeon, a: Pos): number | null {
         return Math.atan2(a.y - t.y, a.x - t.x);
     }
   }
+  // A bullet-hell bolt is the same problem with no fuse at all: it is already moving.
+  // Read every hostile bolt's path over the next third of a second and step off the
+  // side of the first one that would arrive — perpendicular to its travel, on whichever
+  // side the bot is already nearer. This is what "reads the floor" means once the floor
+  // has bolts crossing it (docs/boss-bullet-hell.md); the reckless bot never asks.
+  const LOOK = 0.35;
+  for (const p of d.projectiles) {
+    if (p.friendly) continue;
+    const rx = a.x - p.x, ry = a.y - p.y;
+    const v2 = p.vx * p.vx + p.vy * p.vy;
+    if (v2 <= 0) continue;
+    const t = Math.max(0, Math.min(LOOK, (rx * p.vx + ry * p.vy) / v2));
+    const cx = p.x + p.vx * t - a.x, cy = p.y + p.vy * t - a.y;
+    if (Math.hypot(cx, cy) > a.radius + p.radius + 12) continue;
+    const perp = Math.atan2(p.vy, p.vx) + Math.PI / 2;
+    const side = rx * -p.vy + ry * p.vx;
+    return side >= 0 ? perp : perp + Math.PI;
+  }
   // Burning ground is the same problem with a longer fuse.
   for (const g of d.ground) {
     if (Math.hypot(a.x - g.x, a.y - g.y) <= g.radius + a.radius) {

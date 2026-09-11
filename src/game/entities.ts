@@ -1,4 +1,4 @@
-import type { BossAbilityId, BossSpec, TelegraphShape } from "../data/bosses";
+import type { BossAbilityId, BossSpec, PatternId, TelegraphShape } from "../data/bosses";
 import type { DamagePacket } from "../combat/damage";
 import type { Element, Resists } from "../data/elements";
 import type { EnemyArchetype } from "../data/enemies";
@@ -104,6 +104,38 @@ export interface BossState {
    * of a rotation that overlaps its own wind-ups.
    */
   crescendo: number;
+  /**
+   * The bullet-hell pattern currently being emitted, or null. One at a time: while a
+   * pattern runs, no other pattern card is offered to `beginAbility`, so two fields never
+   * stack into something unreadable — but every non-pattern card still can, which is what
+   * makes the room busier rather than the pattern denser (docs/boss-bullet-hell.md).
+   */
+  pattern: PatternState | null;
+  /**
+   * Which way the next pattern turns, decided when its wind-up is painted so the marker
+   * and the pattern agree — a sweep whose marker pointed one way and whose ray went the
+   * other would be a telegraph that lied.
+   */
+  patternTurn: 1 | -1;
+}
+
+/** A pattern in flight — what the emitter in `game/boss.ts` needs between steps. */
+export interface PatternState {
+  readonly id: PatternId;
+  /** Seconds of emission left, and seconds until the next step. */
+  remaining: number;
+  timer: number;
+  /** Steps emitted so far. */
+  step: number;
+  /** The pattern's own angle (arm, ray or gap), and which way it turns. */
+  angle: number;
+  turn: 1 | -1;
+  /** Per-bolt damage, fixed when the pattern began. */
+  damage: number;
+  /** Seeds still to open (`bloom`): where they will be, and when. */
+  pending: { x: number; y: number; at: number }[];
+  /** Seconds since the pattern began. */
+  elapsed: number;
 }
 
 export interface Enemy extends Body {

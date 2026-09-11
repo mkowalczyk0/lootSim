@@ -292,7 +292,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // judgment (the room is found wanting apart from the ground it spares), and
     // `judgment` the sentence pronounced twice on the same spot. It has been arguing
     // since it was thrown out; it does not say a thing only once.
-    signature: ["sanctuary", "judgment", "starLance", "summon", "wall", "ringOut"],
+    signature: ["sanctuary", "judgment", "starLance", "summon", "wall", "ringOut", "noose"],
     finalPhase: "The Argument, Concluded",
     biome: THE_FIRST_HEAVENS,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -325,7 +325,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // what the flow field is rebuilt against, so a room that rearranges itself is a change
     // to `level.ts`'s hardest promise and not a boss ability. `sunder` is the honest
     // subset of it, and it is a real one.
-    signature: ["sunder", "blink", "mark", "charge", "beam"],
+    signature: ["sunder", "blink", "mark", "charge", "beam", "rings"],
     finalPhase: "No Further Turns",
     biome: THE_NINTH_LABYRINTH,
     baseDepth: 26, depthPerTier: 2.4, dangerPerTier: 1.19,
@@ -362,7 +362,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // *pressure* is card-count-neutral and threat-negative, which is a live difficulty
     // cut to a shipped raid wearing a variety commit's clothes. The pole is a line across
     // the water; it stays.
-    signature: ["drift", "hunt", "beam", "corruption", "summon", "ringOut"],
+    signature: ["drift", "hunt", "beam", "corruption", "summon", "ringOut", "curtain"],
     finalPhase: "Both Banks At Once",
     biome: THE_CROSSING,
     baseDepth: 12, depthPerTier: 2.0, dangerPerTier: 1.15,
@@ -390,7 +390,7 @@ export const RAIDS: readonly RaidSpec[] = [
     // goes on the louder it gets, and there is no waiting it out. `volley`, `starLance` and
     // `meteor` are the answers arriving, and `backlash` is what standing in front of her
     // costs while they do.
-    signature: ["crescendo", "volley", "starLance", "meteor", "backlash"],
+    signature: ["crescendo", "volley", "starLance", "meteor", "backlash", "spiral"],
     finalPhase: "The Prayer Answered",
     biome: THE_SEVENTH_CIRCLE,
     baseDepth: 16, depthPerTier: 2.2, dangerPerTier: 1.17,

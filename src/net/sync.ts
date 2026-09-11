@@ -574,6 +574,9 @@ function applyEnemies(d: Dungeon, s: Snapshot, planetNames?: Record<string, stri
         // The client never runs the rotation, so a crescendo's ratchet is the host's
         // bookkeeping and reaches the client as the haste it already sees in the fight.
         crescendo: 0,
+        // Likewise a pattern: the host emits it, and its bolts reach the client as the
+        // projectiles they already are.
+        pattern: null, patternTurn: 1,
         chargeTimer: 0, chargeVx: 0, chargeVy: 0,
         pendingDrops: 0, dropTimer: 0,
         buffTimer: 0, buffDamageMult: 1, buffHasteMult: 1,
