@@ -20,6 +20,19 @@ out or genuinely need a decision.
    that lands on `master` hot-reloads and interrupts their session. So: **every session
    works in its own git worktree**, finished gate-green branches **queue rather than
    land**, and you **batch the queue behind a single yes/no** to the owner before merging.
+
+   **The one standing exception, stated because the PM role has always quietly taken it:**
+   the PM merges in the shared checkout, because merging is what the role does. Landing a
+   batch there is the sanctioned act rule 3 is about. What is *not* sanctioned is treating
+   that checkout as a scratchpad — on 2026-09-10 the PM wrote a `docs/blind-instruments.md`
+   entry there, never committed it, and four sessions then reported an unattributable edit
+   in the owner's live tree. Nobody could pin it down because every commit in this repo is
+   authored `mkowalczyk0`, so **git cannot distinguish the sessions and content plus timing
+   are the only discriminators available.** Keep your own working notes in your scratchpad;
+   if you write to a tracked file in the shared checkout, commit it or branch it before you
+   do anything else. **A rule everyone silently exempts themselves from is worse than a rule
+   with a stated exception** — so if you take a wider exception than this one, widen the
+   text rather than the practice.
 4. **Delegate by model — but check, don't inherit this list.** As of the handover:
    `lootsim-26` and `lootsim-d8` are Opus (longest and hardest work), `lootsim-97` is
    Sonnet, and `lootsim-56` is **Fable**, not Sonnet as an earlier version of this
