@@ -1504,6 +1504,102 @@ four sessions before its first run under it exposed the gap.
    did not exit non-zero (entry 7's shape). A zero count with no terminator is a killed or
    halted chain (entries 6 and 13). Only the pair says green.
 
+## A twenty-eighth instance: the guard was correct, stayed correct, and could never have seen the thing it was guarding
+
+Ordinal assigned by the PM so several sessions writing into this file at once do not collide;
+entries 22–27 belong to other branches and are not on master yet.
+
+`art/wave-2` added six monsters and then lifted three of their bodies out of the floor's
+luminance band so they would read against the sector tilesets (`a247a07`). That is a change to
+the pixels of art the owner had already approved on sight, so the question on the table was
+the obvious one: **did the lift cost any of them its menace?** The gate that was run, reported
+and treated as the answer was `npm run chroma`.
+
+`chroma` is a good check. It is the subject of no complaint in this file. It measures a
+sprite's *accent* — the maximum chroma over any colour covering two or more pixels — and
+asserts as a comparison, not a bound, that the hero's stays below every committed monster's,
+because §1.4 says the one hot colour is the monsters' "this is looking at you" signal. It was
+built after five hero passes were rejected and a colour-count screen missed a saturated gold
+buckle. It even carries its own falsification section. It was green across the lift, on every
+one of the thirty committed sprites, with the three lifted bodies present by name in its
+output.
+
+And it is **structurally incapable of answering the question it was being asked.** A brighten
+pass moves the *body*. `chroma` reads the *accent*. The two quantities are disjoint: a monster
+whose body is brightened until it stops reading as menacing passes `npm run chroma` green,
+every time, because the accent never moved. Nobody mis-aimed it — that is entry sixteen's
+species and this is not that. It was aimed exactly where it belongs, at its own property, and
+it was then read as evidence about a different property that happened to be nearby.
+
+The other instrument in the room had the same shape from the other side.
+`art/monsters/infusion-matrix.ts` measures each sprite's contrast **against the floor it
+stands on**, and it is what justified the lift. It supplies a *lower* bound: it can tell you a
+body is too dark to see. It cannot tell you a body has been brightened past the cast it
+belongs to. So the change had a floor, and a green accent check, and **no ceiling at all** —
+the entire upper half of the risk was uncovered by anything.
+
+What actually stood in that gap was a person looking at a contact sheet. Which brings the
+second half, and it is the part worth the file's space:
+
+**A description is not a measurement, and this file is the wrong place to be precious about
+it.** The eye report that came back said the gore hound had gone "from a near-black blob to a
+readable purple-grey bull" and the rot priest "from a black-robed lurker to a mid-grey-green
+figure." The PM rendered both commits at 6× side by side and the pixels disagreed: the gore
+hound was *already* a readable purple-grey bull before the lift, the rot priest was *already*
+mid-grey-green, and the whole pass was a modest step. The reviewer had compared a native-trim
+thumbnail against a 6×-rendered strip and attributed the difference to the commit. That
+report was one relay away from reaching the owner as a regression that the pixels do not
+contain.
+
+So the sequence was: a correct check, green, guarding nothing relevant; a second correct
+check, bounding only the safe direction; and prose standing in for the missing third. Each
+link individually defensible.
+
+**The fix is the missing ceiling, written as `npm run bodylum`.** A sprite's body luminance is
+the **median** Rec. 709 luminance over its opaque pixels — median specifically, because a hot
+accent is by design a tiny minority of pixels and a median is structurally insensitive to it,
+where a mean would be dragged by exactly the pixels the check must ignore. The bound is not
+"all committed monsters", which would include the six sprites under test and let brightening
+all six carry the band up with them — the `heroStage` defect, entry one's species. It is a
+frozen list of the five Reliquary monsters that predate art-wave 2 and that this branch never
+touches. The Tower roster is excluded because Heaven is bright by design and folding it in
+would widen the ceiling until nothing could fail.
+
+Two things fell out of it on the first honest run, and the second is the better lesson.
+
+The first: the three lifted bodies land at 44.4, 44.9 and 32.9 against a 68.3 ceiling, with
+16–35 points of headroom. That is real evidence for what had previously been an adjective —
+the lift did not take them out of their own cast.
+
+The second: `reliquary.monster.bloat-fiend` came in at **86.0, over the ceiling**, and it is
+not one of the lifted three. The obvious explanation was ready to hand — its owner-approved
+belly glow is large, so surely the accent is dragging the median. **That explanation was
+written, then measured, and it is false.** Only 3.5% of the Bloat-Fiend's opaque pixels (50 of
+1415) carry chroma ≥ 45, and excluding them outright still leaves the body at 62.0. The belly
+is not a small hot spot; it is a large *pale* one — low-chroma enough to count as body on this
+instrument and bright enough to carry the median over the cast's ceiling. It is pinned, with
+that reason rather than the plausible one, because the belly is an owner ruling (style guide
+§10.2: the Exploder is the roster's one approved exception to the accent being the gaze) and a
+gate that reads approved art as a defect and corrects it is a failure this file already has
+several names for.
+
+Nearly shipping a pin justified by a mechanism that does not hold is the same error as the
+thumbnail comparison, twice in one hour, from the same hands. Both were caught by measuring
+the thing the sentence claimed.
+
+**The rule.** Ask what your check reads, then ask what your change moves, and say the two out
+loud next to each other. If they are different quantities, the check is not evidence about the
+change however green it is and however well built it is — its correctness is not the issue and
+arguing about its quality is a distraction from the fact that it is pointed somewhere else.
+The dangerous version of this is not a bad check; it is a *good* check, adjacent to your
+change, that everyone including you is glad to see go green.
+
+**How to apply.** When a change is guarded by a check you did not write for it, that is the
+signal, not a reassurance. Name the quantity the change moves, grep for the check that reads
+*that*, and if there is not one, you have found the work. And when your only instrument is
+your own eye, say so plainly and render the comparison at matched scale before putting an
+adjective in front of anyone who will act on it.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

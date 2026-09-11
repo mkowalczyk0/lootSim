@@ -549,6 +549,24 @@ Each role is a **distinct silhouette** readable in black (§1.5). The role is le
 | Highly mobile | Minimal body, big legs/wings, blur-friendly pose |
 | Battlefield manipulator | Carries terrain — a slab, a pillar, a chain to the floor |
 
+**The Exploder is the one approved exception to "the accent is the part looking at you"
+(owner ruling, art-wave 2 §1a, Sept 2026).** The Bloat-Fiend (`reliquary.monster.bloat-fiend`)
+generated with hot eyes *and* a hot belly; `art/monsters/finish-delve.ts` darkened the eyes
+and kept the belly, and the owner was shown the result and ruled to keep it. It is still
+exactly one accent — `npm run chroma` counts one — but that accent says *stand back*
+rather than *it sees you*, and it is the only monster in the roster whose accent says that.
+That is deliberate: a bomber's whole threat is its own death, so the thing that glows is the
+thing that is about to go off. Do not read the belly glow as a finishing-pass miss and
+"correct" it onto the eyes, and do not extend the exception to any other role without
+asking — a second body whose accent isn't its gaze dilutes what the gaze means on the
+other ten.
+
+Two of the six also carry finishing notes worth knowing before touching them: the Grave
+Piper ships **out of the density band on purpose** (5.4x the floor against the roster's
+3.9–4.5x; the smaller in-band candidate lost the egg-sac and the owner chose the sac — see
+the `ATLAS` row comment in `render/atlas/manifest.ts`), and the Grave Piper is free-form
+rather than `create_character` output for the reason in §17.8.
+
 ### 10.3 Affix visual indicators (UAT §3 — modular affix system)
 Every affix declares a **visual indicator**. Keep them a small, consistent vocabulary that
 stacks legibly (a monster can have several):
@@ -1127,6 +1145,42 @@ was reworked dark (black basalt floor, pale bone-rubble walls) after the first p
 too bright — "dark is better" for the whole suite; the other circles are next.
 
 ---
+
+### 17.8 Which generator for which body — decide the mode before the first generation
+
+**`create_character` in standard mode poses onto a fixed skeleton template. It cannot raise
+an arm, hunch, kneel, hold something overhead or lose its legs, however the prompt is
+worded.** The summoner in art-wave 2 (§1a of `docs/art-wave-2.md`) was asked twice for
+"both arms raised straight up", once in capitals at `text_guidance_scale` 12, and came back
+twice as a hooded figure with its arms at its sides — the template's pose, wearing the
+prompt's clothes. That is not a prompting failure to iterate on; it is the tool. Standard
+mode is the right choice for anything that *is* a standing biped or a template quadruped,
+because it is one generation and returns eight rotations, and the wrong one for anything
+whose silhouette *is* a pose or *isn't* a skeleton.
+
+So choose the generator per body, before generating, by asking one question — **is the
+thing I want a standing figure?**
+
+| body | generator | why |
+| --- | --- | --- |
+| a standing biped, or a bear / cat / dog / horse / lion | `create_character`, standard | 1 generation, 8 rotations, consistent with the whole roster |
+| a biped whose silhouette is a pose (arms up, kneeling, hauling) | `create_image_pixflux`, `no_background`, `view: "low top-down"`, `direction: "south"` | free-form controls pose; the Grave Piper and the rot-scuttler both came from here |
+| something with no skeleton at all — a turret, a pod, a bloom, an engine, a floating wisp | `create_image_pixflux` (or `create_1_direction_object` for a rigid prop) | there is no template to pose onto |
+| a bird | `create_image_pixflux` | there is no bird template; a humanoid template with wings is a person with wings |
+
+Two consequences for the finish pass. A free-form generation has no rotations, so it
+ships its one south image (the game flips by facing and never needed the other seven).
+And it tends to put the saturated colour where it likes rather than where the prompt said —
+the piper's arrived as a magenta sash while its eye sockets and its sac stayed dark — so
+budget for **painting the accent in** (`recolorWhere`/`liftTop` in
+`art/monsters/finish-delve.ts`) rather than for a reroll that moves it.
+
+One more measured fact that belongs next to §1.4's detector: **of the five element colours
+in §2.2 only fire, poison and lightning are "hot" by the detector's own 0.55 saturation
+line.** Cold `#7dd3fc` is 0.50 and void `#c084fc` is 0.48, so a slit or a socket painted in
+the element colour reports as NO ACCENT to the script that just painted it. Use one step
+deeper for those two (`#56c8ff`, `#b45cff` — the latter is what the procedural caster palette
+already uses) and read the accent report after every paint, not before.
 
 ## 18. Production backlog (mapped to the UAT implementation chunks)
 

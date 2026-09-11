@@ -124,6 +124,16 @@ passes clean: the Tower's tints were already kept dark for exactly this reason (
 `data/tower.ts`'s header), so a bright celestial roster reads with room to spare rather than
 narrowing the window the way a naive fix would have predicted.
 
+- **The roster is eleven roles now, not five, and every set covers all eleven.** Art-wave 2
+  (§1a of `docs/art-wave-2.md`) drew the six UAT §2 roles that had borrowed another role's
+  silhouette since they shipped; `reliquary` and `delve` name them, and `tools/monstersets.ts`
+  derives its coverage list from `ARCHETYPES` (weight > 0) rather than the hand-typed five it
+  used to hold, so a twelfth role cannot slip past it. **The Tower names the same six Hell
+  ids for those roles, on purpose and out loud**, declared in `SHARED_MONSTER_SETS` as
+  temporary: the gate fails a declaration whose sets no longer share art, so drawing the
+  Tower's celestial six (§1b) forces those two lines out rather than letting them go stale.
+  This is the "declare intent before drawing" idiom from §2 pointed the other way — a
+  declared *borrow* instead of a declared *absence*.
 - **The Tower's five bosses** reuse borrowed templates and are deliberately out of scope: a
   boss is one floor in five, and the trash is what you look at for the other four.
 - **Why the Tower's must be bespoke rather than a palette swap of the Reliquary's:** the

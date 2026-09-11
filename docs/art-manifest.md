@@ -48,7 +48,7 @@ or a reskin with no visual identity.
 | # | What | Why it's here | Section |
 |---|---|---|---|
 | 1 | **Raid content art** — the 4 raid boss silhouettes are **done** (§2.1); still open: 8 raid named items + 8 raid relics/artifacts have no icon, 1 raid arena has no tileset | Just shipped (446b44d); "the bosses are one of the main attractions" and raids are the newest, highest-profile boss content in the game | §2 |
-| 2 | **6 of 11 monster archetypes have no sprite of their own** — charger/bomber/shieldbearer/summoner/sniper/leech literally redraw an unrelated archetype's silhouette (`render/draw.ts` `ENEMY_SPRITES`) | Directly violates the style guide's own §1.5 rule ("a sniper is not a recoloured grunt — it is a different shape"); this is the single highest-leverage monster-art gap in the game | §3 |
+| 2 | ~~**6 of 11 monster archetypes have no sprite of their own**~~ — **DONE** (art-wave 2 §1a, `art/monsters/finish-delve.ts`): all eleven trash roles draw their own silhouette. The Tower borrows the six new Hell bodies out loud (`SHARED_MONSTER_SETS`) until its celestial six are drawn — `docs/art-wave-2.md` §1b | Was the single highest-leverage monster-art gap in the game; the style guide's §1.5 now holds on every floor | §3 |
 | 3 | **The Tower's monsters are re-labelled Hell monsters** — a "Gate Cherub" draws the identical rot-imp/bone-archer/iron-brute sprite Hell uses, just renamed | Heaven is a distinct visual force (§1.2 of the style guide) with zero pixels of its own yet; an open decision, not a queued task — see §4 | §4 |
 | 4 | **Named items and relics/artifacts (non-raid)** — fully authored, nothing to do | Already complete; listed for completeness only | §5 |
 | 5 | **Affix glyphs** — 16 affixes render as Unicode text characters, not the 8×8 pixel icons the style guide specifies | Real but low-severity: it works today, just isn't bespoke pixel art | §6 |
@@ -195,7 +195,7 @@ Source: `src/data/enemies.ts` (`ARCHETYPES`, the 11 non-boss `EnemyKind`s) and
 mapping comment says it out loud: *"reuse the closest existing silhouette until the art
 pipeline lands bespoke ones — mapped by combat shape, not by name"*).
 
-### 3.1 What has a bespoke sprite today (5 of 11)
+### 3.1 What has a bespoke sprite today (11 of 11)
 
 | Archetype | Sprite | Status |
 |---|---|---|
@@ -204,8 +204,19 @@ pipeline lands bespoke ones — mapped by combat shape, not by name"*).
 | brute | `reliquary.monster.iron-brute` | done |
 | caster | `reliquary.monster.cult-caster` | done |
 | swarmer | `reliquary.monster.rot-scuttler` | done |
+| charger | `reliquary.monster.gore-hound` | done (art-wave 2) — a `quadruped`/`dog` character, the first non-biped in the roster |
+| bomber | `reliquary.monster.bloat-fiend` | done (art-wave 2) — the one role whose accent is its belly, not its gaze; **owner-approved exception**, written into style guide §10.2 |
+| shieldbearer | `reliquary.monster.aegis-thrall` | done (art-wave 2) |
+| summoner | `reliquary.monster.grave-piper` | done (art-wave 2) — free-form generation, see style guide §17.8 for why; **ships at 5.4x density by owner ruling** (the in-band candidate lost the sac), see the `ATLAS` row comment |
+| sniper | `reliquary.monster.deadeye` | done (art-wave 2) |
+| leech | `reliquary.monster.rot-priest` | done (art-wave 2) — generated with a human face; wrapped dark in the finish pass |
 
-### 3.2 What borrows another archetype's silhouette today (6 of 11) — the gap
+Every finishing op, the accent count before and after, and the `ATLAS` row derivation is
+`art/monsters/finish-delve.ts`; raws under `art/monsters/rotations/` (eight per character)
+and `art/monsters/rejected/` (the two hooded-caster collisions that cost the summoner and
+the leech a reroll each). Eleven generations for six accepted silhouettes.
+
+### 3.2 What borrowed another archetype's silhouette until art-wave 2 (kept as the brief)
 
 | Archetype | Currently draws as | Behaviour (from `enemies.ts`) | Element / hot accent | Silhouette language wanted (style guide §10.2) |
 |---|---|---|---|---|
@@ -499,7 +510,7 @@ actual committed PNGs under `src/render/atlas/` at 446b44d.
 | Category | Count | Notes |
 |---|---|---|
 | Hero | 1 | `hero.legend-base` — v3 redraw, separate rework track in progress |
-| Core monster silhouettes | 5 of 11 | grunt/archer/brute/caster/swarmer — see §3 for the missing 6 |
+| Core monster silhouettes | 11 of 11 | all eleven trash roles — §3.1; the Tower's own versions of the six new roles are §1b of `docs/art-wave-2.md` |
 | Floor/raid-template bosses | 5 of 5 | warden/choir/colossus/herald/nameless — raids/Proving/Tower all reskin these; see §2.1/§4 |
 | Weapon families | 14 of 14 | all done, greyscale +x, rarity-tinted at draw time |
 | Equipment/currency icons | 10 of 10 | armor/shield/ring/gloves/necklace + coin/key/potion/gem/capsule |
@@ -510,10 +521,10 @@ actual committed PNGs under `src/render/atlas/` at 446b44d.
 | Delve tilesets | 6 of 6 | one per circle band |
 | Reliquary tilesets | 6 of 6 | one per sector |
 | Abyssal Rift tileset | 1 of 1 | `tiles.abyss` |
-| Tower tilesets | 0 of 3 | unpainted — §8 |
+| Tower tilesets | 3 of 3 | `tiles.tower-lower/-mid/-upper`, plus `tiles.first-heavens` for the Tyrant's arena — §8 (this row read "0 of 3" for a while after §8 recorded them done; a ledger row is not a fact until the PNGs on disk agree) |
 | Citadel tileset | 1 of 1 | `tiles.citadel` — tiled rung, §8 |
 | Citadel props (station relics + dressing) | 12 of 12 | `prop.citadel-*` — the tiled rung's own relics, §8 |
-| Cosmetics (hat/ears/face/back) | 8 of 24 unique grids | §7 |
+| Cosmetics (hat/ears/face/back) | 24 of 24 unique grids | every id in §7's "not migrated" table has a committed PNG and an `ATLAS_COSMETICS` row; §7's prose is the stale copy |
 | Affix glyphs | 0 of 16 as pixel art (16 as Unicode text) | §6 |
 | Hub scene | 1 of 1 | `hub.citadel-deck`, stations baked in |
 

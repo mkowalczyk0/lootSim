@@ -176,7 +176,10 @@ function stack(rows: readonly Img[]): Img {
 // --- main ------------------------------------------------------------------
 
 /** The cast, in the order they stand: the hero first, then the five monster roles. */
-const CAST = ["hero", "grunt", "archer", "brute", "caster", "swarmer"] as const;
+const CAST = [
+  "hero", "grunt", "archer", "brute", "caster", "swarmer",
+  "charger", "bomber", "shieldbearer", "summoner", "sniper", "leech",
+] as const;
 
 /** A few floors that span the palette range, by biome name. */
 const FLOORS = ["Limbo", "Heresy", "The Veil"];
