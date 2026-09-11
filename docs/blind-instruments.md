@@ -978,6 +978,62 @@ when a number is the load-bearing fact of a diagnosis, **reproduce that number b
 building on it** — not the bug, the number: here it was thirty seconds of printing `pool.max`
 next to it, and the whole entry falls over before a line of code is written.
 
+## A twenty-seventh instance, and it is a law rather than an incident: making a fixed thing variable narrows every existing reader of it
+
+Entries 24-26 are other sessions' and land from their own branches; 27 was assigned to this
+one to avoid the ordinal collision entry 17 is about.
+
+Docket §37 made `MINION_CAP_PER_OWNER` modifiable — `spawnMinion` now clamps to
+`MINION_CAP_PER_OWNER + floor(mods.maxSummons)` so the new `of the Throng` affix can raise
+it. One line, in one function.
+
+`tools/smoke.ts` had asserted, correctly and for the life of the project:
+
+```ts
+check("the per-owner summon cap holds", cd.minions.length === MINION_CAP_PER_OWNER, ...);
+```
+
+That assertion did not change, was not touched, and **stopped being the claim it used to
+be.** It now holds only for a character carrying no `of the Throng`. The full gate passes on
+it — measured, 0 of 120 geared necromancers roll the suffix, because it is `minTier: 4` and
+`geared()` opens Advanced chests — and it would have kept passing until some future gearing
+change rolled one, failing then in a file where nobody would think to connect a summon-count
+failure to an affix roll.
+
+**The law:**
+
+> When you make a fixed thing variable, **every existing reader of it is now asserting
+> something narrower than it used to** — and some of those readers are checks. A check that
+> passes for a reason nobody recorded is indistinguishable from a check that passes because
+> the code is right.
+
+This is the file's first entry that is not about an instrument being wrong. Every check here
+was right when written, is still right today, and is *becoming* wrong at a rate nobody is
+watching — the defect is in the gap between when a constant becomes a variable and when its
+readers find out.
+
+**How to apply, and the whole method is two seconds:**
+
+```
+grep -rn MINION_CAP_PER_OWNER src/ tools/
+```
+
+After making any constant modifiable, grep for it across `src/` and `tools/` and read every
+hit as a sentence. The ones in `src/` you will usually notice, because they are the feature.
+The ones in `tools/` are the dangerous half: a check written against the old invariant keeps
+passing, so nothing tells you, and the gate's greenness actively conceals it.
+
+Where a reader's assumption survives, **say so in the check** rather than leaving it
+implicit — the fix here computes the expectation the way `spawnMinion` computes it and
+asserts `mods.maxSummons === 0` on the fixture directly, so the day it does roll one the
+check reports *why* it broke instead of merely breaking.
+
+**Note what did not find this.** Not the gate, which passes. Not a falsification, because the
+check is not false. Not a control. The question that found it was asked of the *change*
+rather than of the code: having made a constant variable, who else was relying on it being
+constant. It was the third finding in one day from that question and none of the three came
+from a check.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

@@ -264,21 +264,16 @@ pass 4 does, or roll Legendary chests, rather than trusting `geared()` to produc
 representative summoner. The same caution applies to every `minTier: 4+` affix, which is
 most of the build-defining ones.
 
-## "What else reads this?" is a question no gate asks
+## "What else reads this?" — see `docs/blind-instruments.md` §27
 
 Making `MINION_CAP_PER_OWNER` modifiable turned a true assertion in `tools/smoke.ts` into a
 conditionally-true one: it compared the summon count against the bare constant, which after
-§37 only holds for a character carrying no `of the Throng`. **The full gate passes on it**,
-because nothing in the harness rolls that suffix — and it would have kept passing until a
-gearing change made it fail, in a file where nobody would connect a summon-count failure to
-an affix roll.
+§37 only holds for a character carrying no `of the Throng`. The full gate passes on it, and
+would have kept passing until a gearing change made it fail.
 
-Nothing about a green chain surfaces that. The question that did was asking, after making a
-constant modifiable, **who else reads the constant**. `grep -rn MINION_CAP_PER_OWNER src/
-tools/` took seconds and found it.
-
-Stated generally, because this was the third finding of the day from the same question and
-none of the three came from a gate: **when you make a fixed thing variable, every existing
-reader of it is now asserting something narrower than it used to.** Some of those readers
-are checks, and a check that passes for a reason nobody recorded is indistinguishable from a
-check that passes because the code is right.
+**The general law, the method (`grep -rn MINION_CAP_PER_OWNER src/ tools/`) and why no check
+could have caught it are in `docs/blind-instruments.md` §27** — that file is the canonical
+book for this family and a second copy here would drift out of step with it. What is
+specific to summons is only this: the readers of that constant are in `tools/smoke.ts`, and
+the fix computes the expectation the way `spawnMinion` does rather than against the raw
+constant.
