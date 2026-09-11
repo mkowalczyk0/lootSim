@@ -205,9 +205,9 @@ pipeline lands bespoke ones — mapped by combat shape, not by name"*).
 | caster | `reliquary.monster.cult-caster` | done |
 | swarmer | `reliquary.monster.rot-scuttler` | done |
 | charger | `reliquary.monster.gore-hound` | done (art-wave 2) — a `quadruped`/`dog` character, the first non-biped in the roster |
-| bomber | `reliquary.monster.bloat-fiend` | done (art-wave 2) — the one role whose accent is its belly, not its gaze |
+| bomber | `reliquary.monster.bloat-fiend` | done (art-wave 2) — the one role whose accent is its belly, not its gaze; **owner-approved exception**, written into style guide §10.2 |
 | shieldbearer | `reliquary.monster.aegis-thrall` | done (art-wave 2) |
-| summoner | `reliquary.monster.grave-piper` | done (art-wave 2) — free-form generation, see style guide §17.8 for why |
+| summoner | `reliquary.monster.grave-piper` | done (art-wave 2) — free-form generation, see style guide §17.8 for why; **ships at 5.4x density by owner ruling** (the in-band candidate lost the sac), see the `ATLAS` row comment |
 | sniper | `reliquary.monster.deadeye` | done (art-wave 2) |
 | leech | `reliquary.monster.rot-priest` | done (art-wave 2) — generated with a human face; wrapped dark in the finish pass |
 

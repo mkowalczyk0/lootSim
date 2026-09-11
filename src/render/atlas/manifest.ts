@@ -190,10 +190,19 @@ export const ATLAS: Record<string, AtlasSprite> = {
   // `data/enemies.ts` against the five above — a charger at r10 is low-slung, a sniper at
   // r9 tall and still, a shieldbearer at r12 between grunt and brute. The rot priest floats,
   // so its `feet` sits up inside the hem like the cult caster's.
+  //
+  // The grave piper is OUT OF THE DENSITY BAND ON PURPOSE. `npm run inworld` reads it at
+  // 5.4x the floor's 2.0 world units per art pixel against the roster's 3.9–4.5x; the
+  // owner saw both this and a smaller in-band candidate
+  // (`art/monsters/reliquary.monster.grave-piper.v5-candidate.raw.png`, 48x68) and ruled
+  // to ship this one, because at the smaller size the egg-sac on its back disappears and
+  // the sac is the whole reason it reads as a summoner rather than a generic skeleton.
+  // Silhouette clarity beat the band. Do not "fix" the density here — regenerate a body
+  // that keeps the sac at 64px if it ever bothers the owner's eye, and ask first.
   "reliquary.monster.gore-hound":   { id: "reliquary.monster.gore-hound",   w: 30, h: 54, worldScale: 0.4815, feet: 0.05 },
   "reliquary.monster.bloat-fiend":  { id: "reliquary.monster.bloat-fiend",  w: 38, h: 57, worldScale: 0.4912, feet: 0.05 },
   "reliquary.monster.aegis-thrall": { id: "reliquary.monster.aegis-thrall", w: 45, h: 70, worldScale: 0.4571, feet: 0.05 },
-  "reliquary.monster.grave-piper":  { id: "reliquary.monster.grave-piper",  w: 43, h: 83, worldScale: 0.3735, feet: 0.05 },
+  "reliquary.monster.grave-piper":  { id: "reliquary.monster.grave-piper",  w: 43, h: 83, worldScale: 0.3735, feet: 0.05 }, // 5.4x — owner-approved, see above
   "reliquary.monster.deadeye":      { id: "reliquary.monster.deadeye",      w: 27, h: 66, worldScale: 0.5152, feet: 0.05 },
   "reliquary.monster.rot-priest":   { id: "reliquary.monster.rot-priest",   w: 36, h: 76, worldScale: 0.4474, feet: 0.12 },
 

@@ -549,6 +549,24 @@ Each role is a **distinct silhouette** readable in black (§1.5). The role is le
 | Highly mobile | Minimal body, big legs/wings, blur-friendly pose |
 | Battlefield manipulator | Carries terrain — a slab, a pillar, a chain to the floor |
 
+**The Exploder is the one approved exception to "the accent is the part looking at you"
+(owner ruling, art-wave 2 §1a, Sept 2026).** The Bloat-Fiend (`reliquary.monster.bloat-fiend`)
+generated with hot eyes *and* a hot belly; `art/monsters/finish-delve.ts` darkened the eyes
+and kept the belly, and the owner was shown the result and ruled to keep it. It is still
+exactly one accent — `npm run chroma` counts one — but that accent says *stand back*
+rather than *it sees you*, and it is the only monster in the roster whose accent says that.
+That is deliberate: a bomber's whole threat is its own death, so the thing that glows is the
+thing that is about to go off. Do not read the belly glow as a finishing-pass miss and
+"correct" it onto the eyes, and do not extend the exception to any other role without
+asking — a second body whose accent isn't its gaze dilutes what the gaze means on the
+other ten.
+
+Two of the six also carry finishing notes worth knowing before touching them: the Grave
+Piper ships **out of the density band on purpose** (5.4x the floor against the roster's
+3.9–4.5x; the smaller in-band candidate lost the egg-sac and the owner chose the sac — see
+the `ATLAS` row comment in `render/atlas/manifest.ts`), and the Grave Piper is free-form
+rather than `create_character` output for the reason in §17.8.
+
 ### 10.3 Affix visual indicators (UAT §3 — modular affix system)
 Every affix declares a **visual indicator**. Keep them a small, consistent vocabulary that
 stacks legibly (a monster can have several):
