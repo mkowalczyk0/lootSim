@@ -17,11 +17,25 @@
  *     so damage the guard absorbs is never counted as `damagePrevented` and never reaches
  *     the meter.
  *
- * What is left is a loop that does not involve the ultimate at all: ward absorption *is*
- * counted in `prevented`; `damagePrevented` feeds both the ultimate meter (40/maxHealth
- * fraction) and Conviction (50); and Conviction above 60 grants `wardPower +0.15`, which
- * makes the ward bigger, which prevents more. This tool measures what that is worth in a
- * real fight.
+ * What is left is a driver that does not involve the ultimate at all: mitigation and ward
+ * absorption *are* counted in `prevented`, and `damagePrevented` feeds both the ultimate
+ * meter (40/maxHealthFraction) and Conviction (50). The harder you are hit, the sooner it
+ * returns. This tool measures what that is worth in a real fight.
+ *
+ * **CORRECTION (docket §38).** An earlier version of this header called that a *positive
+ * feedback loop*, closed by Conviction above 60 granting `wardPower +0.15` — a bigger ward
+ * preventing more damage, charging faster. **`wardPower` was read by nothing in the
+ * simulation and never had been**, so the amplifying step does not exist and the driver is
+ * linear rather than compounding. Found by lootsim-d8's rip-out sweep.
+ *
+ * Nothing this tool measures or concludes depended on it: every constant below is either
+ * observed (depth 22 because depth 14 is a pinned zero row) or stated, the outputs are
+ * casts/min and `under_oath` uptime read off a live fight, and the tool asserts nothing at
+ * all — it is a reporter. The one thing that *did* rest on the dead link was a **rejected**
+ * option in `docs/ultimate-uptime.md`: "damp the Conviction → wardPower → prevented
+ * feedback" was never a real lever, because there was no feedback to damp. The owner took a
+ * different option. Recorded here rather than deleted, because a header that quietly stops
+ * claiming something is how the next reader inherits it again.
  *
  * Reported as **comparisons**, never as one class's bound — the project's standing lesson.
  * The bot fires the ultimate the tick it charges (`bot.ts`: `if (d.specialCharge >= 1)`),
