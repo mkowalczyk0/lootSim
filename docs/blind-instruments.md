@@ -7,6 +7,63 @@ twice, from two different incidents, months apart — and neither statement of t
 stopped any of today's six. This document is about why, and about the one question that
 would have.
 
+## Index
+
+One row per entry, naming the **failure shape** rather than the incident. Two uses, and the
+second is the one that has actually cost time: find the relevant entry without reading all of
+them, and — before writing "and this one is a new species" — check in ten seconds whether the
+species is already here. Two entries have already been written past each other, opening with
+nearly the same sentence and each claiming to be first of its kind, because there was no list
+to look at.
+
+Entries 1–6 are the numbered paragraphs under *The six*; 7 onward are their own sections, in
+order. Sections that are not entries — the two near-misses, why the existing rule didn't stop
+any of this, the question that catches the seventh, the seen-and-skipped failure, and the
+proposal for the owner — are deliberately absent from this table.
+
+| # | The shape | Where it showed up |
+| --- | --- | --- |
+| 1 | The harness cannot produce the condition that was reported | `tools/mp-stutter.ts` measuring jitter over localhost |
+| 2 | The stand-in has an ability the real subject lacks | `tools/bot.ts` targeting through walls, timing a "search" |
+| 3 | One fixed constant stands in for a varying condition | the co-op reconciliation check at a single `LAG` |
+| 4 | A term outlived the premise that justified it, and nothing reads it | `recommendedLevel`'s equip-floor term |
+| 5 | The fixture builds less than what it claims to measure | `geared()` allocating no tree points, for every class ever measured |
+| 6 | Two runs share one output path, so the tree measured isn't the tree under test | `node_modules/.cache/X.mjs` across worktrees |
+| 7 | A lifecycle report about a process tree nobody inspected | a "job done" shell, and `kill` returning on surviving children |
+| 8 | Instrument and fix share an author, a commit, and a model of the world | `tools/mp-jitter.ts` clearing the de-jitter buffer it shipped with |
+| 9 | The wrapper's exit code says the shell reached its next statement | `npm test > log; echo EXIT=$?` over a SIGKILL'd run |
+| 10 | A fixture that never built the state, behind a bound with room for the gap | `raid-the-ferryman` vs `the-ferryman`, under `>= 5` |
+| 11 | A filter over a set that may not contain what you are looking for | `ps \| grep smoke` missing a 2h13m `tsx` probe |
+| 12 | A sentinel checked for its presence rather than its content | `GATE_EXIT=` printing empty, `PIPESTATUS` under zsh |
+| 13 | The environment the check ran in was never enumerated | worktrees symlinked, installed, or empty — "green here" meaning three things |
+| 14 | A buffering filter turns progress and failure alike into silence | `npx tsx … \| tail -25` on a job that had already died |
+| 15 | A cast is where the typechecker stops being an instrument | `as unknown as {…}` over a private signature that changed |
+| 16 | A sighted instrument aimed at the wrong object | asserting on `raidMateState` rather than `raidClientState` |
+| 17 | "No conflict markers" is not "no conflict" | two independent fixes merging into a duplicate `const raid` |
+| 18 | The scope was copied from the bug that already shipped | the ultimate-meter guard examining 1 of the 41 rules it walks |
+| 19 | A one-directional assertion satisfied by an empty result | `duelist.riposte`, a reactive staged so it never triggered |
+| 20 | The injection moved something the comparison does not read | `tools/bosstarget.ts` moving distance while comparing angle |
+| 21 | An aggregate is invariant across the mechanism that changed | "at least one" reading identically under winner-takes-all |
+| 22 | *in flight* | written on a branch, not yet on master |
+| 23 | *in flight* | written on a branch, not yet on master |
+| 24 | *in flight* | written on a branch, not yet on master |
+| 25 | *in flight* | written on a branch, not yet on master |
+
+The four *in flight* rows are numbers already assigned to entries that exist on unmerged
+branches. They are left blank on purpose: naming a shape from a text this file does not yet
+contain would be a scope taken from somewhere other than the file, which is item 18's defect
+committed while documenting it. **Whichever branch lands one of those entries fills in its own
+row in the same commit.**
+
+**Adding an entry means adding its row, and the number comes from whoever is integrating —
+don't derive it from the highest one you can see.** Both halves are load-bearing. An index that
+quietly stops tracking the file is a scope that has silently emptied, reporting a completeness
+it no longer has; and a locally-derived ordinal is item 17 reproduced by this document's own
+numbering, which is how two of these entries ended up sharing a number. Nothing enforces either
+today — a check comparing this table's row count against the entry headings below would be
+cheap, and is deliberately not built here, because an unverified change to a gate tool is worse
+than the gap it closes.
+
 ## The six
 
 **1. Localhost cannot see multiplayer jitter.** `tools/mp-stutter.ts` cleared host
