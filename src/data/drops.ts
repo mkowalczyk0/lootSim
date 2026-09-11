@@ -53,10 +53,49 @@ import { RAID_BY_ID, raidOfBossId } from "./raids";
 // --- sources ----------------------------------------------------------------
 
 /**
+/**
  * Which half of a raid clear paid out. A raid's one floor is its boss floor, so the floor
  * pays twice: the encounter drops when it dies, and the cache drops when the floor closes.
  */
 export type RaidDropEvent = "encounter" | "cache";
+
+/**
+ * Sources sharing a `pool` id have every member's chance multiplied by **one shared factor**,
+ * chosen so that the odds the event pays *anything* equal the **maximum** chance any single
+ * member declares. Every member still rolls its own dice.
+ *
+ * `rollTable`'s default is independence, which is right for a table of distinct chases: two
+ * different named items can land in the same cache. But independence makes the odds that an
+ * event pays *anything* grow with the number of definitions that match it, and that quantity
+ * is what a player experiences. The Abyssal Rift is where this ran away: fifteen artifacts
+ * match one boss, each rolled separately at ~14%, so the rift paid a relic-tier item on
+ * **92% of tier-1 clears and 99% of tier-8 clears** — and it climbed every time anyone
+ * authored another artifact, with no number changed and nobody deciding it should.
+ *
+ * A pool fixes the *mechanism* rather than the arithmetic. `abyssBoss: 0.14` now means what
+ * a reader already believes it means — "an Abyss boss pays an artifact 14% of the time" —
+ * and a twenty-fourth artifact becomes one more candidate in the draw rather than another
+ * independent chance to inflate it. Lowering the constant instead would have fixed tonight's
+ * number and left the next authored artifact to undo it, which is the same argument that
+ * rejected nudging `raidArtifact`; it applies here with more force, because this one
+ * re-inflates by itself.
+ *
+ * **A pool narrows the odds; it does not elect a winner.** An earlier version did elect one —
+ * a single roll, then a weighted pick — and produced identical per-clear numbers while
+ * silently removing the Abyss's ability to pay more than one artifact from a single kill.
+ * `npm run relics` refused it. Keeping independent dice is what preserves the "two can land
+ * in the same cache" property that makes this a table of distinct chases at all. See
+ * `docs/abyss-odds.md` and `docs/blind-instruments.md`'s nineteenth entry.
+ *
+ * **Deliberately opt-in, not the default.** Applying it generally would also change the
+ * Nameless (2 definitions on one kill) and the Tower cache (2), neither of which anyone has
+ * complained about and both of which are out of scope. A source has to ask.
+ *
+ * Max rather than sum: a sum is the thing that grows with the roster, and a max cannot. §16's
+ * tier gating still works, because a `minTier` member that qualifies raises the pool's rate
+ * above what the low tiers reach.
+ */
+export type DropPool = string;
 
 /**
  * Where a thing is *found*. `chance` is per qualifying event, before `dropChance`
@@ -71,6 +110,7 @@ export type FoundSource =
   | {
       readonly kind: "boss"; readonly bossId: string; readonly chance: number;
       readonly mode?: RunModeId; readonly minTier?: number; readonly minDepth?: number;
+      readonly pool?: DropPool;
     }
   /** Rolls out of a chest of this tier, alongside the ordinary pull. */
   | { readonly kind: "chest"; readonly tier: ChestTier; readonly chance: number }
@@ -81,6 +121,7 @@ export type FoundSource =
   | {
       readonly kind: "clearCache"; readonly minDepth: number; readonly chance: number;
       readonly mode?: RunModeId; readonly minTier?: number; readonly lastFloor?: boolean;
+      readonly pool?: DropPool;
     }
   /** Any wave monster at least this deep. Elites triple the odds. */
   | { readonly kind: "worldDrop"; readonly minDepth: number; readonly chance: number; readonly mode?: RunModeId }
@@ -239,6 +280,33 @@ export function forSource<T extends TableEntry>(defs: readonly T[], q: DropQuery
  * every chance through `dropChance`. `skip` is ids that must not drop — a relic the account
  * already owns. Returns the definitions that hit, in registry order; the caller forges.
  */
+/**
+ * The shared factor that makes a pool's members compose to the pool's own odds.
+ *
+ * Returns `k` such that rolling each member independently at `k * p` gives
+ * `1 - Π(1 - k*pᵢ) = max(pᵢ)` — the event pays *something* at the best odds any one member
+ * declares, however many members there are. With a single member `k` is 1 and the pool is
+ * exactly what it was without one, which is why declaring a pool of one is a safe no-op.
+ *
+ * Solved by bisection rather than in closed form: the equation has none for heterogeneous
+ * chances, and 40 halvings is deterministic, cheap, and accurate past any precision a
+ * probability here is authored to. Monotone in `k`, so bisection is exact in the limit —
+ * at `k = 0` nothing drops and at `k = 1` the union is the old independent product, which
+ * is by definition at least the max.
+ */
+function poolScale(ps: readonly number[]): number {
+  if (ps.length <= 1) return 1;
+  const target = Math.max(...ps);
+  if (target <= 0) return 1;
+  const unionAt = (k: number) => 1 - ps.reduce((acc, p) => acc * (1 - p * k), 1);
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (unionAt(mid) < target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 export function rollTable<T extends TableEntry>(
   defs: readonly T[],
   q: DropQuery,
@@ -247,19 +315,49 @@ export function rollTable<T extends TableEntry>(
   skip?: ReadonlySet<string>,
 ): T[] {
   const out: T[] = [];
+  // Pooled members are collected rather than rolled: a pool competes for one roll (see
+  // `DropPool`). Everything without a `pool` keeps rolling independently, which is still
+  // the default and still right for a table of distinct chases.
+  const pools = new Map<string, { def: T; p: number }[]>();
   for (const def of defs) {
     if (skip?.has(def.id)) continue;
+    let hit = false;
     for (const src of def.sources) {
       if (src.kind === "craft" || !sourceMatches(src, q)) continue;
       let base = src.chance;
       if (q.kind === "worldDrop" && q.elite) base *= 3;
-      if (rng.chance(dropChance(base, danger))) {
-        out.push(def);
-        break;
+      const p = dropChance(base, danger);
+      const pool = "pool" in src ? src.pool : undefined;
+      if (pool !== undefined) {
+        const members = pools.get(pool) ?? [];
+        members.push({ def, p });
+        pools.set(pool, members);
+        continue;
       }
+      if (rng.chance(p)) { hit = true; break; }
+    }
+    if (hit) out.push(def);
+  }
+  for (const members of pools.values()) {
+    if (members.length === 0) continue;
+    // Every member still rolls its own dice — a pool narrows the odds, it does not elect a
+    // single winner. That distinction is load-bearing: relics are a table of *distinct
+    // chases*, two of which are allowed to land together, and an Abyss boss has always been
+    // able to pay more than one artifact. A winner-takes-all pool would have quietly
+    // removed that, and `npm run relics` caught it — "with the dice rigged, the Abyss Choir
+    // pays out every artifact it lists" is the property, and it survives here.
+    //
+    // What the pool changes is only the *scale*: every member's chance is multiplied by one
+    // shared factor chosen so that the odds the event pays anything equal the best odds any
+    // single member declares. Roster-independent by construction, because the factor is
+    // recomputed from whoever is actually in the draw.
+    const k = poolScale(members.map((m) => m.p));
+    for (const m of members) {
+      if (rng.chance(m.p * k) && !out.includes(m.def)) out.push(m.def);
     }
   }
-  return out;
+  // Registry order, so a pooled drop doesn't announce itself by landing last.
+  return defs.filter((d) => out.includes(d));
 }
 
 /**
@@ -339,10 +437,13 @@ export function provingSourcesOf(element: Element, chance: number): FoundSource[
  * so which of the five you meet depends on the tier; listing all five is the honest
  * shape of "the boss at the bottom of the rift".
  */
-export function riftBossSources(mode: RunModeId, chance: number, minTier?: number): FoundSource[] {
+export function riftBossSources(
+  mode: RunModeId, chance: number, minTier?: number, pool?: DropPool,
+): FoundSource[] {
   return BOSSES.map((b) => ({
     kind: "boss", bossId: b.id, chance, mode,
     ...(minTier !== undefined ? { minTier } : {}),
+    ...(pool !== undefined ? { pool } : {}),
   }));
 }
 

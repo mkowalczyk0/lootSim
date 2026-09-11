@@ -407,6 +407,97 @@ section("6b. the union: what a clear actually pays, not what one source says");
   );
 }
 
+// The Abyss artifact pool — the mechanism, asserted as equalities and comparisons.
+//
+// Before pools, fifteen artifacts matched one Abyss boss and each rolled independently, so
+// the rift paid a relic-tier item on 92% of tier-1 clears and 99.2% of tier-8 clears. The
+// number nobody authored was the union, and it climbed on its own every time an artifact
+// was added. These checks pin the mechanism rather than tonight's arithmetic: a constant
+// nudged today would pass a threshold and re-inflate on the next authored artifact.
+section("6c. the Abyss artifact draw pays at the odds RELIC_ODDS states, whatever the roster");
+{
+  const abyssBossQ = (tier: number): DropQuery =>
+    ({ kind: "boss", bossId: "nameless", mode: "abyss", tier, depth: 30 });
+
+  /** P(the event pays any artifact), composed the way `rollTable` actually rolls it. */
+  const artifactUnion = (q: DropQuery, danger: number): number => {
+    const pooled = new Map<string, number>();
+    let missIndependent = 1;
+    for (const m of relicMatchesFor(q)) {
+      if (m.def.tier !== "artifact") continue;
+      const p = dropChance(m.src.chance, danger);
+      const pool = "pool" in m.src ? m.src.pool : undefined;
+      if (pool !== undefined) pooled.set(pool, Math.max(pooled.get(pool) ?? 0, p));
+      else missIndependent *= 1 - p;
+    }
+    let miss = missIndependent;
+    for (const p of pooled.values()) miss *= 1 - p;
+    return 1 - miss;
+  };
+
+  // THE headline, the same shape as a raid's: the authored constant IS the experienced
+  // number. Fifteen independent rolls would read 0.891 here against an authored 0.14.
+  const q1 = abyssBossQ(1);
+  const authored = dropChance(RELIC_ODDS.abyssBoss, 1);
+  const got = artifactUnion(q1, 1);
+  const matched = relicMatchesFor(q1).filter((m) => m.def.tier === "artifact").length;
+  check(
+    `an Abyss boss pays an artifact at exactly the odds RELIC_ODDS states (${(authored * 100).toFixed(1)}%), not once per definition`,
+    Math.abs(got - authored) < 1e-9,
+    `${(got * 100).toFixed(1)}% across ${matched} matching definitions`,
+  );
+  check("...and it really is many definitions competing, not one left in the table",
+    matched >= 10, `${matched} artifacts match one Abyss boss`);
+
+  // The structural property, and the reason this is a mechanism fix rather than a tuning
+  // pass: the union must not move when the roster grows. Injected here rather than
+  // reasoned about — a 24th artifact joining the pool changes nothing.
+  const fake: FoundSource = {
+    kind: "boss", bossId: "nameless", chance: RELIC_ODDS.abyssBoss, mode: "abyss",
+    pool: "abyss-artifact",
+  };
+  const withExtra = (() => {
+    const pooled = new Map<string, number>();
+    let miss = 1;
+    const all = [...relicMatchesFor(q1).filter((m) => m.def.tier === "artifact").map((m) => m.src), fake];
+    for (const src of all) {
+      const p = dropChance(src.chance, 1);
+      const pool = "pool" in src ? src.pool : undefined;
+      if (pool !== undefined) pooled.set(pool, Math.max(pooled.get(pool) ?? 0, p));
+      else miss *= 1 - p;
+    }
+    for (const p of pooled.values()) miss *= 1 - p;
+    return 1 - miss;
+  })();
+  check("a twenty-fourth artifact joining the pool does not raise the odds at all",
+    Math.abs(withExtra - got) < 1e-9, `${(withExtra * 100).toFixed(1)}% vs ${(got * 100).toFixed(1)}%`);
+
+  // A direct comparison against what the old composition would have paid, so the check
+  // states the improvement rather than bounding the result.
+  const independent = relicMatchesFor(q1)
+    .filter((m) => m.def.tier === "artifact")
+    .reduce((acc, m) => acc * (1 - dropChance(m.src.chance, 1)), 1);
+  check("the pooled draw is strictly stingier than rolling every definition separately",
+    got < 1 - independent, `${(got * 100).toFixed(1)}% vs ${((1 - independent) * 100).toFixed(1)}%`);
+
+  // §16 still works: a tier that opens a better-odds member raises the pool's rate.
+  const low = artifactUnion(abyssBossQ(1), 1);
+  const high = artifactUnion(abyssBossQ(8), 1);
+  check("a tier that opens a better member still raises the draw (UAT §16 survives pooling)",
+    high > low, `t1 ${(low * 100).toFixed(1)}% vs t8 ${(high * 100).toFixed(1)}% at equal danger`);
+
+  // Scope, stated positively: the systems this was NOT allowed to move.
+  const untouched: [string, DropQuery][] = [
+    ["the Nameless at depth 25", { kind: "boss", bossId: "nameless", mode: "delve", tier: 1, depth: 25 }],
+    ["the deep Delve cache", { kind: "clearCache", depth: 30, mode: "delve", tier: 1, lastFloor: false }],
+    ["the Tower cache", { kind: "tower", floor: 30 }],
+  ];
+  const leaked = untouched.filter(([, q]) =>
+    relicMatchesFor(q).some((m) => "pool" in m.src && m.src.pool !== undefined));
+  check("no pool reaches the Nameless, the deep Delve cache or the Tower — they roll as before",
+    leaked.length === 0, leaked.map(([n]) => n).join(", ") || `${untouched.length} systems checked, none pooled`);
+}
+
 // =========================================================================
 section("7. the slot rule: three slots, one relic");
 {

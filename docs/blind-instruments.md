@@ -668,6 +668,73 @@ half. **A clean merge of two branches that both edited the same file is a claim 
 and the only cheap way to turn it into a claim about meaning is to enumerate what each side
 was supposed to contribute and check that it is still there.**
 
+## A nineteenth instance, and a new species: a measurement that was correct, complete, and still blind
+
+*(An eighteenth — the ultimate-meter guard whose scope was derived from the two exploits
+already found — is landing on a parallel branch. The numbering assumes it arrives first.)*
+
+Every entry above is an instrument that could not see its subject: a bound taken from the
+thing under test, a scope that had silently emptied, a cast that blinded the typechecker, a
+correct instrument aimed at the wrong object. This one is different, and it is worth the
+file's space because **the defence against it is not "fix the instrument."**
+
+Bringing the Abyssal Rift's artifact odds down (`docs/abyss-odds.md`), the first
+implementation made a drop pool **elect a single winner**: one roll for the whole pool, then
+a weighted pick of which artifact it was. The measurement instrument — `npm run relicunion`,
+which composes P(at least one relic-tier item per clear) and cross-checks its analytic model
+against a 40,000-trial Monte Carlo through the real `rollRelicDrops` — reported:
+
+```
+Abyssal Rift t1    any 34.7%   [sampled 34.7%]
+```
+
+Those numbers are **correct**. They are also the numbers the shipped implementation produces,
+to every decimal place on every row. The instrument was not broken, not mis-scoped, not
+wrongly bounded, and not aimed at the wrong object. It answered its question perfectly.
+
+The question simply did not cover the property that changed. **"At least one" is identical
+under winner-takes-all and under independent rolls** — the aggregate is invariant across two
+mechanisms that differ underneath it. What differed was the *shape* of the payout: an Abyss
+boss has always been able to drop **more than one** artifact from a single kill, and
+winner-takes-all silently made that impossible. That is a player-visible change to live
+content, well beyond the drop rate that had been approved, and no amount of staring at
+34.7% would ever have revealed it.
+
+What caught it was a completely different check, in `npm run relics`, watching the shape
+rather than the number:
+
+```
+FAIL  with the dice rigged, the Abyss Choir pays out every artifact it lists  — 1
+FAIL  killing the Abyss choir drops every artifact it lists (12)  — tempo-of-the-fifth-circle
+```
+
+**The rule.** An aggregate can be preserved across mechanisms that differ beneath it, so a
+measurement that tracks an aggregate cannot certify a mechanism change even when the
+measurement is perfect. When you change *how* something is rolled rather than *how often*,
+the number is not evidence. Keep a check that watches the shape — here, `rollTable`'s own
+documented property that relics are a table of distinct chases and "two can land in the same
+cache" — alongside the one that watches the magnitude. The suite happened to have both, and
+that is the only reason this did not ship.
+
+**The corollary, and the harder half.** The natural response to those two reds was to rewrite
+them: the new mechanism pays one artifact, so assert one artifact, and the suite goes green.
+That would have shipped an unapproved design change *behind a measurement everyone had
+already signed off on* — the "talking a red check down" failure named in `CLAUDE.md`, where a
+written argument stands in for the property it claims. The argument would even have sounded
+good, and it would have been the exact opposite of the position the same branch had already
+taken correctly twice that evening (that a mechanism, not a constant, was the thing to fix).
+**A check you are about to rewrite to match your new behaviour is a check you should first
+assume is right.**
+
+The fix kept both properties: every pool member still rolls its own dice, and one shared
+factor scales all of them so the union equals the authored number. Same aggregate, correct
+shape.
+
+**How to apply.** Before believing a measurement certifies a change, ask what the measurement
+would return if the mechanism were wrong in the way you have not thought of yet. If the
+answer is "the same thing", the measurement is not evidence for this change however good it
+is — go and find the check that watches the shape, and if there isn't one, write it.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
