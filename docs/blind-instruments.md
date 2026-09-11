@@ -54,6 +54,10 @@ proposal for the owner — are deliberately absent from this table.
 | 29 | Two honest detectors that agree on the rule and disagree on the pixel | §1.4's saturation gate vs `chroma`'s scale, on the auto-turret's cream-gold |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
+| 32 | *in flight* |  |
+| 33 | *in flight* |  |
+| 34 | *in flight* |  |
+| 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1635,6 +1639,61 @@ forever if the second had not been pointed at the first's output. The scope exte
 `summon.*` was a PM ruling on the grounds that a rule living in prose is a rule nobody
 measures; it paid for itself on its first run, and what it found was not a bad sprite but
 a gap between two good detectors.
+
+## A thirty-fifth instance: a derivation frozen into a copy, which then stops deriving
+
+Every entry above is an instrument that reads the wrong thing. This one is an instrument that
+read the **right** thing once, was then written down, and kept reporting that one reading
+forever. It is the shape a shortcut takes when it succeeds.
+
+The setup is the acceptance gate. `npm test` is 43 steps, of which `npm run smoke` alone is
+15–19 minutes — roughly 95% of the wall clock. The owner approved splitting it: a branch runs
+the cheap steps, and the full chain is reserved for the single integration gate on the merged
+result. The natural way to express "the test chain minus smoke" is to derive it:
+
+```
+scripts.test.split(" && ").filter((s) => !/\bsmoke\b/.test(s)).join(" && ")
+```
+
+The natural way to express it a *second* time, an hour later, when the one-liner is tiresome to
+retype, is to paste the 42 steps it printed. The two are indistinguishable on the day they are
+written — same steps, same order, same green — and they diverge the moment anybody adds a step
+to the chain. Which is to say: they diverge on exactly the branches where the gate matters
+most, because **a branch's own new check is the one step nothing else in the repo has ever
+run.** A frozen copy skips it and reports 42 green steps, and the number 42 is not wrong in any
+way a reader can see.
+
+This is reported to have already happened here, in the tool built to save the time: on one
+branch the derived chain came to 37 steps and the hand-frozen literal to 36, and the missing
+one was that branch's own new gate. It was caught by *comparing the two counts*, not by reading
+either of them — a single count is a plausible number, which is this document's entire subject.
+
+**The cure was a rule, not a check, and then a check behind the rule.** `tools/gate.mjs` reads
+`scripts.test` at run time and has no list in it; `tools/check-scripts.mjs` fails if
+`scripts.gate` ever stops routing through that file or grows an `&&`, because chaining is the
+defect itself rather than a symptom of it. The copy cannot come back by editing `package.json`,
+which is the only place it would come back.
+
+**Falsified before being believed**, per the rule at the foot of this file. A throwaway step was
+prepended to `scripts.test`:
+
+```
+  scripts.test has 44 steps; running 43, deferring 1
+--- gate step 1/43: npm run __canary
+CANARY RAN
+  gate: step exited 3 — npm run __canary
+```
+
+43 rather than the 42 it runs without the canary, the step's own output on stdout, and exit 3
+arriving intact at the shell — the addition was picked up, executed, and its failure propagated.
+Then the rule was falsified from the other side by freezing `scripts.gate` into the literal
+42-step chain, which went red at `npm run harness` with the whole frozen line printed back.
+
+**The rule.** When you write something down because deriving it is tedious, you have converted a
+question into an answer, and the answer has no way to notice that the question changed. Ask what
+would have to happen for the copy to become wrong, and then ask whether anything at all would
+say so. If the honest answer is "nothing, it would just quietly do less" — that is this entry,
+and the fix is to make the copy impossible rather than to promise to refresh it.
 
 ## Proposed for the owner, not adopted here
 

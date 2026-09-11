@@ -634,3 +634,44 @@ its own piece of work.
 
 Not edited on the branch, per the standing rule that `CLAUDE.md` changes come here for one
 owner read instead.
+
+---
+
+## Pending edit: `npm run gate` exists, so the `npm test` line no longer describes how a branch is checked
+
+**Branch:** `chore/gate-and-docket`. **Design record:** the header of `tools/gate.mjs`, plus
+`docs/blind-instruments.md` entry 35.
+
+`CLAUDE.md`'s stack section currently reads:
+
+> ```
+> npm run test      # the full acceptance gate — see package.json for the exact chain;
+>                   # currently markers+check+vocab+prog+classes+roster+rules+universal+named+
+>                   # legends+forge+previews+world+itemart+relics+deadpaths+smoke
+> ```
+
+Two things are now wrong with it. The enumeration is stale on its own terms — the chain is 43
+steps and that list names 17 — and the file it points at ("see package.json for the exact
+chain") is the right instruction, so the list beside it is a frozen copy of exactly the kind
+entry 35 is about. Second, and the reason this is worth the owner's read at all: on their
+approval the gate is now split, and a branch is expected to run the cheap half rather than the
+full chain. Nothing in `CLAUDE.md` says so, so a fresh session still reads "run `npm test`" and
+spends 15–19 minutes on `smoke` per branch.
+
+Suggested replacement:
+
+> ```
+> npm run gate      # the cheap acceptance gate, ~1 min — every step of `npm test` except
+>                   # smoke, DERIVED from that chain at run time (tools/gate.mjs), so a
+>                   # branch that adds a check runs its own check. Run this per branch.
+> npm run test      # the full chain including `npm run smoke` (15–19 min, ~95% of the wall
+>                   # clock) — reserved for the single integration gate on the merged result.
+>                   # See package.json for the exact steps; don't copy the list anywhere.
+> ```
+
+The "don't copy the list anywhere" clause is the load-bearing half and is why this is a
+replacement rather than an addition: the current text's own enumeration is the habit that
+produces the frozen gate.
+
+Not edited on the branch, per the standing rule that `CLAUDE.md` changes come here for one
+owner read instead.
