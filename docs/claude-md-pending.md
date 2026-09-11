@@ -14,7 +14,26 @@ text anywhere in the repository, a clear statement of that instead of an invente
 
 ## 1. The raids bullet — "raids are no longer solo"
 
-**Branch:** `investigate/raid-party-scaling` (tip `c6baa86`, not merged to master).
+**This entry was restructured 2026-09-10, later the same night, by docket §28's sweep
+(`docs/stale-prose-sweep.md`).** The original draft below (kept as history under "Superseded
+draft") proposed shipping co-op raids bundled with a balance fix from a branch that never
+landed. That's not what happened: raids went co-op through a different, unbundled change,
+and the balance question it describes is explicitly **not** something to propose fixing —
+see the current proposal immediately below.
+
+**What's actually true on master right now:** raids are co-op. `feat/coop-raids` (merged
+`548f218`) removed the `handleHubInteraction` gate the current `CLAUDE.md` text still names,
+on an explicit owner decision to enable co-op *ahead of* answering the scaling question, not
+because it had been answered. **No tuning number moved to do it** — not `partyScale`, not
+`raidThreatRate`, not the raid tier curve. `singleBodyPartyScale` (the fix the superseded
+draft below is built around) is not on master; `investigate/raid-party-scaling` (tip
+`c6baa86`) is still unmerged. So the shipped co-op raid runs on the ordinary crowd-tuned
+`partyScale`, and `docs/raid-party-scaling.md`'s finding — that this term doesn't transfer to
+a single large body — stands, unrefuted, exactly as its own header note says. **The owner
+has a standing instruction that this scaling discussion stays closed** — they're iterating
+on it live in co-op and will report back — so the proposal below corrects only "solo" to
+"co-op" and says nothing about tuning. Don't propose a scaling fix here even though the
+material for one exists on the superseded branch.
 
 **Current text** (`CLAUDE.md`, "Raids: the war's set pieces" section):
 
@@ -26,7 +45,57 @@ text anywhere in the repository, a clear statement of that instead of an invente
 > gap without a new regression elsewhere. See `docs/raid-party-scaling.md` — the finding, not
 > the fix, is what landed.
 
-**Proposed text** (as drafted on the branch):
+**Proposed text:**
+
+> **Co-op since 2026-09-10**, by owner decision, ahead of the scaling answer rather than
+> because of one. The seam this doc used to describe as open — `RunConfigWire` carries
+> `raidId`/`raidTier`, `configFromWire` rebuilds through `raidConfig` — is now used: a raid
+> picked at the War Table sets the party's plan and the Raid Portal becomes the ready spot,
+> the same shape every other portal-picking station already had (`feat/coop-raids`, merged
+> `548f218`). `partyScale` (tuned for a crowd) still doesn't transfer to one enormous body —
+> that finding is unrefuted, not fixed, and no tuning number moved to turn co-op on. See
+> `docs/raid-party-scaling.md`. Expect a party raid to play too easy or too hard; the owner
+> is iterating on the number live and will report back — this isn't an open question for a
+> session to pick up.
+
+**Why:** the text on master still says raids are solo and names a gate (`handleHubInteraction`)
+that's gone. This is now a pure documentation correction with no bundled code decision —
+the code already shipped, weeks before this proposal, via a route this page didn't
+originally know about.
+
+**The "Planned direction" passage this entry used to also propose changing needs no
+change.** Checked while restructuring: `CLAUDE.md`'s "Party balance is still mostly a guess,
+not a measurement" bullet already states the `docs/raid-party-scaling.md` finding correctly,
+already calls it "unresolved... not fixed," and doesn't claim raids are solo. It reads as
+already updated by an earlier, unrelated pass — the two CLAUDE.md passages about this topic
+had simply drifted out of sync with each other, one fixed and one not, which is its own
+small instance of the thing docket §28 sweeps for. Nothing to propose there.
+
+---
+
+### Superseded draft (2026-09-10, earlier the same night) — kept for the trap it shows, not as something to paste anywhere
+
+Written against `investigate/raid-party-scaling` (tip `c6baa86`) on the assumption that
+co-op raids would ship bundled with that branch's balance fix. Neither assumption held:
+raids shipped through a different branch with no tuning change, and that branch is still
+unmerged. **If you are reading this looking for text to copy into `CLAUDE.md`, don't use
+what's below — use the current proposal above instead.** Left in place because a draft
+written against a branch that never landed, and the exact reasoning that made it feel safe
+to write, is worth the next person seeing before they write one the same way.
+
+**Branch:** `investigate/raid-party-scaling` (tip `c6baa86`, not merged to master).
+
+**Then-current text** (unchanged from what's quoted above — this draft never landed):
+
+> **Solo in v1**, the same call the Vigil and the Proving made, but the seam is *open*: the
+> wire carries `raidId`/`raidTier` and `configFromWire` rebuilds through `raidConfig`, so one
+> branch in `handleHubInteraction` is all that stops a party raid. A co-op attempt was built
+> and measured, then **not shipped**: `partyScale` (tuned for a crowd) doesn't transfer to
+> one enormous body, and neither of the two obvious fixes tried (health, damage) closed the
+> gap without a new regression elsewhere. See `docs/raid-party-scaling.md` — the finding, not
+> the fix, is what landed.
+
+**Then-proposed text (do not use):**
 
 > **Co-op**, after shipping solo the same way the Vigil and the Proving did. The wire
 > always carried `raidId`/`raidTier` (`configFromWire` rebuilds through `raidConfig`), so
@@ -47,14 +116,14 @@ text anywhere in the repository, a clear statement of that instead of an invente
 > existing boss floor's co-op difficulty is a live balance change to content people have
 > already played, which stays an owner call this pass didn't make.
 
-A second passage changes with it, in the "Planned direction" section:
-
-**Current:**
+A second passage was proposed to change with it, in the "Planned direction" section — its
+"Current" quote below is itself now stale (that bullet has since changed on master by an
+unrelated route; see the note above the fold):
 
 > - **Party balance is a guess, not a measurement.** `partyScale` was reasoned about and
 >   checked by the smoke test, never by four people actually playing.
 
-**Proposed:**
+**Then-proposed:**
 
 > - **Party balance is still mostly a guess, not a measurement.** `partyScale` (the crowd
 >   term used by the Delve, every rift and planet expeditions) was reasoned about and
@@ -65,35 +134,20 @@ A second passage changes with it, in the "Planned direction" section:
 >   for the rest of the game either — a raid boss floor and the Delve's every-fifth-depth
 >   boss floor are the same *shape* of encounter, and only one of them has been measured.
 
-**Why:** the text on master describes raids as solo with co-op "not shipped." The branch
-contains real, working code (`singleBodyPartyScale`, the War Table callback, the Raid
-Portal joining the party ready-spot flow) that turns co-op raids on — this is not a prose
-correction alone, it is a code branch the prose describes. **Landing this text without also
-landing `investigate/raid-party-scaling` itself would make `CLAUDE.md` describe a feature
-that doesn't exist on master yet.** That is worth flagging explicitly: this is a bundled
-decision (ship the code, then update the doc to match), not a pure documentation fix like
-the other two drafts below.
-
-**Update, checked while writing this page: master's own text is already stale, by a
-different route than this draft.** `feat/coop-raids` (merge `548f218`, authored by 97 —
-this appears to be the same session the handoff credits with the raids bullet) landed
-*after* `investigate/raid-party-scaling` was cut, and it removed the exact gate the current
-CLAUDE.md text names — "the one branch in `handleHubInteraction` [that] is all that stops a
-party raid" is gone; `main.ts:142` says so directly. **So raids are co-op on master right
-now**, but `singleBodyPartyScale` is not: I grepped `src/data/modes.ts` and it isn't there,
-only referenced in a comment in `tools/raid-party-measure.ts` pointing at this still-unlanded
-branch. That means the shipped co-op raid currently uses whatever scaling `profileFor`
-already applies — the ordinary crowd-tuned term this branch's own measurement said
-trivialises a single-body fight — so the balance gap this draft's proposed text describes
-finding is very likely still live in the game today, just reached through the portal-mirror
-fix rather than through this branch. I'm not certain of that last inference — I read the
-code, I did not play a real co-op raid on master to confirm the trivialisation — so treat it
-as a strong flag, not a verified fact. Either way: **master's raids passage needs an update
-regardless of what happens to `investigate/raid-party-scaling`**, because "Solo in v1" is
-now false on its own, independent of this branch's fate. The two things worth deciding
-separately are (a) whether to just fix the "solo" claim to say "co-op" now, today, and (b)
-whether to also land the balance fix and its longer explanation — (a) is a pure doc
-correction; (b) is the bundled decision described above.
+**Why this was written the way it was:** the text on master described raids as solo with
+co-op "not shipped." The branch contained real, working code (`singleBodyPartyScale`, the
+War Table callback, the Raid Portal joining the party ready-spot flow) that turns co-op
+raids on — this read as a bundled decision (ship the code, then update the doc to match),
+not a pure documentation fix. **The trap:** by the time this was written, master's text was
+*already* false for an unrelated reason — `feat/coop-raids` (merge `548f218`) had already
+landed and removed the named gate, days before `investigate/raid-party-scaling` could. The
+draft below was written checking the branch's own diff against master, which correctly
+showed the branch would change the passage — but never re-checked whether master had
+already changed out from under the branch by a different route. **The lesson: when a draft
+proposes replacing text because a branch changes it, check what master's text says right
+now, not what it said when the branch was cut.** A branch's diff against its own base
+proves the branch changes something; it doesn't prove master hasn't already changed it a
+different way.
 
 ---
 
@@ -260,7 +314,7 @@ factually behind the tool that superseded it.
 
 | # | Draft | Source of proposed text | Branch | Reviewed by owner? |
 |---|-------|--------------------------|--------|---------------------|
-| 1 | Raids bullet (co-op + balance fix) | Found in full, on the branch | `investigate/raid-party-scaling` | No. Also: master's "solo" claim is independently stale via `548f218` — see the update in §1 |
+| 1 | Raids bullet (solo → co-op, no balance change) | Restructured 2026-09-10 late — the original branch-sourced draft is superseded, kept in a collapsed section as a method finding rather than something to use | superseded draft: `investigate/raid-party-scaling` (never landed); current proposal: pure prose against `548f218`, which did | No — the current, short proposal is the one to review |
 | 2 | Loot passage A ("per-hero and physical") | **No draft existed** — written fresh this session against `85bdee6` + `docs/shared-loot.md`, verified against `src/game/dungeon.ts` | none | No — flagged as freshly authored, not a found draft |
 | 3 | Loot passage B ("round-robin") | Same as #2 | none | No — same caveat |
 | 4 | Campaign-check thinness paragraph | Reconstructed from `tools/campaignblock.ts`'s landed header | none (no CLAUDE.md diff ever committed) | No — already superseded operationally by the tool header |

@@ -117,11 +117,26 @@ load by CPU (`ps aux | awk '$3 > 15'`), never by expected command name.**
 ### 4. CLAUDE.md edits awaiting one-line owner approval
 
 Four drafts are written and none has landed. **CLAUDE.md is the owner's document — do not
-land an edit to it on a peer session's say-so.** They are:
+land an edit to it on a peer session's say-so.** They live on `docs/claude-md-pending.md`
+now, not this section — read that page rather than this summary, which drifted from it.
+**Correction (docket §28's sweep, `docs/stale-prose-sweep.md`): this section previously
+attributed "26's two co-op loot passages" as an already-written draft.** No such draft
+existed anywhere in the repository — not on any branch, not uncommitted in any worktree —
+until f1 wrote both from scratch, verified against `src/game/dungeon.ts` directly rather
+than taken from a commit message's word. (Git's own history doesn't distinguish which
+session authored a commit — every session commits under the same identity in this repo —
+so "f1" here is the PM's own attribution, not something this correction independently
+confirmed; what this correction does confirm is that no such draft pre-existed anywhere to
+attribute.) The drafts, current as of `docs/claude-md-pending.md`'s last restructure —
+still four, matching that page's own numbering (its "2 & 3" are the two loot passages,
+listed together in one bullet below the same way):
 
-- 97's raids bullet (raids are no longer solo).
-- 26's two co-op loot passages.
-- 26's replacement for the campaign-check thinness paragraph. This one is now *backed by
+- The raids bullet (raids are no longer solo). Restructured once already — its first draft
+  was written against a branch (`investigate/raid-party-scaling`) that never landed; the
+  page now carries a corrected proposal plus that superseded draft as a kept method
+  finding, not a second thing to review.
+- The two co-op loot passages (f1's, per above).
+- The replacement for the campaign-check thinness paragraph. This one is now *backed by
   measurement rather than a gap*: two disjoint 60-seed blocks read margins of **2.55** and
   **2.50**, agreeing to 0.05, so the widened check sits on the noise floor's plateau. The
   paired analysis explains the whole history — per-seed margin sd ≈ 6.1, so at n=60 the

@@ -6,6 +6,18 @@ Owner-requested work that is queued rather than in flight. Added 2026-09-10, exp
 This file exists so the docket survives a session ending. Take items off it in order,
 strike them when they land, and add the design record's path next to the entry.
 
+**Before trusting or writing any status word here (OPEN, LANDED, STILL OPEN, ...), read the
+claim, not just the citation.** §6 marked "the last monster" STILL OPEN for hours after
+`docs/last-monster-search.md` (a real design record, landed on master) had already measured
+it and closed it — and the docket's own citations were never wrong: every hash this file
+cites checks out and is on master, both before and after that item slipped. **Verifying a
+citation and verifying a claim are different sweeps, and only the second would have caught
+it**, because the false half of that entry had no hash to check at all — just a status word
+nothing automatically reconciles against a same-topic document's own status line. So: when
+an item's status is a word rather than something `git merge-base --is-ancestor` can check,
+grep `docs/` for a design record on the same topic and read *its* status line before
+trusting this file's. See `docs/stale-prose-sweep.md` for the full sweep this came from.
+
 ---
 
 ## 1. Multiplayer stuttering — A BUFFER WAS BUILT, SHIPPED, AND REVERTED THE SAME DAY
