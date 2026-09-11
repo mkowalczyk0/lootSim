@@ -44,14 +44,14 @@ proposal for the owner — are deliberately absent from this table.
 | 19 | A one-directional assertion satisfied by an empty result | `duelist.riposte`, a reactive staged so it never triggered |
 | 20 | The injection moved something the comparison does not read | `tools/bosstarget.ts` moving distance while comparing angle |
 | 21 | An aggregate is invariant across the mechanism that changed | "at least one" reading identically under winner-takes-all |
-| 22 | *in flight* | written on a branch, not yet on master |
-| 23 | *in flight* | written on a branch, not yet on master |
+| 22 | A design record as the blind instrument — a confident wrong diagnosis, load-bearing for weeks | `docs/engineer-ultimate-loop.md` naming the wrong mechanism |
+| 23 | The instrument was right and was read in the wrong units | the ultimate meter reported as a fraction, read as a percentage |
 | 24 | A real comparison, correctly phrased, green for a reason unrelated to its claim | the relic level gate's own check |
 | 25 | A subject that never survives long enough to be measured | `tools/rewards.ts`'s harvest fixture, dying in 8s on every seed |
-| 26 | *in flight* | written on a branch, not yet on master |
-| 27 | *in flight* | written on a branch, not yet on master |
-| 28 | *in flight* | written on a branch, not yet on master |
-| 29 | *in flight* | written on a branch, not yet on master |
+| 26 | The blind instrument was inside the process rule itself | `grep -c '^FAIL'`, never correct for any tool in `tools/` |
+| 27 | Making a fixed thing variable narrows every existing reader of it | `MINION_CAP_PER_OWNER` becoming modifiable, and `tools/smoke.ts` still asserting the bare constant |
+| 28 | The guard was correct, stayed correct, and could never have seen what it guarded | `chroma` measuring the accent while the body was what moved |
+| 29 | Two honest detectors that agree on the rule and disagree on the pixel | §1.4's saturation gate vs `chroma`'s scale, on the auto-turret's cream-gold |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
 
