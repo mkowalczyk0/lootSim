@@ -1806,3 +1806,45 @@ The bullet-hell patterns shipped with **per-bolt damage at 0.4–0.6× a boss hi
 deliberately parked pending exactly this kind of request. If the owner wants eaten fields
 to hurt more, that dial and the cadence dial should move in one measured pass rather than
 two, since they compound.
+
+---
+
+## Owner rulings on §38 and §39, 2026-09-11 afternoon
+
+Both taken through the option prompt, both **wider** than the conservative reading. Recorded
+here rather than in a session, because every assignee starts cold and these two rulings are
+the difference between the right fix and a rejected one.
+
+### §39 — cadence AND the parked bolt dial, one pass
+
+> "Cadence + the parked bolt dial."
+
+Shrink the gap between boss casts **and** unpark the bullet-hell per-bolt damage (currently
+0.4–0.6× a boss hit) in a single measured pass. The reasoning the owner accepted: the two
+dials compound, so measuring them separately measures neither honestly, and it is one smoke
+bill rather than two A/Bs that can contradict each other.
+
+**Explicitly not chosen:** re-authoring the low-threat cards in every kit. The threat term of
+`cadence × mean threat` stays as it is for now; this pass moves cadence and the bolts only.
+
+### §38 — the whole execute family, now
+
+> "The whole execute family, now."
+
+The Ranger, the Reaper (`executeMissingHealth: 1.0`, `to: "enemiesEverywhere"`,
+`src/progression/reaper.ts:249`) and the Assassin (0.4, `src/progression/assassin.ts:273`)
+are **one mechanic**, and are to be rebalanced together in one pass rather than fixed
+class-by-class as complaints arrive.
+
+**This overrules the default scope rule for this item, deliberately and on the record.**
+`lootsim-scope-fixes-to-unshipped-content` and `docs/ranger-last-hunt-nerf.md`'s own
+"don't sweep other classes" both point the other way, and the owner was told plainly that
+this is a balance change to two classes nobody reported. They took the call anyway. So:
+**a reviewer must not reject the Reaper and Assassin changes as uncommanded scope creep** —
+they are commanded, by this ruling, and the branch should cite this heading.
+
+What does **not** change: §38's instruction to measure attribution before touching any
+number still stands, and now applies to three classes instead of one. "Fix the family
+together" is a ruling about scope, not permission to skip the measurement that the last two
+fixes skipped. The measurement is the part that has failed twice; widening the scope makes
+getting it right more important, not less.
