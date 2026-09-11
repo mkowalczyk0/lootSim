@@ -54,6 +54,8 @@ proposal for the owner — are deliberately absent from this table.
 | 29 | Two honest detectors that agree on the rule and disagree on the pixel | §1.4's saturation gate vs `chroma`'s scale, on the auto-turret's cream-gold |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
+| 32 | *in flight* | |
+| 33 | A bound so cautious it discards a real signal | the execute split's "one packet or several" guard, pooling a per-seed base |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1635,6 +1637,63 @@ forever if the second had not been pointed at the first's output. The scope exte
 `summon.*` was a PM ruling on the grounds that a rule living in prose is a rule nobody
 measures; it paid for itself on its first run, and what it found was not a bad sprite but
 a gap between two good detectors.
+
+## A thirty-third instance: a bound so cautious it discarded a real signal
+
+Every entry above this one is an instrument that **reported**: it ran, produced a plausible
+number, and could not see the thing it was asked about. This one is the mirror image, and it
+is worth its own row because the reflex the other thirty-two train — *tighten the bound, be
+more careful* — is exactly what causes it.
+
+**Where it showed up.** `tools/execute-attrib.ts` (docket §38) splits an ultimate's damage
+into its direct packet and its execute rider. It does this without knowing the coefficient:
+THE EXECUTE RULE returns zero at or above the threshold, so a hit on a healthy target is a
+clean reading of `base * attack`, and every hit below the threshold is then that base plus a
+residual. The split only holds if the ability fires **one** damage packet per cast, so it
+carried a guard — if the above-threshold amounts are not all the same, assume several
+packets and refuse to report.
+
+The guard pooled hits across seeds. `geared()` rolls different gear per seed, so the caster's
+attack damage — and therefore the ability's base amount — differs from run to run. A
+perfectly clean single-packet ability looked like a mixture of several.
+
+The tell was a one-seed pilot printing
+
+```
+    DEBUG amounts above: 1780,1780,1780,1780,1780,1780,1780,1780,1780,1780
+    (not separable: 13 hits, several distinct base amounts per cast ...)
+```
+
+— a base that is *literally constant to the unit*, declared unreadable. On a single seed the
+guard's own premise held perfectly; pooling twelve seeds is what broke it. The fix is to
+compute the split **per run** and pool the results afterward, and to print how many runs were
+separable so a thin sample is visible instead of silent.
+
+**Why it is a distinct shape.** Item 18's defect is a bound that grows to fit whatever it is
+handed, so it can only ever conclude that the widest thing is the widest thing. This is the
+same error with the sign flipped: a bound drawn from a **mixture of populations the
+instrument itself created**, so it concludes that a clean signal is noise. Both come from
+taking the bound from the data instead of from a fixed reference the code under test cannot
+move — but they fail in opposite directions, and only one of them is loud. A bound that is
+too loose manufactures a green check somebody eventually trips over. A bound that is too
+tight prints `—` and looks like diligence.
+
+**The cheap tell.** A refusal is a result, and it deserves the same suspicion as a number.
+When an instrument declines to report, check whether its *premise* holds on the smallest
+possible sample before widening — here, one seed. If the guard passes on one and fails on
+twelve, the guard is reading across a population boundary, not detecting the condition it
+names.
+
+**A companion, from the same tool and the same afternoon, already covered by an existing
+rule.** The ablation table averaged time-to-clear over *all* runs, including failures. A
+failed run ends when the bot dies, which is early, so a configuration that lost more often
+looked *faster*: the tool reported the Ranger clearing raid bosses **2.8% quicker with its
+ultimate deleted**. That is `docs/raid-party-scaling.md`'s confound — a duration metric lies
+when the thing you changed also changes whether the run finishes — arriving from the other
+direction, and it is filed here as a sighting rather than a new species. What caught it was
+a **sign that made no sense**, not a magnitude that was merely off; a delta pointing the
+wrong way is the cheapest evidence a metric is confounded, and it is worth spending a moment
+on the direction of every number before the size of it.
 
 ## Proposed for the owner, not adopted here
 
