@@ -164,6 +164,7 @@ without a PNG" walk never sees a summon row. And `SUMMON_UNIT_ART`'s value type 
 `SummonArtId` (the keys of `SUMMON_ATLAS`), so a unit cannot point at an id with no
 manifest row — that one is a compile error, not a check.
 
-**Still open, deliberately:** `SUMMON_ELEMENT_WASH` — strength and whether a full-body
-wash is the right carrier at all. See `docs/summon-sprite-seam.md`; the study is the next
-step on this branch, and the call is the owner's.
+**Resolved by owner ruling (2026-09-11):** the element rides on the **outline**, body
+wash zero — `SUMMON_ELEMENT_OUTLINE = 0.65` in `render/sprites.ts`, `SUMMON_ELEMENT_WASH`
+retired. The study that decided it (`wash-study.py`, images under `study/`) and the
+argument that won it are in `docs/summon-sprite-seam.md`.

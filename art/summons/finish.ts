@@ -28,9 +28,10 @@
  * bone-gold the way `muteHot` does) is deliberate: a fixed target shifts VALUE as well as
  * saturation, so a dark saturated brown would come out lighter than the cloth around it
  * and read as a patch. Keeping luminance keeps the shading the generator drew; only the
- * colour goes quiet. What the renderer then paints over the top — the owner's element,
- * `SUMMON_ELEMENT_WASH` in `render/sprites.ts` — is the only saturated thing left on the
- * body, which is exactly what lets it say "mine, and my element" (README decision 2).
+ * colour goes quiet. What the renderer then adds — the owner's element on the edge
+ * pixels only, `SUMMON_ELEMENT_OUTLINE` in `render/sprites.ts` — is the only saturated
+ * thing left on the body, which is exactly what lets it say "mine, and my element"
+ * (README decision 2).
  *
  * ## Shadows
  *

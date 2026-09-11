@@ -27,6 +27,7 @@ import { decodePng } from "./png";
 import { SUMMON_UNITS, summonUnitSources } from "../src/data/summons";
 import { PLAYER_COPY_UNITS } from "../src/render/minionart";
 import { ATLAS, SUMMON_UNIT_ART } from "../src/render/atlas/manifest";
+import { accentEdges } from "../src/render/grade";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -96,6 +97,47 @@ console.log(`  ${summonRows.length} summon.* row(s) in ATLAS`);
 for (const id of summonRows) {
   const by = claims.get(id) ?? [];
   check(`ATLAS "${id}": claimed by exactly one unit`, by.length === 1, by.length ? by.join(", ") : "unclaimed");
+}
+
+// --- the element accent: edges move, the body does not, alpha never -----------------------
+//
+// Owner ruling (2026-09-11): a summon carries its element on its OUTLINE, body wash zero,
+// because a body wash was the elite treatment in a different hue. `accentEdges` is the
+// pure rule the renderer's `outlinedCanvas` applies; this pins the property on a synthetic
+// sprite whose answer is known by construction rather than measured off real art — a 7x7
+// opaque square with one transparent pixel at its centre has exactly 24 border cells plus
+// the 4 cells touching the hole as edges, and 20 interior cells that must not move.
+
+console.log("");
+{
+  const W = 7, H = 7;
+  const data = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) { data[i * 4] = 100; data[i * 4 + 1] = 120; data[i * 4 + 2] = 140; data[i * 4 + 3] = 255; }
+  const hole = (3 * W + 3) * 4;
+  data[hole + 3] = 0;
+  const before = new Uint8ClampedArray(data);
+  const touched = accentEdges(data, W, H, [255, 0, 0], 0.5);
+  console.log(`  synthetic 7x7 with a centre hole: accentEdges touched ${touched} pixel(s)`);
+  check("exactly the 24 border cells and the 4 cells around the hole are edges", touched === 28, `${touched}`);
+  let interiorMoved = 0, alphaMoved = 0, holeMoved = 0, edgeWrong = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    if (data[i + 3] !== before[i + 3]) alphaMoved++;
+    if (x === 3 && y === 3) { if (data[i + 3] !== 0) holeMoved++; continue; }
+    const isEdge = x === 0 || y === 0 || x === W - 1 || y === H - 1 || (Math.abs(x - 3) + Math.abs(y - 3) === 1);
+    if (isEdge) {
+      // 100 + (255-100)*0.5 = 177.5 -> 178; 120*0.5 = 60; 140*0.5 = 70
+      if (data[i] !== 178 || data[i + 1] !== 60 || data[i + 2] !== 70) edgeWrong++;
+    } else if (data[i] !== before[i] || data[i + 1] !== before[i + 1] || data[i + 2] !== before[i + 2]) {
+      interiorMoved++;
+    }
+  }
+  check("every edge pixel landed exactly halfway to the accent colour", edgeWrong === 0, `${edgeWrong} wrong`);
+  check("no interior pixel moved", interiorMoved === 0, `${interiorMoved} moved`);
+  check("no alpha byte moved and the hole stays transparent", alphaMoved === 0 && holeMoved === 0);
+  const again = new Uint8ClampedArray(before);
+  check("strength 0 is the identity", accentEdges(again, W, H, [255, 0, 0], 0) === 28
+    && again.every((v, i) => v === before[i]));
 }
 
 if (failures === 0) {

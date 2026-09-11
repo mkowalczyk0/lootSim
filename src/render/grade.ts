@@ -179,3 +179,44 @@ export function gradeSheet(
     data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : Math.round(b);
   }
 }
+
+/**
+ * The summon element accent (docket §36, owner ruling 2026-09-11): blend only a sprite's
+ * **edge** pixels — opaque cells with a transparent 4-neighbour, or on the canvas border —
+ * toward `rgb` by `strength`, leaving every interior pixel and every alpha byte exactly as
+ * authored. Returns how many pixels it touched.
+ *
+ * Why an edge and not a body wash: `drawEnemy` already draws an elite monster as a 0.35
+ * body wash toward its rarity colour, so a summon washed 0.30 toward its element was the
+ * same operation in a different hue — the family-of-recolours look the 21 bespoke bodies
+ * were commissioned to avoid, arriving through the renderer. An edge says "mine, and my
+ * element" in the allied-outline grammar without recolouring bone, iron or cloth, and it
+ * is a different vocabulary from the monsters' §1.4 accent (a hot point that is looking at
+ * you). It is a deliberate, owner-approved exception to §17.2's ink outline for this one
+ * family, at runtime only — the PNGs stay ink-outlined and accent-free (`npm run chroma`).
+ *
+ * Pure so `tools/summonart.ts` can assert the property (edges move, interior doesn't,
+ * alpha never) without a canvas; `render/sprites.ts#outlinedCanvas` is the canvas half.
+ */
+export function accentEdges(
+  data: Uint8ClampedArray | Uint8Array, width: number, height: number,
+  rgb: readonly [number, number, number], strength: number,
+): number {
+  const alphaAt = (x: number, y: number): number =>
+    x < 0 || y < 0 || x >= width || y >= height ? 0 : data[(y * width + x) * 4 + 3]!;
+  let touched = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (data[i + 3] === 0) continue;
+      const edge = alphaAt(x - 1, y) === 0 || alphaAt(x + 1, y) === 0
+        || alphaAt(x, y - 1) === 0 || alphaAt(x, y + 1) === 0;
+      if (!edge) continue;
+      for (let c = 0; c < 3; c++) {
+        data[i + c] = Math.round(data[i + c]! + (rgb[c]! - data[i + c]!) * strength);
+      }
+      touched++;
+    }
+  }
+  return touched;
+}

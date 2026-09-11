@@ -71,7 +71,28 @@ archers, anything that logically aims or moves in four directions) already accep
 south-plus-flip with nobody treating it as a defect. Adding a second rotation for five
 units would be a genuine new special case for a benefit nothing else in the roster gets.
 
-## The element carrier: tint pass, strength undecided
+## The element carrier: an outline accent, by owner ruling
+
+**Ruled 2026-09-11, against the study below: the element rides on the summon's OUTLINE,
+body wash zero.** `SUMMON_ELEMENT_OUTLINE = 0.65` in `render/sprites.ts`; the mechanism is
+`render/grade.ts#accentEdges` (pure — only opaque pixels with a transparent 4-neighbour
+move, interior and alpha never, pinned as a property in `npm run summonart` on a synthetic
+sprite whose answer is known by construction) applied by `outlinedCanvas`. 0.65 is the
+middle of the 0.6–0.7 band the study rendered; the three read the same at world scale, so
+the middle was chosen and the choice is stated rather than implied. `SUMMON_ELEMENT_WASH`
+is retired, not set to 0 — a wash of 0 would still describe the wrong mechanism.
+
+**This is a deliberate, owner-approved exception to §17.2's ink-outline convention.** Every
+other sprite in the game keeps an `ink` outline at runtime; a summon's is pulled toward its
+owner's element. The cost was stated to the owner as the price of the carrier and accepted.
+It is runtime-only: the committed PNGs are ink-outlined and accent-free, and `npm run
+chroma` measures the files, so the §1.4 rule for the art is untouched. If you find a summon
+outlined in colour, that is the ruling, not a bug.
+
+The section below is the history — the placeholder, why it was a placeholder, and the study
+that replaced it.
+
+### The placeholder, as it was: tint pass, strength undecided
 
 Item #3 of the brief: whatever replaces the triangle still has to say "this is mine, and
 it is my element" — the tint is currently doing that job alone. Mechanism: a tint pass
@@ -132,11 +153,12 @@ What the pictures show, for the owner's eye to confirm or overrule:
   floor, it fights the health bar and the windup ring for the same real estate, and a
   flying unit's ring has nowhere honest to sit.
 
-**Recommendation to put to the owner, not a ruling:** carry the element on the **outline
-at ~0.6-0.7**, body wash **0**; second choice wash 0.15 if the ink-outline convention is
-held to be non-negotiable. `SUMMON_ELEMENT_WASH = 0.3` stays in the code, unchanged, until
-that call is made — the study exists so the number is chosen against real art rather than
-by analogy to the weapon wash, which is how 0.3 got there.
+**Recommendation put to the owner:** carry the element on the **outline at ~0.6-0.7**,
+body wash **0**; second choice wash 0.15 if the ink-outline convention is held to be
+non-negotiable. **Taken** — see the ruling at the top of this section. The study exists so
+the number was chosen against real art rather than by analogy to the weapon wash, which is
+how 0.3 got there; the decisive fact was not "0.3 looks like a lot" but what 0.3 already
+meant elsewhere in the renderer.
 
 ## The co-op bug this almost shipped
 

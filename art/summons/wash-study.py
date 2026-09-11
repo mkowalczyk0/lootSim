@@ -17,7 +17,9 @@ candidate treatment:
                    the body — the windup ring `drawMinions` already draws, made permanent
 
 One image per element (fire, cold, poison, void) so the loud and the pale elements are
-both judged. This is a picture for the owner's eye, not a gate — it decides nothing.
+both judged. This is a picture for the owner's eye, not a gate — it decided nothing by
+itself; the owner ruled on it (outline accent, body wash zero, `SUMMON_ELEMENT_OUTLINE`
+= 0.65). Kept so the next carrier question can be asked against the same rows.
 
   python3 art/summons/wash-study.py <floor-tile.png> <out-dir>
 """

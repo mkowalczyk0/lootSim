@@ -263,10 +263,10 @@ function stripPng(entries: readonly DecodedPng[], scale: number, boxed: boolean,
     .sort();
   stripPng(bossIds.map((id) => frameZero(id, `bosses/${id}.png`)), 2, true, 14);
 
-  // Docket §36 — the 21 summon bodies, shown UNWASHED. The game paints each one toward
-  // its owner's element (`SUMMON_ELEMENT_WASH` in `render/sprites.ts`) and there is no
-  // single element to show here; the wash's strength and carrier are an open owner call
-  // (`docs/summon-sprite-seam.md`), so the sheet shows the authored art the wash sits on.
+  // Docket §36 — the 21 summon bodies, shown as authored. The game pulls each one's edge
+  // pixels toward its owner's element (`SUMMON_ELEMENT_OUTLINE` in `render/sprites.ts`,
+  // owner ruling: outline accent, body wash zero) and there is no single element to show
+  // here, so the sheet shows the ink-outlined art the accent sits on.
   const summonIds = Object.keys(ATLAS).filter((id) => id.startsWith("summon.")).sort();
   stripPng(summonIds.map((id) => decodePng(readFileSync(`src/render/atlas/summons/${id}.png`))), 3, true, 12);
 }

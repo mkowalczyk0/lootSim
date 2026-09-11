@@ -13,6 +13,7 @@
  *    skin overrides it — so what's in your hand is visible, and reskinnable.
  */
 
+import { accentEdges } from "./grade";
 import { CHESTS, type ChestTier } from "../data/chests";
 import { atlasCanvas, loadAtlas } from "./atlas";
 import { NAMED_BY_ID } from "../data/named";
@@ -851,20 +852,18 @@ const ART_AVAILABLE: ArtAvailability = {
 };
 
 /**
- * How hard an authored summon sprite's own colour is washed toward its element — the
- * mechanism the docket §36 owner ruling asked for (one bespoke body per unit, tinted,
- * rather than an authored variant per element). **Deliberately not settled by analogy to
- * `ATLAS_WEAPON_WASH` or `RARITY_WASH`.** Those numbers were each correct for the rung
- * they were measured on and this repo has a named lesson about inheriting a wash/tint
- * constant across rungs without re-measuring (`docs/` — the biome tint that quietly
- * became a 30% wash on the next rendering pass). The owner rejected the cheaper
- * family-of-recolours option specifically to get 21 *recognisable* bodies; a wash heavy
- * enough to read as "this is fire" is a wash heavy enough to erode that. This needs a
- * contact sheet against real authored art and 56's (and the owner's) eye before it ships
- * — see the design note in `docs/summon-sprite-seam.md`. 0.3 is a placeholder in the
- * weapon-wash neighbourhood, not a decision.
+ * How far a summon's edge pixels are pulled toward its owner's element — the carrier of
+ * "this is mine, and it is my element" (docket §36). **Owner ruling, 2026-09-11: an outline
+ * accent, body wash zero.** The placeholder this replaced, `SUMMON_ELEMENT_WASH = 0.3`, was
+ * a full-body `tintedCanvas` wash chosen by analogy to the weapon wash; the study in
+ * `docs/summon-sprite-seam.md` (`art/summons/study/`) showed it was the elite treatment
+ * (`drawEnemy` washes an elite 0.35 toward its rarity colour) in a different hue, turning
+ * 21 bespoke bodies into one terracotta. Retired rather than set to 0 — a wash of 0 would
+ * still describe the wrong mechanism. 0.65 is the middle of the 0.6-0.7 band the study
+ * rendered; the three were near-indistinguishable on the sheet, so the middle it is. See
+ * `render/grade.ts#accentEdges` for why an edge and not a body.
  */
-export const SUMMON_ELEMENT_WASH = 0.3;
+export const SUMMON_ELEMENT_OUTLINE = 0.65;
 
 /** A summon sprite's picture and how big it is in the world — mirrors `ItemSprite`. */
 export interface MinionSprite {
@@ -900,7 +899,7 @@ export function minionSprite(
       if (!png || !meta) return null; // hasAtlas already said this was drawable; fall to the triangle if it somehow isn't
       const color = ELEMENT_COLORS[element] ?? "#9fd3ff";
       return {
-        canvas: tintedCanvas(png, `minion:${choice.id}`, color, SUMMON_ELEMENT_WASH),
+        canvas: outlinedCanvas(png, `minion:${choice.id}`, color, SUMMON_ELEMENT_OUTLINE),
         worldScale: meta.worldScale,
         feet: meta.feet,
       };
@@ -1038,6 +1037,30 @@ export function tintedCanvas(
   ctx.globalAlpha = strength;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (tintCache.size > 512) tintCache.clear();
+  tintCache.set(id, canvas);
+  return canvas;
+}
+
+/**
+ * A copy of any canvas with only its edge pixels pulled toward `color` — the summon element
+ * accent (`SUMMON_ELEMENT_OUTLINE`). The pixel rule is `render/grade.ts#accentEdges`, pure
+ * and tested headless; this is the canvas half. Shares `tintCache`'s eviction so a floor
+ * full of minions can't grow it without bound; the key prefix keeps it from colliding with
+ * a body wash of the same source.
+ */
+export function outlinedCanvas(
+  src: HTMLCanvasElement, key: string, color: string, strength: number,
+): HTMLCanvasElement {
+  const id = `outline|${key}|${color}|${strength}`;
+  const hit = tintCache.get(id);
+  if (hit) return hit;
+
+  const { canvas, ctx } = blank(src.width, src.height);
+  ctx.drawImage(src, 0, 0);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  accentEdges(img.data, canvas.width, canvas.height, hexToRgb(color), strength);
+  ctx.putImageData(img, 0, 0);
   if (tintCache.size > 512) tintCache.clear();
   tintCache.set(id, canvas);
   return canvas;

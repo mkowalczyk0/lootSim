@@ -884,6 +884,42 @@ would return if the mechanism were wrong in the way you have not thought of yet.
 answer is "the same thing", the measurement is not evidence for this change however good it
 is — go and find the check that watches the shape, and if there isn't one, write it.
 
+## A twenty-second instance: two gates that agree on the rule and disagree on the pixel
+
+The art style guide's §1.4 gives a hand rule for a hot pixel — HSV saturation above 0.55
+and a channel above 90 — and every `art/*/finish.ts` script measures its own output with
+it. `npm run chroma` enforces the same design rule (the hero carries no hot accent; the
+monsters do) with a different number: `render/grade.ts#chroma`, saturation × value, ranked
+against every committed monster's loudest 2+px colour. Both are correct readings of §1.4.
+They are not the same detector.
+
+Wiring the 21 summon bodies (`art/summon-wire`), the finish script quieted every §1.4-hot
+pixel, reported `0/635 opaque px hot` on the auto-turret, and wrote the PNG. The first run
+of `chroma` over `summon.*` failed it:
+
+```
+ FAIL  summon.auto-turret: accent chroma stays below every monster's  — >= reliquary.monster.bone-archer (49.8), boss.nameless (47.8), boss.ferryman (49.8), boss.labyrinth-minotaur (45.5)
+```
+
+The pixel was the turret's cream-gold `#f7cb76`: saturation 0.52, so not "hot" by the hand
+rule, and value 0.97, so 50.6 on the scale the gate ranks by — louder than four shipped
+monsters' own accents. A bright, moderately saturated pixel splits the two definitions,
+and nothing in either file said they could disagree.
+
+**The rule.** When two instruments enforce one design rule with two formulas, the gate's
+formula is the authority and the producer must use it. The finish script now quiets a
+pixel that trips *either* detector, importing `chroma` from the same module the gate does
+rather than re-deriving a third. The cheap tell that this family was present: a producer
+reporting a clean zero on its own metric while the gate on the same file goes red — that is
+not a flaky gate, it is a second definition.
+
+**Why it belongs in this file.** Every entry above is one instrument that could not see.
+This one is two instruments that could both see, each honestly, and would have disagreed
+forever if the second had not been pointed at the first's output. The scope extension to
+`summon.*` was a PM ruling on the grounds that a rule living in prose is a rule nobody
+measures; it paid for itself on its first run, and what it found was not a bad sprite but
+a gap between two good detectors.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
