@@ -199,13 +199,16 @@ export const ALCHEMIST_UNSTABLE_REACTION: Ability = {
   id: "alchemist.unstable_reaction",
   classId: "alchemist",
   name: "Unstable Reaction",
-  description: "Force every chemical zone on the field to react at once — fire and frost and acid, all combining badly.",
+  description: "Force every chemical zone around you to react at once — fire and frost and acid, all combining badly.",
   flavor: "Do not do this indoors. You are indoors. Do it anyway.",
   category: "spell",
   tags: ["area", "resourceSpender", "zone"],
   costs: [{ resource: "reagents", amount: 3 }],
   cooldown: 16,
   targeting: "self",
+  // §30: bounded, and authored rather than left to `DEFAULT_ENEMY_REACH` so the
+  // path's own `scaleRadius` mutation has something to scale.
+  shape: { radius: 320 },
   effects: [
     { kind: "damage", damage: { base: 2.6, scale: "spell", type: "fire", canCrit: true, knockback: 90 }, to: "enemies" },
     { kind: "status", status: "burn", chance: 0.7, to: "enemies" },

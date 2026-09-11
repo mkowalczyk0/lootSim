@@ -206,12 +206,15 @@ export const ENGINEER_REMOTE_DETONATION: Ability = {
   id: "engineer.remote_detonation",
   classId: "engineer",
   name: "Remote Detonation",
-  description: "Trigger every mine and expendable device on the field at once. Tagged enemies take the worst of it.",
+  description: "Trigger every mine and expendable device in range at once. Tagged enemies take the worst of it.",
   flavor: "The button was the fun part to build.",
   category: "attack",
   tags: ["area"],
   cooldown: 16,
   targeting: "self",
+  // §30: bounded, and authored rather than left to `DEFAULT_ENEMY_REACH` so the
+  // path's own `scaleRadius` mutation has something to scale.
+  shape: { radius: 320 },
   effects: [
     { kind: "damage", damage: { base: 2.4, scale: "attack", type: "fire", canCrit: true, knockback: 100 }, to: "enemies" },
     { kind: "consumeStatus", status: "tagged", to: "enemies", then: [

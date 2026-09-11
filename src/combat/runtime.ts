@@ -440,9 +440,138 @@ export class AbilityRuntime {
   }
 }
 
+// --- THE MAP-WIPE RULE (docket §30) -----------------------------------
+
+/**
+ * The reach of a `to: "enemies"` selection when nothing on the ability paints a circle.
+ *
+ * **This is the one invented number in docket §30, and it is calibrated against the
+ * repo's own authored radii rather than taste.** Every non-ultimate that bothers to
+ * declare `shape.radius` sits at or below 160 (Crimson Howl); the two ultimates that
+ * declare one sit at 350 and 400. 320 is therefore comfortably above anything a normal
+ * skill asks for — so no ability is squeezed below its declared peers — and still below
+ * both ultimates that went to the trouble of saying how big they are, so *omitting* a
+ * shape can never buy more reach than *declaring* one. A floor's rooms run 448–640 units
+ * across, so this is "the room you are standing in", not "the floor".
+ */
+export const DEFAULT_ENEMY_REACH = 320;
+
+/** Largest zone an ability makes, nested steps included — an ability's own statement of
+ *  how big the thing it just created is. Memoized: `selectActorIds` runs per cast. */
+const zoneReachCache = new WeakMap<Ability, number | null>();
+
+function largestZoneRadius(ability: Ability): number | null {
+  const hit = zoneReachCache.get(ability);
+  if (hit !== undefined) return hit;
+  let best: number | null = null;
+  const walk = (steps: readonly EffectStep[]): void => {
+    for (const step of steps) {
+      const s = step as EffectStep & {
+        effects?: readonly EffectStep[];
+        then?: readonly EffectStep[];
+        choices?: readonly { effects: readonly EffectStep[] }[];
+      };
+      if (step.kind === "zone") {
+        const r = step.zone.radius;
+        if (best === null || r > best) best = r;
+      }
+      if (s.effects) walk(s.effects);
+      if (s.then) walk(s.then);
+      if (s.choices) for (const c of s.choices) walk(c.effects);
+      if (step.kind === "projectile" && step.projectile.onExpire) walk(step.projectile.onExpire);
+    }
+  };
+  walk(ability.effects);
+  if (ability.followUp) walk(ability.followUp.effects);
+  zoneReachCache.set(ability, best);
+  return best;
+}
+
+/**
+ * How far a `to: "enemies"` step reaches, derived from what the ability already says
+ * about itself. Nothing here is authored per packet, which is the whole point: the
+ * execute threshold (docket §20) established that a required per-site field is both an
+ * uncommanded balance pass across classes nobody reported *and* satisfiable with the
+ * value that spells the original bug — `99999` here, `1.0` there. So the rule lives at
+ * the single site that resolves the selection, and an ability written tomorrow is
+ * bounded for free.
+ *
+ * The ladder, most specific first. Every rung is a number the author already wrote.
+ */
+export function enemyReach(ability: Ability, stepRadius?: number): number {
+  if (stepRadius !== undefined) return stepRadius;
+  if (ability.shape?.radius !== undefined) return ability.shape.radius;
+  if (ability.shape?.length !== undefined) return ability.shape.length;
+  const zone = largestZoneRadius(ability);
+  if (zone !== null) return zone;
+  if (ability.range !== undefined) return ability.range;
+  return DEFAULT_ENEMY_REACH;
+}
+
+/** True when the ability moves its own caster — a charge, a vault, a blink. Memoized. */
+const movesCasterCache = new WeakMap<Ability, boolean>();
+
+function movesCaster(ability: Ability): boolean {
+  const hit = movesCasterCache.get(ability);
+  if (hit !== undefined) return hit;
+  let found = false;
+  const walk = (steps: readonly EffectStep[]): void => {
+    for (const step of steps) {
+      if (step.kind === "move") { found = true; return; }
+      const s = step as EffectStep & {
+        effects?: readonly EffectStep[];
+        then?: readonly EffectStep[];
+        choices?: readonly { effects: readonly EffectStep[] }[];
+      };
+      if (s.effects) walk(s.effects);
+      if (s.then) walk(s.then);
+      if (s.choices) for (const c of s.choices) walk(c.effects);
+    }
+  };
+  walk(ability.effects);
+  movesCasterCache.set(ability, found);
+  return found;
+}
+
+/**
+ * Where the circle is centred.
+ *
+ * A point-targeted ability that **does not move its caster** happens where it was aimed —
+ * a trap, a mine, a painted mark. Centring those on the caster would leave the trap
+ * measuring from a player who has since walked away from it, which would have turned this
+ * change from "bound five traps" into "kill five traps".
+ *
+ * A point-targeted ability that **does** move its caster is the opposite case, and the
+ * smoke test is why this distinction exists rather than being assumed away: Heavenly Fist
+ * vaults to the aim point but `leapTo` stops it short of the point, and a wall stops it
+ * shorter still. Anchoring on the aim left the 150-unit circle sitting where the monk
+ * *meant* to land while the monk stood somewhere else — `Monk: the ultimate does something
+ * — dealt 0`. When the caster travels to the action, the caster is the anchor.
+ *
+ * Deliberately not `ctx.targets.point` for `direction` mode either: there, `point` is the
+ * raw aim ray, a heading rather than a location, and using it as a centre would put the
+ * circle wherever the mouse happened to be.
+ */
+function reachAnchor(ctx: EffectContext, caster: HostActor): { x: number; y: number } {
+  if (ctx.ability.targeting === "point" && ctx.targets.point && !movesCaster(ctx.ability)) {
+    return ctx.targets.point;
+  }
+  return { x: caster.x, y: caster.y };
+}
+
 // --- the dispatcher --------------------------------------------------
 
-function selectActorIds(host: CombatHost, ctx: EffectContext, to: EffectTargetSel | undefined): number[] {
+function selectActorIds(
+  host: CombatHost,
+  ctx: EffectContext,
+  to: EffectTargetSel | undefined,
+  /**
+   * The radius the *step* authored, for the step kinds that carry one. Only `threat`
+   * does today, and its radius was dead before docket §30: nothing read it, so a taunt
+   * that said `radius: 200` pulled the whole floor.
+   */
+  stepRadius?: number,
+): number[] {
   const t = ctx.targets;
   switch (to ?? "allTargets") {
     case "self":
@@ -453,19 +582,29 @@ function selectActorIds(host: CombatHost, ctx: EffectContext, to: EffectTargetSe
     case "allTargets":
       return t.actorIds;
     case "enemies": {
-      // "enemies" means every hostile around the caster — NOT the pre-resolved aim list.
-      // A self-targeted shout, a delayed ultimate, a reactive retaliation all resolve
-      // their victims here, at fire time, from where the caster actually is. Bounded by
-      // the ability's `shape.radius` when it has one, field-wide otherwise (a room-wide
-      // ultimate like Death Comes Due or Damnation).
+      // "enemies" means every hostile within the ability's reach — NOT the pre-resolved
+      // aim list. A self-targeted shout, a delayed ultimate, a reactive retaliation all
+      // resolve their victims here, at fire time, around wherever the ability actually
+      // happens. THE MAP-WIPE RULE (docket §30) lives in `enemyReach` below: this is
+      // always bounded, and an ability that wants the whole floor says
+      // `to: "enemiesEverywhere"` instead.
       const caster = host.actor(ctx.casterId);
       if (!caster) return [];
-      const r = ctx.ability.shape?.radius;
-      const hostiles = [...host.actors()].filter((a) => a.alive && a.faction !== caster.faction);
-      const bounded = r === undefined
-        ? hostiles
-        : hostiles.filter((a) => Math.hypot(a.x - caster.x, a.y - caster.y) <= r);
-      return bounded.map((a) => a.id);
+      const at = reachAnchor(ctx, caster);
+      const reach = enemyReach(ctx.ability, stepRadius);
+      return [...host.actors()]
+        .filter((a) => a.alive && a.faction !== caster.faction)
+        .filter((a) => Math.hypot(a.x - at.x, a.y - at.y) <= reach)
+        .map((a) => a.id);
+    }
+
+    case "enemiesEverywhere": {
+      // The deliberate opt-in. Declared per step, never reached by omission.
+      const caster = host.actor(ctx.casterId);
+      if (!caster) return [];
+      return [...host.actors()]
+        .filter((a) => a.alive && a.faction !== caster.faction)
+        .map((a) => a.id);
     }
     case "allies": {
       const caster = host.actor(ctx.casterId);
@@ -804,7 +943,10 @@ export function runEffect(
     }
 
     case "threat": {
-      for (const id of selectActorIds(host, ctx, step.to)) {
+      // `step.radius` was authored on three taunts and read by nothing before §30, so a
+      // Fortress Call that says "nearby enemies" pulled the whole floor. It is a bound
+      // now, which is what it always looked like.
+      for (const id of selectActorIds(host, ctx, step.to, step.radius)) {
         host.setThreat(id, step.op, ctx.casterId, step.amount ?? 0);
       }
       return;

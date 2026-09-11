@@ -235,7 +235,7 @@ export const REAPER_DEATH_COMES_DUE: Ability = {
   targeting: "self",
   effects: [
     { kind: "fx", fx: "reaper.time_freeze" },
-    { kind: "status", status: "freeze", chance: 1, to: "enemies" },
+    { kind: "status", status: "freeze", chance: 1, to: "enemiesEverywhere" },
     { kind: "delay", seconds: 0.4, effects: [
       // 0.8 → 1.0 is the §20 payback, and it is a consequence of the rule rather than a
       // top-up. Under the un-thresholded term this number meant "fraction of missing
@@ -246,7 +246,7 @@ export const REAPER_DEATH_COMES_DUE: Ability = {
       // the entire bill is the definition, not an escalation. Measured against master this
       // is still far weaker in the band that matters (at 35% health on a Ferryman: 54,830
       // → 31,633) and exactly zero above the threshold, where the complaint came from.
-      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 1.0 }, to: "enemies" },
+      { kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, channel: "ultimate", executeMissingHealth: 1.0 }, to: "enemiesEverywhere" },
     ] },
   ],
   mutationHooks: [{ id: "death_comes_due.packet", kind: "damagePacket", note: "The Final Harvest raises the threshold and pays out Souls per kill." }],

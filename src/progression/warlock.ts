@@ -281,8 +281,8 @@ export const WARLOCK_DAMNATION: Ability = {
   targeting: "self",
   effects: [
     { kind: "fx", fx: "warlock.brand" },
-    { kind: "status", status: "damned", chance: 1, to: "enemies" },
-    { kind: "damage", damage: { base: 1.4, scale: "spell", type: "void", canCrit: true, channel: "ultimate" }, to: "enemies" },
+    { kind: "status", status: "damned", chance: 1, to: "enemiesEverywhere" },
+    { kind: "damage", damage: { base: 1.4, scale: "spell", type: "void", canCrit: true, channel: "ultimate" }, to: "enemiesEverywhere" },
   ],
   mutationHooks: [{ id: "damnation.status", kind: "status", note: "The Reckoning makes the brand a Doom that culminates in a wipe pulse." }],
 };

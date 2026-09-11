@@ -1,6 +1,7 @@
 # CLAUDE.md edits awaiting the owner's word
 
-Four drafts were named in `docs/handoff.md` §4 as written and unlanded. `CLAUDE.md` is the
+Four drafts were named in `docs/handoff.md` §4 as written and unlanded; a fifth (§5) was
+added afterwards from `fix/no-mapwipe`. `CLAUDE.md` is the
 owner's own document — no peer session lands an edit to it on another session's say-so, so
 none of these has been applied. This page exists so the owner can read one place and say
 yes or no once, instead of four separate round trips. Nothing here has been merged, edited
@@ -365,6 +366,70 @@ because that's the next number the page actually has right now (1 through 4 exis
 If a map-wipe entry lands separately and is meant to sit at 5, renumber rather than assume
 this one moves — I have no branch or diff for a map-wipe CLAUDE.md draft to check against,
 so I can't tell whether one exists elsewhere and should come first.
+## 6. THE MAP-WIPE RULE — a new passage, not a replacement
+
+**Branch:** `fix/no-mapwipe` (`a87bb42` + `2c9489f`), not merged to master. `npm test` green.
+
+**Current text:** none. This is an **addition**, to sit immediately after THE EXECUTE RULE
+in the "Classes: an interaction system, not a stat block" section — its sibling in both
+shape and reasoning.
+
+**Why it is proposed at all:** the owner reported the same mechanism twice, in two
+different classes ("no skill in the game should have the ability to wipe the entire map out
+— similar to archers ultimate we looked at, paladin has something similar on his aegis
+rush"). THE EXECUTE RULE is in `CLAUDE.md` because a rule at a single runtime site is
+invisible at the call sites it governs, and someone needs to be told it exists. This one has
+exactly that property: `to: "enemies"` looks unremarkable everywhere it is written, and
+nothing at those ~127 sites says the reach is decided elsewhere.
+
+**Proposed text:**
+
+> **THE MAP-WIPE RULE: `to: "enemies"` is bounded, and unbounded is something you say.**
+> `selectActorIds` bounded an enemy selection by the *ability's* `shape.radius` and, when the
+> ability authored no shape, fell through to **every hostile on the floor**. So unbounded was
+> what you got for not thinking about reach — the owner reported it twice, in two classes
+> (the Ranger's ultimate, then Paladin's Aegis Rush), and a skill written tomorrow would have
+> inherited it.
+>
+> The fix is the execute rule's shape and for the execute rule's reason: **the majority of
+> `to: "enemies"` sites in the repo are not on an ability's effect list at all** (63 there,
+> **64** more added by tree nodes, hybrids, archetypes, relics and named items), so a required
+> per-packet radius would be ~95 authored numbers on classes nobody reported *and* satisfiable
+> with `99999` — the original bug spelled explicitly. So the rule lives at the one site that
+> resolves the selection. `to: "enemies"` is now **always** bounded, by `enemyReach`, a ladder
+> of numbers the ability already supplies (`step.radius` → `shape.radius` → `shape.length` →
+> its own largest zone → `range` → `DEFAULT_ENEMY_REACH`). **There is no field to omit**, so a
+> new ability is bounded for free.
+>
+> A genuinely room-wide ability declares `to: "enemiesEverywhere"` — **two ultimates do**, and
+> `npm run mapwipe` pins that roster so a third is a design decision rather than a merge. Two
+> non-ultimates were nearly a third and a fourth on the strength of their own text saying "on
+> the field", and were bounded instead: **an ability's authored prose is not an exemption** —
+> it is the cheapest thing in the repo to change, and there it was describing the bug. See
+> `docs/map-wipe-rule.md`, which also records what a player will notice, the one invented
+> number (320, calibrated against the repo's own authored radii — above every non-ultimate
+> that declares one, below both ultimates that do, so omitting a shape can never buy more
+> reach than declaring one), and the routes that were checked and are *not* open
+> (`to: "allies"`, pierce, projectile count).
+>
+> Two dead fields turned up underneath it: **`threat.radius` was authored on three taunts and
+> read by nothing** (Fortress Call said "nearby enemies" and taunted the floor) — it is rung 1
+> of the ladder now; and **`projectile.onExpire` never reaches the host**, so three sites are
+> inert. The second is deliberately *not* fixed, because landing that seam before the bound
+> existed would have created three new map-wipes.
+
+**One thing the owner should know before approving.** An earlier version of this passage was
+committed to `CLAUDE.md` on the branch and has been reverted. It said *"four do"* and *"two of
+the four are not ultimates and are an open owner question"* — true when written, false about
+six hours later, because the question was decided and those two were bounded. It would have
+landed stale into the one file every session reads. That is the argument for this page
+working the way it does, made by the draft it is now carrying.
+
+**What is not in this passage, deliberately:** the two open tuning questions
+(`paladin.aegis_rush` sitting at its charge distance of 320 rather than a ~140 pulse; the
+Duelist's ripostes countering a circle rather than the attacker) are in
+`docs/map-wipe-rule.md` only. They are live balance questions, and `CLAUDE.md` should not
+carry a number that is expected to move.
 
 ---
 
@@ -377,6 +442,7 @@ so I can't tell whether one exists elsewhere and should come first.
 | 3 | Loot passage B ("round-robin") | Same as #2 | none | No — same caveat |
 | 4 | Campaign-check thinness paragraph | Reconstructed from `tools/campaignblock.ts`'s landed header | none (no CLAUDE.md diff ever committed) | No — already superseded operationally by the tool header |
 | 5 | Difficulty philosophy — the reachable band's ruling | Found in full, on the branch (§11) | `investigate/power-curve2` (never merged) | No — and gated on `docs/reachable-band-decision.md`'s own pending re-confirmation; don't apply either until that clears |
+| 6 | THE MAP-WIPE RULE (new passage, not a replacement) | Written on the branch; **reverted from `CLAUDE.md` and rewritten against the final state** | `fix/no-mapwipe` | No. Sibling to THE EXECUTE RULE; the code is green and independent of this text |
 
 **On drafts 2 and 3 specifically:** these were reported not-found in the first pass of this
 page, and the PM asked me to write them once it was confirmed nobody had. They are not
