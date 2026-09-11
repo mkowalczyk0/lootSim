@@ -670,6 +670,40 @@ section("7b. the level gate: a relic answers to the floor it fell on");
   const high = normalizeRelicLoadout(worn, MAX_REQ);
   check("...the same save at level for both keeps them, and reports nothing",
     high.worn[0] === worn[0] && high.worn[1] === worn[1] && high.unsocketed.length === 0, JSON.stringify(high));
+  // ...and the same thing end-to-end through a real save, because the town reads
+  // `GameState.relicsUnsocketed` and not `normalizeRelicLoadout`'s return value directly.
+  // The unit check above proves the function; this proves the wiring between it and the one
+  // surface a player ever sees, which is the half that would fail silently — a load that
+  // unsockets correctly and reports nothing looks identical to a load that changed nothing.
+  {
+    const owner = new GameState(11);
+    owner.chooseClass("stormcaller");
+    owner.player.level = MAX_REQ;
+    owner.player.refresh();
+    const deep = heavy.find((d) => d.tier === "relic")!;
+    owner.bankRelics([deep.id]);
+    owner.socketRelic(0, deep.id);
+    check("a character at level wears it and the save records that", owner.player.relics[0] === deep.id);
+
+    // The same save, read back by a character who has not earned it. A level is the only
+    // thing changed, so nothing else can explain the difference.
+    const raw = owner.toJSON() as { players: Record<string, Record<string, unknown>> };
+    raw.players.stormcaller!.level = relicRequiredLevel(deep) - 1;
+    const loaded = GameState.fromSaved(parseSaved(serializeSave(raw)));
+    check("...loaded one level short, it comes off",
+      loaded.players.stormcaller.relics[0] === null, JSON.stringify(loaded.players.stormcaller.relics));
+    check("...the account still owns it — a socket gate, not a drop gate", loaded.ownsRelic(deep.id));
+    check("...and the town has something to announce",
+      loaded.relicsUnsocketed.includes(deep.id), JSON.stringify(loaded.relicsUnsocketed));
+
+    // The control: the identical save at level says nothing. Without this, the check above
+    // would pass just as well against a build that announced on every load.
+    const atLevel = GameState.fromSaved(parseSaved(serializeSave(owner.toJSON())));
+    check("...while the same save at level keeps it and announces nothing",
+      atLevel.players.stormcaller.relics[0] === deep.id && atLevel.relicsUnsocketed.length === 0,
+      JSON.stringify(atLevel.relicsUnsocketed));
+  }
+
   // A cap violation is not a level removal. Two relic-tier ids at a level that clears both:
   // one comes out for the cap and must stay silent, or the town would tell a player to
   // level up for something levelling will never fix.
