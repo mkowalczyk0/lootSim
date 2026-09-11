@@ -992,19 +992,18 @@ for (const id of CLASS_IDS) {
   );
   check(`${cls.name}: the ultimate fires`, r.fired);
   check(`${cls.name}: the ultimate does something`, didSomething, `dealt ${Math.round(r.dealt)}`);
-  // PINNED VIOLATION, in `tools/legends.ts`'s idiom: one class is known to break this and
-  // is recorded here by name rather than left as a red the gate teaches people to expect.
+  // The pin is EMPTY, and that is the state to defend. The Engineer sat here as a known,
+  // unfixed self-refilling ultimate (docket §27) until §33 found the actual cause and
+  // closed it: not the missing `fromUltimate` stamp on constructs that the design record
+  // described, but the "Machine Shop" foundation node — a `grantEffect` on the `construct`
+  // tag adding +2 ultimate meter, fired by the ultimate's own cast because `abilities.ts`
+  // subscribes tag-gated grants to `ultimateUse` as well as `skillUse`. Exactly one grant
+  // of that shape exists in the roster.
   //
-  // The Engineer's ultimate summons constructs; a construct's damage packets carry no
-  // `fromUltimate` stamp, so THE ULTIMATE RULE's runtime guard does not reach them and the
-  // `construct` tag matches its own meter's gate. Diagnosis, the sweep of all 21 classes,
-  // and three fix options with no number attached: `docs/engineer-ultimate-loop.md`.
-  //
-  // Pinned, not forgiven. This is a real defect awaiting an owner decision, and the check
-  // below fails BOTH ways: a *second* class self-refilling goes red, and silently fixing
-  // the Engineer without removing it from the pin goes red too. Do not add a class here to
-  // make a red go away — that is the widening this whole re-baseline refused to do.
-  const ULTIMATE_RULE_PINNED = new Set<string>(["Engineer"]);
+  // The check still fails BOTH ways: a class that starts self-refilling goes red, and so
+  // does adding a name here to make a red go away. Do not widen it — that is the whole
+  // point of it being a pin.
+  const ULTIMATE_RULE_PINNED = new Set<string>();
   const pinned = ULTIMATE_RULE_PINNED.has(cls.name);
   const refilled = r.meterRightAfter >= 1;
   check(`${cls.name}: THE ULTIMATE RULE — its own output did not refill the meter`,

@@ -176,7 +176,15 @@ export function runBuildGrants(
       origin: { x: caster.x, y: caster.y },
       facing: facing(),
       input: castInput(),
-      source: { actorId: casterId, actorKind: "hero", abilityId: "build.grant", tags: [] },
+      // THE ULTIMATE RULE reaches the grant path (docket §33). A tag-gated grant is
+      // subscribed to `skillUse` *and* `ultimateUse` below, so an ultimate that happens to
+      // carry the gating tag fires the grant on its own cast. Stamping the source here is
+      // what lets `runEffect`'s `resource` step refuse to pay the ultimate meter for it —
+      // one site, rather than a flag every grant author has to remember.
+      source: {
+        actorId: casterId, actorKind: "hero", abilityId: "build.grant", tags: [],
+        ...(evt?.type === "ultimateUse" ? { fromUltimate: true } : {}),
+      },
     };
     for (const step of grant.effects) runEffect(host, ctx, step as EffectStep, rt);
   };
