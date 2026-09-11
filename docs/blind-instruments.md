@@ -58,6 +58,7 @@ proposal for the owner — are deliberately absent from this table.
 | 33 | *in flight* |  |
 | 34 | *in flight* |  |
 | 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
+| 36 | A silent narrowing, which converts authored content into evidence of its own absence | `GRANTABLE_ABILITY_IDS`' trailing `.filter`, handing every reader the survivors |
 
 The *in flight* rows are numbers already assigned to entries that exist on unmerged
 branches. They are left blank on purpose: naming a shape from a text this file does not yet
@@ -1694,6 +1695,86 @@ question into an answer, and the answer has no way to notice that the question c
 would have to happen for the copy to become wrong, and then ask whether anything at all would
 say so. If the honest answer is "nothing, it would just quietly do less" — that is this entry,
 and the fix is to make the copy impossible rather than to promise to refresh it.
+
+## A thirty-sixth instance: a silent narrowing, which makes the evidence agree with itself
+
+`GRANTABLE_ABILITY_IDS` in `src/progression/index.ts` is the pool an epic-or-better weapon,
+ring or necklace rolls its **granted skill** from — one of the few things in the game that
+legitimately crosses class lines. Twelve classes were named in it. It ended like this:
+
+```ts
+  "warden.vine_snare",
+].filter((id) => id in ABILITY_BY_ID);
+```
+
+Five of the twelve ids had been renamed out from under the list at some earlier point. The
+filter discarded them without a word, and the pool players actually rolled from was seven.
+Ranger, Shaman, Warlock, Berserker and Stormcaller abilities had stopped appearing on
+granted-skill gear entirely — five of twenty-one classes contributing nothing — and nothing in
+the repo was red.
+
+## Why this is not simply "a list went stale"
+
+The stale list is the defect. The entry is about how the defect **defended itself**.
+
+This work was assigned with a brief that said, in good faith: *all 7 currently resolve, so
+there is NO live defect; this is a latent shape, not a bug hunt.* That sentence is correct and
+it is blind, and the two facts are the same fact. **Anyone who reads
+`GRANTABLE_ABILITY_IDS` — a person, a probe, a future gate — is handed the output of the
+filter.** The survivors are all that exists by the time the name resolves. So every possible
+reading of the live value concludes that the entries in it resolve, which is true, complete,
+reproducible, and says nothing whatsoever about the question being asked.
+
+That is this file's founding rule wearing an unfamiliar coat: **the check's scope came from
+the thing under test.** Not a hardcoded seed list, not a fixture, not a threshold — a
+`.filter` in the value's own definition, quietly making the population match the assertion.
+
+And the population was *knowable*. The declaration sits five lines above the filter; the count
+going in is twelve and the count coming out is seven. **No line anywhere compared the two.**
+The defect was one subtraction away from visible for its entire life, which is the part worth
+sitting with — it was not hidden behind a simulation or a statistical margin. It was hidden
+behind nobody having a reason to look, and that reason was removed by the filter.
+
+## Why nothing downstream noticed
+
+A curated list has no length anyone remembers. Nothing in the game says "granted skills should
+draw from twelve classes" — the only statement of intent is the prose comment above the list
+("one flashy, self-contained ability per class"), and prose is not an instrument. A player
+finding a granted skill got a real, working ability every time; the five that never appeared
+left no gap to notice, because an absence in a random pool looks exactly like luck.
+
+This is the failure mode of every defensive filter over authored content. It cannot distinguish
+*retired on purpose* from *misspelled* from *renamed and nobody followed*, and it resolves all
+three identically: delete the content, continue, say nothing. It reads as a safety net and it
+is the thing that hides the fall.
+
+**The rule.** A filter that can only ever discard authored input is not a guard, it is a
+silencer — and if the filtered value is what everyone reads, it also destroys the evidence that
+anything was discarded. Where you must filter, count both sides and say so out loud. Better,
+make the discard impossible: the list is now `readonly AbilityId[]` against a union derived from
+the 210 authored abilities, so a renamed ability is a TS2322 on the line that names it, and the
+filter is gone with a comment saying it must not return.
+
+## The falsification, which is the half this project skips
+
+Getting to a real compile error took three attempts, and **the first two compiled**:
+
+1. `function abilityTable<const T extends readonly Ability[]>(list: T): T` — a `const` type
+   parameter preserves literals for values written inline. These abilities are already-annotated
+   consts, so it preserved nothing.
+2. `} satisfies Ability;` without `as const` — `satisfies` supplies the contextual type during
+   inference, so `id: "ranger.splitshot"` widens against the interface's `id: string` exactly as
+   the annotation it replaced did.
+
+Both produced a green `tsc` and a plausible-looking derived type. Both were caught by the same
+one-line move: assign `"definitely.not.real"` to the derived type and **demand a red**. Only the
+third attempt (`} as const satisfies Ability;`) gave one, naming the full union — and then gave
+the same error for all five real stale ids.
+
+Neither blind attempt would have been caught by reading it, by review, or by the gate. A type
+that has silently widened to `string` looks identical at every call site to one that has not.
+**A derived type is an instrument, and an instrument you have never watched go red is one you
+have not tested** — which is precisely the line this file proposes for `CLAUDE.md` below.
 
 ## Proposed for the owner, not adopted here
 

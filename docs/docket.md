@@ -1533,19 +1533,67 @@ category being real. See `docs/blind-instruments.md`.
 
 ---
 
-## New from the owner, 2026-09-10 night — ASSIGNED, ALL IN FLIGHT
+## New from the owner, 2026-09-10 night — RECONCILED 2026-09-11; four landed, one open, one superseded
 
 Added verbatim by the incoming PM so they survive a session ending, per this file's own
-purpose statement at the top. **No outcomes recorded below — nothing has landed yet.**
+purpose statement at the top.
 
-## 29. Paladin needs a cooldown on his ultimate
+**The header above used to read "ASSIGNED, ALL IN FLIGHT", followed by "No outcomes recorded
+below — nothing has landed yet". That was true when it was written on the night of
+2026-09-10 and had been false for most of a day by the time anyone reread it.** It is the
+same failure this file's own preamble describes at §6: a status word that nothing
+reconciles, sitting above entries whose every *citation* was correct. Four of these seven
+items were on `master` while the heading said none of them were.
+
+Reconciled 2026-09-11 by the method the preamble prescribes, and the two sweeps were kept
+separate on purpose:
+
+1. **Citations** — `git merge-base --is-ancestor <branch> master` for every branch named,
+   and for every merge commit quoted below.
+2. **Claims** — where the status is a *word* rather than something git can check, the
+   same-topic design record in `docs/` was opened and *its* status line read; where neither
+   a branch nor a record existed, the code was read and that is said explicitly.
+
+The second sweep is the one that mattered. §29 names no branch at all, and git has nothing
+to say about it — its record turns out to have **overturned the diagnosis in the entry
+below**, which no amount of hash-checking would have surfaced.
+
+## 29. Paladin needs a cooldown on his ultimate — STILL OPEN, and the lead below was disproved
 
 > "Paladin needs a cooldown on his ultimate."
 
 **Held by session 26. In flight.**
 
 **Lead handed over by the PM (`lootsim-9f`), reported not verified — 26 may yet find this
-wrong.** If true, this is a third instance of a known exploit family, not a fresh bug:
+wrong.**
+
+> **STATUS 2026-09-11: STILL OPEN — measured, and the diagnosis below was disproved.**
+> **Design record: `docs/ultimate-uptime.md`** (landed on `master`, merge `3f3ce23`). No
+> branch was ever named for this item, so there is nothing for `--is-ancestor` to check;
+> this status comes from that record and from the code.
+>
+> **The lead in this entry is wrong, and the record says so in its own words.** *"The
+> proposed `under_oath` loop does not exist"* — `dungeon.ts` computes `prevented` **before**
+> the death-guard clamp, and the clamp only reduces `dealt`, so damage the guard absorbs is
+> never counted as prevented. The ultimate is not in the feedback loop. The entry below is
+> left standing rather than rewritten because the handover was explicitly flagged
+> unverified, and a lead that was checked and found wrong is worth more on the page than a
+> lead quietly deleted.
+>
+> **What was measured instead**: Paladin fires **0.75 ultimates/min, rank 16 of 21**, 0.30×
+> the roster median — bottom third for frequency. The complaint is not about frequency. It
+> is that `under_oath` covers **12% of floor time**, and that share *rises* the harder you
+> are hit, because the meter is fed by `damagePrevented` per `maxHealthFraction`.
+>
+> **Nothing is implemented.** `paladin.last_light` is still `cooldown: 0` — read on
+> `master` today — and so are all 21 ultimates in the game, which is why the record argues a
+> Paladin-only cooldown would be a roster inconsistency rather than a fix. The record's
+> recommendation is `STATUS_UNDER_OATH.baseDuration` (6s) as the one lever that moves the
+> reported thing and nothing else. **This needs an owner call before anyone builds it.**
+>
+> Two live cross-references, both raised by the record and neither closed: it names the
+> **Lancer** as the roster's actual outlier and the thing worth the owner's attention first,
+> and §27 (the Engineer) is still awaiting its own owner call. If true, this is a third instance of a known exploit family, not a fresh bug:
 
 - Conviction generates from `{ on: "damagePrevented", amount: 50, perUnit:
   "maxHealthFraction" }`, and Last Light's `under_oath` is a damage-prevention state — so
@@ -1570,29 +1618,73 @@ guard passing a shape it was never built to see is that book's exact pattern —
 belongs to whoever confirms the diagnosis, not to whoever relayed it. Placeholder only
 until 26 verifies.
 
-## 30. No skill should be able to wipe the entire map — sweep every skill
+## 30. No skill should be able to wipe the entire map — sweep every skill — LANDED
 
 > "No skill should be able to wipe the entire map."
 
 Framed as a sweep across the class roster, not a single-ability fix — find every skill
 capable of clearing a full floor's spawn and bring it in line.
 
-**Held by session 26. In flight.**
+*Was: held by session 26, in flight as of 2026-09-10 night.*
 
-## 31. Artifact/relic drop rates are way too high in raids
+> **STATUS 2026-09-11: LANDED.** `fix/no-mapwipe`, merged to `master` as **`f123bf8`**
+> (verified an ancestor of `master`). **Design record: `docs/map-wipe-rule.md`.**
+>
+> Answered as the owner framed it — a sweep, not an ability fix. The record's diagnosis is
+> that the defect was never in any one skill but in *what an ability got for saying nothing*:
+> one line in `selectActorIds` (`src/combat/runtime.ts`) gave an unbounded reach by omission.
+> It is now a thing you have to say. `npm run mapwipe` is in the `npm test` chain, so the
+> rule is held by a gate rather than by this entry.
+
+## 31. Artifact/relic drop rates are way too high in raids — LANDED
 
 > "Artifact/relic drop rates are way too high in raids."
 
-**Held by session d8. In flight.**
+*Was: held by session d8, in flight as of 2026-09-10 night.*
 
-## 32. Artifacts/relics should be unique to each class
+> **STATUS 2026-09-11: LANDED.** `fix/relic-economy`, merged to `master` as **`8b9a56c`**
+> (verified an ancestor of `master`). **Design record: `docs/relic-economy.md`.**
+>
+> No number in `RELIC_ODDS` was wrong — the *composition* was, and nobody authored it. A raid
+> clear paid its artifact at **32.8%** at tier 1 against a constant that read `0.18`, because
+> a raid floor pays twice and the table was rolled on both halves. The fix makes the constant
+> mean what its own comment says.
+>
+> **One finding from that record is deliberately NOT fixed and is not tracked by any docket
+> item**: the Abyssal Rift pays a relic-tier item on **92.1%** of tier-1 clears and **99.2%**
+> of tier-8 clears — far past what the raids were doing. The owner has not complained about
+> it and it is live content people are playing. Recorded here so it is not mistaken for
+> something this item closed.
+
+## 32. Artifacts/relics should be unique to each class — SUPERSEDED, a level gate shipped instead
 
 > "Artifacts/relics should be unique to each class."
 
-**Held by session d8. Design memo first, per the PM's instruction — no implementation
-before the memo. In flight.**
+*Was: held by session d8, in flight as of 2026-09-10 night. Design memo first, per the PM's
+instruction — no implementation before the memo. The memo is what changed the premise.*
 
-## 33. The multiplayer bug list
+> **STATUS 2026-09-11: SUPERSEDED — the owner changed the premise, and what shipped is not
+> what this entry asks for.** Shipped as `feat/relic-level-gate`, merged to `master` as
+> **`f69b39f`** (verified an ancestor of `master`). **Design records:
+> `docs/relics-per-class.md` §A for the decision, `docs/relics.md` for what the gate does.**
+>
+> The memo was written first as instructed, and it changed the question. The owner clarified:
+> *"My intention with the perclass thing is that if they are shared, you get too much of an
+> advantage when you create a new class. That's really the only issue with them."* That is a
+> **power-inheritance problem, not an identity problem**, and the memo's decisive finding is
+> that per-class relics *would not have fixed it*.
+>
+> So **relics are still account-wide and were deliberately not made unique per class.** What
+> shipped is a level gate derived from the drop source, in its strict form: all three slots,
+> both tiers, no carve-outs. The owner was offered a softer variant letting an alt wear
+> low-tier artifacts immediately and declined it.
+>
+> `docs/relics-per-class.md` §§1–6 are a costed proposal against the *old* premise and its
+> own header says so; don't read them as live design. Two stale sentences in it are flagged
+> in place, and the `CLAUDE.md` correction they imply is queued as §7 of
+> `docs/claude-md-pending.md`.
+
+## 33. The multiplayer bug list — HELD BY ANOTHER SESSION, status not written here
 
 Five reports bundled as one item, plus a standing question:
 
@@ -1606,21 +1698,46 @@ Plus: **"look into a different way to do multiplayer, maybe the cloudflare gate.
 
 **Held by session 56. In flight.**
 
-## 34. Named items and relics out of Records into their own stash-like WASD-navigable screen
+> **STATUS 2026-09-11: NOT RECONCILED HERE — being triaged by another session, and its
+> status is theirs to write.** Deliberately left alone by the 2026-09-11 sweep so two
+> sessions don't write contradicting status words onto one item.
+>
+> What the sweep can say without taking a position, because it is a citation rather than a
+> claim: `fix/coop-bugs` is an ancestor of `master` (first merged at `09b11c0`, into
+> `integration/batch-three`), and a separate branch **`fix/coop-bug-list` is NOT merged**,
+> tip `9a991a6`, whose commit subject reads *"§33's five reports were already fixed — the
+> status word outlived the work"*. That is an unlanded assertion by the session holding the
+> item, not a verdict from this sweep. The standing question about a different multiplayer
+> transport (`docs/coop-transport-options.md`) is separate again and nothing above speaks to
+> it.
+
+## 34. Named items and relics out of Records into their own stash-like WASD-navigable screen — LANDED
 
 > Move named items and relics out of the Records tab into their own stash-like,
 > WASD-navigable screen.
 
-**Held by session 97, building a new Collection tab in `src/ui/town.ts`. In flight.**
+*Was: held by session 97, building a new Collection tab in `src/ui/town.ts`, in flight as of
+2026-09-10 night.*
 
-## 35. Leaderboards UI cleanup
+> **STATUS 2026-09-11: LANDED.** `feat/collection-screen`, merged to `master` as
+> **`b5f5ff6`** (verified an ancestor of `master`); branch tip `66856f8`. Named items and
+> relics have their own screen, out of the Records tab, as asked. No separate design record
+> in `docs/` — this status is from the branch and the merge, which is all the item needs.
+
+## 35. Leaderboards UI cleanup — LANDED
 
 > "Leaderboards are fine, though the UI could use a clean up."
 
 Function is right; scope is presentation only — `src/net/recordsClient.ts` and
 `src/net/records.ts` should not need to change. `renderLeaderboards` in `src/ui/town.ts`.
 
-**Held by this session, on branch `ui/leaderboards-cleanup`. In flight.**
+*Was: held by the PM session of 2026-09-10 night, on branch `ui/leaderboards-cleanup`.*
+
+> **STATUS 2026-09-11: LANDED.** `ui/leaderboards-cleanup`, merged to `master` as
+> **`fb51a2e`** (verified an ancestor of `master`); branch tip `e7e30d7`. Presentation only,
+> as scoped — the merge subject records the substantive fix as *"the board stopped showing
+> the previous board's numbers"*. `docs/leaderboards.md` is the feature's record (docket §4)
+> and covers the original build rather than this cleanup.
 
 ## New from the owner, 2026-09-11 — the summons pass
 
