@@ -240,3 +240,45 @@ move speed, dash charges, pickup radius, coin and gem find.
 
 **Deferred, not refused:** crit chance/damage and elemental damage percentages, which belong
 alongside `summonDamage` where there is a live read to attach them to.
+
+
+---
+
+# Two traps for whoever works on summons next
+
+## `geared()` cannot see `of the Throng`, so it cannot measure a summoner build
+
+**0 of 120 geared necromancers rolled `maxSummons > 0`** — levels 16/30/45/60, thirty seeds
+each. Not a bug: `of the Throng` is `minTier: 4` (epic) and `tools/bot.ts`'s `geared()`
+opens **Advanced** chests, which rarely reach epic. Real players open better chests than the
+harness does.
+
+The trap is that **sampled gearing under-represents the epic gate**, so any future
+measurement of a summoner build — "is `summonDamage` worth a slot?", "does `maxSummons`
+change how the class plays?" — will silently measure characters wearing none of it and
+report that the mods do nothing. That reads exactly like a balance finding and is an
+instrument artefact.
+
+**Set the mods deliberately** (`st.player.mods.maxSummons = n`) as `npm run summonscale`'s
+pass 4 does, or roll Legendary chests, rather than trusting `geared()` to produce a
+representative summoner. The same caution applies to every `minTier: 4+` affix, which is
+most of the build-defining ones.
+
+## "What else reads this?" is a question no gate asks
+
+Making `MINION_CAP_PER_OWNER` modifiable turned a true assertion in `tools/smoke.ts` into a
+conditionally-true one: it compared the summon count against the bare constant, which after
+§37 only holds for a character carrying no `of the Throng`. **The full gate passes on it**,
+because nothing in the harness rolls that suffix — and it would have kept passing until a
+gearing change made it fail, in a file where nobody would connect a summon-count failure to
+an affix roll.
+
+Nothing about a green chain surfaces that. The question that did was asking, after making a
+constant modifiable, **who else reads the constant**. `grep -rn MINION_CAP_PER_OWNER src/
+tools/` took seconds and found it.
+
+Stated generally, because this was the third finding of the day from the same question and
+none of the three came from a gate: **when you make a fixed thing variable, every existing
+reader of it is now asserting something narrower than it used to.** Some of those readers
+are checks, and a check that passes for a reason nobody recorded is indistinguishable from a
+check that passes because the code is right.
