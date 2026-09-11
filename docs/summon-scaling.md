@@ -153,7 +153,50 @@ Deletion does become attrition: hits-to-kill goes 1 → 4 at depth 10, which is 
 working exactly. At depth 22 it reads 7 because mitigation keeps most hits *below* the cap
 — the cap is a ceiling, not a floor, and that is the intended division of labour.
 
-## THE OPEN QUESTION — 4% at depth 22 may be too survivable
+## RESOLVED: 4% is expiry, not immortality
+
+**The owed check is built, green, and in the gate** (`npm run summonscale`). The cap stands;
+`MINION_MAX_HIT_FRACTION = 0.25` is not up for revisiting.
+
+Two passes, because the first proves the design and only the second proves the code.
+
+**Arithmetic**, against a reference the cap cannot move: five boss abilities leave burning
+ground and the shortest linger authored anywhere is **2.5s** (`beam`). The cap's bound is
+4 hits x `GROUND_TICK` 0.5s = **2s worst case**, which fits inside even the shortest — and
+at 17% of a lifespan the cap is what bounds it, rather than the lifespan quietly doing the
+work. That last assertion exists so the check says something if someone lowers the fraction
+until the arithmetic stops governing.
+
+**Observed**, on real boss floors, against `despawnMinion`'s own `dead` flag: **3 of 3
+staged summons killed, 0 expired**, and each took **exactly 5 zone ticks** — against **1
+tick with the cap disabled**, on every seed. That comparison-with-a-control is the finding:
+the cap turns one-shot deletion into five ticks of attrition and does not make a summon
+unkillable.
+
+### The wrong version of this check, kept because it looked exactly like the bug
+
+The second draft asserted **wall-clock under half a lifespan and failed at 11.0 seconds.**
+A summon standing in a raid boss's fire for eleven seconds is precisely what
+tanking-with-skeletons would look like, and it was tempting to read it as the cap being too
+generous and reach for 0.34.
+
+It was not. Attributing it cap-off versus cap-on gives **1 tick versus exactly 5 ticks on
+every seed**, while the wall-clock ranges **3.6-11.0s** — and the variance is entirely
+**when the boss re-cast**. The zone expires, the summon stands in nothing, the boss casts
+again. The draft was measuring the encounter's cooldown and calling it the summon's
+durability: a correct instrument answering a question nobody asked.
+
+**The assertion is on tick count now**, which is what the cap actually governs and is
+independent of the gaps. Anyone who re-derives the 11-second number should stop here rather
+than at the fraction — the number is real, it is just not about summons.
+
+An earlier draft failed a different way and is worth the same sentence: it reported **zero
+stagings**, because a boss floor does not reliably leave the bot holding a live summon at
+the moment a zone appears. It **failed rather than passing on an empty observation**, which
+is the only reason the third draft is believable. The staging now summons on demand through
+the dungeon's own `summonFor`.
+
+## SUPERSEDED — the open question as it stood before the check was built
 
 The PM's third condition was: *the cap must not become immortality at the bottom end.*
 **That check has not been run, and the depth-22 row is the reason to take it seriously.** A
