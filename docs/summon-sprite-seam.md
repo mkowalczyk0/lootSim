@@ -121,6 +121,31 @@ path's own rule is that an unrecognised unit draws the triangle rather than brea
 resolves to a sentinel string that is never a real unit id, which `chooseMinionArt` falls
 through to the triangle rung for exactly like any other unauthored unit.
 
+## `npm run summonart`'s place in the test chain: free
+
+No real ordering constraint — safe to union anywhere in the chain. Specifically:
+
+- **Doesn't need the bundle.** Like every `run-tool.mjs` script, it bundles its own entry
+  fresh with esbuild into a private `mkdtemp` directory each invocation (see
+  `tools/run-tool.mjs`'s own header on why — concurrent runs must never share an
+  `outfile`). It never reads `dist/`.
+- **Imports from `src/` directly** — `data/summons` (`SUMMON_UNITS`, `summonUnitSources`),
+  `render/minionart` (`PLAYER_COPY_UNITS`), `render/atlas/manifest`
+  (`SUMMON_UNIT_ART`) — but all three are plain data/pure-function modules with no DOM.
+  `manifest.ts` says so explicitly in its own header: the PNG-decoding half that needs a
+  `document` lives in `render/atlas/index.ts`, which this tool never touches.
+- **Needs no earlier step to have run.** It doesn't read any file another gate step writes,
+  doesn't touch `node_modules/.cache` (nothing does anymore, per the same header), and its
+  own inputs are just the source tree already on disk.
+- The only real precondition is `npm install` having put esbuild in `node_modules/.bin` —
+  the same baseline every other `run-tool.mjs` step in the chain already assumes, not a
+  distinguishing constraint.
+
+Same shape as d8's `summonUnitSources` example: reads only source, needs no prior build. It
+currently sits right before `smoke` in this branch's own `test` line, which is placement of
+convenience (grouped with the other art-ladder checks), not a requirement — it would pass
+unioned in at any position.
+
 ## What worldScale/feet do and don't touch
 
 `ATLAS[id].worldScale`/`.feet` (rung 2) and `heroSprite()`'s own `scale`/`feet` (rung 1)
