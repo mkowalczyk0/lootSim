@@ -92,7 +92,8 @@ const UNIVERSAL_ACCENT = "#7dd3fc";
 import { cleanPlayerName } from "../data/settings";
 import type { Party } from "../net/party";
 import { MAX_PARTY, ROOM_CODE_LENGTH, isRoomCode, normalizeRoomCode } from "../net/protocol";
-import { itemMods, itemScore, requiredLevel, statLine, type Item } from "../game/item";
+import { forgeNamedItem, itemMods, itemScore, requiredLevel, statLine, type Item } from "../game/item";
+import { Rng } from "../core/rng";
 import {
   POTION_CAP, POTION_PRICE, sellPrice, type CapsulePull, type GameState,
 } from "../game/state";
@@ -122,7 +123,7 @@ const AUGMENT_CATEGORY = CHEST_CATEGORIES.length;
 
 const CYCLE_TABS = [
   "Chests", "Shop", "Stash", "Hero", "Skills", "Tree", "Universal", "Path", "Style", "Capsules", "Codex",
-  "Records", "Leaderboards", "Settings",
+  "Collection", "Records", "Leaderboards", "Settings",
 ] as const;
 const STATION_TABS = [
   "Dive", "Tower", "Rifts", "StarMap", "Raid", "Craft", "Altar", "Party", "Vigil",
@@ -178,6 +179,11 @@ type StyleRow =
   | { readonly kind: "hairStyle" }
   | { readonly kind: "hair" | "skin" | "eyes" | "dye" }
   | { readonly kind: "slot"; readonly slot: CosmeticSlot };
+
+/** One card of the Collection grid — a named item or a relic/artifact, own or not. */
+type CollectionEntry =
+  | { readonly kind: "named"; readonly def: NamedItemDef }
+  | { readonly kind: "relic" | "artifact"; readonly def: RelicDef };
 
 const STYLE_ROWS: readonly StyleRow[] = [
   { kind: "hairStyle" },
@@ -282,6 +288,7 @@ function tabHelp(
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
     case "Codex": return `${sel} browse the class roster · ${adj} switch view — the full 21-class design; play one from the Path tab`;
+    case "Collection": return `${sel} / ${adj} move · pure browsing, nothing to spend or equip here`;
     case "Records": return "Nothing to do here — just numbers.";
     case "Leaderboards": return `${adj} switch board · ${semi} switch class filter · self-reported, no anti-cheat`;
     case "Settings": return `${sel} select · ${e} toggle/rebind · ${q} resets a key/backs out · reset progress asks twice`;
@@ -911,19 +918,21 @@ export class TownUI {
 
     const count = this.rowCount();
 
-    // Stash, Shop, Skills, the Hero doll and Reforge (Craft's other screen) are real 2-D
-    // grids: W/A/S/D walk them in both axes and A/D are spent on nothing but movement.
-    // Every other tab — including Hero while a relic picker is open, which is a flat
-    // list over the whole collection, the same shape `trophyPicking` already uses —
+    // Stash, Shop, Skills, Collection, the Hero doll and Reforge (Craft's other screen)
+    // are real 2-D grids: W/A/S/D walk them in both axes and A/D are spent on nothing but
+    // movement. Every other tab — including Hero while a relic picker is open, which is a
+    // flat list over the whole collection, the same shape `trophyPicking` already uses —
     // keeps the flat-list model: up/down walk the cursor, left/right adjust whatever
     // that tab adjusts.
     const reforgeGrid = this.tab === "Craft" && this.forgeMode === "reforge";
     const heroDoll = this.tab === "Hero" && this.relicPicking === null;
-    if (this.tab === "Stash" || this.tab === "Shop" || this.tab === "Skills" || heroDoll || reforgeGrid) {
+    if (this.tab === "Stash" || this.tab === "Shop" || this.tab === "Skills"
+      || this.tab === "Collection" || heroDoll || reforgeGrid) {
       const walk = (dx: number, dy: number) => {
         const moved = this.tab === "Stash" ? this.navStash(dx, dy)
           : this.tab === "Shop" ? this.navShop(dx, dy)
           : this.tab === "Skills" ? this.navSkills(dx, dy)
+          : this.tab === "Collection" ? this.navCollection(dx, dy)
           : reforgeGrid ? this.navReforge(dx, dy)
           : this.navHero(dx, dy);
         if (moved) { this.resetArmed = false; this.disarm(); dirty = true; }
@@ -1045,6 +1054,7 @@ export class TownUI {
       case "Style": return STYLE_ROWS.length;
       case "Capsules": return CAPSULE_TIERS.length;
       case "Codex": return ALL_CLASSES.length;
+      case "Collection": return this.collectionEntries().length;
       case "Records": return 0;
       case "Leaderboards": return 0;
       case "Settings": return this.logoutIndex + 1;
@@ -1220,6 +1230,25 @@ export class TownUI {
     let next = this.cursor;
     if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
     else if (dy < 0) next = this.cursor < cols ? -1 : this.cursor - cols;
+    else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
+    if (next === this.cursor) return false;
+    this.cursor = next;
+    return true;
+  }
+
+  /**
+   * 2-D movement across the Collection grid — no bar above it to walk onto (there's
+   * nothing to filter), so this is the plain form `navReforge`'s card half uses rather
+   * than `navStash`'s `cursor < 0` shape: up/down simply refuse to move off the first
+   * or last row instead of leaving the grid.
+   */
+  private navCollection(dx: number, dy: number): boolean {
+    const n = this.collectionEntries().length;
+    if (n === 0) return false;
+    const cols = this.stashColumns();
+    let next = this.cursor;
+    if (dx !== 0) next = clamp(this.cursor + dx, 0, n - 1);
+    else if (dy < 0 && this.cursor >= cols) next = this.cursor - cols;
     else if (dy > 0) next = Math.min(n - 1, this.cursor + cols);
     if (next === this.cursor) return false;
     this.cursor = next;
@@ -1960,6 +1989,7 @@ export class TownUI {
         }
         break;
       }
+      case "Collection":
       case "Records":
         break;
       case "Settings": {
@@ -2408,6 +2438,7 @@ export class TownUI {
       case "Style": return this.renderStyle();
       case "Capsules": return this.renderCapsules();
       case "Codex": return this.renderCodex();
+      case "Collection": return this.renderCollection();
       case "Records": return this.renderRecords();
       case "Leaderboards": return this.renderLeaderboards();
       case "Settings": return this.renderSettings();
@@ -4418,6 +4449,116 @@ export class TownUI {
       </aside>`;
   }
 
+  /**
+   * The Collection screen (docket): named items and relics/artifacts, pulled out of the
+   * right-hand rail of Records into their own grid, styled and navigated like the Stash —
+   * the owner's own words were "displayed and behaving like the stash tab". Every
+   * definition appears whether or not it's been found yet (`namedSourceLines` /
+   * `relicSourceLines` exist specifically to answer "I want X, and this is where I get
+   * it" — that must survive the move), which is why this reads `NAMED_ITEMS`/
+   * `relicsOfTier` directly rather than the account's own found-lists.
+   */
+  private collectionEntries(): CollectionEntry[] {
+    return [
+      ...NAMED_ITEMS.map((def): CollectionEntry => ({ kind: "named", def })),
+      ...relicsOfTier("relic").map((def): CollectionEntry => ({ kind: "relic", def })),
+      ...relicsOfTier("artifact").map((def): CollectionEntry => ({ kind: "artifact", def })),
+    ];
+  }
+
+  /**
+   * A named item has no `Item` sitting around until one actually drops, but the card
+   * needs one to draw — `forgeNamedItem` is the sanctioned way to turn a definition into
+   * a real `Item` (UAT §28), so the icon goes through `itemSprite` exactly like a stash
+   * card's does rather than a second art path. The ilvl and seed are fixed and never
+   * shown: nothing here reads the forged item's rolled stats, only its `type`/`rarity`/
+   * `named` for `chooseItemArt`.
+   */
+  private collectionArt(def: NamedItemDef): Item {
+    return forgeNamedItem(def, 1, new Rng(1));
+  }
+
+  private renderCollection(): string {
+    const st = this.state.stats;
+    const entries = this.collectionEntries();
+    const namedFound = NAMED_ITEMS.filter((d) => (st.namedFound[d.id] ?? 0) > 0).length;
+    const relics = relicsOfTier("relic");
+    const artifacts = relicsOfTier("artifact");
+    const relicFound = relics.filter((d) => this.state.ownsRelic(d.id)).length;
+    const artifactFound = artifacts.filter((d) => this.state.ownsRelic(d.id)).length;
+
+    const cards = entries.map((entry, i) => {
+      const on = i === this.cursor;
+      if (entry.kind === "named") {
+        const def = entry.def;
+        const n = st.namedFound[def.id] ?? 0;
+        const color = n > 0 ? RARITY_COLORS[def.rarity] : "#5a6270";
+        const art = this.collectionArt(def);
+        const icon = pixelImageTag(itemArt(art), 64, 64, itemArtKey("collection", art));
+        return `
+          <div class="item-card ${on ? "on" : ""}" data-index="${i}" style="--r:${color}"
+               title="${escapeHtml(`${def.name} — ${rarityLabel(def.rarity)} ${def.type}`)}">
+            <div class="ic-art">${icon}</div>
+            <span class="ic-name" style="color:${color}">${escapeHtml(def.name)}</span>
+            <span class="ic-slot">${n > 0 ? `found ×${n}` : "not yet"}</span>
+          </div>`;
+      }
+      const def = entry.def;
+      const info = RELIC_TIER_INFO[def.tier];
+      const owned = this.state.ownsRelic(def.id);
+      const n = st.relicsFound[def.id] ?? 0;
+      const color = owned ? info.color : "#5a6270";
+      const icon = pixelImageTag(relicArt(def), 64, 64, relicArtKey(def));
+      return `
+        <div class="item-card ${on ? "on" : ""}" data-index="${i}" style="--r:${color}"
+             title="${escapeHtml(`${def.name} — ${info.label}`)}">
+          <div class="ic-art">${icon}</div>
+          <span class="ic-name" style="color:${color}">${escapeHtml(def.name)}</span>
+          <span class="ic-slot">${owned ? (n > 1 ? `found ×${n}` : "found") : "not yet"}</span>
+        </div>`;
+    }).join("");
+
+    const sel = entries[this.cursor];
+    return `<div class="stash-grid">${cards}</div>
+      <aside class="side">
+        <h3>Collection</h3>
+        <p class="muted">Named ${namedFound} / ${NAMED_ITEMS.length}
+          · Relics ${relicFound} / ${relics.length} · Artifacts ${artifactFound} / ${artifacts.length}</p>
+        ${sel
+          ? this.renderCollectionDetail(sel)
+          : `<p class="muted">Pick a card to read what it does and where it comes from.</p>`}
+      </aside>`;
+  }
+
+  /** One card's detail: named items get their own lore block (there's no `Item` to hand
+   *  `renderRelicLore`-style code), a relic or artifact reuses it outright — one owned
+   *  form of this exact panel, not a second copy. */
+  private renderCollectionDetail(entry: CollectionEntry): string {
+    if (entry.kind !== "named") return this.renderRelicLore(entry.def);
+    const def = entry.def;
+    const n = this.state.stats.namedFound[def.id] ?? 0;
+    const art = this.collectionArt(def);
+    const dctx: DescribeCtx = {
+      abilityName: (id) => ALL_CLASSES.flatMap((c) => c.abilities).find((a) => a.id === id)?.name,
+    };
+    const lines = describeEffects((def.effects ?? []) as readonly NodeEffect[], dctx)
+      .map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+    const sources = namedSourceLines(def).map((l) => `<li class="muted">${escapeHtml(l)}</li>`).join("");
+    return `
+      <div class="cmp-hero" style="--r:${RARITY_COLORS[def.rarity]}">
+        <div class="cmp-art">${pixelImageTag(itemArt(art), 96, 96, itemArtKey("collection", art))}</div>
+        <div>
+          <h3 style="color:${RARITY_COLORS[def.rarity]};margin:0">${escapeHtml(def.name)}</h3>
+          <p class="muted" style="margin:2px 0 0">${escapeHtml(rarityLabel(def.rarity))} ${escapeHtml(def.type)}
+            ${n > 0 ? `· found ×${n}` : ""}</p>
+        </div>
+      </div>
+      <p class="muted" style="font-style:italic;margin:4px 0">${escapeHtml(def.flavor)}</p>
+      <p style="margin:0 0 4px">${escapeHtml(def.description)}</p>
+      ${lines ? `<ul class="pulls">${lines}</ul>` : ""}
+      <ul class="pulls">${sources}</ul>`;
+  }
+
   private renderStash(): string {
     const items = this.filteredStash();
     // A sticky bar of rarity pills across the top of the grid. `cursor < 0` = it has
@@ -5656,23 +5797,6 @@ export class TownUI {
     const rifts = RIFT_MODES.map(
       (m) => `<tr><td style="color:${MODES[m].color}">${MODES[m].name}</td>
         <td>${formatNumber(st.riftsCleared[m] ?? 0)} cleared · tier ${this.state.riftTiers[m]}</td></tr>`).join("");
-    // Every named item and where it comes from — the seed of the UAT §20 drop preview:
-    // "I want X, and this is where I get it", whether or not you've seen X yet.
-    const named = NAMED_ITEMS.map((def) => {
-      const n = st.namedFound[def.id] ?? 0;
-      return `<li><b style="color:${RARITY_COLORS[def.rarity]}">${escapeHtml(def.name)}</b>
-        <span class="muted">${n > 0 ? `found ×${n}` : "not yet"}</span>
-        <em>${escapeHtml(namedSourceLines(def).join(" · "))}</em></li>`;
-    }).join("");
-    // UAT §19 rule 4: every relic and artifact, owned or not, with where it drops — the
-    // other half of the §20 seed. Owned ones read in their tier colour, the rest in grey.
-    const relicRows = (tier: RelicDef["tier"]): string => relicsOfTier(tier).map((def) => {
-      const owned = this.state.ownsRelic(def.id);
-      const n = st.relicsFound[def.id] ?? 0;
-      return `<li><b style="color:${owned ? RELIC_TIER_INFO[def.tier].color : "#5a6270"}">${escapeHtml(def.name)}</b>
-        <span class="muted">${owned ? (n > 1 ? `found ×${n}` : "found") : "not yet"}</span>
-        <em>${escapeHtml(relicSourceLines(def).join(" · "))}</em></li>`;
-    }).join("");
     // UAT §13: which Legends are Complete. Only the finished ones are listed — a wall of
     // twenty-one "not yet" rows would say less than the count already does.
     const complete = CLASS_IDS.filter((id) => this.state.players[id].legendComplete);
@@ -5704,12 +5828,6 @@ export class TownUI {
       <aside class="side">
         <h3>Rifts</h3>
         <table class="cmp">${rifts}</table>
-        <h3>Named items <span class="muted">${Object.keys(st.namedFound).filter((id) => id in NAMED_BY_ID).length} / ${NAMED_ITEMS.length}</span></h3>
-        <ul class="pulls">${named}</ul>
-        <h3>Relics <span class="muted">${relicsOfTier("relic").filter((d) => this.state.ownsRelic(d.id)).length} / ${relicsOfTier("relic").length}</span></h3>
-        <ul class="pulls">${relicRows("relic")}</ul>
-        <h3>Artifacts <span class="muted">${relicsOfTier("artifact").filter((d) => this.state.ownsRelic(d.id)).length} / ${relicsOfTier("artifact").length}</span></h3>
-        <ul class="pulls">${relicRows("artifact")}</ul>
         <h3>Legends</h3>
         ${legends}
         <h3>Rarities found</h3>
