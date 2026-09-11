@@ -24,6 +24,10 @@
  */
 
 import { readFileSync } from "node:fs";
+import { BOSSES } from "../src/data/bosses";
+import { PLANETS } from "../src/data/planets";
+import { TOWER_BOSSES } from "../src/data/tower";
+import { levelAdvice } from "../src/data/depth";
 import type { EffectStep } from "../src/combat/ability";
 import { getStatusSpec } from "../src/combat/status";
 import { SKILL_TAGS } from "../src/combat/tags";
@@ -33,17 +37,20 @@ import { Rng } from "../src/core/rng";
 import { parseSaved, serializeSave } from "../src/core/save";
 import { COSMETICS, COSMETIC_SLOTS } from "../src/data/cosmetics";
 import { dropsForSource } from "../src/data/drop-preview";
-import { LIVE_SOURCE_KINDS, dropChance, type DropQuery, type FoundSource } from "../src/data/drops";
+import {
+  LIVE_SOURCE_KINDS, dropChance, isLiveSource, sourceFloor, sourceLevel,
+  type DropQuery, type FoundSource,
+} from "../src/data/drops";
 import { DELVE_BOTTOM } from "../src/data/legends";
 import { MOD_KEYS, type ModKey } from "../src/data/mods";
-import { delveConfig, riftConfig } from "../src/data/modes";
+import { MODES, delveConfig, riftConfig } from "../src/data/modes";
 import { towerConfig } from "../src/data/tower";
 import { NAMED_ITEMS } from "../src/data/named";
 import { RAIDS, raidConfig, raidDropQueries } from "../src/data/raids";
 import {
   MAX_RELICS_WORN, RELICS, RELIC_BY_ID, RELIC_ODDS, RELIC_RULE_PREFIX, RELIC_SLOTS, RELIC_TIER_INFO,
   normalizeRelicLoadout, relicMatchesFor, relicProblems, relicSocketBlocker, relicSourceLines, relicsForSource,
-  relicsOfTier, rollRelicDrops, type RelicDef,
+  relicsOfTier, relicRequiredLevel, rollRelicDrops, type RelicDef,
 } from "../src/data/relics";
 import { REACTIVE_EVENTS } from "../src/game/abilities";
 import { Dungeon, type Hero } from "../src/game/dungeon";
@@ -505,17 +512,170 @@ section("7. the slot rule: three slots, one relic");
   const artifacts = relicsOfTier("artifact").map((d) => d.id);
   check(`there are ${RELIC_SLOTS} slots and ${MAX_RELICS_WORN} may be a relic`, RELIC_SLOTS === 3 && MAX_RELICS_WORN === 1);
   const empty: (string | null)[] = [null, null, null];
-  check("anything owned goes into an empty loadout", relicSocketBlocker(empty, 0, relics[0]!) === null && relicSocketBlocker(empty, 2, artifacts[0]!) === null);
+  // Every check in this section is about the *slot* rule, so it is asked at a level no
+  // definition can out-rank — derived from the roster rather than pinned at a round number,
+  // so authoring a deeper relic tomorrow cannot quietly turn a slot-rule check into a level
+  // -gate check that happens to be red for the other reason.
+  const MAX_REQ = Math.max(...RELICS.map(relicRequiredLevel));
+  const any = MAX_REQ;
+  check("anything owned goes into an empty loadout", relicSocketBlocker(empty, 0, relics[0]!, any) === null && relicSocketBlocker(empty, 2, artifacts[0]!, any) === null);
   const one: (string | null)[] = [relics[0]!, null, null];
-  check("a second relic is refused with a reason", typeof relicSocketBlocker(one, 1, relics[1]!) === "string");
-  check("...but two artifacts beside it are fine", relicSocketBlocker(one, 1, artifacts[0]!) === null && relicSocketBlocker([relics[0]!, artifacts[0]!, null], 2, artifacts[1]!) === null);
-  check("replacing the relic in its own slot is fine", relicSocketBlocker(one, 0, relics[1]!) === null);
-  check("the same relic twice is refused", typeof relicSocketBlocker(one, 1, relics[0]!) === "string");
-  check("an unknown id is refused", typeof relicSocketBlocker(empty, 0, "not-a-relic") === "string");
-  const legal = normalizeRelicLoadout([relics[0], relics[1], artifacts[0], artifacts[1], "ghost"]);
+  check("a second relic is refused with a reason", typeof relicSocketBlocker(one, 1, relics[1]!, any) === "string");
+  check("...but two artifacts beside it are fine", relicSocketBlocker(one, 1, artifacts[0]!, any) === null && relicSocketBlocker([relics[0]!, artifacts[0]!, null], 2, artifacts[1]!, any) === null);
+  check("replacing the relic in its own slot is fine", relicSocketBlocker(one, 0, relics[1]!, any) === null);
+  check("the same relic twice is refused", typeof relicSocketBlocker(one, 1, relics[0]!, any) === "string");
+  check("an unknown id is refused", typeof relicSocketBlocker(empty, 0, "not-a-relic", any) === "string");
+  const legal = normalizeRelicLoadout([relics[0], relics[1], artifacts[0], artifacts[1], "ghost"], any);
   check("a loadout that broke the rule loads back to legal — one relic, the artifact kept, the rest dropped",
-    legal.length === RELIC_SLOTS && legal[0] === relics[0] && legal[1] === null && legal[2] === artifacts[0], JSON.stringify(legal));
-  check("garbage normalises to three empty slots", JSON.stringify(normalizeRelicLoadout("nope")) === JSON.stringify(empty));
+    legal.worn.length === RELIC_SLOTS && legal.worn[0] === relics[0] && legal.worn[1] === null && legal.worn[2] === artifacts[0], JSON.stringify(legal.worn));
+  check("...and nothing is reported unsocketed, because the level was never the reason",
+    legal.unsocketed.length === 0, JSON.stringify(legal.unsocketed));
+  check("garbage normalises to three empty slots", JSON.stringify(normalizeRelicLoadout("nope", any).worn) === JSON.stringify(empty));
+}
+
+// =========================================================================
+section("7b. the level gate: a relic answers to the floor it fell on");
+{
+  // A level no definition can out-rank, derived from the roster rather than pinned — used
+  // wherever a check needs the gate out of the way to look at something else.
+  const MAX_REQ = Math.max(...RELICS.map(relicRequiredLevel));
+  const relicIds = relicsOfTier("relic").map((d) => d.id);
+
+  // --- it is DERIVED, not authored -------------------------------------------------
+  //
+  // The whole design is that `relicRequiredLevel` reads the drop table rather than a field
+  // on the definition, so this asserts the identity against the independently-computed
+  // answer rather than against a pinned list of numbers. A pinned list would be a second
+  // authoring of exactly the thing that must not be authored twice, and would go green on
+  // a definition whose sources moved underneath it.
+  const derivedMismatch = RELICS.filter((d) => {
+    const live = d.sources.filter(isLiveSource);
+    const cheapest = Math.min(...live.map(sourceLevel));
+    return relicRequiredLevel(d) !== Math.max(1, cheapest - 1);
+  });
+  check(`every one of ${RELICS.length} requirements is the cheapest source's own level, less the grace`,
+    derivedMismatch.length === 0, derivedMismatch.map((d) => d.id).join(", ") || "no definition authors its own number");
+
+  // A relic has no field to author one with — the positive half of the same statement, and
+  // the reason a definition added tomorrow is gated for free.
+  check("no RelicDef carries a level field for anyone to forget",
+    RELICS.every((d) => !("requiredLevel" in d) && !("minLevel" in d)));
+
+  // --- it tracks the SOURCE, both ways ----------------------------------------------
+  //
+  // Not a bound ("every relic needs at least level 5") — a bound is satisfied by a constant
+  // and would say nothing about whether the number follows the floor. This compares two
+  // definitions against each other: the one that drops deeper must ask for more.
+  const shallow = RELICS.reduce((a, b) => relicRequiredLevel(a) <= relicRequiredLevel(b) ? a : b);
+  const deep = RELICS.reduce((a, b) => relicRequiredLevel(a) >= relicRequiredLevel(b) ? a : b);
+  const shallowFloor = Math.min(...shallow.sources.filter(isLiveSource).map((s) => sourceFloor(s).depth));
+  const deepFloor = Math.min(...deep.sources.filter(isLiveSource).map((s) => sourceFloor(s).depth));
+  check("the relic from the deepest floor asks for more than the one from the shallowest",
+    relicRequiredLevel(deep) > relicRequiredLevel(shallow) && deepFloor > shallowFloor,
+    `${deep.id} lv ${relicRequiredLevel(deep)} @ depth ${deepFloor} vs ${shallow.id} lv ${relicRequiredLevel(shallow)} @ depth ${shallowFloor}`);
+
+  // Climbing a rift's tier ladder asks for more. True of the whole ladder — depth and danger
+  // together, which is what a player actually walks up.
+  const t1 = sourceLevel({ kind: "boss", bossId: BOSSES[1]!.id, chance: 1, mode: "abyss" });
+  const t8 = sourceLevel({ kind: "boss", bossId: BOSSES[1]!.id, chance: 1, mode: "abyss", minTier: 8 });
+  check("a tier-8 Abyss source asks for more than a tier-1 one", t8 > t1, `tier 8 → ${t8}, tier 1 → ${t1}`);
+
+  // ...and **danger is a part of it on its own**, which the check above cannot show: a rift's
+  // `depthPerTier` raises the depth as well, so tier 8 out-ranking tier 1 is carried by the
+  // depth confound whether danger is read or not. (Measured: dividing danger back out of
+  // `sourceLevel` left that comparison green, which is precisely the shape CLAUDE.md's
+  // one-sided-bound lesson warns about — the check named danger and measured depth.)
+  //
+  // Isolating it needs the depth held still, so this asks the same formula about the same
+  // depth at danger 1 — the control the confounded version was missing.
+  const tiered: FoundSource = { kind: "boss", bossId: BOSSES[1]!.id, chance: 1, mode: "abyss", minTier: 8 };
+  const tieredFloor = sourceFloor(tiered);
+  check("...and danger carries part of that on its own: the same depth at danger 1 asks less",
+    tieredFloor.danger > 1 && sourceLevel(tiered) > levelAdvice(tieredFloor.depth, 1),
+    `depth ${tieredFloor.depth} at danger ${tieredFloor.danger.toFixed(2)} → ${sourceLevel(tiered)}, `
+      + `the same depth at danger 1 → ${levelAdvice(tieredFloor.depth, 1)}`);
+
+  // A rift's boss is `bossFor(effective depth)`, so *which* encounter a source names is a
+  // real constraint on top of the mode and the tier — "the Colossus, in the Abyss" is a much
+  // deeper ask than "the Herald, in the Abyss". Both sources below name the same rift at the
+  // same minimum tier, so the mode and the tier are held still and the encounter is the only
+  // thing that varies. (Measured: stubbing the tier search out to always answer its lowest
+  // tier left every other check in this section green, so without this one the search would
+  // have been untested code that silently flattened five artifacts' requirements.)
+  const shallowEnc = sourceLevel({ kind: "boss", bossId: BOSSES[1]!.id, chance: 1, mode: "abyss" });
+  const deepEnc = sourceLevel({ kind: "boss", bossId: BOSSES[BOSSES.length - 1]!.id, chance: 1, mode: "abyss" });
+  check("in one rift at one tier floor, naming a deeper encounter asks for more",
+    deepEnc > shallowEnc,
+    `${BOSSES[BOSSES.length - 1]!.id} → ${deepEnc}, ${BOSSES[1]!.id} → ${shallowEnc}`);
+
+  // --- an unrecognised boss id fails OPEN, so every id the game makes needs a watcher ---
+  //
+  // `sourceFloor` hands an id it cannot place the shallowest run in the game (depth 1), which
+  // is the weakest possible gate. That is the right failure direction — an unwearable relic
+  // is worse than a cheap one — but it means a boss id nobody taught it about goes quiet
+  // rather than red. So every id the game can actually generate is walked here, and the
+  // count is printed: a scope that silently empties is then visible in the output rather
+  // than passing as a zero-iteration loop.
+  const everyBossId = [
+    ...BOSSES.map((b) => b.id),
+    ...TOWER_BOSSES.map((b) => `tower-${b.templateId}`),
+    ...PLANETS.map((pl) => `planet-${pl.id}`),
+    ...RAIDS.map((r) => `raid-${r.id}`),
+    ...CLASS_IDS.map((c) => `legend-${c}`),
+  ];
+  const unplaced = everyBossId.filter((id) => sourceFloor({ kind: "boss", bossId: id, chance: 1 }).depth <= 1);
+  check(`all ${everyBossId.length} boss ids the game can generate place on a real floor`,
+    everyBossId.length >= 28 && unplaced.length === 0, unplaced.join(", ") || "none falls back to depth 1");
+
+  // ...and the fallback itself is still reachable, or the check above would be asserting a
+  // property of `filter` rather than of `sourceFloor`.
+  check("...while an id nothing emits does fall back", sourceFloor({ kind: "boss", bossId: "no-such-boss", chance: 1 }).depth === 1);
+
+  // ...and the Challenger dial is NOT part of it. A player must not be able to raise their
+  // own relics' requirements by turning their own difficulty up.
+  check("the Challenger dial never reaches the gate — `sourceFloor` reads danger at dial zero",
+    sourceFloor({ kind: "boss", bossId: BOSSES[1]!.id, chance: 1, mode: "abyss", minTier: 8 }).danger
+      === Math.pow(MODES.abyss.dangerPerTier, 7));
+
+  // --- both directions at the boundary, and the grace -------------------------------
+  // The deepest relic in the roster rather than the first one over a threshold: a filter can
+  // silently empty (and then this section asserts nothing, or crashes), while a reduce over
+  // a non-empty roster always has a subject. `RELICS` being non-empty is section 1's job.
+  const subject = RELICS.reduce((a, b) => relicRequiredLevel(a) >= relicRequiredLevel(b) ? a : b);
+  const need = relicRequiredLevel(subject);
+  check(`the boundary subject is a real gate to stand on — ${subject.name} asks for ${need}`, need > 1);
+  const slots: (string | null)[] = [null, null, null];
+  check(`a character one level short of ${subject.name} (${need}) is refused, with the level in the message`,
+    (relicSocketBlocker(slots, 0, subject.id, need - 1) ?? "").includes(String(need)));
+  check("...and at exactly that level it goes on", relicSocketBlocker(slots, 0, subject.id, need) === null);
+  check("...and above it, obviously", relicSocketBlocker(slots, 0, subject.id, need + 5) === null);
+
+  // The grace is one level and it is `requiredLevel`'s, for `requiredLevel`'s reason: the
+  // run that earns a relic must be able to wear it. Asserted as the relationship, not as a
+  // number — the cheapest source's advice is exactly one above what the gate asks.
+  const graceWrong = RELICS.filter((d) => {
+    const cheapest = Math.min(...d.sources.filter(isLiveSource).map(sourceLevel));
+    return cheapest > 1 && relicRequiredLevel(d) !== cheapest - 1;
+  });
+  check("the grace is exactly one level, on every definition that has room for it",
+    graceWrong.length === 0, graceWrong.map((d) => d.id).join(", ") || `${RELICS.length} definitions`);
+  check("and it never lands below level 1", RELICS.every((d) => relicRequiredLevel(d) >= 1));
+
+  // --- the migration says what it took ----------------------------------------------
+  const heavy = RELICS.filter((d) => relicRequiredLevel(d) > 5);
+  const worn = [heavy.find((d) => d.tier === "relic")!.id, heavy.find((d) => d.tier === "artifact")!.id, null];
+  const low = normalizeRelicLoadout(worn, 1);
+  check("a level-1 character loading that save wears neither, and is told about both",
+    low.worn.every((w) => w === null) && low.unsocketed.length === 2, JSON.stringify(low));
+  const high = normalizeRelicLoadout(worn, MAX_REQ);
+  check("...the same save at level for both keeps them, and reports nothing",
+    high.worn[0] === worn[0] && high.worn[1] === worn[1] && high.unsocketed.length === 0, JSON.stringify(high));
+  // A cap violation is not a level removal. Two relic-tier ids at a level that clears both:
+  // one comes out for the cap and must stay silent, or the town would tell a player to
+  // level up for something levelling will never fix.
+  const capped = normalizeRelicLoadout([relicIds[0], relicIds[1], null], MAX_REQ);
+  check("a relic dropped for the slot cap is not reported as a level removal",
+    capped.worn[1] === null && capped.unsocketed.length === 0, JSON.stringify(capped));
 }
 
 // =========================================================================
@@ -587,6 +747,13 @@ section("9. save, wire, and a retired id");
 {
   const state = new GameState(5);
   state.chooseClass("magician");
+  // This section is about the save and the wire, not the level gate, so the character is
+  // taken past every requirement in the roster first — derived rather than pinned, so a
+  // deeper relic authored later can't turn a save round-trip check red for the wrong reason.
+  // The level itself round-trips (`applyPlayerJSON` reads it before the loadout), which is
+  // what makes the loaded character's loadout comparable to the saved one at all.
+  state.player.level = Math.max(...RELICS.map(relicRequiredLevel));
+  state.player.refresh();
   const ids = ["spark-of-the-unfinished-storm", "tempo-of-the-fifth-circle", "shard-of-the-nothing", "weight-of-the-fourth-circle"];
   state.bankRelics(ids);
   check("banking puts every new relic in the collection once", ids.every((id) => state.ownsRelic(id)) && state.relics.length === 4);

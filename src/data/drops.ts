@@ -38,17 +38,19 @@
  * Pure data + pure functions. Imports only types and registries from `data/`.
  */
 
-import { BOSSES } from "./bosses";
+import { BOSSES, bossFor } from "./bosses";
+import { levelAdvice } from "./depth";
 import { rewardCurve } from "./rewards";
 import { CHEST_TIERS, chestName, type ChestTier } from "./chests";
 import { CLASS_IDS, CLASSES, type ClassId } from "./classes";
 import type { ItemRequirement } from "./crafting";
 import type { Element } from "./elements";
-import { legendName } from "./legends";
+import { DELVE_BOTTOM, legendName } from "./legends";
 import type { MaterialBag } from "./materials";
-import { MODES, RUN_MODES, type RunModeId } from "./modes";
-import { PLANETS } from "./planets";
-import { RAID_BY_ID, raidOfBossId } from "./raids";
+import { MODES, RUN_MODES, riftConfig, type RunModeId } from "./modes";
+import { PLANETS, planetConfig } from "./planets";
+import { RAID_BY_ID, raidConfig, raidOfBossId } from "./raids";
+import { TOWER_BOSSES, towerConfig } from "./tower";
 
 // --- sources ----------------------------------------------------------------
 
@@ -445,6 +447,192 @@ export function riftBossSources(
     ...(minTier !== undefined ? { minTier } : {}),
     ...(pool !== undefined ? { pool } : {}),
   }));
+}
+
+/**
+ * The **easiest** run a source can pay out on: the effective depth of the shallowest
+ * qualifying floor, and the `danger` that floor is fought at.
+ *
+ * This is the basis of the relic level gate (`relicRequiredLevel` in `data/relics.ts`). A
+ * relic has no `ilvl`, so unlike an item it cannot derive a requirement from its own power;
+ * what it has instead is a drop site, and a drop site already carries an authored
+ * difficulty. Reading that rather than authoring a level per definition is the same call
+ * `requiredLevel()` makes for gear: derived cannot drift, and a relic added tomorrow is
+ * gated for free with no number to forget.
+ *
+ * Three things make this a *reading* rather than a second model of the world:
+ *
+ *  - **The configuration is asked, never restated.** `riftConfig`, `raidConfig` and
+ *    `towerConfig` are called for the depth and danger they actually produce, so a retuned
+ *    `baseDepth` or `dangerPerTier` moves the gate with it and no rift maths is copied here.
+ *  - **`bossFor` answers which boss a floor spawns**, rather than this file assuming a
+ *    rift's boss is whatever its lowest tier meets. `riftBossSources` lists all five Delve
+ *    encounters per rift, so "the Colossus, in the Abyss" is a real and much deeper ask than
+ *    "the Abyss"; searching for the tier that actually spawns it is what tells them apart.
+ *  - **Every constraint on the source composes as a maximum**, because `sourceMatches`
+ *    composes them as a conjunction. A source that demands both `minDepth` 25 and a boss
+ *    first reachable at depth 25 is satisfied at 25; one that demands `minDepth` 25 of a
+ *    boss first reachable at 10 is not satisfied until 25.
+ *
+ * A `craft` source returns the shallowest possible run — a relic may never carry one, and a
+ * named item's recipe is a purchase rather than a floor. So does a `chest`, for the same
+ * reason: a chest is bought, and its tier says nothing about where you were standing.
+ */
+export interface SourceFloor {
+  /** Effective depth of the shallowest floor that satisfies the source. */
+  readonly depth: number;
+  /** The `danger` that floor is fought at, with the Challenger dial off. */
+  readonly danger: number;
+}
+
+/** The shallowest run in the game: depth 1 at danger 1. What an unreachable source falls back to. */
+const SHALLOWEST: SourceFloor = { depth: 1, danger: 1 };
+
+/**
+ * How far to walk a rift's or a raid's tier ladder looking for the floor that spawns a
+ * named boss. Both ladders are unbounded, so the search needs a stop; past this, a source
+ * naming a boss its mode never spawns falls back to that mode's own first tier rather than
+ * looping. Far beyond any authored `minTier` (the deepest is 8) and past the point every
+ * `BOSSES` entry has been reached, so raising it can only ever change an answer that is
+ * already a fallback.
+ */
+const TIER_SEARCH_LIMIT = 40;
+
+/** The rift floor a source's constraints first admit, or null when the mode isn't a rift. */
+function riftFloor(mode: RunModeId | undefined, minTier: number | undefined, floor: "first" | "last"): SourceFloor | null {
+  if (mode === undefined) return null;
+  const spec = MODES[mode];
+  if (!spec?.isRift) return null;
+  const cfg = riftConfig(mode, Math.max(1, minTier ?? 1), floor === "last" ? spec.floors : 1);
+  return { depth: cfg.depth, danger: cfg.danger };
+}
+
+export function sourceFloor(src: DropSource): SourceFloor {
+  switch (src.kind) {
+    case "boss": {
+      // A Proving is the bottom of the Delve, whatever else its id says.
+      if (provingClassOf(src.bossId) !== null) return { depth: DELVE_BOTTOM, danger: 1 };
+      const rift = riftBossFloor(src);
+      // `sourceMatches` conjoins the boss id with `minDepth`, so the two compose as a max.
+      const floor = rift ?? anyModeBossFloor(src.bossId);
+      return src.minDepth !== undefined && src.minDepth > floor.depth
+        ? { depth: src.minDepth, danger: floor.danger }
+        : floor;
+    }
+    case "clearCache": {
+      // `lastFloor` is the cache that closes a rift — the deepest floor of the run, and the
+      // one you only reach by killing the boss. Without it, floor 1 already qualifies.
+      const rift = riftFloor(src.mode, src.minTier, src.lastFloor ? "last" : "first");
+      if (!rift) return { depth: Math.max(1, src.minDepth), danger: 1 };
+      return { depth: Math.max(src.minDepth, rift.depth), danger: rift.danger };
+    }
+    case "worldDrop": {
+      const rift = riftFloor(src.mode, undefined, "first");
+      if (!rift) return { depth: Math.max(1, src.minDepth), danger: 1 };
+      return { depth: Math.max(src.minDepth, rift.depth), danger: rift.danger };
+    }
+    case "tower": {
+      // A height, not a depth — but the Tower walks the Delve's own curve height-for-depth
+      // (UAT §21), so the level a climb wants is the level that depth wants. `towerConfig`
+      // is asked for it rather than assumed, because that identity is a property `npm run
+      // world` asserts and not something this file should restate.
+      const cfg = towerConfig(Math.max(1, src.minFloor));
+      return { depth: cfg.depth, danger: cfg.danger };
+    }
+    case "raid": {
+      const spec = RAID_BY_ID[src.raidId];
+      if (!spec) return SHALLOWEST;
+      const cfg = raidConfig(spec, Math.max(1, src.minTier ?? 1));
+      return { depth: cfg.depth, danger: cfg.danger };
+    }
+    case "chest":
+    case "craft":
+      return SHALLOWEST;
+  }
+}
+
+/**
+ * The shallowest floor anywhere that spawns this boss id, for a source that named no rift.
+ *
+ * Every id the game can generate is resolved here, in the same order and by the same reads
+ * `bossDisplayName` uses — a Delve encounter, a Tower order, a sector boss, a raid
+ * encounter. That matters more than it looks: a source naming a boss this function does not
+ * recognise falls back to the shallowest run in the game, which is the weakest possible gate,
+ * so an unhandled id fails *open*. Only ids nothing can emit are meant to land there.
+ *
+ * The two ladders are each read off their own table rather than off the other's:
+ * `bossFor` puts the i-th `BOSSES` entry at depth `5*(i+1)`, and `towerBossSpec` puts the
+ * i-th `TOWER_BOSSES` entry at *height* `5*(i+1)` — the same arithmetic on a different
+ * ladder, which is exactly why the height is taken to `towerConfig` rather than used as a
+ * depth directly. A height is not a depth (UAT §21), even where the numbers agree.
+ */
+function anyModeBossFloor(bossId: string): SourceFloor {
+  const delve = BOSSES.findIndex((b) => b.id === bossId);
+  if (delve >= 0) return { depth: (delve + 1) * 5, danger: 1 };
+
+  // A Tower order (`tower-<templateId>`). Its first height is its index on `TOWER_BOSSES`.
+  const tower = TOWER_BOSSES.findIndex((b) => `tower-${b.templateId}` === bossId);
+  if (tower >= 0) {
+    const cfg = towerConfig((tower + 1) * 5);
+    return { depth: cfg.depth, danger: cfg.danger };
+  }
+
+  // A Reliquary sector boss (`planet-<planetId>`). A sector run is rift-shaped, so its boss
+  // stands on its last floor, and the cheapest way to meet it is the sector's first tier.
+  const planet = PLANETS.find((pl) => `planet-${pl.id}` === bossId);
+  if (planet) {
+    const cfg = planetConfig(planet, 1, planet.floors);
+    return { depth: cfg.depth, danger: cfg.danger };
+  }
+
+  // A raid encounter (`raid-<raidId>`) named as a boss rather than through a `raid` source.
+  const raid = raidOfBossId(bossId);
+  if (raid) {
+    const cfg = raidConfig(raid, 1);
+    return { depth: cfg.depth, danger: cfg.danger };
+  }
+
+  return SHALLOWEST;
+}
+
+/**
+ * The shallowest rift tier whose boss floor actually spawns `src.bossId`, or null when the
+ * source names no rift.
+ *
+ * The search is what makes this honest. A rift's boss is `bossFor(effective depth)`, so
+ * which of the five you meet is a function of the tier — and `riftBossSources` writes all
+ * five out per rift precisely because of that. Taking the lowest allowed tier's depth for
+ * every one of them would say the Colossus is as cheap as the Herald, and quietly hand the
+ * deepest artifact in the Abyss the gate of its shallowest.
+ */
+function riftBossFloor(src: Extract<FoundSource, { kind: "boss" }>): SourceFloor | null {
+  const mode = src.mode;
+  if (mode === undefined) return null;
+  const spec = MODES[mode];
+  if (!spec?.isRift) return null;
+  const lowest = Math.max(1, src.minTier ?? 1);
+  for (let tier = lowest; tier <= TIER_SEARCH_LIMIT; tier++) {
+    const cfg = riftConfig(mode, tier, spec.floors);
+    if (bossFor(cfg.depth).id === src.bossId) return { depth: cfg.depth, danger: cfg.danger };
+  }
+  // Nothing in this rift's reachable ladder spawns it. Fall back to its own first
+  // qualifying tier rather than to depth 1 — the mode is still a real constraint.
+  return riftFloor(mode, src.minTier, "last");
+}
+
+/**
+ * The character level the shallowest run that can pay out `src` asks for — `levelAdvice`,
+ * the same formula behind `DepthProfile.recommendedLevel`, asked about that floor.
+ *
+ * Danger is included rather than divided out, and that is deliberate: a rift tier, a raid
+ * tier and a sector tier are part of *where the thing drops*, not weather laid over it. The
+ * Challenger dial is the opposite and is absent here by construction — `riftConfig`,
+ * `raidConfig` and `towerConfig` are all called with the dial at zero, so a player cannot
+ * raise a relic's requirement by turning their own difficulty up.
+ */
+export function sourceLevel(src: DropSource): number {
+  const floor = sourceFloor(src);
+  return levelAdvice(floor.depth, floor.danger);
 }
 
 // --- reading a source -----------------------------------------------------------------

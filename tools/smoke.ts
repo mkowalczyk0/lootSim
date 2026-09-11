@@ -18,7 +18,7 @@ import {
 } from "./bot";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, type Hero } from "../src/game/dungeon";
-import type { Pickup } from "../src/game/entities";
+import type { GroundZone, Pickup } from "../src/game/entities";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
 import {
@@ -885,7 +885,34 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
   // self-loop but not "ultimate leaves a thing, the thing charges the meter". Keep the
   // door shut: no `allowFromUltimate` opt-out, and any untagged damage-scaled rule on an
   // ultimate meter stays a small top-up, never the whole meter.
-  const DAMAGE_TOPUP_CAP = 0.05; // Warlock's tuned-safe value is 0.03; the exploit was 0.3
+  // WIDENED (docket §31). The filter above used to be `perUnit === "damage"`, which
+  // examined **1 of the 41** ultimate-meter generation rules in the game — Warlock's,
+  // already tuned safe at 0.03 under a 0.05 cap — and skipped the Engineer's by its own
+  // `construct` tag, the one confirmed exploit in the repo. The scope had been transcribed
+  // from the signature of the two bugs that had already shipped, so it could only ever
+  // find those two, and now finds neither. See `docs/blind-instruments.md` §18.
+  //
+  // Three classes were found outside it by hand: Lancer (`perUnit: "distance"`), Paladin
+  // (`maxHealthFraction`) and the Engineer (tagged). This walks **all** of them and says
+  // how many, so a future narrowing is visible in the output instead of silent.
+  //
+  // The bound is the hard part and it is honest about its limits: `amount` means a
+  // different thing per `perUnit`, so a single cap cannot govern all 41. What can be
+  // asserted is a **comparison against the rule's own peers** — the same unit, on other
+  // classes — and, where a unit has no peers, the fact that it cannot be compared at all.
+  // That second case is not a technicality: `perUnit: "distance"` has exactly one rule in
+  // the game, and being a unit-of-one is precisely how it went unexamined.
+  const PEER_FACTOR = 4;
+  const rowsByUnit = new Map<string, { cls: string; on: string; amount: number }[]>();
+  let totalRules = 0;
+  for (const id of CLASS_IDS) {
+    const meter = CLASS_BY_ID[id]?.resources.find((r) => r.isUltimateMeter === true);
+    for (const r of meter?.generation ?? []) {
+      totalRules += 1;
+      const unit = r.perUnit ?? "flat";
+      rowsByUnit.set(unit, [...(rowsByUnit.get(unit) ?? []), { cls: id, on: r.on, amount: r.amount }]);
+    }
+  }
   for (const id of CLASS_IDS) {
     const def = CLASS_BY_ID[id];
     const meter = def?.resources.find((r) => r.isUltimateMeter === true);
@@ -893,10 +920,53 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
     const optOut = rules.filter((r) => r.allowFromUltimate === true);
     check(`${CLASSES[id].name}: no ultimate-meter rule opts out of THE ULTIMATE RULE`,
       optOut.length === 0, optOut.map((r) => r.on).join(", "));
-    const loopy = rules.filter((r) => r.perUnit === "damage" && !r.requireTags?.length && r.amount > DAMAGE_TOPUP_CAP);
-    check(`${CLASSES[id].name}: no untagged damage-scaled ultimate-meter rule above the top-up cap`,
-      loopy.length === 0, loopy.map((r) => `${r.on} ${r.amount}/dmg`).join(", "));
   }
+  // Every rule, against its own peers. A rule far above the median of the same unit on
+  // other classes is the shape both shipped exploits had, expressed without a magic number.
+  const outliers: string[] = [];
+  const lonely: string[] = [];
+  for (const [unit, rows] of rowsByUnit) {
+    if (rows.length < 2) {
+      for (const r of rows) lonely.push(`${r.cls} ${r.on} ${r.amount}/${unit}`);
+      continue;
+    }
+    // **Leave-one-out.** The first draft took the median of the whole group, which let a
+    // rule bound itself: with two rules in a unit, the bad one *is* the median. Replaying
+    // the original Engineer exploit (0.2 untagged `/damage`) against that version passed
+    // clean — the bound came from the thing under test, which is this repo's oldest
+    // documented instrument failure. Each rule is now compared against the median of the
+    // *other* rules of its unit, which the rule cannot move.
+    for (const r of rows) {
+      const others = rows.filter((o) => o !== r).map((o) => o.amount).sort((a, b) => a - b);
+      if (others.length === 0) continue;
+      const median = others[Math.floor(others.length / 2)]!;
+      if (median > 0 && r.amount > median * PEER_FACTOR) {
+        outliers.push(`${r.cls} ${r.on} ${r.amount}/${unit} = ${(r.amount / median).toFixed(1)}x its peers' median (${median})`);
+      }
+    }
+  }
+  console.log(`  walked ${totalRules} ultimate-meter generation rules across ${CLASS_IDS.length} classes,` +
+    ` ${rowsByUnit.size} distinct perUnit groups`);
+  check("no ultimate-meter rule is far above its own peers", outliers.length === 0, outliers.join("; "));
+  /**
+   * A `perUnit` with one rule in the whole roster cannot be checked against anything, so
+   * it is pinned by hand instead — `tools/legends.ts`'s idiom. Adding one is a decision;
+   * so is removing one. The Lancer sat here unexamined for the life of the project.
+   */
+  const REVIEWED_ALONE: Readonly<Record<string, string>> = {
+    "lancer move 0.06/distance": "reviewed §31 — was 0.6, which filled the meter every 167 units walked (51.7 ultimates/min measured, ~21x the roster median). 0.06 makes a full meter roughly a floor's traverse.",
+    "magician manaSpent 40/manaFraction": "reviewed §31: gated on spending the class's own finite, slowly-regenerating pool",
+  };
+  for (const l of lonely) {
+    // The note must describe the state that was found, not the failure — `check` prints it
+    // either way, and "ok ... not on the reviewed list" reads as a contradiction in the log.
+    check(`${l} is a unit-of-one and hand-reviewed`, l in REVIEWED_ALONE,
+      REVIEWED_ALONE[l] ?? "NOT on the reviewed list — a rule whose unit has no peers cannot be checked against anything, so it needs a human verdict here");
+  }
+  for (const k of Object.keys(REVIEWED_ALONE)) {
+    check(`${k} is still the only rule of its unit`, lonely.includes(k), "pin is stale — it has peers now, or it changed");
+  }
+
 }
 
 console.log("\n=== classes ===");
@@ -3845,6 +3915,101 @@ console.log("\n=== multiplayer ===");
     host.completionPortal = null;
     applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
     check("and goes away again with it", client.completionPortal === null);
+  }
+
+  // 3a'. A zone that moves must move on the client too. The owner's "horrendous delay
+  // on wards/AOE abilities that follow the player": a client rebuilt every ground zone
+  // from the snapshot's [x, y] each 50 ms — the host's copy of the hero, a round trip
+  // old — while the hero it rides is predicted forward, so a follow zone was the one
+  // effect on the wire guaranteed to trail its owner. Asserted structurally on this
+  // rig, with no wall clock in it: the client's local hero is walked ahead of where the
+  // snapshot put it, and the zone has to be under the walked body, not the wire's.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    const zoneAt = (x: number, y: number, extra: Partial<GroundZone>): GroundZone => ({
+      x, y, px: x, py: y, radius: 60, element: "holy", damage: 0, remaining: 6, tickTimer: 0.5,
+      hitsPlayer: false, hitsEnemies: false, color: "#fff", ...extra,
+    });
+    host.ground.length = 0;
+    host.ground.push(zoneAt(hostMate.avatar.x, hostMate.avatar.y, { benefit: "haste", follows: 1, owner: 1 }));
+    host.ground.push(zoneAt(hostMate.avatar.x + 200, hostMate.avatar.y, { vx: 100, vy: 0 }));
+    const wire = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    check("a zone's owner and velocity cross the wire",
+      wire.g[0][5] === 1 && wire.g[1][5] === -1 && wire.g[1][6] === 100, JSON.stringify(wire.g));
+    applySnapshot(client, wire);
+    const follow = client.ground[0]!;
+    const drift = client.ground[1]!;
+    const wireX = wire.g[0][0] as number;
+    // Walk the client's own hero for half a second. Nothing arrives from the host in
+    // that time, exactly like the gap between two snapshots on a slow link.
+    const walk = new FakeInput();
+    walk.hold("right", true);
+    const startX = me.avatar.x;
+    for (let i = 0; i < 30; i++) { walk.beginTick(); client.update(DT, walk as unknown as AvatarInput); }
+    check("the client's predicted hero actually walked (so the next check has something to trail)",
+      me.avatar.x - startX > 20, `${(me.avatar.x - startX).toFixed(1)} units`);
+    check("a follow zone rides the client's *predicted* hero, not the wire's stale position",
+      Math.abs(follow.x - me.avatar.x) < 0.01 && Math.abs(follow.y - me.avatar.y) < 0.01,
+      `zone ${follow.x.toFixed(1)} hero ${me.avatar.x.toFixed(1)} wire ${wireX}`);
+    check("...which is where the old rebuild left it (the control: the wire's x)",
+      Math.abs(follow.x - wireX) > 20, `${Math.abs(follow.x - wireX).toFixed(1)} units off the wire`);
+    check("a drifting zone travels between snapshots like a projectile does",
+      Math.abs(drift.x - (wire.g[1][0] + 100 * 0.5)) < 2, `${drift.x.toFixed(1)} vs ${wire.g[1][0] + 50}`);
+    check("...and the renderer gets a previous position to blend from", follow.px !== follow.x || drift.px !== drift.x);
+    host.ground.length = 0;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+  }
+
+  // 3a''. A client's own swing shows the tick it presses. Before this the swing waited
+  // for the host's word — RTT + a snapshot interval + the interpolation span — so your
+  // own attack button was the most delayed thing on your screen ("attacks still have
+  // delays"). Only the animation is predicted; every hit is still the host's.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    // Both ends at rest, then the same weapon swung on each: the visible timer has to
+    // come out identical, because `startSwing` is one function for both.
+    hostMate.avatar.attackTimer = 0; hostMate.avatar.swingTimer = 0;
+    me.avatar.attackTimer = 0; me.avatar.swingTimer = 0;
+    client.drainEvents();
+    const press = new FakeInput();
+    press.beginTick(); press.press("attack");
+    client.update(DT, press as unknown as AvatarInput);
+    const predictedSwing = me.avatar.swingTimer;
+    const predictedEvents = client.drainEvents().filter((e) => e.kind === "swing");
+    check("a client's swing starts the tick the button goes down",
+      predictedSwing > 0 && me.avatar.attackTimer > 0, `swingTimer ${predictedSwing.toFixed(3)}`);
+    check("...and raises its own crescent, marked as predicted, for its own hero",
+      predictedEvents.length === 1 && predictedEvents[0]!.kind === "swing"
+      && predictedEvents[0]!.predicted === true && predictedEvents[0]!.hero === 1,
+      JSON.stringify(predictedEvents.map((e) => e.kind === "swing" ? [e.hero, e.predicted] : e.kind)));
+    // The host hasn't seen the press yet: its snapshot says this hero is not swinging.
+    // Adopting that would cancel the animation a few ticks in — the exact "restart
+    // mid-swing" the old apply did, and the control here.
+    const wire = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    check("the host's snapshot does not yet know about the swing (the control)", wire.h[1].sw === 0);
+    applySnapshot(client, wire);
+    check("...and adopting it does not cancel the client's in-flight swing",
+      Math.abs(me.avatar.swingTimer - predictedSwing) < 1e-9, `${me.avatar.swingTimer.toFixed(3)} vs ${predictedSwing.toFixed(3)}`);
+    // Now the host swings the same weapon: same visible timer, and its crescent names
+    // the hero so the client can drop the copy of a swing it already drew.
+    host.drainEvents();
+    mateInput.beginTick(); mateInput.press("attack");
+    hostInput.beginTick();
+    host.update(DT, hostInput as unknown as AvatarInput);
+    const hostSwing = host.drainEvents().find((e) => e.kind === "swing" && e.hero === 1);
+    check("the host's swing of the same weapon shows for exactly as long as the client predicted",
+      Math.abs(hostMate.avatar.swingTimer - predictedSwing) < 1e-9,
+      `${hostMate.avatar.swingTimer.toFixed(3)} vs ${predictedSwing.toFixed(3)}`);
+    check("...and the host's crescent names the hero and is not marked predicted",
+      hostSwing !== undefined && hostSwing.kind === "swing" && !hostSwing.predicted, JSON.stringify(hostSwing));
+    // An ally's swing is still the host's word, so allies keep seeing each other swing.
+    const ally = host.heroes[0]!.avatar;
+    ally.swingTimer = 0.1; ally.swingAngle = 1.5;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("an ally's swing on the client is still whatever the host says",
+      Math.abs(client.heroes[0]!.avatar.swingTimer - 0.1) < 0.01 && Math.abs(client.heroes[0]!.avatar.swingAngle - 1.5) < 0.01);
   }
 
   // 3b. Loot sharing. A drop is **shared, not owned** (owner ruling, 2026-09-10): one

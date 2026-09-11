@@ -101,7 +101,12 @@ export const STATUS_UNDER_OATH = {
   glyph: "O",
   category: "buff",
   tags: ["holy", "barrier", "support"],
-  baseDuration: 6,
+  // 6s put a played Paladin under a death guard for 12.0% of a deep floor
+  // (docs/ultimate-uptime.md). 4s takes that to ~8%. The meter rate is deliberately
+  // untouched: at 0.75 ultimates/min the class is rank 16 of 21 for frequency, and
+  // cutting generation would make the ultimate unreachable at the depths where it
+  // already never charges while barely moving the depths where it is a problem.
+  baseDuration: 4,
   maxStacks: 1,
   refreshRule: "refresh",
   guardsDeath: true,
