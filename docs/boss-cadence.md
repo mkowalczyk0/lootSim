@@ -200,3 +200,47 @@ the *next* unparking pass cannot slip through — it is the `HUNT_SPEED`-vs-slow
 one table over. Shapeless cards are excluded deliberately: `volley` is a ring of bolts at
 0.9, the pattern family's own ancestor, and ranking a bolt against it compares the thing to
 itself. Falsified by injection (`noose` at 1.2 → red, named in the message).
+
+---
+
+## 7. What the acceptance chain actually reads from disk
+
+Landed here as a fact rather than left as a step in an argument, because the question comes
+up every time a branch is rebased and it was got wrong twice in one evening — once by this
+branch's author and once, independently, by the session integrating it.
+
+**The question is not which folder a diff touched. It is whether the diff moves an artifact
+a gate step *reads*.** "Docs are safe" is the wrong rule: `docs/blind-instruments.md` is
+read by `tools/blind-index.mjs`, which is step 2 of the chain, so a docs-only diff can
+absolutely turn the gate red.
+
+**And grepping for a filename in source is not the same question as asking what the process
+opens.** `grep -rl docket tools/` returns 22 hits; every one is a prose citation in a
+comment, and not one of them is a read. Both wrong answers that evening came from that
+method. The reliable move is to enumerate the call sites — `readFileSync`, `readdirSync`,
+`createReadStream` — and see what they resolve to.
+
+Doing that, the chain's non-asset reads are:
+
+| what | read by | step |
+|---|---|---|
+| `docs/game_story_worldbuilding.md` | `tools/world.ts:308` | `npm run world` |
+| `docs/blind-instruments.md` | `tools/blind-index.mjs:51` | `npm run blindindex` |
+| `package.json` | `tools/check-scripts.mjs:24` | `npm run harness` |
+| `src/game/rules.ts`, **as text** | `tools/relics.ts:112` | `npm run relics` |
+| `src/styles.css`, **as text** | `tools/smoke.ts:3120` | `npm run smoke` |
+| every `.ts` under the sim dirs, **as text** | `tools/modkeys.ts:91` | `npm run modkeys` |
+| every `.ts` under `src/`, **comments stripped** | `tools/retiredmods.ts:79` | `npm run retiredmods` |
+
+Everything else the chain opens is an art asset — `src/render/atlas/**` PNGs and their
+JSON layouts.
+
+Two consequences worth carrying:
+
+- **`docs/docket.md` is read by nothing.** Its only appearance anywhere in `tools/` is a
+  comment on line 1 of `mp-stutter.ts`, which is not in the chain. A rebase whose whole diff
+  is the docket cannot invalidate a green — which is what let this branch's gate result
+  carry across its rebase on evidence rather than on assumption.
+- **Four steps read source as prose**, so "it only changes a comment" is not automatically
+  safe either. `retiredmods` strips comments before matching, deliberately, so that a
+  tombstone note may name the key it retired; `modkeys` does not.
