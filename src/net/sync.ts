@@ -338,6 +338,7 @@ function encodeHero(hero: Hero): HeroSnap {
     ack: hero.input instanceof NetInput ? hero.input.lastSeq : 0,
     ...(st !== 0 ? { st } : {}),
     cd: hero.skillCooldowns.map(r2),
+    rs: hero.resources.all().map((pool) => r2(pool.value)),
     pot: hero.potions,
     down: hero.downed,
     ...(hero.departed ? { gn: true } : {}),
@@ -476,6 +477,17 @@ function applyHero(d: Dungeon, hero: Hero, h: HeroSnap, log?: InputLog): void {
   hero.potions = h.pot;
   hero.reviveProgress = h.rev;
   for (let i = 0; i < hero.skillCooldowns.length; i++) hero.skillCooldowns[i] = h.cd[i] ?? 0;
+  // The class resource pools, by position — the same order `encodeHero` walked, because
+  // both ends built the same `ResourceSet` from the same character. `specialCharge`
+  // above already wrote the ultimate meter's pool through its setter; this writes every
+  // pool, the meter included, so the two never disagree.
+  if (h.rs) {
+    const pools = hero.resources.all();
+    for (let i = 0; i < pools.length; i++) {
+      const v = h.rs[i];
+      if (v !== undefined) pools[i]!.value = v;
+    }
+  }
 
   hero.loot.coins = h.lt[0];
   hero.loot.gems = h.lt[1];

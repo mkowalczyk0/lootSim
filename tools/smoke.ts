@@ -36,6 +36,7 @@ import { type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
+import { ResourcePool } from "../src/combat/resources";
 import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import {
   EARLY_EXTRACT_KEEP, MODES, RUN_MODES, delveConfig, describeRun, riftConfig, trainingConfig,
@@ -3759,6 +3760,69 @@ console.log("\n=== multiplayer ===");
     `${client.localHero.player.health} vs ${host.heroes[1]!.player.health.toFixed(0)}`);
   check("a client can bank what the host says it earned",
     client.localHero.loot.coins === host.heroes[1]!.loot.coins);
+
+  // 3a. The class's own resources cross the wire (the owner: "UI displays wrong
+  // resources, UI skill cooldowns are broken" in co-op). A client's `Dungeon.update`
+  // only reconciles and predicts — `hero.resources.tick` and `hero.rt.tick` never run
+  // there — so before `HeroSnap.rs` its pools sat at the constructor's starting value
+  // all floor and the HUD's resource bar, cost lines and `canCast` all read that.
+  // Asserted as a comparison against the host after 120s of real fighting, with the
+  // host's pools shown to have *moved* first so equality can't be two untouched pools.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    const hostPools = hostMate.resources.all();
+    const myPools = me.resources.all();
+    check("host and client built the same resource pools in the same order",
+      hostPools.length > 0 && hostPools.map((p) => p.spec.id).join() === myPools.map((p) => p.spec.id).join(),
+      `${hostPools.map((p) => p.spec.id).join(",")} vs ${myPools.map((p) => p.spec.id).join(",")}`);
+    // The bot above only basic-attacks — it never casts — so a magician's mana sits at
+    // full and its meter at empty for the whole fight, and "client equals host" would be
+    // two untouched pools agreeing with each other. So the host's pools are moved here
+    // on purpose, each to a value that is neither its start nor its max, before the
+    // snapshot is taken; the client then has to read *that*.
+    const startOf = (p: ResourcePool) => new ResourcePool(p.spec).value;
+    hostPools.forEach((p, i) => {
+      const rigged = p.max > 0 ? p.max * (0.3 + 0.1 * i) : 0;
+      p.value = Math.abs(rigged - startOf(p)) < 1 ? p.max * 0.75 : rigged;
+    });
+    check("the host's pools were moved off their starting values (so the next check isn't two untouched pools)",
+      hostPools.every((p) => Math.abs(p.value - startOf(p)) >= 1),
+      hostPools.map((p) => `${p.spec.id} ${startOf(p).toFixed(0)}->${p.value.toFixed(1)}`).join(" "));
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("a client reads its class resources off the host, every pool",
+      hostPools.every((p, i) => Math.abs((myPools[i]?.value ?? NaN) - p.value) <= 0.01),
+      hostPools.map((p, i) => `${p.spec.id} ${p.value.toFixed(1)}/${myPools[i]?.value.toFixed(1)}`).join(" "));
+    check("...and the ultimate meter agrees with `ch` rather than fighting it",
+      Math.abs(me.specialCharge - hostMate.specialCharge) < 0.011,
+      `${me.specialCharge.toFixed(3)} vs ${hostMate.specialCharge.toFixed(3)}`);
+    // Cooldowns. `cd` already crossed the wire; what didn't is *readiness* — the HUD
+    // colours a skill by `canCast`, which read the client's own `hero.rt`, a runtime that
+    // never casts and so never has anything on cooldown. The old read is quoted as the
+    // negative control: it says "ready" for the exact skill the host has on cooldown.
+    const slot = hostMate.player.activeAbilities.findIndex(Boolean);
+    const ability = slot >= 0 ? hostMate.player.activeAbilities[slot] : undefined;
+    if (!ability) {
+      check("the remote hero has an equipped skill to test cooldown readiness with", false);
+    } else {
+      hostMate.skillCooldowns[slot] = 4;
+      applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+      check("a client's skill on cooldown on the host is not castable on the client",
+        me.skillCooldowns[slot] === 4 && !client.canCast(slot),
+        `cd ${me.skillCooldowns[slot]}, canCast ${client.canCast(slot)}`);
+      check("...which the client's own runtime would have got wrong (the old read)",
+        me.rt.ready(ability) === true);
+      hostMate.skillCooldowns[slot] = 0;
+      applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+      const affordable = (ability.costs ?? []).every((c) => (me.resources.get(c.resource)?.value ?? 0) >= c.amount);
+      check("...and castable again once the host's cooldown clears, if the wire's pools can pay for it",
+        client.canCast(slot) === affordable, `canCast ${client.canCast(slot)}, affordable ${affordable}`);
+    }
+    // What this costs on the wire, per hero, at the busiest moment measured above.
+    const rsBytes = JSON.stringify(encodeSnapshot(host).h.map((h) => h.rs)).length / host.heroes.length;
+    check("the resource pools cost a few bytes per hero per snapshot",
+      rsBytes <= 64, `${rsBytes.toFixed(0)} bytes/hero (${hostPools.length} pools)`);
+  }
 
   // The floor objective is the host's to count (UAT §5) — a client mirrors the two
   // numbers and derives the two requirements from the config it already had, so its

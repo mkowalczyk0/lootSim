@@ -174,6 +174,16 @@ export interface HeroSnap {
   readonly st?: number;
   /** Skill cooldowns, four of them. */
   readonly cd: number[];
+  /**
+   * The class's own resource pools — Momentum, Rage, Mana, the ultimate meter, whatever
+   * `ResourceSpec`s the class declares — as `value` per pool in `ResourceSet.all()` order.
+   * `mp` above is legacy `Player.mana`, which no live class casts with; the HUD reads
+   * these (`primaryResource`, the cost line under each skill, `canCast`), and a client
+   * whose pools never tick was drawing the constructor's starting value all floor. The
+   * order is fixed per class at construction (no pool is ever added mid-run), which is
+   * what lets this be a bare array rather than id-keyed.
+   */
+  readonly rs: number[];
   readonly pot: number;
   /** Dead and waiting for a revive. */
   readonly down: boolean;
