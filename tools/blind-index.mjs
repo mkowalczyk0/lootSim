@@ -19,7 +19,28 @@
  *
  * Plain `.mjs` on purpose: it reads one markdown file and imports nothing from `src/`, so
  * routing it through the bundler would buy nothing and put a docs check on the shared
- * bundle path that is item 6 of the very file it is checking.
+ * bundle path that is item 6 of the very file it is checking. **The cost of that choice is
+ * that `check:tools` does not typecheck this file** — it covers `tools/*.ts` — so a
+ * reference error here surfaces when it runs rather than when it compiles. That is the
+ * same trade `tools/check-scripts.mjs` makes, and it is deliberate, but a reader seeing a
+ * green gate would otherwise have no way to know the extension was a decision.
+ *
+ * WHAT THIS CHECK DOES NOT SEE, which is the more useful half:
+ *
+ * It compares the table against the entries *structurally* — a row per entry, a number
+ * used once, no gap. It has no opinion on whether a row's text is **accurate**, whether
+ * two differently-worded rows name the **same** species, or whether a number was assigned
+ * by the integrator rather than derived locally (a derived ordinal that happens not to
+ * collide is indistinguishable from an assigned one). The near-duplicate pair that made
+ * the index worth writing would therefore still pass this check today, if both entries had
+ * held distinct numbers — the index defends against that by being *readable*, not by being
+ * verified.
+ *
+ * Concretely, from the night this was written: two defects were found in this branch by a
+ * person re-reading their own work — a `$?` that belonged to `tail`, and a sentence in the
+ * index claiming this very check was "deliberately not built", true when written and false
+ * an hour later. **Neither would have been caught by anything here.** A check that notices
+ * a missing row is worth having; it is not the thing that keeps this file honest.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
