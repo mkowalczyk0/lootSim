@@ -1,5 +1,9 @@
 /**
- * Paladin's ultimate uptime, measured rather than reasoned about (docket §31 lead).
+ * Ultimate uptime across the whole roster, measured rather than reasoned about.
+ *
+ * Started as a Paladin-specific question and was renamed when the roster sweep found the
+ * outlier somewhere else entirely — see `docs/ultimate-uptime.md`. **Paladin is rank 16 of
+ * 21 for how often its ultimate fires.** The Lancer fires one every 1.2 seconds.
  *
  * The owner's report is "Paladin needs a cooldown on his ultimate — you can infinitely
  * live if you get it up enough times." Two things about that had to be established before
@@ -23,7 +27,7 @@
  * The bot fires the ultimate the tick it charges (`bot.ts`: `if (d.specialCharge >= 1)`),
  * which is exactly the play the owner described.
  *
- * Reports; never fails the build. Run with `npm run paladin-uptime`.
+ * Reports; never fails the build. Run with `npm run ultimate-uptime`.
  */
 
 import { playFloor, geared } from "./bot";
