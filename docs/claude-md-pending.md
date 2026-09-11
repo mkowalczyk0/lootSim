@@ -1,7 +1,8 @@
 # CLAUDE.md edits awaiting the owner's word
 
 Four drafts were named in `docs/handoff.md` §4 as written and unlanded; a fifth (§5) was
-added afterwards from `fix/no-mapwipe`. `CLAUDE.md` is the
+added afterwards from `fix/no-mapwipe`, and a seventh (§7) from `feat/relic-level-gate`.
+`CLAUDE.md` is the
 owner's own document — no peer session lands an edit to it on another session's say-so, so
 none of these has been applied. This page exists so the owner can read one place and say
 yes or no once, instead of four separate round trips. Nothing here has been merged, edited
@@ -433,6 +434,57 @@ carry a number that is expected to move.
 
 ---
 
+## 7. The relic slots bullet — "No level gate" is now false
+
+**Branch:** `feat/relic-level-gate`. The code is green and does not depend on this text; the
+line is simply no longer true of the game, so leaving it is a landmine for whoever reads it
+next. This is a factual correction to a sentence the owner's own ruling overturned, not a
+proposal to change anything.
+
+### Current `CLAUDE.md` text (the "Relics and artifacts" section, third bullet)
+
+> - **Three slots, one relic.** `RELIC_SLOTS = 3` on `Player.relics` (per class, on the
+>   co-op wire via `playerToJSON`), out of the account-wide `GameState.relics`. At most
+>   `MAX_RELICS_WORN = 1` is relic-tier; artifacts fill the rest, so they never go dead. One
+>   constant, owner-overturnable. **No level gate, like the universal tree.**
+
+### Proposed replacement
+
+> - **Three slots, one relic, and a level gate.** `RELIC_SLOTS = 3` on `Player.relics` (per
+>   class, on the co-op wire via `playerToJSON`), out of the account-wide `GameState.relics`.
+>   At most `MAX_RELICS_WORN = 1` is relic-tier; artifacts fill the rest, so they never go
+>   dead. One constant, owner-overturnable. **A relic may only be socketed by a character at
+>   the level of the shallowest floor that can pay it out** — all three slots, both tiers, no
+>   carve-outs. `relicRequiredLevel` **derives** that from the drop table rather than an
+>   authored field: `sourceFloor` walks a source to its shallowest qualifying run by *asking*
+>   `riftConfig`/`raidConfig`/`towerConfig`/`bossFor`, and `levelAdvice` — the same function
+>   behind `DepthProfile.recommendedLevel` — turns that floor into a level, less
+>   `requiredLevel`'s one level of grace. A relic authored tomorrow is gated for free with no
+>   number to forget, and there is no per-definition field to omit. Danger counts (a tier is
+>   *where* a thing drops); the Challenger dial does not, by construction. It gates the
+>   **socket, not the drop** — an above-level relic still drops and waits in the collection.
+>   See `docs/relics.md`.
+
+### Why the old line was written, and why it no longer holds
+
+The exemption was reasoned by analogy to the universal tree, and the analogy does not
+survive inspection: the universal *pool* is account-wide but its **allocation is per-class**,
+and a universal node grants no abilities and flips no rules by design. A relic does both — it
+is a tree node you wear. So relics were not "like the universal tree"; they were the one
+account-wide power system a level-1 alt could wear the endgame out of.
+
+The owner overturned it directly, and declined a softer variant that would have let an alt
+wear low-tier artifacts immediately.
+
+### Also affected, and handled on the branch
+
+`docs/relics-per-class.md` §A-i cites this exact CLAUDE.md sentence as evidence ("CLAUDE.md
+says so outright"). That doc is a proposal page rather than a live design record, so the
+branch adds a one-line resolution note at its head rather than rewriting a proposal after the
+fact. `docs/relics.md` — the live design record — has been rewritten properly.
+
+---
+
 ## Summary for a fast read
 
 | # | Draft | Source of proposed text | Branch | Reviewed by owner? |
@@ -443,6 +495,7 @@ carry a number that is expected to move.
 | 4 | Campaign-check thinness paragraph | Reconstructed from `tools/campaignblock.ts`'s landed header | none (no CLAUDE.md diff ever committed) | No — already superseded operationally by the tool header |
 | 5 | Difficulty philosophy — the reachable band's ruling | Found in full, on the branch (§11) | `investigate/power-curve2` (never merged) | No — and gated on `docs/reachable-band-decision.md`'s own pending re-confirmation; don't apply either until that clears |
 | 6 | THE MAP-WIPE RULE (new passage, not a replacement) | Written on the branch; **reverted from `CLAUDE.md` and rewritten against the final state** | `fix/no-mapwipe` | No. Sibling to THE EXECUTE RULE; the code is green and independent of this text |
+| 7 | Relic slots bullet — "No level gate" is now false | Written fresh against the shipped code on the branch; a factual correction, not a proposal | `feat/relic-level-gate` | No. The code is green and independent of this text |
 
 **On drafts 2 and 3 specifically:** these were reported not-found in the first pass of this
 page, and the PM asked me to write them once it was confirmed nobody had. They are not
