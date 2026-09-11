@@ -1903,9 +1903,14 @@ flagged: it passes today, and passing today is not the same as being gated.
 
 ## Owner rulings, 2026-09-11 night — §38 rescoped, and §40 opened
 
-### §38 is now the Ranger and the Berserker, and nothing else
+### §38 is the Ranger, and only the Ranger
 
-> "Ranger + Berserker, same defect."
+> "Ranger + Berserker, same defect." — **then, on better evidence, "Drop it — record
+> the observation."**
+
+**Both rulings are recorded because the first was made on a premise the PM supplied and
+later had to withdraw.** The Berserker is out. See "The Berserker is not the same defect"
+below, which is the part of this entry most worth reading before applying §38 anywhere else.
 
 The measurement that forced this is in `docs/execute-family.md`. The short version: **the
 three classes §38 named are not comparable**, and the owner's earlier "whole execute family"
@@ -1916,10 +1921,8 @@ ruling was made on a premise that did not survive contact with a real build.
   target `{ withTag: "projectile" }`, the ultimate carries that tag, and neither node's prose
   mentions the ultimate. So §8's "halve 0.4 to 0.2" was really 1.15 to 0.95 — a 17% cut
   believed to be 50%.
-- **Berserker** — `worldbreaker` [ULT] collects **+0.30** from two tag-targeted adders and has
-  **no authored rider at all**. The identical mechanism, unreported, much smaller. Found only
-  because the attribution tool swept all 28 rider-carrying packets rather than the three the
-  docket named; **the docket's candidate list was a scope inherited from the complaint.**
+- **Berserker** — **investigated and deliberately left alone.** `worldbreaker` collects
+  **+0.30**, and it was briefly folded into §38 as the same bug. It is not. See below.
 - **Reaper and Assassin** are removed from §38 — see §40. Their ultimates barely fire or do
   not fire at all, and nerfing an ultimate nobody can cast is the wrong item entirely.
 
@@ -1932,6 +1935,37 @@ called a fourth guess at a number.
 the *composed* coefficient. Three people in a row reasoned correctly about an authored 0.2
 while the game ran 0.95. `npm run execute-attrib` now prints the effective value, and its
 `--roster` mode is what found the Berserker. Keep both.
+
+### The Berserker is not the same defect — and this is the test that separates them
+
+**The test is a mismatch between a node's prose and its reach. It is NOT the presence of tag
+targeting.** Tag targeting is a legitimate authoring idiom used correctly all over the
+roster, and §38 must never be read as a licence to hunt it down.
+
+- **The Ranger fails the test.** `perfect_ambush` promises "a shot fired from stealth or
+  Deadeye" and `winter_execution` promises "a held Deadeye shot". Neither sentence describes
+  an area volley at radius 350, and neither mentions the ultimate. The ultimate was taking
+  +0.75 from two nodes that do not describe it.
+- **The Berserker passes it.** `blood_scent` (+0.05, `withTag: "melee"`) is general by design
+  and names no ability; `deathblow.heavy` (+0.15, `withAllTags: ["melee","heavy"]`) is
+  described as "heavy attacks consume a chunk of your remaining health for catastrophic
+  damage". `BERSERKER_WORLDBREAKER` is tagged `["ultimate","melee","heavy","area","nova"]`
+  and described as "an escalating sequence of enormous axe strikes". It is not collateral —
+  **it is the paradigm case of what that node's own text promises.** Narrowing it would
+  delete an effect the tree advertised to the player, which is the inverse of the Ranger fix
+  rather than the same shape.
+
+Two corrections worth keeping, both to the PM's own reasoning:
+
+1. **"It would go to zero" was arithmetically wrong.** A third adder,
+   `blood_god.worldbreaker` (+0.10), targets `{ abilityId: "berserker.worldbreaker" }` — by
+   id, and it is the Mythic. Narrowing the two tag adders would leave 0.10, not 0.
+2. **The owner was asked again once the premise collapsed, rather than having the reversal
+   made quietly.** The ruling that stands is the second one.
+
+**If the Berserker ever does need moving, the honest lever is the authored values on those
+nodes, not their targeting** — a real balance change to an unreported class, needing its own
+item and its own measurement. It has not been measured and nobody has reported it.
 
 ## 40. Two classes cannot charge their ultimate — the Assassin's has never worked
 
