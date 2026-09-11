@@ -49,7 +49,7 @@
 import type { NodeEffect } from "../progression/nodes";
 import {
   forSource, foundSourceLines, foundSourceProblems, isLiveSource, riftBossSources, rollTable,
-  provingSourcesOf, type DropQuery, type FoundSource, type TableMatch,
+  provingSourcesOf, sourceLevel, type DropQuery, type FoundSource, type TableMatch,
 } from "./drops";
 import { DELVE_BOTTOM } from "./legends";
 import { MOD_KEYS } from "./mods";
@@ -976,19 +976,77 @@ export function relicSourceLines(def: RelicDef): string[] {
   return foundSourceLines(def.sources);
 }
 
+// --- the level gate ---------------------------------------------------------------
+
+/**
+ * Character level needed to socket a relic — **derived from where it drops**, never
+ * authored per definition.
+ *
+ * An item answers this from its own `ilvl` (`requiredLevel` in `game/item.ts`), because a
+ * drop's item level already tracks the floor that produced it. A relic has no `ilvl` — no
+ * base block, no affixes, nothing that scales — so the same question has to be asked of the
+ * only thing it does carry: its drop table. `sourceLevel` takes each source to the
+ * shallowest run that can pay it out and asks `levelAdvice`, which is the identical formula
+ * behind `DepthProfile.recommendedLevel`. The relic's requirement is the **cheapest** of
+ * those, because a player only has to find one of its sources.
+ *
+ * Deriving it is the whole design, and the reason is the one `requiredLevel` gives: a
+ * derived requirement cannot drift, and a relic authored tomorrow is gated for free with no
+ * number for anyone to forget. A `requiredLevel` field on `RelicDef` would be thirty numbers
+ * to keep in step with thirty drop tables, and could anyway be satisfied with `1`.
+ *
+ * The one-level grace is `requiredLevel`'s, for `requiredLevel`'s reason: a floor's XP lands
+ * as its monsters die, so a character clearing the floor that pays a relic is often a level
+ * short of that floor's advice at the moment it drops. Without the grace, the run that earns
+ * a relic routinely could not wear it.
+ *
+ * **This is a socket gate, not a drop gate.** An above-level relic still drops, still banks,
+ * and waits in the collection — the account owns it, the character has to grow into it. That
+ * is the same shape the shared stash already has, and it is what keeps the rule from being a
+ * second, invisible rarity ceiling.
+ */
+export function relicRequiredLevel(def: RelicDef): number {
+  let cheapest = Infinity;
+  for (const src of def.sources) {
+    // A `craft` source would answer 1 and flatten the gate — and `relicProblems` already
+    // refuses one on a relic, so skipping it here is belt-and-braces rather than policy.
+    if (!isLiveSource(src)) continue;
+    cheapest = Math.min(cheapest, sourceLevel(src));
+  }
+  // A definition with no live source is refused by `relicProblems`, so this floor is
+  // unreachable for anything shipped. 1 rather than Infinity so a malformed definition is a
+  // gate failure rather than an unwearable item.
+  if (!Number.isFinite(cheapest)) return 1;
+  return Math.max(1, cheapest - 1);
+}
+
 // --- wearing --------------------------------------------------------------------
 
 /**
- * Whether `id` may go into slot `slot` of `worn`. Pure: the one rule, read by the town
- * (to grey a candidate out) and by `Player.socketRelic` (to refuse it). Three reasons to
- * say no — the id isn't a relic, it's already in another slot, or it's relic-tier and
- * `MAX_RELICS_WORN` are already worn elsewhere.
+ * Whether `id` may go into slot `slot` of `worn` at character level `level`. Pure: the one
+ * rule, read by the town (to grey a candidate out) and by `Player.socketRelic` (to refuse
+ * it). Four reasons to say no — the id isn't a relic, it's already in another slot, it's
+ * relic-tier and `MAX_RELICS_WORN` are already worn elsewhere, or the character is below
+ * `relicRequiredLevel`.
+ *
+ * `level` is required rather than optional on purpose. An optional level would make the gate
+ * a thing each call site remembers to ask for, and the one that forgot would be a silent
+ * hole in exactly the rule this parameter exists to enforce — the same argument the execute
+ * threshold settled by living at its single evaluation site. Every socketing path in the
+ * game goes through this function, so there is one place to pass it and no way to omit it.
  */
-export function relicSocketBlocker(worn: readonly (string | null)[], slot: number, id: string): string | null {
+export function relicSocketBlocker(
+  worn: readonly (string | null)[], slot: number, id: string, level: number,
+): string | null {
   const def = RELIC_BY_ID[id];
   if (!def) return "That isn't a relic.";
   if (slot < 0 || slot >= RELIC_SLOTS) return "No such slot.";
   if (worn.some((w, i) => i !== slot && w === id)) return `${def.name} is already in another slot.`;
+  const need = relicRequiredLevel(def);
+  // Deliberately name-free: both readers (the picker row, which already shows the name to
+  // its left, and the town's refusal notice, which is about the thing just picked) would
+  // otherwise say it twice.
+  if (level < need) return `Answers to level ${need} — you are ${Math.max(1, Math.floor(level))}.`;
   if (def.tier === "relic") {
     const others = worn.filter((w, i) => i !== slot && w !== null && RELIC_BY_ID[w]?.tier === "relic").length;
     if (others >= MAX_RELICS_WORN) {
@@ -1010,20 +1068,50 @@ export function wornRelicEffects(worn: readonly (string | null)[]): NodeEffect[]
   return out;
 }
 
+/** A normalised loadout, and the relics that had to come out to make it legal. */
+export interface RelicLoadout {
+  readonly worn: (string | null)[];
+  /**
+   * Ids removed because the character is below `relicRequiredLevel` — the only reason a
+   * *previously legal* loadout can become illegal, and so the only one worth telling a
+   * player about. An unknown id, a duplicate or a cap violation is either data that no
+   * longer exists or a save that was never legal; those come out silently, as they always
+   * have.
+   */
+  readonly unsocketed: string[];
+}
+
 /**
- * A loadout brought back to legality — unknown ids dropped, duplicates dropped, relics
- * past the cap dropped, padded or cut to `RELIC_SLOTS`. Used on load and on the wire;
- * a save from a build that allowed three relics loads wearing one.
+ * A loadout brought back to legality at character level `level` — unknown ids dropped,
+ * duplicates dropped, relics past the cap dropped, relics above the character's level
+ * dropped, padded or cut to `RELIC_SLOTS`. Used on load and on the wire; a save from a build
+ * that allowed three relics loads wearing one.
+ *
+ * It returns what it took out rather than only the result, because the level gate arriving
+ * (SAVE_VERSION 35) is the first migration here that can unsocket something a player
+ * legitimately earned and was wearing. A migration players cannot see is how trust in a save
+ * format dies — `GameState.relicsUnsocketed` carries this to a one-time town notice, exactly
+ * as `treePointsRefunded` already does for the class refactor.
  */
-export function normalizeRelicLoadout(raw: unknown): (string | null)[] {
-  const out: (string | null)[] = Array.from({ length: RELIC_SLOTS }, () => null);
-  if (!Array.isArray(raw)) return out;
+export function normalizeRelicLoadout(raw: unknown, level: number): RelicLoadout {
+  const worn: (string | null)[] = Array.from({ length: RELIC_SLOTS }, () => null);
+  const unsocketed: string[] = [];
+  if (!Array.isArray(raw)) return { worn, unsocketed };
   for (let i = 0; i < RELIC_SLOTS; i++) {
     const id = raw[i];
     if (!isRelicId(id)) continue;
-    if (relicSocketBlocker(out, i, id) === null) out[i] = id;
+    if (relicSocketBlocker(worn, i, id, level) === null) {
+      worn[i] = id;
+      continue;
+    }
+    // Would it have fit had the character been at its level? Then the level is the reason
+    // it came out, and this is the one removal a player earned and should hear about.
+    // Asking the same blocker a second question is what keeps "why" from forking away from
+    // "whether" — a duplicate or a cap violation answers no to both and stays silent.
+    const def = RELIC_BY_ID[id];
+    if (def && relicSocketBlocker(worn, i, id, relicRequiredLevel(def)) === null) unsocketed.push(id);
   }
-  return out;
+  return { worn, unsocketed };
 }
 
 // --- validation (the `npm run relics` gate reads this) ----------------------------------
