@@ -4037,6 +4037,68 @@ console.log("\n=== multiplayer ===");
     check("banking again doesn't advance the ladder a second time",
       raidHostState.raidProgress[spec.id] === hostBefore + 1,
       `still ${raidHostState.raidProgress[spec.id]}`);
+
+    // 3e. The Raid Portal is *spawned* by the War Table, not permanent like the Delve or
+    // a rift — so unlike those, picking one doesn't just mark an existing station as the
+    // party's ready spot, it has to bring the portal into existence in the first place.
+    // The host's pick calls `hub.setRaid` on the host's own `Hub`; until now nothing told
+    // any other party member's `Hub` to do the same, so the portal only ever existed on
+    // whichever machine ran the War Table. This is the live bug the owner hit, and it's
+    // asserted here as a comparison rather than a presence check on the client alone — a
+    // check that only reads the client's hub can pass by reading the host's by mistake,
+    // which is exactly the shape of gap that let this ship. The property that matters is
+    // **host and client derive the same open stations from the same plan**; that would
+    // have caught this at `setExpedition` too, had anyone written it there, and it covers
+    // the next station someone adds the same way.
+    const hostParty = new Party(new GameState(9001));
+    hostParty.net.status = "connected";
+    hostParty.net.code = "TEST";
+    hostParty.net.isHost = true;
+    const hostHub = new Hub();
+    const clientParty = new Party(new GameState(9002));
+    // `Party.syncHub` only does anything while `inRoom` — real co-op needs a live relay
+    // connection for that, which this harness doesn't stand up, so this reaches the exact
+    // same fields a real host/join sets rather than mocking `syncHub`'s behavior around
+    // them. `setPlan`'s own broadcast is a safe no-op with no socket open.
+    clientParty.net.status = "connected";
+    clientParty.net.code = "TEST";
+    const clientHub = new Hub();
+    const openKinds = (hub: Hub) => hub.stations.map((s) => s.kind).sort().join(",");
+
+    hostParty.syncHub(hostHub, DT);
+    clientParty.syncHub(clientHub, DT);
+    check("before any plan, neither deck has a raid portal",
+      openKinds(hostHub) === openKinds(clientHub) && !openKinds(hostHub).includes("raidPortal"),
+      openKinds(hostHub));
+
+    // The host picks, the same call the War Table makes; the client learns of it the way
+    // `receive()` actually does — a `plan` message rebuilt through the real wire types —
+    // not by copying `.plan` directly, which would test a shortcut nobody's client takes.
+    hostParty.setPlan(raidCfg, "raidPortal");
+    (clientParty as unknown as { receive(from: string, msg: unknown): void }).receive("host", {
+      k: "plan", players: 2, running: false,
+      run: configToWire(hostParty.plan!.config), station: hostParty.plan!.station,
+    });
+    hostParty.syncHub(hostHub, DT);
+    clientParty.syncHub(clientHub, DT);
+    check("host and client derive the identical open stations from the same plan",
+      openKinds(hostHub) === openKinds(clientHub) && openKinds(hostHub).includes("raidPortal"),
+      `${openKinds(hostHub)} vs ${openKinds(clientHub)}`);
+    check("...and specifically agree on which raid and which tier",
+      hostHub.raid?.raidId === clientHub.raid?.raidId && hostHub.raid?.tier === clientHub.raid?.tier
+      && clientHub.raid?.raidId === spec.id && clientHub.raid?.tier === tier,
+      `host ${JSON.stringify(hostHub.raid)} vs client ${JSON.stringify(clientHub.raid)}`);
+
+    // And it goes away again on both ends if the plan ever stops being a raid.
+    hostParty.plan = null;
+    (clientParty as unknown as { receive(from: string, msg: unknown): void }).receive("host", {
+      k: "plan", players: 1, running: false,
+    });
+    hostParty.syncHub(hostHub, DT);
+    clientParty.syncHub(clientHub, DT);
+    check("...and both agree it's gone once the plan is",
+      openKinds(hostHub) === openKinds(clientHub) && !openKinds(hostHub).includes("raidPortal"),
+      openKinds(hostHub));
   }
 
   // 4. Going down is not dying: an ally standing over you brings you back.

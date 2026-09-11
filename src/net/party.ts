@@ -244,12 +244,17 @@ export class Party {
     // this the host's deck grew a portal and no client's did: the party could see the plan
     // and had nowhere to stand. `RunConfigWire` already carries `raidId`/`raidTier` and
     // `configFromWire` rebuilds through `raidConfig`, so the plan arriving here is already
-    // the raid — the only thing missing was mirroring it into everybody's hub.
+    // the raid — the only thing missing was mirroring it into everybody's hub. This also
+    // bypasses the viewer's own `raidOpen` (their own account's unlock) for the duration:
+    // a party goes where the host goes, the same call joining a planet expedition already
+    // makes, so a member whose own frontier hasn't personally unlocked this raid still
+    // comes along rather than finding nothing to stand in.
     const raid = this.plan?.config.raid;
     if (raid) {
       if (hub.raid?.raidId !== raid.spec.id || hub.raid.tier !== raid.tier) {
         hub.setRaid(raid.spec.id, raid.tier);
       }
+      hub.raidOpen = true;
     } else if (hub.raid) {
       hub.clearRaid();
     }
