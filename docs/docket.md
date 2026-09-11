@@ -1708,7 +1708,7 @@ instruction — no implementation before the memo. The memo is what changed the 
 > in place, and the `CLAUDE.md` correction they imply is queued as §7 of
 > `docs/claude-md-pending.md`.
 
-## 33. The multiplayer bug list — HELD BY ANOTHER SESSION, status not written here
+## 33. The multiplayer bug list — ALL FIVE LANDED; the transport question is answered
 
 Five reports bundled as one item, plus a standing question:
 
