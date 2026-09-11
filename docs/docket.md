@@ -1523,6 +1523,32 @@ purpose statement at the top. **No outcomes recorded below — nothing has lande
 
 **Held by session 26. In flight.**
 
+**Lead handed over by the PM (`lootsim-9f`), reported not verified — 26 may yet find this
+wrong.** If true, this is a third instance of a known exploit family, not a fresh bug:
+
+- Conviction generates from `{ on: "damagePrevented", amount: 50, perUnit:
+  "maxHealthFraction" }`, and Last Light's `under_oath` is a damage-prevention state — so
+  the ultimate would be charging the meter that casts it. Engineer and Warlock both
+  shipped the same loop earlier as untagged `{ on: "damageDealt", perUnit: "damage" }`
+  rules with fat coefficients.
+- **THE ULTIMATE RULE doesn't reach this shape.** `src/combat/resources.ts:257` refuses
+  generation from an ultimate-*sourced* event, but not from a state the ultimate left
+  behind that goes on to charge the meter itself — a limitation already stated in that
+  guard's own comment in `tools/smoke.ts`, known and written down when the first two
+  instances were fixed.
+- **The existing data-shape guard is blind to this instance too.** "The ultimate meter
+  cannot pay for itself" only checks untagged `damageDealt`, damage-scaled rules against a
+  0.05 cap. `damagePrevented` on `maxHealthFraction` is out of scope on both axes, so it
+  passes clean regardless of whether the bug is real.
+- **Cross-reference §27.** If 26's fix closes this structurally it may resolve the
+  Engineer item too, which is currently awaiting an owner call — flag that rather than
+  quietly closing §27 as a side effect of this one.
+
+**An eighteenth `docs/blind-instruments.md` entry may be owed here** — the data-shape
+guard passing a shape it was never built to see is that book's exact pattern — but it
+belongs to whoever confirms the diagnosis, not to whoever relayed it. Placeholder only
+until 26 verifies.
+
 ## 30. No skill should be able to wipe the entire map — sweep every skill
 
 > "No skill should be able to wipe the entire map."
