@@ -56,13 +56,20 @@ proposal for the owner — are deliberately absent from this table.
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
 | 32 | Noise inventing a plateau, read as a mechanism | a false plateau at 1.95s with the stall beat as its ready-made cause |
 | 33 | A bound so cautious it discards a real signal | the execute split's "one packet or several" guard, pooling a per-seed base |
-| 34 | *reserved* | held for the co-op cast-prediction work; §33's triage found nothing to fix and wrote no entry |
+| 34 | *in flight* |  |
 | 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
 | 36 | A silent narrowing, which converts authored content into evidence of its own absence | `GRANTABLE_ABILITY_IDS`' trailing `.filter`, handing every reader the survivors |
 | 37 | A clean merge read as evidence about meaning, when it is only evidence about text | a docket ruling appended 300 lines below the status word it falsified |
 
-The *in flight* rows are numbers already assigned to entries that exist on unmerged
-branches. They are left blank on purpose: naming a shape from a text this file does not yet
+The *in flight* rows are numbers already assigned to entries this file does not yet contain
+— usually because the entry exists on an unmerged branch, and sometimes because the work the
+number was assigned to has not been written at all. Row 34 is the second kind: it was assigned
+to a co-op investigation that concluded there was nothing to fix, so no entry was ever authored
+and the number is simply waiting for the next one. **A number, once assigned, is never reused
+and never reclaimed** — entries are cited by number, and closing a gap by renumbering would
+break every citation of every entry above it.
+
+They are left blank on purpose: naming a shape from a text this file does not yet
 contain would be a scope taken from somewhere other than the file, which is item 18's defect
 committed while documenting it. **Whichever branch lands one of those entries fills in its own
 row in the same commit.**
