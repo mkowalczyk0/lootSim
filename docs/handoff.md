@@ -1,242 +1,139 @@
-# PM handoff — end of the 2026-09-10 (evening) run
+# PM handoff — end of the 2026-09-10 night run
 
-You are the incoming PM. The owner's standing instructions define the job:
+You are the incoming PM for lootSim. Five peer Claude Code sessions do the work; you set
+priority, delegate, approve, sign off, and keep the ball rolling. **Don't re-do or
+extensively audit other sessions' work** — take their word, spot-check only when something
+they claim contradicts something you can see. Ping the owner only when you roll something
+out or genuinely need a decision.
 
-> "You are the PM here. You will dictate priority, delegate work, approve and sign off, and
-> keep the ball rolling. Do not re-do or extensively check other agents'/sessions' work.
-> Only ping me once you roll something out and need me to take a look. Be mindful of the
-> session limit and token consumption — use compact and clear after every task."
+## Standing rules from the owner — these override your instincts
 
-Plus, always: **`docs/game_story_worldbuilding.md` is the creative tiebreaker.** Read the
-relevant part of it before any task touching lore, naming, realm identity or the structure
-of a system. Other `docs/*.md` files carry the design records.
+1. **`docs/game_story_worldbuilding.md` is the creative tiebreaker.** Read it before any
+   lore, naming or structural call.
+2. **Every decision goes to the owner as a selectable-options prompt** (AskUserQuestion),
+   framed as a professional game designer would pitch it — what the player experiences,
+   what it costs, what rule it spends. Lead with your recommendation and say it is the
+   recommendation. Never filter out the expensive option; this owner reliably trades
+   effort for a better game.
+3. **The owner is a live player of this build.** One dev server runs out of the shared
+   checkout at `~/Desktop/lootSim`, usually with a second real person in co-op. Any commit
+   that lands on `master` hot-reloads and interrupts their session. So: **every session
+   works in its own git worktree**, finished gate-green branches **queue rather than
+   land**, and you **batch the queue behind a single yes/no** to the owner before merging.
+4. **Delegate by model.** `lootsim-26` and `lootsim-d8` are Opus — give them the longest
+   and hardest work. `lootsim-97`, `lootsim-56`, `lootsim-f1` are Sonnet — generic,
+   well-specified tasks.
+5. **Be frugal.** `/compact` and `/clear` between tasks.
 
-Master is at the merge of `fix/keystone-symmetry`, **gate green (`npm test`, all stages)**.
+## Where things stand
 
----
+`master` is at `548f218`. The night's headline work is in and playing:
 
-## 1. THE ONE THING THAT MATTERS RIGHT NOW: multiplayer is near-unplayable
+- **Co-op loot is instanced.** Anyone may pick up any drop, and picking it up credits
+  every party member with their own copy at their own character level. This went through
+  two owner reversals — first-come-first-served → ownership → shared — and the *final*
+  rule is shared. `docs/shared-loot.md` has the design and the two falsification
+  injections that establish it.
+- **Raids are live in co-op.** The solo gate is gone and the Raid Portal now appears for
+  every party member, not just the host, including one whose own account has unlocked no
+  raid. The settled design rule: **the party goes where the host goes**, matching the
+  precedent the expedition portal already set. The owner asked for this explicitly and
+  told us to ignore the earlier `partyScale` scaling discussion — they want to iterate in
+  co-op and will report on scaling themselves. Do not reopen that.
+- **Multiplayer chop is partly closed.** Movement is fine; the owner reports residual
+  input lag on *attacking*. A de-jitter buffer was built, shipped, and then **reverted**
+  after a clean real-link test made it worse — root cause written up: `netClock` is a
+  simulation clock driving a wall-clock mechanism, `core/loop.ts`'s spiral guard discards
+  leftover time, and queue overflow applies several snapshots in one tick. Rebuild
+  requirements are recorded; don't rebuild it without reading them.
+- **A live crash was fixed** — `updateTelegraphs` asserted non-null on an array a boss
+  death empties mid-walk. Falsified properly (1 crash in 60 seeds, seed 802199, red→green
+  on one line). `docs/telegraph-splice-crash.md`.
+- **The acceptance gate no longer shares a bundle cache** between concurrent worktree
+  runs; the chain is 34 steps and `tools/check-scripts.mjs` keeps `package.json` honest.
 
-This is the owner's top priority and everything else is behind it.
+## The single most valuable thing to carry forward
 
-**The report (today, their words):** they played co-op with another real person on a second
-machine — the first time that has ever happened; every previous test was one process on
-localhost. The other player found it *"very laggy, very choppy, near unplayable."*
+`docs/blind-instruments.md` — fourteen catalogued cases in this repo of a check that could
+not see its own subject. The rule CLAUDE.md now states, and which cost real regressions to
+learn: **a check's bound, its scope and its subject must all come from somewhere other
+than the thing under test**, and **a rule that cannot be violated beats a check that
+notices when it was.** Hold every delegated verification to it. When a session reports a
+green, the useful follow-up question is "what would have made it red?", not "are you sure?"
 
-**Owner-supplied facts, all confirmed by them directly. Do not re-ask:**
+## Open items, in the order I would take them
 
-| Question | Answer |
-| --- | --- |
-| Who hosted | The owner |
-| Did the host feel it | **No** — "perfectly fine on my end... very playable, very good," maybe marginally less smooth |
-| Both ends | **Wifi** |
-| Onset | **Bad immediately**, not degrading |
-| Movement or attacks | **"Movement felt laggy as well"** |
+### 1. Untested and cheap: the host-CPU-starvation hypothesis
 
-Host-fine + client-bad rules out local frame budget and confirms the network path. Wifi +
-immediate confirms jitter rather than a leak.
+The leading untested explanation for the remaining attack-input lag is simply that the
+host's machine is loaded. **Host once with the machine quiet and once with cores busy, and
+ask the client which felt worse.** This costs one evening of the owner's time and no code,
+and it sits ahead of any netcode rebuild. Two separate incidents this session came from
+assuming a machine was idle when a stray process had pinned a core for hours — **audit
+load by CPU (`ps aux | awk '$3 > 15'`), never by expected command name.**
 
-**Still unknown, worth getting if they offer it:** ping and jitter numbers between the two
-machines, and whether it was same-LAN or over the internet. Do not block on these.
+### 2. Branches that are green and still parked
 
-### The diagnosis (lootsim-26, found in code before measuring — verified by me)
+- **`feat/gem-sinks-standards` @ `13771ec`** — Standards + wardrobe expansion, approved by
+  the owner (they chose *both* options), gate-green, never landed. This is the oldest
+  unpaid debt on the board. Land it in the next batch.
+- **`fix/boss-xp-hole` @ `6b3b7c3`** (d8, marked UNVERIFIED) — needs a rebase onto master,
+  then a widened A/B **on an XP-axis metric, never `deepest`**, and **against the arming
+  branch, not master**. The owner approved fixing this independently of the difficulty
+  work.
+- **`investigate/power-curve2` @ `2bf2fe1`** — unlanded measurement.
 
-**Cause 1 — the chop. The client's tolerance for a late packet is 10 milliseconds.**
-`SNAPSHOT_HZ = 20` in `src/net/protocol.ts` (a snapshot every 50ms) against
-`LERP_SPAN = 1.2 / SNAPSHOT_HZ` = 60ms at `src/net/sync.ts:48`. `advanceRemote` slides each
-remote body toward its last known position over that window; when it expires the body
-**freezes on its last known position** until the next packet lands, then jerks. 10ms of
-slack is nothing over wifi. I verified both constants myself.
+### 3. Owner decisions queued (put these up as option prompts)
 
-**This is why every check we have is green.** On loopback the inter-arrival gap never
-exceeds 60ms, so the failure mode is *structurally unreachable* in every test the project
-has ever run.
+- **The Engineer's self-refilling ultimate** (docket §27, pinned) — a live meter loop
+  found when the trees were armed.
+- **Shared-loot affinity residue** — a leftover from the instancing pass.
+- **Relic dedup.**
+- **Fog of war.**
+- **Whether to push ~394 commits to GitHub `origin`.** Nothing has been pushed all
+  project; this is the owner's call and worth asking plainly.
 
-**Cause 2 — attacks are not predicted at all.** `predictLocal` covers movement, facing and
-dash. Attacks, skills, ultimates and interacts are host-authoritative with no local echo, so
-a client waits a full round trip to see its own swing.
+### 4. CLAUDE.md edits awaiting one-line owner approval
 
-**Cause 3 — unexplained, and this is the open one.** The owner says **movement felt laggy
-too**, which contradicts the design: the client predicts its own movement and reconciles by
-replaying unacknowledged inputs, so it should feel instant at any RTT. Either prediction
-isn't working under real conditions, or the problem is on the **input path** rather than the
-snapshot path — if inputs stall going up, the hero stops *on the host* and the next snapshot
-pulls it back, which is rubber-banding. **Nobody has diagnosed this yet.**
+Four drafts are written and none has landed. **CLAUDE.md is the owner's document — do not
+land an edit to it on a peer session's say-so.** They are:
 
-### State of the work
+- 97's raids bullet (raids are no longer solo).
+- 26's two co-op loot passages.
+- 26's replacement for the campaign-check thinness paragraph. This one is now *backed by
+  measurement rather than a gap*: two disjoint 60-seed blocks read margins of **2.55** and
+  **2.50**, agreeing to 0.05, so the widened check sits on the noise floor's plateau. The
+  paired analysis explains the whole history — per-seed margin sd ≈ 6.1, so at n=60 the
+  bar of 1 sits 1.9 SE below the margin, while at n=12 it sat 0.9 SE away, which is a coin
+  flip and is exactly why the check inverted on an arbitrary block with no code change.
+  **Operationally: a red here is ~3% likely to be noise (about 1 run in 30), so the first
+  move on a red is one disjoint block, not a regression hunt.** A 3-sigma bar would need
+  ~150 seeds at 2.5× the cost — a real decision for the owner and the only part still
+  unpaid.
 
-`art/two-accents` carries `882ac04` *"fix(net): a de-jitter buffer on the client — the chop
-was a 10ms tolerance."* **I asked 26 to confirm it is finished and gate-green before I
-merged it, and the session was handed off before that answer landed. Check with 26 first —
-do not merge an unfinished net change on your own judgement.**
+26 also offered a one-line `"campaignblock"` entry in `package.json` to make that harness
+discoverable; it was deliberately not added because `package.json` is a conflict magnet
+while merges are being sequenced. Say the word when the queue is quiet.
 
-Three questions I put to them that you should make sure get answered:
+### 5. Held work
 
-1. **Did they falsify the check?** `tools/smoke.ts` asserts *"a walking client is never
-   tugged back by the host"* — at **constant RTT with zero jitter and zero loss**. It cannot
-   see the reported bug. If it still passes under injected jitter and loss, that must be
-   recorded as known-blind rather than read as coverage.
-2. **Is the buffer's window a named constant with its assumption written beside it?** The
-   old 60ms was right for loopback and wrong for wifi. That is the exact failure shape as
-   docket §25 (below). Do not ship a second one.
-3. **Does the commit claim to fix the whole report?** It addresses the chop. It does not
-   obviously address laggy movement. Narrow the message if so.
+**26 is holding §19** — the four hand-drawn boss poses — behind two conditions they set
+themselves and have not yet settled: re-deriving the 23-of-35 figure from f1's cause
+table, and proving the 54–70%-against-idle measure won't reject a correct pose. Let them
+finish; don't hand the poses to someone else.
 
-### Scope the owner has already opened
+## Mistakes I made, so you don't repeat them
 
-They said: *optimize the current setup — **and if not, we look at something alternative.***
-That is explicit permission to replace the transport or architecture.
-
-**WebRTC DataChannel (unreliable/unordered) is the leading alternative** and costs no runtime
-dependency, since it is built into browsers — the project's no-deps rule survives. We are on
-WebSocket/TCP today, so one lost packet stalls every snapshot behind it: classic
-head-of-line blocking, and a clean mechanism for laggy movement specifically.
-
-**I told the owner the transport swap might not be needed, then walked that back when they
-said movement was affected. Do not let my earlier "complements, not alternatives" framing
-anchor the decision.** Price it on what the diagnosis actually finds.
-
-Other unpriced avenues: no delta/dirty encoding, JSON rather than binary, float precision
-nobody needs (int16 position quantization is nearly free), no view-culling. Bandwidth is
-already known to be **66–105 kB/s at depth 18–26**, higher at four players
-(`docs/mp-stuttering.md`, `tools/mp-stutter.ts`).
-
-**Docket §1 is the entry point** and has been reopened in place rather than renumbered.
-
----
-
-## 2. THE THEME OF THIS RUN, AND THE THING TO CARRY FORWARD
-
-Four times in one day, a check or an instrument turned out to be **structurally incapable of
-seeing the thing it was pointed at.** Not broken — blind.
-
-- **Localhost cannot see multiplayer jitter.** Inter-arrival gaps never exceed the tolerance.
-- **`tools/bot.ts` cannot measure "find the last monster."** Line 228 iterates *every* enemy
-  on the floor with no line-of-sight filter and walks straight at the nearest. Its 1.1s
-  average is an **omniscient** agent's walk time; the human problem is *search*. I nearly
-  killed a docket item on that number before checking.
-- **The "never tugged back" check** runs at fixed RTT with no jitter or loss.
-- **`recommendedLevel`'s equip floor** (§25) kept a term whose justification had been deleted
-  under it, and stayed green because the term only bites when the Challenger dial is up.
-
-This is CLAUDE.md's own most-repeated lesson — *a check's bound, scope and subject must come
-from somewhere other than the thing under test*, and *a harness that runs but is blind
-returns a plausible number rather than an error*. **Ask of every green check and every
-delegate's number: could this instrument have seen the failure?** It caught real problems
-four times today and it is the highest-value question a PM can ask here.
-
----
-
-## 3. Sessions and what they are holding
-
-Names are addresses for `SendMessage`. Model matters — the owner wants the longest and
-hardest work on Opus and generic work on Sonnet.
-
-| Session | Model | Holding |
-| --- | --- | --- |
-| **lootsim-26** | **Opus** | Multiplayer latency (§1). De-jitter buffer built, merge-readiness unconfirmed. Also owns §19 (boss blow), parked on an owner decision. |
-| **lootsim-d8** | **Opus** | The reachable band. Briefed to report a **diagnosis before changing any number**; had not reported when this session ended. |
-| **lootsim-97** | Sonnet | Docket §6, the minimap. Building. |
-| **lootsim-56** | Sonnet | **Free.** Just delivered the gem-sink shortlist and the docket hygiene pass. |
-| **lootsim-f1** | Sonnet | **Free.** Just delivered weapon skins and the keystone fix, both merged. |
-
-**Merge discipline, learned the hard way this run:** verify the main checkout is on `master`
-before merging. Seven commits once landed on a leftover feature branch while master sat
-still; a peer session caught it from the outside. Merge `--no-ff` with a real message, run
-the full gate, then reply to the delegate.
-
-**Browser verification IS available** — this was falsified today. `playwright-core` with the
-cached Chromium, your own worktree's dev server on a throwaway port, a throwaway account
-through the normal login flow. **Never use port 5173 — that is the owner's dev server.**
-Revert any dev scaffolding before committing. The honest caveat is narrower than "unverified":
-a screenshot proves a frame, not a session — it says nothing about feel over minutes of play.
-
----
-
-## 4. Waiting on the owner — do not decide these yourself
-
-**The boss blow (docket §19).** 26 closed every cheap route with evidence: free-form
-generation, rigid transform and compositing are all eliminated. The reason is structural and
-worth keeping — *an arms-down pose is near rest by definition, because rest IS arms-down*, so
-on any boss that rests with hands low a downward blow terminates on a rest-shaped silhouette
-and gets vetoed however well it is drawn. What remains is a commissioned hand-drawn impact
-frame per **sprite** (not per fight — that is the leverage).
-
-- **12 poses finishes the roster. 4 poses buy 23 of 35 encounters** (Warden 7, Saint 6,
-  Colossus 5, Herald 5). A fifth reaches 26 of 35.
-- **The cost of not doing it:** the cut from last wind-up frame back to idle moves 54–70% of
-  the body, roughly twice the largest real motion inside the animation, on 3 of 6 animated
-  sprites covering 18 of 35 fights.
-- 26 refused to claim "most players won't notice," correctly: the only player data that
-  exists is the owner, unprompted, calling it *"halfway."*
-
-**Gem sinks (docket §3).** 56 recommends **Standards** — one thing you actually did, rendered
-under your name in the lobby, on the in-run nameplate and in the hall ("Death March IV ·
-Delve 22"). The mark is earned and free; gems buy only the cloth it renders in. Design only,
-nothing built, `docs/gem-sinks.md`.
-
-Two things from it worth keeping regardless of the decision:
-- **A gem sink is safe iff what it buys is never read by `game/`.** That is *why* "cosmetics
-  are powerless" has held — not care, but that nothing in the simulation can see them.
-  Necessary but not sufficient: appearance re-rolls pass it and are still wrong, because
-  pricing something currently free is a takeaway, not a sink.
-- **Refused in writing:** a gem-bought ping that finds the last monster. It is convenience
-  substituting for play, and it is docket §6 — *selling the repair for a reported bug* is the
-  worst available shape for a real-money sink. **Gems are planned to become a real-money
-  currency, so the no-pay-to-win rule binds every gem sink, not just cosmetic ones.**
-
-**Docket §25 — `recommendedLevel`'s equip floor.** Small, and genuinely theirs to call: should
-hard content advise a *higher level* than the same depth does? Nothing in `game/` reads
-`recommendedLevel`, so no measurement can answer it and no check will go red either way.
-
-**Docket §24 — the Reaper may not be able to charge its ultimate on a raid boss at all.**
-Untouched, needs them.
-
-**The Universal Tree point cap.** Deliberately deferred behind the band decision. Note the
-keystone fix changed the honest number: the reachability doc's "a realistic frontier buys one
-keystone" now reads **zero**. That is correct — the old answer was propped up by the bug —
-and it sharpens the cap question rather than answering it.
-
----
-
-## 5. Landed this run (all merged to master, gate green)
-
-- **§22 — bodies and items no longer end up inside rock.** Both causes my brief predicted
-  were **wrong**: 0 of 188 sampled boss spawns were embedded, and knockback stressed to 9,600
-  (real values ~140) produced no penetration. It was `separateEnemies()`/`separateMinions()`
-  shoving a body back into rock after that tick's own wall-resolve had cleared it. 43
-  penetration episodes → 0 across ~323k ticks. The 2–3s unstick net is built as a backstop and
-  **fires zero times**; the doc says plainly that a future nonzero count is a *regression
-  signal*, not the net working.
-- **§23 — item level tracks the receiving character's level everywhere.** Monster drops, clear
-  caches and named tables, not just chests. Per-hero in co-op; the clear cache round-robins its
-  one physical pile across the live party. §16's `itemPower` was **kept, not repealed** — a new
-  `powerIlvl` still scales stats and affix magnitude without moving `requiredLevel`.
-- **Seven dead weapon skins now draw.** They had no authored art and fell through to a plain
-  tint, so gems had bought nothing visible. Scoped to the seven already sold; it does **not**
-  reopen the owner's standing call that a *new* skin is its own authored weapon.
-- **Universal Tree keystones all cost 7.** Three cost 5–6 because `CROSS_LINKS` pointed at the
-  neighbour path's row-1 node instead of row-2. Cap and node costs untouched.
-- **THE EXECUTE RULE** is in `CLAUDE.md`, on the owner's explicit approval.
-- **The Colossus idle**, shipped on an owner override that is recorded *as* an override —
-  `loop-check.py`'s bar was not moved, and the approval re-measures the value it was granted
-  for, so regenerating that art re-reds the check.
-- **Docket hygiene**: seven items were shipped but still reading as open. Keep it current —
-  I nearly briefed a session onto finished work.
-
----
-
-## 6. Standing rules worth not rediscovering
-
-- **CLAUDE.md edits go to the owner directly, not through the PM.** I got this wrong and was
-  corrected by a delegate mid-run.
-- **Assert design promises as comparisons, not one-sided bounds — and give the comparison
-  power.** A thin comparison fails as silently as a bound.
-- **A rule that cannot be violated beats a check that notices when it was.**
-- **Never report a balance delta from one default smoke run.** Widen the seeds and A/B against
-  master in a throwaway worktree.
-- **The owner reliably trades effort for a better-looking game.** Price both options honestly
-  and never withhold the expensive one because it looks like too much work — but a measurement
-  showing the cheap option is *adequate* is not an argument that it is *preferred*.
-- **Cosmetics are a permanent pillar and never the scope to cut.**
-- **Don't commit `docs/game_story_worldbuilding.md`** — it is usually the owner's live WIP.
+- **I briefed two sessions onto work that had already landed** because the docket wasn't
+  marked. Verify with `git merge-base --is-ancestor` before briefing anything.
+- **I released the merge queue while the owner was mid-session** and interrupted their
+  co-op game. That's what rule 3 above exists for.
+- **I read a branch tip as a status** and told the owner raids hadn't started when the
+  session had it done but uncommitted. Ask the session; tips lie.
+- **I relayed two peer claims as fact and had to retract both.** A peer's finding is a
+  report, not a result. Say who found it.
+- **I shipped a partial fix and nearly called it done.** My raid-portal fix mirrored
+  `hub.raid` but never touched `hub.raidOpen`, so it worked only because both accounts
+  happened to have a raid unlocked. It passed the case in front of me and would have
+  shipped a latent bug. 97's version replaced it. **The case in front of you passing is
+  not the property holding.**
