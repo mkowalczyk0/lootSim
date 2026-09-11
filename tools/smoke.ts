@@ -3269,7 +3269,9 @@ console.log("\n=== floor tilesets (§17.7 — contrast is gameplay, loud is wron
    * that fixed the other two) made this one worse before "brighten it" was tried.
    */
   const KNOWN_INFUSION_COLLISIONS: readonly string[] = [
-    "Ashen Wastes", // tiles.delve-wrath, fire-on-fire — see docs/ashen-wastes-infusion-fix.md
+    // Was keyed "Ashen Wastes" until the Nine Circles re-cut renamed the biome; same
+    // sheet, same tint, same element, same owner ruling. Only the key moved.
+    "Wrath", // tiles.delve-wrath, fire-on-fire — see docs/ashen-wastes-infusion-fix.md
   ];
 
   let worstMonsterDelta = Infinity;

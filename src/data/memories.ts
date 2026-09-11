@@ -426,6 +426,37 @@ export function memoryPlace(placeId: string): BiomeStyle | null {
 }
 
 /**
+ * The Delve biome names that shipped before the Nine Circles re-cut, mapped to the
+ * circle each became. A Memory's `placeId` **is** the biome name, and `GameState.load`
+ * drops a Memory whose place "names nowhere" — so a rename with no map silently deletes
+ * owned endgame content on the first load after the update, for a player who did nothing
+ * wrong. This map is applied on load before that validation.
+ *
+ * The keys are the *shipped* strings, copied from the biome table as it stood on master
+ * at save version 34 — not derived from anything the current code says, because a map
+ * derived from the thing being renamed would be a mirror of it. The Dark Cave became
+ * Treachery, a different depth but the same frozen floor; a Memory carries its own
+ * `depth`, so nothing about the Memory moves but its label. `tools/world.ts` loads a save
+ * holding a Memory in every one of these places and asserts every one survives.
+ */
+export const LEGACY_PLACE_NAMES: Readonly<Record<string, string>> = {
+  "Training Grounds": "Limbo",
+  "Whispering Forest": "Gluttony",
+  "Dark Cave": "Treachery",
+  "Ashen Wastes": "Wrath",
+  "Dragon's Lair": "Heresy",
+  // "The Veil" kept its name.
+};
+
+/** A saved Memory with its place renamed if the place was one of the shipped names. */
+export function migrateMemoryPlace<T extends { readonly placeId?: unknown }>(memory: T): T {
+  const id = memory.placeId;
+  if (typeof id !== "string") return memory;
+  const renamed = LEGACY_PLACE_NAMES[id];
+  return renamed === undefined ? memory : { ...memory, placeId: renamed };
+}
+
+/**
  * Every encounter a Memory can put on its last floor: the five authored ones, the six
  * sector bosses, and the Tower's five.
  *

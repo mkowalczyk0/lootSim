@@ -17,8 +17,11 @@
  * still takes an effective depth plus a `danger` and the one curve does the rest. Layers
  * only change what the screen says — the Dive list groups its floors under layer headers,
  * the asides say what the layer is, and the HUD says where you are standing. Biome names,
- * tilesets and floor names are untouched, and the bands sit exactly on the five-depth
- * boundaries `biomeFor` already changes at (`tools/world.ts` pins that).
+ * tilesets and floor names are untouched, and every band edge is a depth `biomeFor`
+ * already changes at (`tools/world.ts` pins that). Since the Nine Circles re-cut the
+ * biomes change more often than the layers do — a layer holds several circles — but a
+ * layer edge is still always a circle edge, and this table did not move for the re-cut:
+ * it is the fixed reference the new ladder was cut to fit (`docs/nine-circles.md`).
  *
  * **One answer for every run.** `layerFor(config)` maps *any* `RunConfig` to a layer — the
  * Delve by depth, each rift to the realm its own `RunMode.lore` already says it tore into
@@ -81,9 +84,10 @@ export interface WorldLayer {
 }
 
 /**
- * The descent, in §23's own four names. The bands follow `biomeFor`'s five-depth buckets:
- * Limbo is the Surface, the appetite circles are the Deep Delve, the idea circles are the
- * Hell Layers, and from depth 26 the ground stops being Hell's.
+ * The descent, in §23's own four names. Limbo is the Surface, the appetite circles (Lust,
+ * Gluttony, Avarice) are the Deep Delve, the idea circles (Wrath through Treachery) are
+ * the Hell Layers, and from depth 26 the ground stops being Hell's. `DELVE_LADDER` in
+ * `data/biomes.ts` is cut to these edges, not the other way round.
  *
  * Depth 30 — the Proving — falls inside the last band on purpose. The bottom of the Delve
  * is where the Abyss keeps the part of your Legend you never recovered (`data/legends.ts`),

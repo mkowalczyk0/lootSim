@@ -798,14 +798,16 @@ export const MONSTER_SETS: Record<string, Record<string, string>> = {
 };
 
 export const TILESETS: Record<string, AtlasTileset> = {
-  // The Delve (§5) — one per legacy biome, themed toward the Nine Circles it's
-  // becoming. Floor mid-tone, wall near-black, on the ash/Hell palette.
-  "tiles.delve-limbo":    { id: "tiles.delve-limbo",    w: 64, h: 64, tile: 16 }, // Training Grounds — Circle I, drained ash flagstone
-  "tiles.delve-gluttony": { id: "tiles.delve-gluttony", w: 64, h: 64, tile: 16 }, // Whispering Forest — Circle III, bile-stained stone, wet rot
-  "tiles.delve-cave":     { id: "tiles.delve-cave",     w: 64, h: 64, tile: 16 }, // Dark Cave — frozen cavern rock, ice rime
-  "tiles.delve-wrath":    { id: "tiles.delve-wrath",    w: 64, h: 64, tile: 16 }, // Ashen Wastes — Circle V, scorched flagstone, dull embers
-  "tiles.delve-heresy":   { id: "tiles.delve-heresy",   w: 64, h: 64, tile: 16 }, // Dragon's Lair — Circle VI, black cathedral, gold used wrong
-  "tiles.delve-veil":     { id: "tiles.delve-veil",     w: 64, h: 64, tile: 16 }, // The Veil — Abyss-touched, warped violet-black stone
+  // The Delve (§5) — the Nine Circles (`data/biomes.ts`). Six sheets for ten places:
+  // Lust, Avarice, Violence and Fraud borrow one of these until their own lands
+  // (`BORROWED_LOOKS`, declared and gated). Floor mid-tone, wall near-black, on the
+  // ash/Hell palette.
+  "tiles.delve-limbo":    { id: "tiles.delve-limbo",    w: 64, h: 64, tile: 16 }, // Limbo — Circle I, drained ash flagstone
+  "tiles.delve-gluttony": { id: "tiles.delve-gluttony", w: 64, h: 64, tile: 16 }, // Gluttony — Circle III, bile-stained stone, wet rot
+  "tiles.delve-cave":     { id: "tiles.delve-cave",     w: 64, h: 64, tile: 16 }, // Treachery — Circle IX, frozen cavern rock, ice rime (was the Dark Cave)
+  "tiles.delve-wrath":    { id: "tiles.delve-wrath",    w: 64, h: 64, tile: 16 }, // Wrath — Circle V, scorched flagstone, dull embers
+  "tiles.delve-heresy":   { id: "tiles.delve-heresy",   w: 64, h: 64, tile: 16 }, // Heresy — Circle VI, black cathedral, gold used wrong
+  "tiles.delve-veil":     { id: "tiles.delve-veil",     w: 64, h: 64, tile: 16 }, // The Veil — past the last circle, Abyss-touched, warped violet-black stone
 
   // The Ashen Reliquary (§8.2) — one per sector, warm/element ash over
   // dead-civilisation stone.

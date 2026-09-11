@@ -25,11 +25,23 @@
  *      may never remove it, so no existing save can lose a sector it already had.
  *   7. **Every element has a sector.** A material with no sector paying it out is a live
  *      dead end (the Sept 2026 holy/arcane/nature bug this file now pins against).
+ *   8. **The Delve is the Nine Circles, in the doc's order.** The biome table's first nine
+ *      names are read against the `## Circle N — Name` headings of
+ *      `docs/game_story_worldbuilding.md` *at test time* — the tiebreaker document is the
+ *      bound, so an invented, renamed or reordered circle goes red against something the
+ *      code under test cannot move. Plus the frozen ninth and the fire-free first, the
+ *      declared-and-temporary sheet borrows, dressing coverage, floor numerals, and a
+ *      shipped-era save whose Memories all survive the rename (`docs/nine-circles.md`).
  *
  * Headless, no browser. Run with `npm run world`.
  */
 
-import { BIOMES as DELVE_BIOMES, biomeFor } from "../src/data/biomes";
+import { BIOMES as DELVE_BIOMES, BORROWED_LOOKS, DELVE_LADDER, biomeFor, delveBandFor } from "../src/data/biomes";
+import { readFileSync } from "node:fs";
+import { DRESSING } from "../src/game/level";
+import { LEGACY_PLACE_NAMES, MEMORY_VAULT_CAP, memoryPlaces } from "../src/data/memories";
+import { parseSaved, serializeSave } from "../src/core/save";
+import { LOOT_ELEMENTS } from "../src/data/elements";
 import {
   DOWN_LAYERS, LAYERS, RIFT_LAYERS, UP_LAYERS, layerAt, layerFor, type WorldLayer,
 } from "../src/data/layers";
@@ -279,6 +291,176 @@ check("every descent band starts where the biome changes", edgesAlign, edgeDetai
 // its own by a later edit — it is inside the last one.
 check("the Proving's floor is inside the last descent band",
   layerAt("down", DELVE_BOTTOM) === DOWN_LAYERS[DOWN_LAYERS.length - 1]);
+
+// --- 3b. the Delve is the Nine Circles -----------------------------------
+//
+// The re-cut (`docs/nine-circles.md`) was cut to fit DOWN_LAYERS above, which did not
+// move; the edge check just before this section is therefore still comparing the new
+// ladder against a reference it did not derive. The checks here take their bounds from
+// the other fixed thing in the room — the worldbuilding doc — and from tables that are
+// not the ladder.
+
+console.log("\n=== the Delve is the Nine Circles, in the doc's order ===");
+
+{
+  // The doc is read here, not quoted here: a list of nine names typed into this file
+  // would be a second copy of the thing it is checking, and would drift with it.
+  const doc = readFileSync("docs/game_story_worldbuilding.md", "utf8");
+  const headings = [...doc.matchAll(/^## Circle ([IVX]+) — (.+?)\s*$/gm)].map((m) => m[2]!);
+  check("the worldbuilding doc names nine circles", headings.length === 9, headings.join(", "));
+  const circles = DELVE_BIOMES.slice(0, 9).map((b) => b.name);
+  check("the first nine biomes are the doc's nine circles, in the doc's order",
+    circles.length === 9 && circles.every((n, i) => n === headings[i]),
+    `code [${circles.join(", ")}]  doc [${headings.join(", ")}]`);
+  check("the tenth is past the last circle, and it is the last",
+    DELVE_BIOMES.length === 10 && DELVE_BIOMES[9]!.name === "The Veil"
+      && DELVE_LADDER[9]!.from === DOWN_LAYERS[DOWN_LAYERS.length - 1]!.from,
+    `${DELVE_BIOMES.length} biomes; rung 10 starts at ${DELVE_LADDER[9]!.from}`);
+  check("the ladder's rungs ascend from depth 1 with no repeats",
+    DELVE_LADDER[0]!.from === 1 && DELVE_LADDER.every((r, i) => i === 0 || r.from > DELVE_LADDER[i - 1]!.from),
+    DELVE_LADDER.map((r) => r.from).join(" "));
+
+  // Two facts the doc states about specific circles, checked as facts rather than trusted.
+  const ninth = biomeFor(DELVE_LADDER[8]!.from);
+  check("the ninth circle is frozen — \"this area should be frozen\" (Circle IX)",
+    ninth.name === "Treachery" && ninth.element === "cold", `${ninth.name} is ${ninth.element}`);
+  const first = biomeFor(1);
+  check("the first circle has nothing burning — physical, so nothing to infuse with",
+    first.name === "Limbo" && first.element === "physical", `${first.name} is ${first.element}`);
+  // CLAUDE.md: holy, arcane and nature are kept out of the random rolls, which a biome's
+  // infusion is. The bound is `LOOT_ELEMENTS`, not this table.
+  const offPool = DELVE_BIOMES.filter((b) => b.element !== "physical" && !(LOOT_ELEMENTS as readonly string[]).includes(b.element));
+  check("every circle's element is physical or in the random loot pool", offPool.length === 0,
+    offPool.map((b) => `${b.name}: ${b.element}`).join(", "));
+
+  // The layer table did not move for the re-cut, and the lore of its bands says which
+  // circles it holds: Limbo alone on the Surface, the three appetites in the Deep Delve,
+  // the five ideas in the Hell Layers. Counted against the table, not against the ladder.
+  // A name that is not on the ladder reads as "no band" rather than throwing, so a
+  // renamed circle fails the checks below legibly instead of crashing the tool.
+  const bandOf = (name: string) => {
+    const rung = DELVE_LADDER.find((r) => r.biome.name === name);
+    return rung ? layerAt("down", rung.from).id : "(not on the ladder)";
+  };
+  check("Limbo is the Surface, and the Surface is only Limbo",
+    bandOf("Limbo") === "surface" && circles.filter((n) => bandOf(n) === "surface").length === 1);
+  check("the circles of appetite — Lust, Gluttony, Avarice — are the Deep Delve, and nothing else is",
+    ["Lust", "Gluttony", "Avarice"].every((n) => bandOf(n) === "deep-delve")
+      && circles.filter((n) => bandOf(n) === "deep-delve").length === 3);
+  check("Wrath through Treachery are the Hell Layers, and nothing else is",
+    ["Wrath", "Heresy", "Violence", "Fraud", "Treachery"].every((n) => bandOf(n) === "hell-layers")
+      && circles.filter((n) => bandOf(n) === "hell-layers").length === 5);
+  check("no circle is thinner than two floors",
+    DELVE_LADDER.slice(0, 9).every((_, i) => delveBandFor(DELVE_LADDER[i]!.from).to - DELVE_LADDER[i]!.from >= 1));
+
+  // A floor's numeral counts from its circle's first floor, not from a five-floor cycle:
+  // depth 9 is "Gluttony I", not "Gluttony IV". Every non-boss floor 1–30 is checked
+  // against the offset into its band; a boss floor is a Warden's Hall and carries no
+  // numeral, which is `floorName`'s business and not this check's.
+  const ROMAN = ["I", "II", "III", "IV", "V"];
+  const wrong: string[] = [];
+  for (let d = 1; d <= 30; d++) {
+    const config = delveConfig(d);
+    if (config.bossFloor) continue;
+    const want = `${biomeFor(d).name} ${ROMAN[(d - delveBandFor(d).from) % 5]}`;
+    const got = profileFor(d, config).name;
+    if (got !== want) wrong.push(`depth ${d}: ${got} (wanted ${want})`);
+  }
+  check("every non-boss floor 1–30 is numbered from its circle's first floor", wrong.length === 0,
+    wrong.join("; ") || [6, 9, 12, 16].map((d) => profileFor(d, delveConfig(d)).name).join(" · "));
+}
+
+console.log("\n=== a circle without a sheet borrows one out loud ===");
+
+{
+  // Undeclared sharing fails; declared sharing whose two sides no longer match fails too,
+  // so the day a borrower gets its own sheet the borrow line has to go in the same commit.
+  const byName = new Map(DELVE_BIOMES.map((b) => [b.name, b]));
+  const owners = new Map<string, string[]>();
+  for (const b of DELVE_BIOMES) if (b.tileset) owners.set(b.tileset, [...(owners.get(b.tileset) ?? []), b.name]);
+  const declared = new Set(BORROWED_LOOKS.map((x) => `${x.borrower}<${x.lender}`));
+  const undeclared: string[] = [];
+  for (const [id, names] of owners) {
+    if (names.length < 2) continue;
+    // Exactly one of a shared sheet's owners is the lender (its own sheet); every other
+    // owner must have declared the borrow from that lender.
+    const lenders = names.filter((n) => !BORROWED_LOOKS.some((x) => x.borrower === n));
+    if (lenders.length !== 1) undeclared.push(`${id}: ${lenders.length} undeclared owners (${names.join(", ")})`);
+    for (const n of names) {
+      if (n === lenders[0]) continue;
+      if (!declared.has(`${n}<${lenders[0]}`)) undeclared.push(`${id}: ${n} draws it without declaring a borrow from ${lenders[0]}`);
+    }
+  }
+  check("no two circles share a sheet without declaring it", undeclared.length === 0, undeclared.join("; "));
+
+  const stale: string[] = [];
+  for (const { borrower, lender } of BORROWED_LOOKS) {
+    const b = byName.get(borrower), l = byName.get(lender);
+    if (!b || !l) { stale.push(`${borrower} < ${lender}: names nowhere`); continue; }
+    if (BORROWED_LOOKS.some((x) => x.borrower === lender)) stale.push(`${lender} is itself a borrower`);
+    // The whole look, not only the sheet: the tint is part of what the smoke test's
+    // contrast gates measured the sheet under, so a borrower on its own tint would be a
+    // (sheet, tint) pair nobody graded.
+    const same = b.tileset === l.tileset && b.tint === l.tint && b.floorAlt === l.floorAlt
+      && b.wall === l.wall && b.wallSide === l.wallSide && b.accent === l.accent;
+    if (!same) stale.push(`${borrower} no longer wears ${lender}'s look — remove the borrow line`);
+  }
+  check("every declared borrow is still a borrow — the same sheet and the same graded palette", stale.length === 0,
+    stale.join("; "));
+  check("every borrower is a circle, and no circle borrows twice",
+    BORROWED_LOOKS.every((x) => byName.has(x.borrower))
+      && new Set(BORROWED_LOOKS.map((x) => x.borrower)).size === BORROWED_LOOKS.length);
+  // Printed on purpose, every run: a temporary line that nobody sees becomes a permanent one.
+  for (const { borrower, lender } of BORROWED_LOOKS) {
+    console.log(`       · TEMPORARY  ${borrower} draws ${byName.get(lender)?.tileset ?? "?"} (${lender}'s) until tiles.delve-${borrower.toLowerCase()} is committed`);
+  }
+  console.log(`       ${BORROWED_LOOKS.length} borrow(s) declared, ${DELVE_BIOMES.length - BORROWED_LOOKS.length} circles on their own sheet`);
+
+  // DRESSING is keyed by biome name, and a missing key is "no heavy props" rather than an
+  // error — a rename would silently strip a circle. Bound: the biome list. Subject: level.ts.
+  const undressed = DELVE_BIOMES.filter((b) => !DRESSING[b.name] || DRESSING[b.name]!.length === 0).map((b) => b.name);
+  check("every Delve biome has a heavy-dressing mix under its current name", undressed.length === 0,
+    undressed.join(", ") || `${DELVE_BIOMES.length} biomes dressed`);
+}
+
+console.log("\n=== a save from before the circles keeps every Memory ===");
+
+{
+  // A Memory's placeId is the biome's name and `GameState.load` drops one that names
+  // nowhere. The map's keys are the names that *shipped*; this builds a save the way the
+  // shipped build would have written it — version 34, one Memory in every shipped place
+  // and one in every current place — and asserts nothing is lost. All of them, not one.
+  const rng = new Rng(9);
+  const state = new GameState(1);
+  const shipped = Object.keys(LEGACY_PLACE_NAMES);
+  const current = memoryPlaces().map((p) => p.name);
+  const places = [...shipped, ...current];
+  check("the legacy map covers every shipped Delve name that changed",
+    shipped.length === 5 && shipped.every((n) => !current.includes(n)),
+    shipped.join(", "));
+  check("...and maps each onto a place that exists today",
+    shipped.every((n) => current.includes(LEGACY_PLACE_NAMES[n]!)),
+    shipped.map((n) => `${n} → ${LEGACY_PLACE_NAMES[n]}`).join("; "));
+  check("the vault can hold the whole fixture, so a cap is not what makes this pass",
+    places.length <= MEMORY_VAULT_CAP, `${places.length} of ${MEMORY_VAULT_CAP}`);
+  const fixture = places.map((placeId, i) => ({ ...rollMemory("rare", 30, rng, `m${i + 1}`), placeId }));
+  const json = { ...(state.toJSON() as Record<string, unknown>), memories: fixture, memorySeq: fixture.length };
+  const text = serializeSave(json).replace(/"version":\d+/, '"version":34');
+  const saved = parseSaved(text);
+  check("the fixture parses as a version-34 save", saved !== null && saved.version === 34);
+  const back = GameState.fromSaved(saved);
+  const survived = back.memories.map((m) => m.placeId);
+  check(`every Memory survives the load — ${places.length} written, ${survived.length} read`,
+    survived.length === places.length);
+  const expected = places.map((n) => LEGACY_PLACE_NAMES[n] ?? n);
+  check("each shipped-era place reads as the circle it became, and each current one as itself",
+    survived.length === expected.length && survived.every((n, i) => n === expected[i]),
+    shipped.map((n, i) => `${n} → ${survived[i]}`).join("; "));
+  // The instrument has to be able to see a loss, or the check above is a mirror.
+  const broken = serializeSave({ ...json, memories: [{ ...fixture[0]!, placeId: "Nowhere In Particular" }] });
+  check("...and the same load drops a Memory of a place that really names nowhere",
+    GameState.fromSaved(parseSaved(broken)).memories.length === 0);
+}
 
 // The ascent has to hold the same property, or the Tower's bands are decoration: the
 // band a height sits in and the place that height is made of must change on the same

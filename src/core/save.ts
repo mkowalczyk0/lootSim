@@ -198,6 +198,13 @@
 // which is what a fresh account already looks like — `normalizeOwnedStyles` and
 // `normalizeFlownStyle` both hand back that exact state rather than throwing.
 //
+// 36 (2026-09-11): the Nine Circles (`docs/nine-circles.md`) — the Delve's six biomes
+// re-cut into nine circles and the Veil, five of them renamed. No field changed shape.
+// The one thing that would have been lost is a Memory whose `placeId` is a renamed biome
+// (`GameState.load` drops a Memory naming nowhere), so `LEGACY_PLACE_NAMES` in
+// `data/memories.ts` maps the shipped names forward on load, version-agnostically.
+// Claimed as 36 because 35 was already claimed by the relic level gate while in flight.
+//
 // --- CLAIMED, NOT YET MERGED ------------------------------------------------
 // Bumping the version? Add your number to this list in the SAME commit that starts the
 // work, before you write anything else. Two branches claimed 31 on 2026-09-10 because
@@ -214,9 +221,11 @@
 //        (`GameState.relicsUnsocketed`). Nothing is lost: the relics stay in the
 //        account-wide collection and go back on at level.
 //
+//   36 — feat/nine-circles (the Delve's biomes re-cut into the Nine Circles)
+//
 // Take the next free number, not `SAVE_VERSION + 1` — the constant below is what has
 // merged, and the list above is what is in flight.
-export const SAVE_VERSION = 35;
+export const SAVE_VERSION = 36;
 
 /**
  * Where a save lives is no longer this file's business. The blob below used to go to

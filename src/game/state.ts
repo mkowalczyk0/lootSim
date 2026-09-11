@@ -24,7 +24,7 @@ import { EQUIP_SLOTS, type EquipSlot } from "../data/items";
 import {
   CRYSTALLISE_COMPONENTS, MEMORY_RARITIES, MEMORY_VAULT_CAP, crystalliseMemory, deepenMemory,
   distortMemory, etchMemory, memoryForgetAsh, memoryOpCost, memoryPairs, memoryRecallCost,
-  memoryProblems, memoryUnlocked, rollMemory, type MemoryInstance, type MemoryOp,
+  memoryProblems, memoryUnlocked, migrateMemoryPlace, rollMemory, type MemoryInstance, type MemoryOp,
 } from "../data/memories";
 import { CLASSES, CLASS_IDS, DEFAULT_CLASS, isClassId, type ClassId } from "../data/classes";
 import type { Element } from "../data/elements";
@@ -1513,8 +1513,13 @@ export class GameState {
       // naming a place or an encounter that no longer exists is dropped on load instead of
       // crashing the Altar — the same rule `normalizeAppearance` follows for a retired
       // cosmetic id.
+      // Version 36 renamed the Delve's biomes to the Nine Circles; a Memory's place is
+      // the biome's name, so the shipped names are mapped forward *before* the validation
+      // below gets a chance to drop them (`LEGACY_PLACE_NAMES`). Version-agnostic, the
+      // `normalizeAppearance` house style: it reads whichever name is there.
       state.memories = Array.isArray(d.memories)
         ? (d.memories as MemoryInstance[])
+            .map((m) => (m && typeof m === "object" ? migrateMemoryPlace(m) : m))
             .filter((m) => m && typeof m === "object" && memoryProblems(m).length === 0)
             .slice(0, MEMORY_VAULT_CAP)
         : [];
