@@ -44,15 +44,22 @@ import { DEFAULT_ENEMY_REACH, enemyReach } from "../src/combat/runtime";
 import type { Ability, EffectStep } from "../src/combat/index";
 
 /**
- * The deliberate opt-ins. Each is here because its own description says "the field", and
- * each was read before it was listed. Changing this list is a design decision, which is
- * the point of pinning it.
+ * The deliberate opt-ins. Both are ultimates, and both are here because the whole floor is
+ * the ability's identity rather than an accident of omission — they are also the two the
+ * pre-§30 comment in `runtime.ts` named as the reason the unbounded default existed.
+ *
+ * Two non-ultimates were briefly on this list — Unstable Reaction and Remote Detonation —
+ * on the strength of their own descriptions saying "on the field". They were bounded
+ * instead, and their text rewritten to match, on the owner's sentence: *no skill in the
+ * game should have the ability to wipe the entire map out*. **An ability's authored prose
+ * is not an exemption**; it is the cheapest thing in the repo to change, and in both cases
+ * it was describing the bug. A 16-second cooldown does not buy the whole floor.
+ *
+ * Changing this list is a design decision, which is the point of pinning it.
  */
 const FIELD_WIDE: Readonly<Record<string, string>> = {
   "warlock.damnation": "ULT — \"Brand every enemy on the field.\"",
   "reaper.death_comes_due": "ULT — \"Time freezes for everything below a health threshold ... walks the field.\"",
-  "alchemist.unstable_reaction": "\"Force every chemical zone on the field to react at once.\" (non-ultimate, 16s)",
-  "engineer.remote_detonation": "\"Trigger every mine and expendable device on the field at once.\" (non-ultimate, 16s)",
 };
 
 /**
@@ -288,8 +295,10 @@ let probed = 0;
 const LIVE: readonly { cls: ClassId; id: string; fieldWide: boolean }[] = [
   { cls: "paladin", id: "paladin.aegis_rush", fieldWide: false },
   { cls: "warden", id: "warden.overgrowth", fieldWide: false },
+  { cls: "engineer", id: "engineer.remote_detonation", fieldWide: false },
+  { cls: "reaper", id: "reaper.death_comes_due", fieldWide: true },
   { cls: "warlock", id: "warlock.damnation", fieldWide: true },
-  { cls: "alchemist", id: "alchemist.unstable_reaction", fieldWide: true },
+  { cls: "alchemist", id: "alchemist.unstable_reaction", fieldWide: false },
 ];
 for (const probe of LIVE) {
   const hit = liveReach(probe.cls, probe.id);

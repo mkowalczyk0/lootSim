@@ -120,7 +120,9 @@ peers — and below both ultimates that went to the trouble of saying how big th
   for it, so `spawnProjectile` drops it. Three of the `to: "enemies"` sites in the sweep
   (Ember Orb, Powder Keg, Cyclone Blade) are inert today. **Not fixed here** — deliberately,
   because landing that seam *before* this change would have created three new map-wipes.
-  It is safe to land now.
+  It is safe to land now — but it should land on **its own branch with its own
+  measurement**, not folded in here: three abilities gaining an effect they have never had
+  is a balance event, not a cleanup.
 
 ## What a player will actually notice
 
@@ -138,40 +140,51 @@ scope that silently empties is visible rather than green. The reach changes wort
 | 5 traps/mines (snare, explosive, shock mine, mirror trap, painted target) | whole floor, centred on the player | 140–200, centred on the trap | `range` |
 | 9 self-targeted reprisals and auras | whole floor | 320 | `DEFAULT` |
 
-### Declared field-wide, and the two that are an open question
+### Declared field-wide — two, and both ultimates
 
-Four abilities keep the whole floor, because each one's own description says so. They are
-pinned in `tools/mapwipe.ts`; adding a fifth fails the gate, and so does silently dropping
-one.
+Two abilities keep the whole floor. They are pinned in `tools/mapwipe.ts`; adding a third
+fails the gate, and so does silently dropping one.
 
 | ability | its own words |
 |---|---|
 | `warlock.damnation` (ULT) | "Brand **every enemy on the field**." |
 | `reaper.death_comes_due` (ULT) | "Time freezes for everything below a health threshold. The Reaper **walks the field**." |
-| `alchemist.unstable_reaction` | "Force **every chemical zone on the field** to react at once." |
-| `engineer.remote_detonation` | "Trigger **every mine and expendable device on the field** at once." |
 
-The first two are ultimates and are the two the original code comment named — they are the
-documented intent and they stay.
+These are the two the pre-§30 comment in `runtime.ts` named as the reason the unbounded
+default existed, so they are the documented intent and they stay.
 
-**The last two are not ultimates.** Unstable Reaction and Remote Detonation are 16-second
-cooldown skills dealing 2.6 and 2.4 scale damage to every enemy on the floor. Their text is
-field-wide, so bounding them would be a balance change nobody asked for and they are left
-exactly as they are — but under the owner's own sentence, *"no skill in the game should have
-the ability to wipe the entire map out"*, these two are the closest surviving relatives of
-the thing that was reported. **That is an owner call, not this change's to make**, and it is
-recorded here rather than decided.
+### The two that were nearly a third and a fourth
 
-Two more worth the owner's eye, bounded here but on a number derived rather than designed:
+`alchemist.unstable_reaction` and `engineer.remote_detonation` were briefly declared
+field-wide, on the strength of their own descriptions saying "on the field". **They were
+bounded instead, to 320, and their descriptions rewritten to match**, on the owner's own
+sentence: *"No skill in the game should have the ability to wipe the entire map out."*
 
-- **`paladin.aegis_rush` at 320.** That is its *charge distance*, which is the only number
-  the ability supplies. Its own text says it releases "a protective **pulse** where you
-  land", and a pulse is not 640 units across. Bounding it to its charge distance closes the
-  reported bug without inventing a nerf; if the owner wants it to read as a pulse, the
-  number wants to be nearer 120–150.
-- **`duelist.riposte` / `perfect_riposte` at 320 (DEFAULT).** A counter-attack arguably
-  ought to hit *the attacker*, not a circle. That is a targeting question rather than a
-  reach question, and it is left alone.
+The reasoning is worth keeping, because the first instinct was to treat the prose as
+intent. **An ability's authored text is not an exemption.** It is the cheapest thing in the
+repo to change, and here it was describing the bug rather than a design: both are
+*non-ultimates* on 16-second cooldowns dealing 2.6 and 2.4 scale damage to every enemy on
+the floor. A 16-second cooldown does not buy the whole floor. If either genuinely needs the
+floor to work, it declares `enemiesEverywhere` and becomes an ultimate-tier statement.
+
+Both now carry an explicit `shape: { radius: 320 }` rather than falling through to the
+default. That is deliberate: the Mad Scientist path's `{ kind: "targeting", scaleRadius: 1.3 }`
+mutation on Unstable Reaction had nothing to scale — the ability had no shape — so the node
+was a no-op. Authoring the radius makes that tree node live for the first time.
+
+### Open tuning questions, recorded rather than decided
+
+- **`paladin.aegis_rush` sits at 320, which is its charge distance, not a designed pulse.**
+  Its own text says it releases "a protective **pulse** where you land", and 320 is a
+  640-unit circle — most of a room. Bounding it to the only number the ability supplies
+  closes the reported bug without stacking a second balance change on top of a fix, which
+  is the call made here deliberately. **If it still reads wrong in play, the recommended
+  number is 140** — just above the largest trap radius (`trickster.mirror_trap`, 160 is
+  the range not the blast) and in line with `monk.heavenly_fist`'s authored 150, which is
+  the closest thing in the repo to "a big impact where you land".
+- **`duelist.riposte` / `perfect_riposte` counter a 320 circle rather than the attacker.**
+  A counter-attack arguably ought to hit whoever hit you. That is a targeting question, not
+  a reach question, and it is left alone.
 
 ## Measurement
 

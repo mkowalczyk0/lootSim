@@ -671,6 +671,39 @@ meter casts", which covers `damagePrevented`, `damageTaken`, `statusApplied` and
 tagged deserves particular suspicion, because a tag is the cheapest thing in the world for a
 new exploit to acquire — as the Engineer's already has.
 
+## A nineteenth instance, caught inside a brand-new check before it shipped: a reactive that passed green having cast nothing
+
+While building `tools/mapwipe.ts`'s live pass (docket §30), the probe list included
+`duelist.riposte`. The assertion was "a bounded ability must leave the far ring untouched",
+the far ring at 700/1000/1400 units was untouched, and the check went green.
+
+Riposte is a `reactive`. It resolves its victims only when the caster takes damage, and the
+staged hero in the arena never takes any. **It cast nothing, hit nothing, and satisfied
+"hit nothing far away" perfectly.** It is the zero-iteration loop from the fourth lesson's
+*scope* clause wearing a green tick — a filter over an empty set passes, and so does an
+assertion about the contents of an empty result.
+
+What makes it worth recording rather than just fixing is that **the check was correct, new,
+and written by someone who had the blind-instruments rule explicitly in mind** — the same
+run's static pass already printed `walked 21/21 classes` specifically so an emptied scope
+would be visible. The hole was not in the scope of the *sweep*; it was in the scope of a
+single probe, where one ability's trigger condition was never met and no count anywhere
+went to zero to say so. Nothing in the output looked empty.
+
+The fix is the shape every A/B in this repo has had to learn separately: **assert both
+directions.** A bounded ability must miss the far ring *and* hit the near one. With the
+near-ring assertion in place, riposte failed immediately and honestly — `hit nothing at 60
+units — the probe never landed, so its far-ring result proves nothing` — and was removed
+from the list as unsuited to a staged cast rather than quietly carried as evidence.
+
+**How to apply:** a one-directional assertion over a live probe is a bound, not a
+comparison, and inherits every weakness `CLAUDE.md` already ascribes to one. Any check of
+the form "X must not appear in the result" needs a companion "and the result is not empty" —
+not as belt-and-braces, but because the two failure modes are indistinguishable from the
+outside. This is the same defect as a one-sided threshold and it is *cheaper to introduce*,
+because a probe that silently stops doing anything looks exactly like a probe reporting
+success.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy
