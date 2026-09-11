@@ -18,7 +18,7 @@ import {
 } from "./bot";
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, REBINDABLE_ACTIONS } from "../src/data/settings";
 import { Dungeon, type Hero } from "../src/game/dungeon";
-import type { Pickup } from "../src/game/entities";
+import type { GroundZone, Pickup } from "../src/game/entities";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
 import {
@@ -3915,6 +3915,101 @@ console.log("\n=== multiplayer ===");
     host.completionPortal = null;
     applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
     check("and goes away again with it", client.completionPortal === null);
+  }
+
+  // 3a'. A zone that moves must move on the client too. The owner's "horrendous delay
+  // on wards/AOE abilities that follow the player": a client rebuilt every ground zone
+  // from the snapshot's [x, y] each 50 ms — the host's copy of the hero, a round trip
+  // old — while the hero it rides is predicted forward, so a follow zone was the one
+  // effect on the wire guaranteed to trail its owner. Asserted structurally on this
+  // rig, with no wall clock in it: the client's local hero is walked ahead of where the
+  // snapshot put it, and the zone has to be under the walked body, not the wire's.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    const zoneAt = (x: number, y: number, extra: Partial<GroundZone>): GroundZone => ({
+      x, y, px: x, py: y, radius: 60, element: "holy", damage: 0, remaining: 6, tickTimer: 0.5,
+      hitsPlayer: false, hitsEnemies: false, color: "#fff", ...extra,
+    });
+    host.ground.length = 0;
+    host.ground.push(zoneAt(hostMate.avatar.x, hostMate.avatar.y, { benefit: "haste", follows: 1, owner: 1 }));
+    host.ground.push(zoneAt(hostMate.avatar.x + 200, hostMate.avatar.y, { vx: 100, vy: 0 }));
+    const wire = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    check("a zone's owner and velocity cross the wire",
+      wire.g[0][5] === 1 && wire.g[1][5] === -1 && wire.g[1][6] === 100, JSON.stringify(wire.g));
+    applySnapshot(client, wire);
+    const follow = client.ground[0]!;
+    const drift = client.ground[1]!;
+    const wireX = wire.g[0][0] as number;
+    // Walk the client's own hero for half a second. Nothing arrives from the host in
+    // that time, exactly like the gap between two snapshots on a slow link.
+    const walk = new FakeInput();
+    walk.hold("right", true);
+    const startX = me.avatar.x;
+    for (let i = 0; i < 30; i++) { walk.beginTick(); client.update(DT, walk as unknown as AvatarInput); }
+    check("the client's predicted hero actually walked (so the next check has something to trail)",
+      me.avatar.x - startX > 20, `${(me.avatar.x - startX).toFixed(1)} units`);
+    check("a follow zone rides the client's *predicted* hero, not the wire's stale position",
+      Math.abs(follow.x - me.avatar.x) < 0.01 && Math.abs(follow.y - me.avatar.y) < 0.01,
+      `zone ${follow.x.toFixed(1)} hero ${me.avatar.x.toFixed(1)} wire ${wireX}`);
+    check("...which is where the old rebuild left it (the control: the wire's x)",
+      Math.abs(follow.x - wireX) > 20, `${Math.abs(follow.x - wireX).toFixed(1)} units off the wire`);
+    check("a drifting zone travels between snapshots like a projectile does",
+      Math.abs(drift.x - (wire.g[1][0] + 100 * 0.5)) < 2, `${drift.x.toFixed(1)} vs ${wire.g[1][0] + 50}`);
+    check("...and the renderer gets a previous position to blend from", follow.px !== follow.x || drift.px !== drift.x);
+    host.ground.length = 0;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+  }
+
+  // 3a''. A client's own swing shows the tick it presses. Before this the swing waited
+  // for the host's word — RTT + a snapshot interval + the interpolation span — so your
+  // own attack button was the most delayed thing on your screen ("attacks still have
+  // delays"). Only the animation is predicted; every hit is still the host's.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    // Both ends at rest, then the same weapon swung on each: the visible timer has to
+    // come out identical, because `startSwing` is one function for both.
+    hostMate.avatar.attackTimer = 0; hostMate.avatar.swingTimer = 0;
+    me.avatar.attackTimer = 0; me.avatar.swingTimer = 0;
+    client.drainEvents();
+    const press = new FakeInput();
+    press.beginTick(); press.press("attack");
+    client.update(DT, press as unknown as AvatarInput);
+    const predictedSwing = me.avatar.swingTimer;
+    const predictedEvents = client.drainEvents().filter((e) => e.kind === "swing");
+    check("a client's swing starts the tick the button goes down",
+      predictedSwing > 0 && me.avatar.attackTimer > 0, `swingTimer ${predictedSwing.toFixed(3)}`);
+    check("...and raises its own crescent, marked as predicted, for its own hero",
+      predictedEvents.length === 1 && predictedEvents[0]!.kind === "swing"
+      && predictedEvents[0]!.predicted === true && predictedEvents[0]!.hero === 1,
+      JSON.stringify(predictedEvents.map((e) => e.kind === "swing" ? [e.hero, e.predicted] : e.kind)));
+    // The host hasn't seen the press yet: its snapshot says this hero is not swinging.
+    // Adopting that would cancel the animation a few ticks in — the exact "restart
+    // mid-swing" the old apply did, and the control here.
+    const wire = JSON.parse(JSON.stringify(encodeSnapshot(host)));
+    check("the host's snapshot does not yet know about the swing (the control)", wire.h[1].sw === 0);
+    applySnapshot(client, wire);
+    check("...and adopting it does not cancel the client's in-flight swing",
+      Math.abs(me.avatar.swingTimer - predictedSwing) < 1e-9, `${me.avatar.swingTimer.toFixed(3)} vs ${predictedSwing.toFixed(3)}`);
+    // Now the host swings the same weapon: same visible timer, and its crescent names
+    // the hero so the client can drop the copy of a swing it already drew.
+    host.drainEvents();
+    mateInput.beginTick(); mateInput.press("attack");
+    hostInput.beginTick();
+    host.update(DT, hostInput as unknown as AvatarInput);
+    const hostSwing = host.drainEvents().find((e) => e.kind === "swing" && e.hero === 1);
+    check("the host's swing of the same weapon shows for exactly as long as the client predicted",
+      Math.abs(hostMate.avatar.swingTimer - predictedSwing) < 1e-9,
+      `${hostMate.avatar.swingTimer.toFixed(3)} vs ${predictedSwing.toFixed(3)}`);
+    check("...and the host's crescent names the hero and is not marked predicted",
+      hostSwing !== undefined && hostSwing.kind === "swing" && !hostSwing.predicted, JSON.stringify(hostSwing));
+    // An ally's swing is still the host's word, so allies keep seeing each other swing.
+    const ally = host.heroes[0]!.avatar;
+    ally.swingTimer = 0.1; ally.swingAngle = 1.5;
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("an ally's swing on the client is still whatever the host says",
+      Math.abs(client.heroes[0]!.avatar.swingTimer - 0.1) < 0.01 && Math.abs(client.heroes[0]!.avatar.swingAngle - 1.5) < 0.01);
   }
 
   // 3b. Loot sharing. A drop is **shared, not owned** (owner ruling, 2026-09-10): one
