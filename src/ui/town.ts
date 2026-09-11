@@ -4595,13 +4595,13 @@ export class TownUI {
         const n = st.namedFound[def.id] ?? 0;
         const color = n > 0 ? RARITY_COLORS[def.rarity] : "#5a6270";
         const art = this.collectionArt(def);
-        const icon = pixelImageTag(itemArt(art), 64, 64, itemArtKey("collection", art));
+        const icon = pixelImageTag(itemArt(art), 64, 64, itemArtKey("item", art));
         return `
           <div class="item-card ${on ? "on" : ""}" data-index="${i}" style="--r:${color}"
                title="${escapeHtml(`${def.name} — ${rarityLabel(def.rarity)} ${def.type}`)}">
             <div class="ic-art">${icon}</div>
             <span class="ic-name" style="color:${color}">${escapeHtml(def.name)}</span>
-            <span class="ic-slot">${n > 0 ? `found ×${n}` : "not yet"}</span>
+            <span class="ic-slot">Named · ${n > 0 ? `found ×${n}` : "not yet"}</span>
           </div>`;
       }
       const def = entry.def;
@@ -4615,7 +4615,7 @@ export class TownUI {
              title="${escapeHtml(`${def.name} — ${info.label}`)}">
           <div class="ic-art">${icon}</div>
           <span class="ic-name" style="color:${color}">${escapeHtml(def.name)}</span>
-          <span class="ic-slot">${owned ? (n > 1 ? `found ×${n}` : "found") : "not yet"}</span>
+          <span class="ic-slot">${info.label} · ${owned ? (n > 1 ? `found ×${n}` : "found") : "not yet"}</span>
         </div>`;
     }).join("");
 
@@ -4647,7 +4647,7 @@ export class TownUI {
     const sources = namedSourceLines(def).map((l) => `<li class="muted">${escapeHtml(l)}</li>`).join("");
     return `
       <div class="cmp-hero" style="--r:${RARITY_COLORS[def.rarity]}">
-        <div class="cmp-art">${pixelImageTag(itemArt(art), 96, 96, itemArtKey("collection", art))}</div>
+        <div class="cmp-art">${pixelImageTag(itemArt(art), 96, 96, itemArtKey("item", art))}</div>
         <div>
           <h3 style="color:${RARITY_COLORS[def.rarity]};margin:0">${escapeHtml(def.name)}</h3>
           <p class="muted" style="margin:2px 0 0">${escapeHtml(rarityLabel(def.rarity))} ${escapeHtml(def.type)}
