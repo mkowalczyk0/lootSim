@@ -364,7 +364,7 @@ function rollGrant(type: ItemType, tier: number, rng: Rng): string | null {
   const eligible = isWeaponType(type) || type === "ring" || type === "necklace";
   if (!eligible) return null;
   if (!rng.chance(grantChance(tier))) return null;
-  return rng.pick(GRANTABLE_ABILITY_IDS as readonly string[]);
+  return rng.pick(GRANTABLE_ABILITY_IDS);
 }
 
 /** From legendary upward an item can do something on its own, without a key press. */

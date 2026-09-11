@@ -84,7 +84,7 @@ export const SHAMAN_STATUSES: readonly StatusSpec[] = [STATUS_WITHERING, STATUS_
 
 // --- abilities --------------------------------------------------------
 
-export const SHAMAN_BONE_TALISMAN: Ability = {
+export const SHAMAN_BONE_TALISMAN = {
   id: "shaman.bone_talisman",
   classId: "shaman",
   name: "Bone Talisman",
@@ -100,9 +100,9 @@ export const SHAMAN_BONE_TALISMAN: Ability = {
     { kind: "status", status: "mark", chance: 1, to: "target" },
     { kind: "status", status: "withering", chance: 1, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_BRIAR_CIRCLE: Ability = {
+export const SHAMAN_BRIAR_CIRCLE = {
   id: "shaman.briar_circle",
   classId: "shaman",
   name: "Briar Circle",
@@ -117,9 +117,9 @@ export const SHAMAN_BRIAR_CIRCLE: Ability = {
     { kind: "zone", zone: { radius: 90, duration: 8, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.35, scale: "spell", type: "nature", channel: "periodic" }, status: { id: "rooted", chance: 0.15 } } },
   ],
   mutationHooks: [{ id: "briar_circle.zone", kind: "zone", note: "Great Ritual lets every skill interact with this." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_SPIRIT_HAWK: Ability = {
+export const SHAMAN_SPIRIT_HAWK = {
   id: "shaman.spirit_hawk",
   classId: "shaman",
   name: "Spirit Hawk",
@@ -134,9 +134,9 @@ export const SHAMAN_SPIRIT_HAWK: Ability = {
     { kind: "summon", unit: "spirit_hawk", count: 1, duration: 18, command: { behavior: "aggroNearest", inheritPower: 0.6 } },
   ],
   mutationHooks: [{ id: "spirit_hawk.summon", kind: "summon", note: "Spirit Council merges hawks into an elder spirit." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_HEX_OF_WITHERING: Ability = {
+export const SHAMAN_HEX_OF_WITHERING = {
   id: "shaman.hex_of_withering",
   classId: "shaman",
   name: "Hex of Withering",
@@ -153,9 +153,9 @@ export const SHAMAN_HEX_OF_WITHERING: Ability = {
     { kind: "damage", damage: { base: 0.6, scale: "spell", type: "void", canCrit: true }, to: "target" },
   ],
   mutationHooks: [{ id: "hex_of_withering.status", kind: "status", note: "Hexmaster links heavily-cursed enemies." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_ANCESTRAL_DRUM: Ability = {
+export const SHAMAN_ANCESTRAL_DRUM = {
   id: "shaman.ancestral_drum",
   classId: "shaman",
   name: "Ancestral Drum",
@@ -168,9 +168,9 @@ export const SHAMAN_ANCESTRAL_DRUM: Ability = {
   effects: [
     { kind: "zone", zone: { radius: 150, duration: 8, tickInterval: 1, follows: true, benefit: "haste" } },
   ],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_ROOTCALLER: Ability = {
+export const SHAMAN_ROOTCALLER = {
   id: "shaman.rootcaller",
   classId: "shaman",
   name: "Rootcaller",
@@ -187,9 +187,9 @@ export const SHAMAN_ROOTCALLER: Ability = {
     { kind: "damage", damage: { base: 1.2, scale: "spell", type: "nature", canCrit: true }, to: "allTargets" },
     { kind: "status", status: "rooted", chance: 1, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_SPIRIT_EXCHANGE: Ability = {
+export const SHAMAN_SPIRIT_EXCHANGE = {
   id: "shaman.spirit_exchange",
   classId: "shaman",
   name: "Spirit Exchange",
@@ -204,9 +204,9 @@ export const SHAMAN_SPIRIT_EXCHANGE: Ability = {
     { kind: "heal", amount: 1.4, scale: "spell", to: "lowestHealthAlly" },
     { kind: "summon", unit: "healing_spirit", count: 2, duration: 10, command: { behavior: "follow" } },
   ],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_TOTEMIC_MIGRATION: Ability = {
+export const SHAMAN_TOTEMIC_MIGRATION = {
   id: "shaman.totemic_migration",
   classId: "shaman",
   name: "Totemic Migration",
@@ -222,9 +222,9 @@ export const SHAMAN_TOTEMIC_MIGRATION: Ability = {
     { kind: "zone", zone: { radius: 60, duration: 4, tickInterval: 1, follows: false, benefit: "shield" } },
   ],
   mutationHooks: [{ id: "totemic_migration.zone", kind: "zone", note: "Battle Rite lets the moved ritual travel with the caster." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_RITUAL_HOLLOW_MOON: Ability = {
+export const SHAMAN_RITUAL_HOLLOW_MOON = {
   id: "shaman.ritual_hollow_moon",
   classId: "shaman",
   name: "Ritual of the Hollow Moon",
@@ -241,9 +241,9 @@ export const SHAMAN_RITUAL_HOLLOW_MOON: Ability = {
     { kind: "summon", unit: "moon_guardian", count: 2, duration: 20, command: { behavior: "guardPoint" } },
   ],
   mutationHooks: [{ id: "hollow_moon.summon", kind: "summon", note: "Walking Plague turns diseased kills into infection zones instead." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_SPIRIT_WORLD: Ability = {
+export const SHAMAN_SPIRIT_WORLD = {
   id: "shaman.spirit_world",
   classId: "shaman",
   name: "Spirit World",
@@ -260,9 +260,9 @@ export const SHAMAN_SPIRIT_WORLD: Ability = {
     { kind: "summon", unit: "elder_spirit", count: 2, duration: 12, command: { behavior: "aggroNearest", inheritPower: 1 } },
   ],
   mutationHooks: [{ id: "spirit_world.zone", kind: "zone", note: "Hollow King makes the overlay permanent within the arena." }],
-};
+} as const satisfies Ability;
 
-export const SHAMAN_ABILITIES: readonly Ability[] = [
+export const SHAMAN_ABILITIES = [
   SHAMAN_BONE_TALISMAN,
   SHAMAN_BRIAR_CIRCLE,
   SHAMAN_SPIRIT_HAWK,
@@ -273,7 +273,7 @@ export const SHAMAN_ABILITIES: readonly Ability[] = [
   SHAMAN_TOTEMIC_MIGRATION,
   SHAMAN_RITUAL_HOLLOW_MOON,
   SHAMAN_SPIRIT_WORLD,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

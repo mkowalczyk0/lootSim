@@ -86,7 +86,7 @@ export const BARD_STATUSES: readonly StatusSpec[] = [STATUS_INSPIRED, STATUS_DIS
 
 // --- abilities --------------------------------------------------------
 
-export const BARD_WAR_MARCH: Ability = {
+export const BARD_WAR_MARCH = {
   id: "bard.war_march",
   classId: "bard",
   name: "War March",
@@ -101,9 +101,9 @@ export const BARD_WAR_MARCH: Ability = {
     { kind: "status", status: "inspired", chance: 1, to: "allies" },
   ],
   mutationHooks: [{ id: "war_march.zone", kind: "zone", note: "War Drummer path widens and hardens the march." }],
-};
+} as const satisfies Ability;
 
-export const BARD_BATTLE_HYMN: Ability = {
+export const BARD_BATTLE_HYMN = {
   id: "bard.battle_hymn",
   classId: "bard",
   name: "Battle Hymn",
@@ -116,9 +116,9 @@ export const BARD_BATTLE_HYMN: Ability = {
   effects: [
     { kind: "status", status: "inspired", chance: 1, stacks: 2, to: "allies" },
   ],
-};
+} as const satisfies Ability;
 
-export const BARD_RESTORATIVE_VERSE: Ability = {
+export const BARD_RESTORATIVE_VERSE = {
   id: "bard.restorative_verse",
   classId: "bard",
   name: "Restorative Verse",
@@ -132,9 +132,9 @@ export const BARD_RESTORATIVE_VERSE: Ability = {
     { kind: "heal", amount: 0.2, scale: "spell", to: "allies", overTime: { duration: 6 } },
   ],
   mutationHooks: [{ id: "restorative_verse.heal", kind: "zone", note: "Minstrel path makes the verse a moving heal zone." }],
-};
+} as const satisfies Ability;
 
-export const BARD_DISSONANCE: Ability = {
+export const BARD_DISSONANCE = {
   id: "bard.dissonance",
   classId: "bard",
   name: "Dissonance",
@@ -151,9 +151,9 @@ export const BARD_DISSONANCE: Ability = {
     { kind: "damage", damage: { base: 0.4, scale: "spell", type: "arcane", canCrit: false }, to: "allTargets" },
     { kind: "status", status: "discord", chance: 1, stacks: 2, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const BARD_RALLYING_CHORUS: Ability = {
+export const BARD_RALLYING_CHORUS = {
   id: "bard.rallying_chorus",
   classId: "bard",
   name: "Rallying Chorus",
@@ -168,9 +168,9 @@ export const BARD_RALLYING_CHORUS: Ability = {
     { kind: "status", status: "inspired", chance: 1, stacks: 3, to: "allies" },
     { kind: "cleanse", category: "debuff", to: "allies" },
   ],
-};
+} as const satisfies Ability;
 
-export const BARD_CRESCENDO: Ability = {
+export const BARD_CRESCENDO = {
   id: "bard.crescendo",
   classId: "bard",
   name: "Crescendo",
@@ -185,9 +185,9 @@ export const BARD_CRESCENDO: Ability = {
     { kind: "resource", resource: "rhythm", delta: 40, to: "self" },
   ],
   mutationHooks: [{ id: "crescendo.rule", kind: "resource", note: "Maestro path lets the Crescendo double two songs, not one." }],
-};
+} as const satisfies Ability;
 
-export const BARD_ENCORE: Ability = {
+export const BARD_ENCORE = {
   id: "bard.encore",
   classId: "bard",
   name: "Encore",
@@ -201,9 +201,9 @@ export const BARD_ENCORE: Ability = {
     { kind: "resource", resource: "rhythm", delta: 10, to: "self" },
   ],
   mutationHooks: [{ id: "encore.rule", kind: "followUp", note: "Virtuoso path makes Encore a full second cast of any song." }],
-};
+} as const satisfies Ability;
 
-export const BARD_DIRGE_OF_SILENCE: Ability = {
+export const BARD_DIRGE_OF_SILENCE = {
   id: "bard.dirge_of_silence",
   classId: "bard",
   name: "Dirge of Silence",
@@ -218,9 +218,9 @@ export const BARD_DIRGE_OF_SILENCE: Ability = {
     { kind: "zone", zone: { radius: 130, duration: 6, tickInterval: 0.5, follows: false, status: { id: "silenced", chance: 1 } } },
     { kind: "interrupt", radius: 130 },
   ],
-};
+} as const satisfies Ability;
 
-export const BARD_STANDING_OVATION: Ability = {
+export const BARD_STANDING_OVATION = {
   id: "bard.standing_ovation",
   classId: "bard",
   name: "Standing Ovation",
@@ -234,9 +234,9 @@ export const BARD_STANDING_OVATION: Ability = {
     { kind: "reactive", event: "criticalHit", window: 8, effects: [{ kind: "status", status: "inspired", chance: 1, stacks: 2, to: "allies" }] },
     { kind: "reactive", event: "dodge", window: 8, effects: [{ kind: "status", status: "inspired", chance: 1, to: "allies" }] },
   ],
-};
+} as const satisfies Ability;
 
-export const BARD_GRAND_PERFORMANCE: Ability = {
+export const BARD_GRAND_PERFORMANCE = {
   id: "bard.grand_performance",
   classId: "bard",
   name: "Grand Performance",
@@ -257,9 +257,9 @@ export const BARD_GRAND_PERFORMANCE: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "grand_performance.followup", kind: "followUp", note: "The Symphony adds a fourth movement that lets the party act twice." }],
-};
+} as const satisfies Ability;
 
-export const BARD_ABILITIES: readonly Ability[] = [
+export const BARD_ABILITIES = [
   BARD_WAR_MARCH,
   BARD_BATTLE_HYMN,
   BARD_RESTORATIVE_VERSE,
@@ -270,7 +270,7 @@ export const BARD_ABILITIES: readonly Ability[] = [
   BARD_DIRGE_OF_SILENCE,
   BARD_STANDING_OVATION,
   BARD_GRAND_PERFORMANCE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

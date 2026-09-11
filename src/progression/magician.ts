@@ -91,7 +91,7 @@ export const MAGICIAN_STATUSES: readonly StatusSpec[] = [STATUS_WEAVE, STATUS_UN
 
 // --- abilities (9 + 1) --------------------------------------------
 
-export const MAGICIAN_ARC_SPARK: Ability = {
+export const MAGICIAN_ARC_SPARK = {
   id: "magician.arc_spark",
   classId: "magician",
   name: "Arc Spark",
@@ -116,9 +116,9 @@ export const MAGICIAN_ARC_SPARK: Ability = {
     },
   ],
   mutationHooks: [{ id: "arc_spark.chain", kind: "projectile", note: "Thunder God nodes add bounces and chains." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_EMBER_ORB: Ability = {
+export const MAGICIAN_EMBER_ORB = {
   id: "magician.ember_orb",
   classId: "magician",
   name: "Ember Orb",
@@ -146,9 +146,9 @@ export const MAGICIAN_EMBER_ORB: Ability = {
       },
     },
   ],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_PRISM_LANCE: Ability = {
+export const MAGICIAN_PRISM_LANCE = {
   id: "magician.prism_lance",
   classId: "magician",
   name: "Prism Lance",
@@ -170,9 +170,9 @@ export const MAGICIAN_PRISM_LANCE: Ability = {
     { id: "prism_lance.element", kind: "damagePacket", note: "Elementalist rotates the beam through its element cycle." },
     { id: "prism_lance.reach", kind: "targeting", note: "Reality Bender can split its origin (Paradox)." },
   ],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_GRAVITY_WELL: Ability = {
+export const MAGICIAN_GRAVITY_WELL = {
   id: "magician.gravity_well",
   classId: "magician",
   name: "Gravity Well",
@@ -198,9 +198,9 @@ export const MAGICIAN_GRAVITY_WELL: Ability = {
     { kind: "zone", zone: { radius: 100, duration: 4, tickInterval: 0.5, follows: false, mergeable: false, damage: { base: 0.35, scale: "spell", type: "void", channel: "periodic" }, status: { id: "rooted", chance: 0.5 } } },
   ],
   mutationHooks: [{ id: "gravity_well.element", kind: "zone", note: "Elemental Rift makes the well inherit the last spell's element." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_MIRROR_IMAGE: Ability = {
+export const MAGICIAN_MIRROR_IMAGE = {
   id: "magician.mirror_image",
   classId: "magician",
   name: "Mirror Image",
@@ -215,9 +215,9 @@ export const MAGICIAN_MIRROR_IMAGE: Ability = {
     { kind: "summon", unit: "mirror_image", count: 2, duration: 10, command: { behavior: "aggroNearest", inheritPower: 0.45 } },
   ],
   mutationHooks: [{ id: "mirror_image.count", kind: "summon", note: "Reality Bender adds a third image and lets them teleport." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_ARCANE_ROULETTE: Ability = {
+export const MAGICIAN_ARCANE_ROULETTE = {
   id: "magician.arcane_roulette",
   classId: "magician",
   name: "Arcane Roulette",
@@ -243,9 +243,9 @@ export const MAGICIAN_ARCANE_ROULETTE: Ability = {
     },
   ],
   mutationHooks: [{ id: "arcane_roulette.table", kind: "replaceEffect", note: "Mad-science nodes weight the wheel toward the bigger outcomes." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_MANA_BURN: Ability = {
+export const MAGICIAN_MANA_BURN = {
   id: "magician.mana_burn",
   classId: "magician",
   name: "Mana Burn",
@@ -264,9 +264,9 @@ export const MAGICIAN_MANA_BURN: Ability = {
     { kind: "status", status: "exposed", chance: 1, to: "allTargets" },
   ],
   mutationHooks: [{ id: "mana_burn.cost", kind: "resource", note: "Arcane Overload lets it fire off health when the bar is empty." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_SPELLWEAVE: Ability = {
+export const MAGICIAN_SPELLWEAVE = {
   id: "magician.spellweave",
   classId: "magician",
   name: "Spellweave",
@@ -281,9 +281,9 @@ export const MAGICIAN_SPELLWEAVE: Ability = {
     { kind: "resource", resource: "overcharge", delta: 20, to: "self" },
   ],
   mutationHooks: [{ id: "spellweave.rule", kind: "trigger", note: "Grand Arcanist grants a free fourth spell while weaving." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_AETHER_STEP: Ability = {
+export const MAGICIAN_AETHER_STEP = {
   id: "magician.aether_step",
   classId: "magician",
   name: "Aether Step",
@@ -300,9 +300,9 @@ export const MAGICIAN_AETHER_STEP: Ability = {
     { kind: "zone", zone: { radius: 70, duration: 5, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.5, scale: "spell", type: "arcane", channel: "periodic" }, status: { id: "unstable", chance: 1 } } },
   ],
   mutationHooks: [{ id: "aether_step.anchor", kind: "movement", note: "Paradox: the anchor becomes a second cast origin for later spells." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_ASTRAL_COLLAPSE: Ability = {
+export const MAGICIAN_ASTRAL_COLLAPSE = {
   id: "magician.astral_collapse",
   classId: "magician",
   name: "Astral Collapse",
@@ -323,9 +323,9 @@ export const MAGICIAN_ASTRAL_COLLAPSE: Ability = {
     { kind: "delay", seconds: 2.2, effects: [{ kind: "zone", zone: { radius: 120, duration: 4, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.5, scale: "spell", type: "fire", channel: "periodic" }, status: { id: "burn", chance: 1 } } }] },
   ],
   mutationHooks: [{ id: "astral_collapse.rift", kind: "followUp", note: "Singularity leaves a persistent gravity well where the bombardment lands." }],
-};
+} as const satisfies Ability;
 
-export const MAGICIAN_ABILITIES: readonly Ability[] = [
+export const MAGICIAN_ABILITIES = [
   MAGICIAN_ARC_SPARK,
   MAGICIAN_EMBER_ORB,
   MAGICIAN_PRISM_LANCE,
@@ -336,7 +336,7 @@ export const MAGICIAN_ABILITIES: readonly Ability[] = [
   MAGICIAN_SPELLWEAVE,
   MAGICIAN_AETHER_STEP,
   MAGICIAN_ASTRAL_COLLAPSE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree -----------------------------------------------------
 

@@ -116,7 +116,7 @@ export const PALADIN_STATUSES: readonly StatusSpec[] = [STATUS_BLESSED, STATUS_J
 
 // --- abilities (9 + 1) --------------------------------------------
 
-export const PALADIN_RADIANT_STRIKE: Ability = {
+export const PALADIN_RADIANT_STRIKE = {
   id: "paladin.radiant_strike",
   classId: "paladin",
   name: "Radiant Strike",
@@ -132,9 +132,9 @@ export const PALADIN_RADIANT_STRIKE: Ability = {
     { kind: "status", status: "blessed", chance: 1, to: "allies" },
     { kind: "resource", resource: "conviction", delta: 4, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const PALADIN_GUARDIANS_OATH: Ability = {
+export const PALADIN_GUARDIANS_OATH = {
   id: "paladin.guardians_oath",
   classId: "paladin",
   name: "Guardian's Oath",
@@ -151,9 +151,9 @@ export const PALADIN_GUARDIANS_OATH: Ability = {
     { kind: "shield", amount: 1, scale: "attack", to: "self", duration: 8 },
   ],
   mutationHooks: [{ id: "guardians_oath.share", kind: "replaceEffect", note: "Bodyguard raises the redirected fraction and shields the ward too." }],
-};
+} as const satisfies Ability;
 
-export const PALADIN_CONSECRATED_GROUND: Ability = {
+export const PALADIN_CONSECRATED_GROUND = {
   id: "paladin.consecrated_ground",
   classId: "paladin",
   name: "Consecrated Ground",
@@ -170,9 +170,9 @@ export const PALADIN_CONSECRATED_GROUND: Ability = {
     { kind: "zone", zone: { radius: 120, duration: 10, tickInterval: 1, follows: false, mergeable: false, damage: { base: 0.3, scale: "spell", type: "holy", channel: "periodic" } } },
   ],
   mutationHooks: [{ id: "consecrated_ground.follow", kind: "zone", note: "Moving Sanctuary makes the ground follow the Paladin." }],
-};
+} as const satisfies Ability;
 
-export const PALADIN_JUDGEMENT: Ability = {
+export const PALADIN_JUDGEMENT = {
   id: "paladin.judgement",
   classId: "paladin",
   name: "Judgement",
@@ -189,9 +189,9 @@ export const PALADIN_JUDGEMENT: Ability = {
     { kind: "status", status: "judged", chance: 1, to: "target" },
     { kind: "resource", resource: "conviction", delta: 6, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const PALADIN_SHIELD_OF_FAITH: Ability = {
+export const PALADIN_SHIELD_OF_FAITH = {
   id: "paladin.shield_of_faith",
   classId: "paladin",
   name: "Shield of Faith",
@@ -207,9 +207,9 @@ export const PALADIN_SHIELD_OF_FAITH: Ability = {
     { kind: "shield", amount: 999, scale: "flat", to: "lowestHealthAlly", duration: 6, absorbOneHit: true },
   ],
   mutationHooks: [{ id: "shield_of_faith.break", kind: "trigger", note: "Sanctuary detonates the shield's break into a heal pulse." }],
-};
+} as const satisfies Ability;
 
-export const PALADIN_AEGIS_RUSH: Ability = {
+export const PALADIN_AEGIS_RUSH = {
   id: "paladin.aegis_rush",
   classId: "paladin",
   name: "Aegis Rush",
@@ -225,9 +225,9 @@ export const PALADIN_AEGIS_RUSH: Ability = {
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "holy", canCrit: true, knockback: 80 }, to: "enemies" },
     { kind: "shield", amount: 0.8, scale: "attack", to: "allies", duration: 5 },
   ],
-};
+} as const satisfies Ability;
 
-export const PALADIN_CLEANSING_FLAME: Ability = {
+export const PALADIN_CLEANSING_FLAME = {
   id: "paladin.cleansing_flame",
   classId: "paladin",
   name: "Cleansing Flame",
@@ -244,9 +244,9 @@ export const PALADIN_CLEANSING_FLAME: Ability = {
     { kind: "cleanse", category: "curse", to: "allies", thenHealPerStatus: 0.2 },
     { kind: "heal", amount: 0.15, scale: "spell", to: "allies" },
   ],
-};
+} as const satisfies Ability;
 
-export const PALADIN_VINDICATORS_CALL: Ability = {
+export const PALADIN_VINDICATORS_CALL = {
   id: "paladin.vindicators_call",
   classId: "paladin",
   name: "Vindicator's Call",
@@ -268,9 +268,9 @@ export const PALADIN_VINDICATORS_CALL: Ability = {
       effects: [{ kind: "resource", resource: "conviction", delta: 3, to: "self" }],
     },
   ],
-};
+} as const satisfies Ability;
 
-export const PALADIN_MARTYRS_GRACE: Ability = {
+export const PALADIN_MARTYRS_GRACE = {
   id: "paladin.martyrs_grace",
   classId: "paladin",
   name: "Martyr's Grace",
@@ -288,9 +288,9 @@ export const PALADIN_MARTYRS_GRACE: Ability = {
     { kind: "heal", amount: 0.4, scale: "spell", to: "allies", overTime: { duration: 4 } },
   ],
   mutationHooks: [{ id: "martyrs_grace.return", kind: "followUp", note: "Saint's Burden reflects a share of the sacrifice back as damage." }],
-};
+} as const satisfies Ability;
 
-export const PALADIN_LAST_LIGHT: Ability = {
+export const PALADIN_LAST_LIGHT = {
   id: "paladin.last_light",
   classId: "paladin",
   name: "Last Light",
@@ -313,9 +313,9 @@ export const PALADIN_LAST_LIGHT: Ability = {
     },
   ],
   mutationHooks: [{ id: "last_light.finale", kind: "followUp", note: "Saint of the Last Stand keeps the guard up while Conviction holds." }],
-};
+} as const satisfies Ability;
 
-export const PALADIN_ABILITIES: readonly Ability[] = [
+export const PALADIN_ABILITIES = [
   PALADIN_RADIANT_STRIKE,
   PALADIN_GUARDIANS_OATH,
   PALADIN_CONSECRATED_GROUND,
@@ -326,7 +326,7 @@ export const PALADIN_ABILITIES: readonly Ability[] = [
   PALADIN_VINDICATORS_CALL,
   PALADIN_MARTYRS_GRACE,
   PALADIN_LAST_LIGHT,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree ---------------------------------------------------
 

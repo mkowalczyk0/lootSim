@@ -86,7 +86,7 @@ export const ALCHEMIST_STATUSES: readonly StatusSpec[] = [STATUS_CORRODED, STATU
 
 // --- abilities --------------------------------------------------------
 
-export const ALCHEMIST_VOLATILE_FLASK: Ability = {
+export const ALCHEMIST_VOLATILE_FLASK = {
   id: "alchemist.volatile_flask",
   classId: "alchemist",
   name: "Volatile Flask",
@@ -102,9 +102,9 @@ export const ALCHEMIST_VOLATILE_FLASK: Ability = {
     { kind: "zone", zone: { radius: 80, duration: 6, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.5, scale: "spell", type: "fire", channel: "periodic" }, status: { id: "burn", chance: 0.6 } } },
   ],
   mutationHooks: [{ id: "volatile_flask.zone", kind: "zone", note: "Pyromancer path chains detonations between fire pools." }],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_FROST_SOLUTION: Ability = {
+export const ALCHEMIST_FROST_SOLUTION = {
   id: "alchemist.frost_solution",
   classId: "alchemist",
   name: "Frost Solution",
@@ -119,9 +119,9 @@ export const ALCHEMIST_FROST_SOLUTION: Ability = {
   effects: [
     { kind: "zone", zone: { radius: 90, duration: 5, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.3, scale: "spell", type: "cold", channel: "periodic" }, status: { id: "chill", chance: 1 } } },
   ],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_ADRENAL_COMPOUND: Ability = {
+export const ALCHEMIST_ADRENAL_COMPOUND = {
   id: "alchemist.adrenal_compound",
   classId: "alchemist",
   name: "Adrenal Compound",
@@ -137,9 +137,9 @@ export const ALCHEMIST_ADRENAL_COMPOUND: Ability = {
     { kind: "status", status: "catalyzed", chance: 1, to: "allies" },
     { kind: "cleanse", category: "cc", to: "allies" },
   ],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_CORROSIVE_MIXTURE: Ability = {
+export const ALCHEMIST_CORROSIVE_MIXTURE = {
   id: "alchemist.corrosive_mixture",
   classId: "alchemist",
   name: "Corrosive Mixture",
@@ -155,9 +155,9 @@ export const ALCHEMIST_CORROSIVE_MIXTURE: Ability = {
     { kind: "projectile", projectile: { damage: { base: 0.8, scale: "spell", type: "poison", canCrit: true, inflict: { status: "corroded", chance: 1 } }, speed: 380, radius: 18, life: 0.9 } },
   ],
   mutationHooks: [{ id: "corrosive_mixture.status", kind: "status", note: "Toxicologist deepens the corrosion." }],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_TRANSFUSION_TONIC: Ability = {
+export const ALCHEMIST_TRANSFUSION_TONIC = {
   id: "alchemist.transfusion_tonic",
   classId: "alchemist",
   name: "Transfusion Tonic",
@@ -172,9 +172,9 @@ export const ALCHEMIST_TRANSFUSION_TONIC: Ability = {
   effects: [
     { kind: "heal", amount: 1.6, scale: "spell", to: "lowestHealthAlly" },
   ],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_REAGENT_TOSS: Ability = {
+export const ALCHEMIST_REAGENT_TOSS = {
   id: "alchemist.reagent_toss",
   classId: "alchemist",
   name: "Reagent Toss",
@@ -193,9 +193,9 @@ export const ALCHEMIST_REAGENT_TOSS: Ability = {
       { weight: 1, effects: [{ kind: "projectile", projectile: { damage: { base: 1.0, scale: "spell", type: "poison", canCrit: true, inflict: { status: "corroded", chance: 1 } }, speed: 420, radius: 12, life: 0.8 } }] },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_UNSTABLE_REACTION: Ability = {
+export const ALCHEMIST_UNSTABLE_REACTION = {
   id: "alchemist.unstable_reaction",
   classId: "alchemist",
   name: "Unstable Reaction",
@@ -215,9 +215,9 @@ export const ALCHEMIST_UNSTABLE_REACTION: Ability = {
     { kind: "status", status: "corroded", chance: 0.7, to: "enemies" },
   ],
   mutationHooks: [{ id: "unstable_reaction.packet", kind: "damagePacket", note: "Mad Scientist path randomises and amplifies the yield." }],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_SMOKE_BOMB: Ability = {
+export const ALCHEMIST_SMOKE_BOMB = {
   id: "alchemist.smoke_bomb",
   classId: "alchemist",
   name: "Smoke Bomb",
@@ -231,9 +231,9 @@ export const ALCHEMIST_SMOKE_BOMB: Ability = {
   effects: [
     { kind: "zone", zone: { radius: 130, duration: 6, tickInterval: 1, follows: false, status: { id: "blinded", chance: 1 } } },
   ],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_EXPERIMENTAL_SERUM: Ability = {
+export const ALCHEMIST_EXPERIMENTAL_SERUM = {
   id: "alchemist.experimental_serum",
   classId: "alchemist",
   name: "Experimental Serum",
@@ -252,9 +252,9 @@ export const ALCHEMIST_EXPERIMENTAL_SERUM: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "experimental_serum.rule", kind: "trigger", note: "Medic path lets you pick the outcome." }],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_GRAND_EXPERIMENT: Ability = {
+export const ALCHEMIST_GRAND_EXPERIMENT = {
   id: "alchemist.grand_experiment",
   classId: "alchemist",
   name: "Grand Experiment",
@@ -271,9 +271,9 @@ export const ALCHEMIST_GRAND_EXPERIMENT: Ability = {
     { kind: "delay", seconds: 4, effects: [{ kind: "zone", zone: { radius: 280, duration: 6, tickInterval: 0.5, follows: false, damage: { base: 0.5, scale: "spell", type: "cold", channel: "ultimate" }, status: { id: "chill", chance: 0.6 } } }] },
   ],
   mutationHooks: [{ id: "grand_experiment.zone", kind: "zone", note: "The Reaction makes every phase overlap instead of cycling." }],
-};
+} as const satisfies Ability;
 
-export const ALCHEMIST_ABILITIES: readonly Ability[] = [
+export const ALCHEMIST_ABILITIES = [
   ALCHEMIST_VOLATILE_FLASK,
   ALCHEMIST_FROST_SOLUTION,
   ALCHEMIST_ADRENAL_COMPOUND,
@@ -284,7 +284,7 @@ export const ALCHEMIST_ABILITIES: readonly Ability[] = [
   ALCHEMIST_SMOKE_BOMB,
   ALCHEMIST_EXPERIMENTAL_SERUM,
   ALCHEMIST_GRAND_EXPERIMENT,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

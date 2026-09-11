@@ -70,7 +70,7 @@ export const JUGGERNAUT_STATUSES: readonly StatusSpec[] = [STATUS_SUNDERED];
 
 // --- abilities --------------------------------------------------------
 
-export const JUGGERNAUT_HAMMERFALL: Ability = {
+export const JUGGERNAUT_HAMMERFALL = {
   id: "juggernaut.hammerfall",
   classId: "juggernaut",
   name: "Hammerfall",
@@ -88,9 +88,9 @@ export const JUGGERNAUT_HAMMERFALL: Ability = {
     { kind: "damage", damage: { base: 2.2, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },
     { kind: "status", status: "stunned", chance: 1, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_BASTION_STANCE: Ability = {
+export const JUGGERNAUT_BASTION_STANCE = {
   id: "juggernaut.bastion_stance",
   classId: "juggernaut",
   name: "Bastion Stance",
@@ -105,9 +105,9 @@ export const JUGGERNAUT_BASTION_STANCE: Ability = {
     { kind: "resource", resource: "fortify", delta: 25, to: "self" },
   ],
   mutationHooks: [{ id: "bastion_stance.shield", kind: "zone", note: "Guardian Wall extends the arc to allies behind you." }],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_IRON_MARCH: Ability = {
+export const JUGGERNAUT_IRON_MARCH = {
   id: "juggernaut.iron_march",
   classId: "juggernaut",
   name: "Iron March",
@@ -125,9 +125,9 @@ export const JUGGERNAUT_IRON_MARCH: Ability = {
     { kind: "threat", op: "generate", amount: 30, to: "allTargets" },
   ],
   mutationHooks: [{ id: "iron_march.movement", kind: "movement", note: "Rolling Mountain builds speed the longer it runs." }],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_SHIELDLESS_GUARD: Ability = {
+export const JUGGERNAUT_SHIELDLESS_GUARD = {
   id: "juggernaut.shieldless_guard",
   classId: "juggernaut",
   name: "Shieldless Guard",
@@ -142,9 +142,9 @@ export const JUGGERNAUT_SHIELDLESS_GUARD: Ability = {
     { kind: "shield", amount: 4.0, scale: "attack", to: "self", duration: 3 },
     { kind: "resource", resource: "fortify", delta: 40, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_TREMOR_BLOW: Ability = {
+export const JUGGERNAUT_TREMOR_BLOW = {
   id: "juggernaut.tremor_blow",
   classId: "juggernaut",
   name: "Tremor Blow",
@@ -162,9 +162,9 @@ export const JUGGERNAUT_TREMOR_BLOW: Ability = {
     { kind: "status", status: "sundered", chance: 1, stacks: 2, to: "allTargets" },
   ],
   mutationHooks: [{ id: "tremor_blow.status", kind: "status", note: "Demolitionist path deepens the sunder." }],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_ANCHOR_RUNE: Ability = {
+export const JUGGERNAUT_ANCHOR_RUNE = {
   id: "juggernaut.anchor_rune",
   classId: "juggernaut",
   name: "Anchor Rune",
@@ -179,9 +179,9 @@ export const JUGGERNAUT_ANCHOR_RUNE: Ability = {
     { kind: "zone", zone: { radius: 120, duration: 10, tickInterval: 1, follows: false, benefit: "shield" } },
     { kind: "terrain", piece: "anchor", duration: 10, hp: 0 },
   ],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_RETALIATION_PLATE: Ability = {
+export const JUGGERNAUT_RETALIATION_PLATE = {
   id: "juggernaut.retaliation_plate",
   classId: "juggernaut",
   name: "Retaliation Plate",
@@ -196,9 +196,9 @@ export const JUGGERNAUT_RETALIATION_PLATE: Ability = {
     { kind: "reactive", event: "damageTaken", window: 3, effects: [{ kind: "damage", damage: { base: 0.8, scale: "attack", type: "physical", channel: "retaliation" }, to: "enemies" }] },
     { kind: "delay", seconds: 3, effects: [{ kind: "damage", damage: { base: 2.4, scale: "attack", type: "physical", canCrit: true, knockback: 100 }, to: "enemies" }] },
   ],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_FORTRESS_CALL: Ability = {
+export const JUGGERNAUT_FORTRESS_CALL = {
   id: "juggernaut.fortress_call",
   classId: "juggernaut",
   name: "Fortress Call",
@@ -213,9 +213,9 @@ export const JUGGERNAUT_FORTRESS_CALL: Ability = {
     { kind: "redirect", fraction: 0.4, duration: 6, to: "allies" },
   ],
   mutationHooks: [{ id: "fortress_call.redirect", kind: "trigger", note: "Champion's Challenge focuses this on one elite." }],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_MOUNTAINS_WEIGHT: Ability = {
+export const JUGGERNAUT_MOUNTAINS_WEIGHT = {
   id: "juggernaut.mountains_weight",
   classId: "juggernaut",
   name: "Mountain's Weight",
@@ -231,9 +231,9 @@ export const JUGGERNAUT_MOUNTAINS_WEIGHT: Ability = {
     { kind: "cleanse", category: "cc", to: "self" },
     { kind: "resource", resource: "fortify", delta: 100, to: "self" },
   ],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_CITADEL: Ability = {
+export const JUGGERNAUT_CITADEL = {
   id: "juggernaut.citadel",
   classId: "juggernaut",
   name: "Citadel",
@@ -250,9 +250,9 @@ export const JUGGERNAUT_CITADEL: Ability = {
     { kind: "threat", op: "taunt", radius: 260, to: "enemies" },
   ],
   mutationHooks: [{ id: "citadel.zone", kind: "zone", note: "The Keep makes the fortress mobile and reflects what it stops." }],
-};
+} as const satisfies Ability;
 
-export const JUGGERNAUT_ABILITIES: readonly Ability[] = [
+export const JUGGERNAUT_ABILITIES = [
   JUGGERNAUT_HAMMERFALL,
   JUGGERNAUT_BASTION_STANCE,
   JUGGERNAUT_IRON_MARCH,
@@ -263,7 +263,7 @@ export const JUGGERNAUT_ABILITIES: readonly Ability[] = [
   JUGGERNAUT_FORTRESS_CALL,
   JUGGERNAUT_MOUNTAINS_WEIGHT,
   JUGGERNAUT_CITADEL,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

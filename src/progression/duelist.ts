@@ -67,7 +67,7 @@ export const DUELIST_STATUSES: readonly StatusSpec[] = [STATUS_OPENING];
 
 // --- abilities --------------------------------------------------------
 
-export const DUELIST_FEINT: Ability = {
+export const DUELIST_FEINT = {
   id: "duelist.feint",
   classId: "duelist",
   name: "Feint",
@@ -83,9 +83,9 @@ export const DUELIST_FEINT: Ability = {
     { kind: "status", status: "opening", chance: 0.5, to: "target" },
   ],
   mutationHooks: [{ id: "feint.window", kind: "trigger", note: "Fencer path punishes the committed attack." }],
-};
+} as const satisfies Ability;
 
-export const DUELIST_RIPOSTE: Ability = {
+export const DUELIST_RIPOSTE = {
   id: "duelist.riposte",
   classId: "duelist",
   name: "Riposte",
@@ -103,9 +103,9 @@ export const DUELIST_RIPOSTE: Ability = {
     { kind: "resource", resource: "precision", delta: 15, to: "self" },
   ],
   mutationHooks: [{ id: "riposte.window", kind: "trigger", note: "Perfect Counter widens the window and refunds the cooldown." }],
-};
+} as const satisfies Ability;
 
-export const DUELIST_FOOTWORK: Ability = {
+export const DUELIST_FOOTWORK = {
   id: "duelist.footwork",
   classId: "duelist",
   name: "Footwork",
@@ -120,9 +120,9 @@ export const DUELIST_FOOTWORK: Ability = {
     { kind: "move", style: "dash", distance: 120, iframes: 0.35 },
     { kind: "status", status: "opening", chance: 1, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const DUELIST_DISARM: Ability = {
+export const DUELIST_DISARM = {
   id: "duelist.disarm",
   classId: "duelist",
   name: "Disarm",
@@ -138,9 +138,9 @@ export const DUELIST_DISARM: Ability = {
     { kind: "status", status: "silenced", chance: 1, to: "target" },
     { kind: "interrupt", radius: 30 },
   ],
-};
+} as const satisfies Ability;
 
-export const DUELIST_OPENING_CUT: Ability = {
+export const DUELIST_OPENING_CUT = {
   id: "duelist.opening_cut",
   classId: "duelist",
   name: "Opening Cut",
@@ -159,9 +159,9 @@ export const DUELIST_OPENING_CUT: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "opening_cut.packet", kind: "damagePacket", note: "Bleedmaster leaves stacking wounds." }],
-};
+} as const satisfies Ability;
 
-export const DUELIST_LUNGING_JAB: Ability = {
+export const DUELIST_LUNGING_JAB = {
   id: "duelist.lunging_jab",
   classId: "duelist",
   name: "Lunging Jab",
@@ -177,9 +177,9 @@ export const DUELIST_LUNGING_JAB: Ability = {
     { kind: "move", style: "dash", distance: 100, iframes: 0.15 },
     { kind: "damage", damage: { base: 1.8, scale: "attack", type: "physical", canCrit: true }, to: "allTargets" },
   ],
-};
+} as const satisfies Ability;
 
-export const DUELIST_BLOODLESS_VICTORY: Ability = {
+export const DUELIST_BLOODLESS_VICTORY = {
   id: "duelist.bloodless_victory",
   classId: "duelist",
   name: "Bloodless Victory",
@@ -193,9 +193,9 @@ export const DUELIST_BLOODLESS_VICTORY: Ability = {
     { kind: "resource", resource: "precision", delta: 25, to: "self" },
   ],
   mutationHooks: [{ id: "bloodless_victory.rule", kind: "trigger", note: "Blood Duel path fixates this on a single target." }],
-};
+} as const satisfies Ability;
 
-export const DUELIST_COUNTERMARK: Ability = {
+export const DUELIST_COUNTERMARK = {
   id: "duelist.countermark",
   classId: "duelist",
   name: "Countermark",
@@ -214,9 +214,9 @@ export const DUELIST_COUNTERMARK: Ability = {
       { kind: "resource", resource: "ultimate", delta: 10, to: "self" },
     ] },
   ],
-};
+} as const satisfies Ability;
 
-export const DUELIST_FINAL_LESSON: Ability = {
+export const DUELIST_FINAL_LESSON = {
   id: "duelist.final_lesson",
   classId: "duelist",
   name: "Final Lesson",
@@ -233,9 +233,9 @@ export const DUELIST_FINAL_LESSON: Ability = {
     { kind: "status", status: "vulnerable", chance: 1, to: "target" },
     { kind: "threat", op: "taunt", radius: 40, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const DUELIST_PERFECT_RIPOSTE: Ability = {
+export const DUELIST_PERFECT_RIPOSTE = {
   id: "duelist.perfect_riposte",
   classId: "duelist",
   name: "Perfect Riposte",
@@ -254,9 +254,9 @@ export const DUELIST_PERFECT_RIPOSTE: Ability = {
     ] },
   ],
   mutationHooks: [{ id: "perfect_riposte.window", kind: "trigger", note: "The Last Word turns each counter into a full execute." }],
-};
+} as const satisfies Ability;
 
-export const DUELIST_ABILITIES: readonly Ability[] = [
+export const DUELIST_ABILITIES = [
   DUELIST_FEINT,
   DUELIST_RIPOSTE,
   DUELIST_FOOTWORK,
@@ -267,7 +267,7 @@ export const DUELIST_ABILITIES: readonly Ability[] = [
   DUELIST_COUNTERMARK,
   DUELIST_FINAL_LESSON,
   DUELIST_PERFECT_RIPOSTE,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree --------------------------------------------------------
 

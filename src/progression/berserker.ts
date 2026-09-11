@@ -99,7 +99,7 @@ export const BERSERKER_STATUSES: readonly StatusSpec[] = [STATUS_FRENZY, STATUS_
 
 // --- abilities (9 + 1) ------------------------------------------------
 
-export const BERSERKER_SKULLBREAKER: Ability = {
+export const BERSERKER_SKULLBREAKER = {
   id: "berserker.skullbreaker",
   classId: "berserker",
   name: "Skullbreaker",
@@ -117,9 +117,9 @@ export const BERSERKER_SKULLBREAKER: Ability = {
     { kind: "status", status: "stunned", chance: 0.9, to: "target" },
   ],
   mutationHooks: [{ id: "skullbreaker.packet", kind: "damagePacket", note: "Marauder scales the overhead and adds overkill." }],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_BLOOD_PRICE: Ability = {
+export const BERSERKER_BLOOD_PRICE = {
   id: "berserker.blood_price",
   classId: "berserker",
   name: "Blood Price",
@@ -135,9 +135,9 @@ export const BERSERKER_BLOOD_PRICE: Ability = {
     { kind: "status", status: "frenzy", to: "self", stacks: 3, chance: 1 },
   ],
   mutationHooks: [{ id: "blood_price.gain", kind: "resource", note: "Last Breath makes the trade far more generous below half health." }],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_FRENZY_CHAIN: Ability = {
+export const BERSERKER_FRENZY_CHAIN = {
   id: "berserker.frenzy_chain",
   classId: "berserker",
   name: "Frenzy Chain",
@@ -153,9 +153,9 @@ export const BERSERKER_FRENZY_CHAIN: Ability = {
     { kind: "damage", damage: { base: 0.7, scale: "attack", type: "physical", canCrit: true, inflict: { status: "bleed", chance: 0.5 } }, to: "target" },
     { kind: "status", status: "frenzy", to: "self", chance: 1 },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_AXEQUAKE: Ability = {
+export const BERSERKER_AXEQUAKE = {
   id: "berserker.axequake",
   classId: "berserker",
   name: "Axequake",
@@ -174,9 +174,9 @@ export const BERSERKER_AXEQUAKE: Ability = {
     { kind: "status", status: "rooted", chance: 0.6, to: "allTargets" },
     { kind: "zone", zone: { radius: 100, duration: 3, tickInterval: 0.5, follows: false, mergeable: true, damage: { base: 0.3, scale: "attack", type: "physical", channel: "periodic" } } },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_SAVAGE_GRIP: Ability = {
+export const BERSERKER_SAVAGE_GRIP = {
   id: "berserker.savage_grip",
   classId: "berserker",
   name: "Savage Grip",
@@ -192,9 +192,9 @@ export const BERSERKER_SAVAGE_GRIP: Ability = {
     { kind: "damage", damage: { base: 2.2, scale: "attack", type: "physical", canCrit: true, knockback: 140 }, to: "target" },
     { kind: "status", status: "exposed", chance: 1, to: "target" },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_CRIMSON_HOWL: Ability = {
+export const BERSERKER_CRIMSON_HOWL = {
   id: "berserker.crimson_howl",
   classId: "berserker",
   name: "Crimson Howl",
@@ -210,9 +210,9 @@ export const BERSERKER_CRIMSON_HOWL: Ability = {
     { kind: "shield", amount: 1.2, scale: "attack", to: "self", duration: 6 },
     { kind: "status", status: "weakened", chance: 1, to: "enemies" },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_CLEAVERS_REPRISAL: Ability = {
+export const BERSERKER_CLEAVERS_REPRISAL = {
   id: "berserker.cleavers_reprisal",
   classId: "berserker",
   name: "Cleaver's Reprisal",
@@ -233,9 +233,9 @@ export const BERSERKER_CLEAVERS_REPRISAL: Ability = {
       ],
     },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_LAST_STAND: Ability = {
+export const BERSERKER_LAST_STAND = {
   id: "berserker.last_stand",
   classId: "berserker",
   name: "Last Stand",
@@ -247,9 +247,9 @@ export const BERSERKER_LAST_STAND: Ability = {
   targeting: "self",
   effects: [{ kind: "status", status: "last_stand", to: "self", chance: 1 }],
   mutationHooks: [{ id: "last_stand.window", kind: "status", note: "Deathwish lengthens the window and adds damage while it holds." }],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_BUTCHERS_MOMENTUM: Ability = {
+export const BERSERKER_BUTCHERS_MOMENTUM = {
   id: "berserker.butchers_momentum",
   classId: "berserker",
   name: "Butcher's Momentum",
@@ -267,9 +267,9 @@ export const BERSERKER_BUTCHERS_MOMENTUM: Ability = {
       effects: [{ kind: "status", status: "butcher", to: "self", chance: 1 }],
     },
   ],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_WORLDBREAKER: Ability = {
+export const BERSERKER_WORLDBREAKER = {
   id: "berserker.worldbreaker",
   classId: "berserker",
   name: "Worldbreaker",
@@ -296,9 +296,9 @@ export const BERSERKER_WORLDBREAKER: Ability = {
     },
   ],
   mutationHooks: [{ id: "worldbreaker.finale", kind: "followUp", note: "Blood God turns the finale into a standing aura while near death." }],
-};
+} as const satisfies Ability;
 
-export const BERSERKER_ABILITIES: readonly Ability[] = [
+export const BERSERKER_ABILITIES = [
   BERSERKER_SKULLBREAKER,
   BERSERKER_BLOOD_PRICE,
   BERSERKER_FRENZY_CHAIN,
@@ -309,7 +309,7 @@ export const BERSERKER_ABILITIES: readonly Ability[] = [
   BERSERKER_LAST_STAND,
   BERSERKER_BUTCHERS_MOMENTUM,
   BERSERKER_WORLDBREAKER,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree -------------------------------------------------------
 

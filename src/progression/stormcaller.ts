@@ -107,7 +107,7 @@ export const STORMCALLER_STATUSES: readonly StatusSpec[] = [STATUS_SOAKED, STATU
 
 // --- abilities (9 + 1) ------------------------------------------
 
-export const STORMCALLER_STATIC_DISC: Ability = {
+export const STORMCALLER_STATIC_DISC = {
   id: "stormcaller.static_disc",
   classId: "stormcaller",
   name: "Static Disc",
@@ -133,9 +133,9 @@ export const STORMCALLER_STATIC_DISC: Ability = {
     },
   ],
   mutationHooks: [{ id: "static_disc.chakram", kind: "projectile", note: "Stormblade path adds discs and turns the return into a tornado." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_THUNDERSTEP: Ability = {
+export const STORMCALLER_THUNDERSTEP = {
   id: "stormcaller.thunderstep",
   classId: "stormcaller",
   name: "Thunderstep",
@@ -153,9 +153,9 @@ export const STORMCALLER_THUNDERSTEP: Ability = {
     { kind: "damage", damage: { base: 1.6, scale: "attack", type: "lightning", canCrit: true, inflict: { status: "shock", chance: 0.6 } }, to: "enemies" },
   ],
   mutationHooks: [{ id: "thunderstep.origin", kind: "movement", note: "Windrunner leaves both nodes hot for a follow-up strike." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_GALE_RING: Ability = {
+export const STORMCALLER_GALE_RING = {
   id: "stormcaller.gale_ring",
   classId: "stormcaller",
   name: "Gale Ring",
@@ -171,9 +171,9 @@ export const STORMCALLER_GALE_RING: Ability = {
     { kind: "knockback", force: 80, to: "enemies" },
     { kind: "shield", amount: 0.6, scale: "attack", to: "self", duration: 5 },
   ],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_RAINCALLER: Ability = {
+export const STORMCALLER_RAINCALLER = {
   id: "stormcaller.raincaller",
   classId: "stormcaller",
   name: "Raincaller",
@@ -188,9 +188,9 @@ export const STORMCALLER_RAINCALLER: Ability = {
   effects: [
     { kind: "zone", zone: { radius: 100, duration: 8, tickInterval: 0.6, follows: true, mergeable: true, damage: { base: 0.35, scale: "spell", type: "cold", channel: "periodic" }, status: { id: "soaked", chance: 1 } } },
   ],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_TEMPEST_CHAIN: Ability = {
+export const STORMCALLER_TEMPEST_CHAIN = {
   id: "stormcaller.tempest_chain",
   classId: "stormcaller",
   name: "Tempest Chain",
@@ -216,9 +216,9 @@ export const STORMCALLER_TEMPEST_CHAIN: Ability = {
     },
   ],
   mutationHooks: [{ id: "tempest_chain.bounces", kind: "projectile", note: "Thunder God adds bounces per Static stack." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_CYCLONE_BLADE: Ability = {
+export const STORMCALLER_CYCLONE_BLADE = {
   id: "stormcaller.cyclone_blade",
   classId: "stormcaller",
   name: "Cyclone Blade",
@@ -245,9 +245,9 @@ export const STORMCALLER_CYCLONE_BLADE: Ability = {
       },
     },
   ],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_BALL_LIGHTNING: Ability = {
+export const STORMCALLER_BALL_LIGHTNING = {
   id: "stormcaller.ball_lightning",
   classId: "stormcaller",
   name: "Ball Lightning",
@@ -272,9 +272,9 @@ export const STORMCALLER_BALL_LIGHTNING: Ability = {
       },
     },
   ],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_EYE_OF_THE_STORM: Ability = {
+export const STORMCALLER_EYE_OF_THE_STORM = {
   id: "stormcaller.eye_of_the_storm",
   classId: "stormcaller",
   name: "Eye of the Storm",
@@ -290,9 +290,9 @@ export const STORMCALLER_EYE_OF_THE_STORM: Ability = {
     { kind: "zone", zone: { radius: 260, duration: 12, tickInterval: 1, follows: false, mergeable: false, damage: { base: 0.15, scale: "spell", type: "lightning", channel: "periodic" }, status: { id: "static", chance: 0.3 } } },
   ],
   mutationHooks: [{ id: "eye_of_the_storm.eye", kind: "zone", note: "Eye path lets the eye follow you and buffs attacks made outside it." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_WEATHER_SHIFT: Ability = {
+export const STORMCALLER_WEATHER_SHIFT = {
   id: "stormcaller.weather_shift",
   classId: "stormcaller",
   name: "Weather Shift",
@@ -307,9 +307,9 @@ export const STORMCALLER_WEATHER_SHIFT: Ability = {
     { kind: "resource", resource: "storm_charge", delta: 10, to: "self" },
   ],
   mutationHooks: [{ id: "weather_shift.phase", kind: "trigger", note: "Tempest path fires a phase-appropriate burst on every shift." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_EYE_OF_THE_TEMPEST: Ability = {
+export const STORMCALLER_EYE_OF_THE_TEMPEST = {
   id: "stormcaller.eye_of_the_tempest",
   classId: "stormcaller",
   name: "Eye of the Tempest",
@@ -327,9 +327,9 @@ export const STORMCALLER_EYE_OF_THE_TEMPEST: Ability = {
     { kind: "knockback", force: 60, to: "enemies" },
   ],
   mutationHooks: [{ id: "eye_of_the_tempest.storm", kind: "zone", note: "Stormlord runs all three weathers through the storm wall at once." }],
-};
+} as const satisfies Ability;
 
-export const STORMCALLER_ABILITIES: readonly Ability[] = [
+export const STORMCALLER_ABILITIES = [
   STORMCALLER_STATIC_DISC,
   STORMCALLER_THUNDERSTEP,
   STORMCALLER_GALE_RING,
@@ -340,7 +340,7 @@ export const STORMCALLER_ABILITIES: readonly Ability[] = [
   STORMCALLER_EYE_OF_THE_STORM,
   STORMCALLER_WEATHER_SHIFT,
   STORMCALLER_EYE_OF_THE_TEMPEST,
-];
+] as const satisfies readonly Ability[];
 
 // --- the tree ---------------------------------------------------
 

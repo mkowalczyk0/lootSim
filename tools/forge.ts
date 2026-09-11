@@ -120,8 +120,13 @@ section("1. every op keeps its word");
   check("Inscribe refuses an armor slot", forgeOpBlocker("inscribe", epicArmor) !== null);
   check("Inscribe accepts an epic ring", forgeOpBlocker("inscribe", epicRing) === null);
   const inscribed = inscribe(epicRing, rng);
+  // `.some` rather than `.includes`: `Item.grant` is deliberately a plain `string`, not an
+  // `AbilityId`. A save written before an ability was renamed can hold a grant id that no
+  // longer exists, and that has to load and degrade quietly rather than fail to compile.
+  // The alternative here — casting the pool back to `readonly string[]` — would switch the
+  // typechecker off at exactly the list it was just turned on for.
   check("Inscribe rolls a grant from the grantable pool — never a chosen one",
-    inscribed.grant !== null && GRANTABLE_ABILITY_IDS.includes(inscribed.grant));
+    inscribed.grant !== null && GRANTABLE_ABILITY_IDS.some((id) => id === inscribed.grant));
   let rescribeDiffers = false;
   for (let i = 0; i < 30 && !rescribeDiffers; i++) rescribeDiffers = inscribe(inscribed, rng).grant !== inscribed.grant;
   check("Rescribe rolls a different grant", rescribeDiffers);
