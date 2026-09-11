@@ -118,8 +118,8 @@ Every raid boss (`raidBossSpec` in `raids.ts`) borrowed a template's sprite whol
 |---|---|---|---|
 | Tyrant of the First Heavens | `boss.corrupted-saint` (Choir) | holy | none — flat fill (no Heaven tileset exists yet) |
 | Minotaur of the Ninth Labyrinth | `boss.gravebound-colossus` (Colossus) | void | `tiles.delve-veil` (The Veil, reused) |
-| The Ferryman | `boss.warden` (Warden) | cold | `tiles.delve-cave` (Dark Cave, reused) |
-| Queen of the Seventh Circle | `boss.herald-unspoken` (Herald) | fire | `tiles.delve-heresy` (Dragon's Lair, reused) |
+| The Ferryman | `boss.warden` (Warden) | cold | `tiles.delve-cave` (Treachery, reused — was the Dark Cave) |
+| Queen of the Seventh Circle | `boss.herald-unspoken` (Herald) | fire | `tiles.delve-heresy` (Heresy, reused — was Dragon's Lair) |
 
 **This is consistent with the codebase's own reskin pattern** (identical to how
 `planetBossSpec` and `legendBossSpec` work) and is *not* automatically a bug — but it

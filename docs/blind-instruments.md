@@ -1443,6 +1443,67 @@ by name, and remember that the other name may not be the one you are deleting. T
 the compiler is not already stopping you; the answer is usually an annotation somebody wrote
 without noticing it was a waiver.
 
+## A twenty-sixth instance, and it was inside the process rule: an anchored grep that was never correct for any tool in the directory
+
+*(Numbered 26 by the PM session; 22–25 are assigned to other branches and may land after this.)*
+
+The rule for reading a gate log, as written into `docs/pm-handoff-2026-09-11-morning.md`
+on master and repeated in four assignment briefs that day, was: report the terminator line
+and an **anchored** `grep -c '^FAIL'` count — never the exit code, never `grep -i fail`.
+Both prohibitions were earned: an exit code had certified a killed chain, and a
+case-insensitive grep matches prose in ok lines. The anchor was meant to be the precise
+instrument between them.
+
+**It matched nothing any tool prints, and never had.** The failure line in this repo's
+acceptance tools is a house style, not a per-tool choice: every `check()` helper in
+`tools/` prints `"  ok  "` and `" FAIL "` from the same indented template —
+`` `  ${ok ? "ok  " : "FAIL"} ${label}` `` or its equivalent — and the three tools written
+the same morning by a different session (`mapwipe`, `ultfloor`, `summon-scaling`) copied
+it from their neighbours without a thought, which is exactly how a house style propagates.
+A sweep of the directory finds thirty-three per-check failure prints, all indented, and
+**zero** at column zero; the only `FAIL` that starts a line anywhere is one tool's
+`FAILED (n)` summary. So `^FAIL` was not blind to twenty tools out of thirty; it was blind
+to the check line itself, everywhere, from the day it was written, and it cannot be made
+correct by fixing any list of tools — a tool written tomorrow will indent too.
+
+It showed on the Nine Circles branch's post-rebase gate:
+
+```
+anchored grep -c '^FAIL'   0
+grep -c 'FAIL'             1     ← " FAIL  the harvest collected drops on both sides"
+```
+
+with `1 REWARD CURVE CHECK(S) FAILED` and `EXIT=1` further down. A reader following the
+rule to the letter, with the terminator overlooked, calls that run clean. Two of the three
+tools lootsim-26 named — `mapwipe` and `ultfloor` — exist specifically to catch instruments
+that cannot see their target; **the anchored grep was blind to the checks written to catch
+blindness**, and their author would have reported both green under the old rule. Master's
+batch-three integration log was rescanned at every indentation and is genuinely green — the
+hole was in the reading, not the code.
+
+**The species.** Not a bound taken from the thing under test, and not a subject that never
+existed: an instrument in the *process* — the rule that exists to stop blind instruments —
+scoped to a format the code base does not use. It is entry 13's omission one level up:
+nobody enumerated what the tools print before anchoring on it, and `grep -rlE ' FAIL '
+tools/*.ts` was a one-line question that would have answered it the day the rule was
+written. A rule repeated into briefs inherits whatever blindness it had; this one reached
+four sessions before its first run under it exposed the gap.
+
+**The correct reading, so the next brief copies this and not the old line:**
+
+1. **The terminator.** The chain's last step prints `ALL CHECKS PASSED`, and the launcher's
+   own `EXIT=0` (or whatever it appends) must be present. An absent terminator means the
+   chain **stopped** — `npm test` halts at the first failing step — so every step after the
+   red one *never ran*, and a green tail cannot be inferred from a green head. Compare the
+   `> lootsim@2.0.0 <step>` banners against the chain in `package.json`; a missing banner
+   is an unrun step.
+2. **A case-sensitive, unanchored `grep -c 'FAIL'`.** Not `^FAIL`, not `-i`. It must be
+   zero. If it is not, the matching lines are the finding; read them. (`FAILED` is a
+   summary line; it is caught by the same grep.)
+3. **Both, never one.** A terminator with a non-zero count is a tool that printed a red and
+   did not exit non-zero (entry 7's shape). A zero count with no terminator is a killed or
+   halted chain (entries 6 and 13). Only the pair says green.
+
 ## Proposed for the owner, not adopted here
 
 `CLAUDE.md` already carries the two rules quoted above, in the difficulty-philosophy

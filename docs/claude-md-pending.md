@@ -482,6 +482,54 @@ wear low-tier artifacts immediately.
 says so outright"). That doc is a proposal page rather than a live design record, so the
 branch adds a one-line resolution note at its head rather than rewriting a proposal after the
 fact. `docs/relics.md` — the live design record — has been rewritten properly.
+## 8. The Nine Circles — three passages that now say "five-depth" or name a legacy biome
+
+**Branch:** `feat/nine-circles` (design record `docs/nine-circles.md`). Not landed. The
+Delve's six biomes are re-cut into the doc's nine circles plus the Veil; `data/layers.ts`
+did not move. Three `CLAUDE.md` passages describe the old shape.
+
+**(a) Under "Run modes", the layers paragraph.** Current text:
+
+> the band edges sit exactly on the five-depth boundaries `biomeFor` already changes at,
+> which is what makes this a reading of the ladder rather than a second one.
+
+Proposed:
+
+> every band edge is a depth `biomeFor` already changes at — since the Nine Circles
+> (`docs/nine-circles.md`) a layer holds several circles, but a layer edge is always a
+> circle edge, and the layer table is the fixed reference the circles were cut to fit —
+> which is what makes this a reading of the ladder rather than a second one.
+
+**(b) Under "Every floor is a generated dungeon" — no change needed**, but under "Run
+modes: the delve", after the Delve bullet, one added sentence:
+
+> The Delve's floors are the Nine Circles of Hell in the worldbuilding doc's order — Limbo
+> 1–5, then Lust, Gluttony, Avarice through 15, then Wrath, Heresy, Violence, Fraud and
+> Treachery two floors each to 25, then the Veil (`DELVE_LADDER` in `src/data/biomes.ts`).
+> Four circles borrow a painted circle's sheet until their own lands, declared in
+> `BORROWED_LOOKS` and gated so landing the art forces the borrow out. `npm run world`
+> reads the circle order out of the worldbuilding doc itself.
+
+**(c) Under "The Proving":** "`biomeFor` caps at its last biome from depth 26" is still
+true and stays.
+
+**Why:** (a) is now false as written — biomes change at 6, 9, 12, 16, 18, 20, 22, 24, 26,
+not every five — and a reader trusting it would "fix" a circle edge to a multiple of five.
+(b) is the one-paragraph orientation the rest of the file gives every other structure.
+
+---
+
+## 9. The gate-reading rule taught on master is blind — a correction, not a CLAUDE.md edit
+
+**Branch:** `feat/nine-circles` (blind-instruments entry 26). `docs/pm-handoff-2026-09-11-morning.md`
+on master tells a reader to certify a gate with an anchored `grep -c '^FAIL'`. Every
+per-check failure line in `tools/` is indented by house style (`" FAIL  ..."`), so that grep
+reads every real red as zero; it was never correct for any tool. The corrected rule, now in
+force from the PM: the terminator (`ALL CHECKS PASSED` plus the launcher's `EXIT=0`) **and** a
+case-sensitive, unanchored `grep -c 'FAIL'` of zero — and a missing terminator means the
+chain halted and the later steps never ran. Nothing in `CLAUDE.md` states the old rule, so
+no edit is proposed there; this note exists so the owner sees the correction once, and so
+the handoff doc gets fixed on master rather than re-read as written.
 
 ## 7. Two small factual corrections, found while building the affix codex
 

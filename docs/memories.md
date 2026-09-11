@@ -343,8 +343,10 @@ tool pins that as a property: the preview's stated multipliers equal
 The owner: *"not unique but rather randomly from every piece of content available in the
 game."* The fiction says the same thing — memories bleed together.
 
-**The place** (`placeId`) is rolled from every `BiomeStyle` the game owns: the six Delve
-biomes, the three Tower bands, and every Reliquary sector's biome. A place brings its
+**The place** (`placeId`) is rolled from every `BiomeStyle` the game owns: the ten Delve
+biomes (the Nine Circles and the Veil — `placeId` is the biome's *name*, so the pre-circle
+names are mapped forward on load by `LEGACY_PLACE_NAMES`), the three Tower bands, and every
+Reliquary sector's biome. A place brings its
 palette, its props, its layouts, its traps, its elemental affinity and its roster names —
 so a Memory of the Seamless Halls has Thrones and Dominions in it, and one of a Delve
 circle does not. `biomeForRun` gains one branch; nothing else changes, because renaming

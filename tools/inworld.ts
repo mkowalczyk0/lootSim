@@ -179,7 +179,7 @@ function stack(rows: readonly Img[]): Img {
 const CAST = ["hero", "grunt", "archer", "brute", "caster", "swarmer"] as const;
 
 /** A few floors that span the palette range, by biome name. */
-const FLOORS = ["Training Grounds", "Dragon's Lair", "The Veil"];
+const FLOORS = ["Limbo", "Heresy", "The Veil"];
 
 const figures: Figure[] = [];
 console.log(`floor: ${TILE_WORLD / 16} world units per art pixel (16 texels across a ${TILE_WORLD}-unit cell)`);

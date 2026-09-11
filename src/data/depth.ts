@@ -8,7 +8,7 @@
  */
 
 import { clamp } from "../core/math";
-import { biomeFor, type BiomeStyle } from "./biomes";
+import { biomeFor, delveBandFor, type BiomeStyle } from "./biomes";
 import { layerFor, type WorldLayer } from "./layers";
 import { challengerName, challengerRarityBias, challengerRewardMult } from "./challenger";
 import { BASE_RARITY_BIAS, rarityLabel } from "./rarity";
@@ -307,7 +307,10 @@ function floorName(biomeName: string, d: number, run: RunConfig): string {
   if (run.memory) return run.bossFloor ? `${biomeName} — As It Ended` : `${biomeName} — Remembered`;
   if (run.bossFloor) return `${biomeName} — Warden's Hall`;
   if (run.mode.isRift) return `${biomeName} — Rift Fracture`;
-  return `${biomeName} ${romanize(((d - 1) % 5) + 1)}`;
+  // Numbered from the first floor of the circle, so depth 9 is "Gluttony I" and not
+  // "Gluttony IV" off a five-floor cycle the Nine Circles no longer sit on. The Veil has
+  // no bottom, so past its first five floors the numeral cycles the way it always did.
+  return `${biomeName} ${romanize(((d - delveBandFor(d).from) % 5) + 1)}`;
 }
 
 const NUMERALS = ["I", "II", "III", "IV", "V"] as const;

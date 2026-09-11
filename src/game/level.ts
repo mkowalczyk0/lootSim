@@ -1056,13 +1056,20 @@ function dressFloor(level: Level): Prop[] {
  * (repetition = frequency). A biome with no entry — the Abyss, for now — gets no
  * heavy dressing and `dressFloor` returns nothing.
  */
-const DRESSING: Record<string, readonly PropKind[]> = {
-  // The Delve — the Nine Circles' funerary dungeon.
-  "Training Grounds": ["skulls", "skulls", "statue", "sarcophagus", "gibbet", "brazier", "altar"],
-  "Whispering Forest": ["skulls", "skulls", "statue", "sarcophagus", "brazier"],
-  "Dark Cave": ["skulls", "statue", "gibbet", "brazier", "brazier"],
-  "Ashen Wastes": ["skulls", "brazier", "brazier", "statue", "gibbet", "altar"],
-  "Dragon's Lair": ["brazier", "brazier", "statue", "altar", "gibbet", "sarcophagus"],
+export const DRESSING: Record<string, readonly PropKind[]> = {
+  // The Delve — the Nine Circles' funerary dungeon, keyed by the circle's name. Keyed by
+  // name is a drift hazard (a renamed biome silently loses every heavy prop, because a
+  // missing key is "no dressing" rather than an error), so `npm run world` asserts every
+  // Delve biome has a mix here.
+  "Limbo": ["skulls", "skulls", "statue", "sarcophagus", "gibbet", "brazier", "altar"],
+  "Lust": ["statue", "statue", "altar", "brazier", "skulls"],
+  "Gluttony": ["skulls", "skulls", "statue", "sarcophagus", "brazier"],
+  "Avarice": ["sarcophagus", "sarcophagus", "altar", "gibbet", "skulls", "statue"],
+  "Wrath": ["skulls", "brazier", "brazier", "statue", "gibbet", "altar"],
+  "Heresy": ["brazier", "brazier", "statue", "altar", "gibbet", "sarcophagus"],
+  "Violence": ["gibbet", "gibbet", "skulls", "skulls", "brazier", "statue"],
+  "Fraud": ["statue", "altar", "altar", "gibbet", "sarcophagus", "brazier"],
+  "Treachery": ["skulls", "statue", "gibbet", "brazier", "brazier"],
   "The Veil": ["skulls", "brazier", "statue", "gibbet", "altar"],
   // The Ashen Reliquary — the tomb of the supernatural, each sector its own dead war.
   // (`casket` is wired but kept out of rotation — it reads too much like a loot chest.)
