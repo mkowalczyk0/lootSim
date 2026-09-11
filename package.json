@@ -61,6 +61,7 @@
     "deadpaths": "node tools/run-tool.mjs deadpaths",
     "mapwipe": "node tools/run-tool.mjs mapwipe",
     "raids": "node tools/run-tool.mjs raids",
+    "bosscadence": "node tools/run-tool.mjs boss-cadence",
     "bossvariety": "node tools/run-tool.mjs bossvariety",
     "bosstarget": "node tools/run-tool.mjs bosstarget",
     "hublayout": "node tools/run-tool.mjs hub-layout",

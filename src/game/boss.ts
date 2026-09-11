@@ -26,7 +26,7 @@
 
 import { clamp, dist, TAU } from "../core/math";
 import {
-  BOSS_ABILITIES, BOSS_ACTION_GAP, HUNT_SPEED, PATTERNS, isPattern,
+  BOSS_ABILITIES, BOSS_ACTION_GAP, BOSS_CADENCE, HUNT_SPEED, PATTERNS, isPattern,
   type BossAbility, type BossAbilityId, type PatternId,
 } from "../data/bosses";
 import { ELEMENT_COLORS } from "../data/elements";
@@ -216,7 +216,11 @@ function beginAbility(d: Dungeon, e: Enemy): void {
   b.castTotal = cast;
   // The wind-up itself never shrinks below what `MIN_CAST` already guarantees — an
   // enrage buys a tighter rotation, not a shorter warning.
-  b.cooldowns[id] = ability.cooldown * phase.haste * b.buffHasteMult;
+  // `BOSS_CADENCE` is here as well as on the recovery below, and it is load-bearing in
+  // both places: this cooldown decides what `beginAbility` is allowed to *pick*, and a
+  // tighter recovery with untouched cooldowns only buys more 0.35s stall beats. See the
+  // constant's own doc in `data/bosses.ts`.
+  b.cooldowns[id] = ability.cooldown * BOSS_CADENCE * phase.haste * b.buffHasteMult;
   const aimed = d.aimAvatar(e.x, e.y);
   b.aimX = ability.onSelf ? e.x : aimed.x;
   b.aimY = ability.onSelf ? e.y : aimed.y;
@@ -425,7 +429,8 @@ function resolveAbility(d: Dungeon, e: Enemy): void {
   // A raid boss asks a party more questions rather than harder ones — the third lever in
   // `docs/raid-party-scaling.md`, scoped to raids and exactly 1 solo. The wind-up is
   // untouched; only the gap between casts shrinks.
-  b.actionTimer = BOSS_ACTION_GAP * phase.haste * d.profile.aggression * b.buffHasteMult
+  b.actionTimer = BOSS_ACTION_GAP * BOSS_CADENCE * phase.haste * d.profile.aggression
+    * b.buffHasteMult
     * crescendoHaste(b)
     * (d.config.raid ? raidThreatRate(d.config.players ?? 1) : 1);
   if (!id) return;

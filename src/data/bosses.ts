@@ -296,13 +296,21 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
   // asking, where a circle asks once. Fully eaten, a three-second pattern lands the
   // invulnerability-capped maximum of roughly one hit every 0.65s — four or five bolts,
   // two to three slams' worth. Threaded, it lands nothing. That spread is the point.
+  //
+  // **Per-bolt damage is 0.6-0.9 of the boss's hit, raised from 0.4-0.6 by docket §39.**
+  // It shipped low and parked, pending an owner call on whether an eaten field should
+  // hurt more; the owner took that call together with the cadence dial (`BOSS_CADENCE`),
+  // because the two compound and measuring them apart measures neither. A bolt still
+  // costs less than the cheapest mechanic in the deck (`cleave`, 1.4), which is the line
+  // worth keeping: a field is dangerous because it keeps asking, not because one bolt is
+  // a slam. Measured in `docs/boss-cadence.md`.
 
   spiral: {
     // **Move with the turn.** Arms of bolts wheel out of the body; the safe lanes
     // between them are wide but they drift sideways for the whole pattern, so the answer
     // is to keep stepping around the boss at the wheel's own pace. Stand still and an
     // arm walks into you; run the wrong way round and you close on the next arm faster.
-    id: "spiral", name: "Wheel Within Wheel", cast: 1.3, cooldown: 15, damage: 0.55,
+    id: "spiral", name: "Wheel Within Wheel", cast: 1.3, cooldown: 15, damage: 0.83,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 3, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
@@ -311,7 +319,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // different place every ring — it walks around the circle a fixed step at a time,
     // starting on you. `volley` is one ring and one decision; this is five decisions
     // that have to be made in sequence, moving, each one where the last one pointed.
-    id: "rings", name: "Each Door Elsewhere", cast: 1.4, cooldown: 16, damage: 0.6,
+    id: "rings", name: "Each Door Elsewhere", cast: 1.4, cooldown: 16, damage: 0.9,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 18, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
@@ -320,7 +328,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // two and a half seconds. Keep walking in one direction and every bolt lands a step
     // behind you; stop, or turn back into the line you just drew, and they catch up.
     // The one pattern that punishes *reversing* rather than standing.
-    id: "stream", name: "It Knows Where You Were", cast: 1.2, cooldown: 13, damage: 0.4,
+    id: "stream", name: "It Knows Where You Were", cast: 1.2, cooldown: 13, damage: 0.6,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 1, linger: 0,
     minRange: 0, maxRange: 999, onSelf: false,
   },
@@ -329,7 +337,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // you, the whole width at once, for four seconds — no aim, no ring, just weather with
     // gaps in it. Nothing here is decided by where the boss is; the question is reading
     // holes in a field as it arrives, which is the plainest form of the family.
-    id: "curtain", name: "The Weather Here", cast: 1.5, cooldown: 18, damage: 0.55,
+    id: "curtain", name: "The Weather Here", cast: 1.5, cooldown: 18, damage: 0.83,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 2, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
@@ -338,7 +346,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // each bursts into a ring. Where a seed *is* is safe until it isn't, and where it is
     // going to be when it opens is the thing to read — the safe ground at stage one is
     // the danger at stage two.
-    id: "bloom", name: "Late Flowering", cast: 1.4, cooldown: 17, damage: 0.5,
+    id: "bloom", name: "Late Flowering", cast: 1.4, cooldown: 17, damage: 0.75,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 10, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
@@ -347,7 +355,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // around the boss, starting a quarter-turn short of you and passing over where you
     // stand. Circle away from it and it never arrives; circle into it and it does; a
     // dash through the ray is the third answer and the fastest.
-    id: "sweep", name: "The Lighthouse", cast: 1.25, cooldown: 14, damage: 0.5,
+    id: "sweep", name: "The Lighthouse", cast: 1.25, cooldown: 14, damage: 0.75,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 1, linger: 0,
     minRange: 0, maxRange: 999, onSelf: true,
   },
@@ -356,7 +364,7 @@ export const BOSS_ABILITIES: Record<BossAbilityId, BossAbility> = {
     // closes inward, with one opening in it; then another, on wherever you have got to,
     // with the opening a third of a turn on. `ringOut` asks you to get in; this asks you
     // to get out, through one door, before the door reaches you.
-    id: "noose", name: "Room to Leave", cast: 1.45, cooldown: 16, damage: 0.6,
+    id: "noose", name: "Room to Leave", cast: 1.45, cooldown: 16, damage: 0.9,
     shape: "none", radius: 0, inner: 0, arc: 0, width: 0, count: 26, linger: 0,
     minRange: 0, maxRange: 999, onSelf: false,
   },
@@ -661,6 +669,35 @@ export function bossFor(depth: number): BossSpec {
  * this to match or the encounter quietly gets easier.
  */
 export const BOSS_ACTION_GAP = 1.85;
+/**
+ * How tight the rotation runs, as a fraction of its old spacing (docket §39). The owner
+ * asked to "decrease the time in between boss attacks"; this is that number, and at 0.60
+ * it takes the measured gap between casts from 2.40s to 1.85s.
+ *
+ * **0.60 is an owner ruling, taken with both rungs measured in front of them.** 0.70 was
+ * the conservative recommendation and they chose the harder one deliberately — see the
+ * heading in `docs/boss-cadence.md`. Don't "correct" this back toward the recommendation.
+ *
+ * **It has to reach two sites, and the second one is the reason this is a constant rather
+ * than a smaller `BOSS_ACTION_GAP`.** `game/boss.ts` spends a boss's time winding up
+ * (rooted) or recovering, so the gap is `actionTimer + cast` — but `beginAbility` can only
+ * pick a card that is off its own `cooldown`, and when nothing is ready it takes a 0.35s
+ * beat and tries again. A phase-one kit is two or three cards with 3.6-8s cooldowns
+ * against a ~3s cycle, so it is already close to cooldown-bound: cut the recovery alone
+ * and the boss does not press harder, it **stutters** in stall beats. So this multiplies
+ * the recovery *and* every per-card cooldown, which is what "the rotation is at 70% of its
+ * old spacing" has to mean to mean anything. Measured, stall beats per fight go *down*
+ * (15.5 -> 12.6) rather than up, which is the check that this worked.
+ *
+ * **What it must never touch is `cast`.** The wind-up is the player's entire warning, and
+ * shortening it makes hits unreadable rather than making the boss aggressive — CLAUDE.md's
+ * first boss rule. That also sets a hard floor on what this dial can ever buy: roughly 1.0s
+ * of the 2.40s gap is telegraph, so no value here takes the gap below that.
+ *
+ * See `docs/boss-cadence.md` for the measurement, including the full sweep from 1.00 to
+ * 0.40 that this rung was picked off.
+ */
+export const BOSS_CADENCE = 0.6;
 /**
  * How fast a `hunt` shape walks toward its target, in units per second.
  *

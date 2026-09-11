@@ -123,9 +123,11 @@ export const RAID_DAMAGE = 1.15;
  */
 export const RAID_SELF_RESIST = 175;
 /**
- * The tightest the gap between casts is allowed to get. `BOSS_ACTION_GAP` times this is
- * that gap, and a rotation short enough to overlap its own wind-ups breaks the one rule
- * every encounter rests on: if a hit landed, it was readable.
+ * The tightest the gap between casts is allowed to get. `BOSS_ACTION_GAP * BOSS_CADENCE`
+ * times this is that gap — §39 added the second factor, and the floor scales with it on
+ * purpose, since a tighter rotation is the whole point of that change. A rotation short
+ * enough to overlap its own wind-ups breaks the one rule every encounter rests on: if a
+ * hit landed, it was readable.
  */
 export const RAID_HASTE_FLOOR = 0.42;
 /** Health fraction the appended final phase begins at. */

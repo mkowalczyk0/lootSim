@@ -54,7 +54,7 @@ proposal for the owner — are deliberately absent from this table.
 | 29 | Two honest detectors that agree on the rule and disagree on the pixel | §1.4's saturation gate vs `chroma`'s scale, on the auto-turret's cream-gold |
 | 30 | An annotation that discards the fact the compiler needed | `AFFIX_MOD_IDS` typed `string[]`, holding a deleted `MOD_POOL` id |
 | 31 | A stat with no instrument pointed at it at all | `wardPower`, granted by 24 sites and read by none |
-| 32 | *in flight* | |
+| 32 | Noise inventing a plateau, read as a mechanism | a false plateau at 1.95s with the stall beat as its ready-made cause |
 | 33 | A bound so cautious it discards a real signal | the execute split's "one packet or several" guard, pooling a per-seed base |
 | 34 | *in flight* |  |
 | 35 | A derivation frozen into a copy, which then stops deriving | `npm run gate` as a literal step list, silently skipping the branch's own new check |
@@ -1933,6 +1933,73 @@ direction, and it is filed here as a sighting rather than a new species. What ca
 a **sign that made no sense**, not a magnitude that was merely off; a delta pointing the
 wrong way is the cheapest evidence a metric is confounded, and it is worth spending a moment
 on the direction of every number before the size of it.
+## A thirty-second instance: noise that did not widen an error bar but invented a mechanism
+
+Every entry above is an instrument that could not see something. This one saw fine. The
+**sample** was too small, and what a too-small sample produced was not a fuzzy number — it
+was a confident, plausible, *structural* claim about how the game works.
+
+Measuring docket §39's cadence dial, an early 8-seed sweep read the gap between boss casts
+like this:
+
+```
+cad 1.00   gap 2.36s
+cad 0.75   gap 1.94s
+cad 0.60   gap 1.95s     <- stopped falling
+```
+
+The obvious reading, and the one nearly written into the design record: **the dial bottoms
+out.** There was even a ready mechanism for it — `boss.ts:206`'s 0.35s stall beat, taken
+whenever no card is off cooldown. A rotation tightened past the point where cards come back
+would stall rather than cast, so a floor at ~1.95s was not just consistent with the data, it
+was *explained* by the code. Two independent things agreeing is normally the moment you stop
+checking.
+
+At 144 runs per point the floor is not there at all:
+
+| `BOSS_CADENCE` | 1.00 | 0.90 | 0.80 | 0.70 | 0.60 | 0.50 | 0.40 |
+|---|---|---|---|---|---|---|---|
+| gap | 2.40s | 2.25s | 2.12s | 1.99s | 1.85s | 1.71s | 1.57s |
+| stalls/fight | 15.5 | 13.9 | 14.4 | 12.6 | 11.7 | 11.3 | 10.8 |
+
+The curve is smooth and monotone, and the proposed mechanism runs *backwards*: stall beats
+go **down** as the rotation tightens, because the dial scales the cooldowns too, so more
+cards are ready, not fewer. The 1.95s reading was two adjacent cells of noise, and the
+explanation was a story told about them after the fact.
+
+**The reusable half, and it is one sentence: noise that arrives with a plausible causal
+story is worse than bare noise, because the story is what stops you widening.**
+
+Bare noise announces itself — a number that looks wrong gets re-run. This did not look
+wrong. It looked *explained*. The stall beat is real, it is in the file, and it genuinely
+would produce a floor if the dial worked the way it appeared to; two independent things
+agreeing is normally the moment you stop checking, and here one of the two was a coincidence
+in two adjacent cells. Everyone already knows a thin sample gives a noisy number — this
+repo's own campaign comparison is a whole CLAUDE.md section about that. The step past it is
+that a noisy *curve* has a shape, a shape invites a mechanism, and a mechanism found in the
+source to match it reads as confirmation rather than as the coincidence it is.
+
+What would have shipped is the part that makes this worth an entry: not a wrong number but a
+wrong *sentence about the game* — "the cadence dial cannot be pushed past 0.75" — in a design
+record, with a code reference attached, that no future reader would have had any reason to
+re-derive. The owner's eventual ruling was `BOSS_CADENCE = 0.6`, a rung that false finding
+had already declared unreachable.
+
+**The tell is cheap and it is not statistical.** When an explanation arrives quickly and fits
+well, that is the moment to ask how many data points define the feature it explains. Here,
+two.
+
+**A second, smaller one on the same branch, worth a paragraph because it looks like a bug
+and is not.** After the change landed, re-running the same nominal baseline through the
+shipped code gave 35.9% where the runtime-patched baseline had given 39.6% — 3.7 points
+apart for what was meant to be an identical configuration. Nothing was wrong. The patched
+path multiplied by `1.0`; the shipped path multiplies by `0.7` and the tool divides it back
+out, and `1.85 * 0.7 * h * (1/0.7)` is not bit-identical to `1.85 * h`. One float away, a
+cast resolves a tick earlier, the shared `Rng` stream reorders, and the rest of the fight is
+a different fight. **A same-binary control is only a control if it is the same arithmetic,
+not merely the same intended value** — so the two runs are independent samples that happen
+to agree on direction (−22% and −26% relative), and it would have been wrong to report
+either as a re-measurement of the other.
 
 ## Proposed for the owner, not adopted here
 
