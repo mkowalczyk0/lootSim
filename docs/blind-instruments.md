@@ -763,10 +763,64 @@ half. **A clean merge of two branches that both edited the same file is a claim 
 and the only cheap way to turn it into a claim about meaning is to enumerate what each side
 was supposed to contribute and check that it is still there.**
 
-## A nineteenth instance, and a new species: a measurement that was correct, complete, and still blind
+## A twentieth instance, and it is the check on the check: a falsification that could not falsify
 
-*(An eighteenth — the ultimate-meter guard whose scope was derived from the two exploits
-already found — is landing on a parallel branch. The numbering assumes it arrives first.)*
+Building `tools/bosstarget.ts` (the boss aim-lock rule, `fix/boss-target-lock`), the
+falsification step itself — checking out the pre-fix `boss.ts`/`dungeon.ts` and confirming
+the new check goes red — came back green on five of its six cases, against code known,
+by construction, to be broken.
+
+The probe worked like this: position hero A near the boss, capture the boss's facing the
+instant it begins a wind-up, move hero B to become the new nearest hero, and compare
+facing at commit against facing at resolve. Hero B's new position was closer to the boss
+than hero A's — but at the *same angle*, due east, just nearer. A boss correctly locked
+onto hero A and a boss silently reassigned onto hero B both read as "facing due east" from
+that geometry, because the only thing that changed was distance, and distance never
+entered the comparison. The check couldn't distinguish its two hypotheses, so of course it
+agreed with whichever one it was pointed at — it would have agreed with the fix being
+broken just as readily, and briefly did, before the fix was even reverted, since the
+initial version of the geometry produced this every time.
+
+**Every other entry in this file is a check that couldn't see its own subject. This one is
+the instrument whose entire job is to prove another check has teeth, being blind in
+exactly that job.** It is worse than an ordinary blind instrument for the reason CLAUDE.md
+already states about a design-promise comparison: a check that always passes gets trusted
+indefinitely, while a check that always fails announces itself in minutes. The wave
+director's spawn timing — an earlier version of this same probe looked for the boss
+synchronously at construction and missed one hundred percent of the time — is the benign
+version of this exact mistake: loud, obvious, fixed before anyone believed the number.
+This one was quiet. It reported the fix *working* against code the very next command was
+about to prove was broken, which is the green that would have retired the whole question
+if the falsification step hadn't been run at all, or had been trusted on its first result.
+
+**It was only caught because red was expected and green arrived instead** — a prediction
+recorded before the run, the same discipline `docs/shared-loot.md`'s two injections and
+this file's own falsification entries already use. Had the fix itself been subtly wrong
+rather than deliberately reverted wholesale, this same blind probe would have blessed it,
+and nothing about the resulting green would have looked any different from a correct one.
+
+**The rule is already written down, in a different domain, and this is the same rule
+restated rather than a new one.** CLAUDE.md's determinism section: *"the violation has to
+actually consume or reorder the shared `Rng` stream ... a real behavior change that only
+reaches something the run doesn't compare ... passes the check while proving nothing."*
+Swap the domain and the sentence is unchanged: the injection has to move the quantity the
+check reads. There, the shared quantity is the rng stream and the injection has to touch
+it. Here, the read quantity is *angle* and the injection moved *distance* — a real,
+deliberate change to the test's own state that the comparison was nonetheless structurally
+incapable of seeing. Two people, two domains, the same shape, arrived at independently —
+which is the evidence that the rule is general rather than a fact about random numbers.
+
+**How to apply:** when a falsification returns the *expected* red, that is evidence about
+the subject. When it returns an *unexpected* green — pass against code you deliberately
+broke — that is not yet evidence about the subject at all. It is a result about the
+injection, and the injection has to be shown to move the specific value the check reads
+before the green means anything. Here that meant re-examining the geometry (a fixed
+angular offset between "still locked" and "reassigned") rather than the lock code a second
+time. Fixed by moving the second hero to a *different* angle from the boss, not just a
+different distance, so the two hypotheses read roughly ninety degrees apart and the
+comparison finally had something to distinguish.
+
+## A twenty-first instance, and a new species: a measurement that was correct, complete, and still blind
 
 Every entry above is an instrument that could not see its subject: a bound taken from the
 thing under test, a scope that had silently emptied, a cast that blinded the typechecker, a

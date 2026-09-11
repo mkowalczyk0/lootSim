@@ -207,7 +207,7 @@ interface TowerBoss {
   readonly sprite: BossSpec["sprite"];
 }
 
-const TOWER_BOSSES: readonly TowerBoss[] = [
+export const TOWER_BOSSES: readonly TowerBoss[] = [
   {
     templateId: "warden", name: "Cherub of the Lower Gate",
     title: "It has been watching this door since before the door.",

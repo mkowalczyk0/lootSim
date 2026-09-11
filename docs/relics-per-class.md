@@ -1,5 +1,15 @@
 # Relics and artifacts, unique to each class — options and prices
 
+> **RESOLVED, 2026-09-10 (`feat/relic-level-gate`).** Option **A-i, the level gate, shipped** —
+> in its strict form: derived from the drop source, all three slots, both tiers, no carve-outs.
+> The owner was offered a softer variant that let an alt wear low-tier artifacts immediately
+> and declined it. Two claims below are now stale and are left in place only because this is a
+> proposal page rather than a live design record: §A-i's *"Relics are the one account-wide
+> power system with no level gate at all"* and its citation of `CLAUDE.md`'s "No level gate,
+> like the universal tree" (that sentence's correction is queued as §7 of
+> `docs/claude-md-pending.md`). The live design record is `docs/relics.md` — read that, not
+> this, for what the gate actually does.
+
 **The ask** (owner, 2026-09-10): *"Artifact/Relics should be unique to each class."*
 
 **Nothing here is built.** This is a costed set of options; the owner picks one and it gets

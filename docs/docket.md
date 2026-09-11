@@ -1621,3 +1621,68 @@ Function is right; scope is presentation only — `src/net/recordsClient.ts` and
 `src/net/records.ts` should not need to change. `renderLeaderboards` in `src/ui/town.ts`.
 
 **Held by this session, on branch `ui/leaderboards-cleanup`. In flight.**
+
+## New from the owner, 2026-09-11 — the summons pass
+
+Two items, arriving together and about the same subject. They are deliberately kept as
+two, because one is an art problem and the other is a systems problem and they can be
+built in either order without blocking each other.
+
+## 36. Every class's summon is drawn as a triangle
+
+> "Sprites for each class summons, ie. Replace the triangle sprite"
+
+Literally true and easy to confirm: `drawMinions` in `src/render/draw.ts` builds a
+three-point path (`moveTo(radius + 2, 0)` and two back corners), fills it with
+`ELEMENT_COLORS[m.element]`, and rotates it to `m.facing`. There is no sprite, no atlas
+row and no fallback ladder — a summoned combatant is a coloured arrowhead. The comment
+above it states the intent honestly ("small, plain bodies in their owner's element — a
+legion should read as a swarm of yours"), and the element tint is doing the whole job of
+distinguishing a minion from a monster.
+
+Two things to settle before generating anything:
+
+- **How many distinct summons actually exist.** The Engineer-loop investigation found
+  **ten** classes create a persistent thing, which is not the same count as ten sprites —
+  several may want the same body in a different colour.
+- **Whether this is one family or ten.** A shared "summoned minion" family with per-class
+  silhouette variants is far cheaper in PixelLab generations than a bespoke sprite per
+  class, and it also preserves the property the current triangle has by accident: a
+  player can tell their own swarm from the floor's monsters at a glance. That property
+  must survive whatever replaces it.
+
+The element tint is currently the only carrier of "this is mine and it is my element."
+Whatever lands has to keep saying both of those things.
+
+## 37. Summons die too easily, don't scale with the player, and the Forge can't support them
+
+> "Buff Summons, die to easily, needs to scale better with player, summon support for
+> affixes in the forge (summon damage %, +1-3 Max Summons, etc.) Make sure summons
+> inherit elemental affixes and other player related buffs."
+
+Four separate asks in one line, and they are not the same size:
+
+1. **Survivability.** A summon's health does not track the player's investment, so a
+   minion that is useful at depth 10 evaporates at depth 40. This is the reported defect.
+2. **Scaling.** Summons need to inherit from the owner rather than from a flat authored
+   number — the same shape as the item-level ruling in §23, where a drop reads the
+   receiving hero rather than the floor.
+3. **New affix vocabulary.** `summonDamage` (a percentage) and `maxSummons` (+1–3) as
+   real `Mods` keys, rollable on gear and offered by the Forge workbench. Both are new
+   entries in `src/data/mods.ts`, both need `MOD_POOL` rows with a `minTier` — `+1–3 max
+   summons` is a projectile-count-shaped mod and should be gated like one.
+4. **Inheritance of what the player already carries.** Elemental affixes, and "other
+   player related buffs" — which needs scoping, because the honest answer to "everything"
+   is a very large balance change. Crit, leech, elemental conversion and flat damage
+   percentages are the obvious candidates; triggers and granted skills are almost
+   certainly not.
+
+**The trap to avoid is the one `wardPower` taught us** (see
+`lootsim-dead-stat-gets-removed-not-implemented`): do not author a mod key that nothing
+in `src/combat/` or `src/game/` ever reads. Whatever is added here must be wired to a
+live read in the same branch, and the branch must be able to state where that read is.
+
+Ask #4 also cuts the other way and is worth pricing before building: if a summon inherits
+the owner's elemental conversion and damage percentages, a summoner build's scaling is
+now multiplicative with its own gear, and the honest question is whether #1 (more health)
+is still needed once #4 lands. Measure that before buffing both.

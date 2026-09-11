@@ -245,7 +245,20 @@ export interface Snapshot {
    * which is the one thing a telegraph may never be.
    */
   readonly tg: number[][];
-  /** [x, y, radius, colorIndex] */
+  /**
+   * [x, y, radius, elementIndex, remaining, follows, vx, vy] per ground zone.
+   *
+   * `follows` is the hero index a zone rides (Bard's march, a Shaman totem's aura) or
+   * -1, and `vx`/`vy` is a drifting zone's velocity. Both are here because a client
+   * rebuilds every zone from the snapshot, and a zone that *moves* rebuilt from a
+   * position the host held a round trip ago is drawn a round trip behind the thing it
+   * is attached to — while the hero it should ride is predicted forward. That was the
+   * owner's "horrendous delay on wards/AOE that follow the player": the one kind of
+   * effect on the wire guaranteed to trail. With the owner index the client anchors the
+   * zone to its own copy of that hero every tick (`Dungeon.advanceRemote`), the
+   * predicted body for the local hero and the interpolated one for everyone else, and
+   * carries a drifting zone forward the way it already does a projectile.
+   */
   readonly g: number[][];
   /** [x, y, colorIndex] */
   readonly tm: number[][];
