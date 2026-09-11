@@ -119,12 +119,33 @@ of the three cannot be exercised that way at all:
 | assassin | 0.103 |
 | necromancer (control) | 0.137 |
 
-The Reaper's meter charges only from `execute`-tagged hits and the Assassin's only from its
-own kit, so on a raid floor — one enormous body, almost no other kills — they never fill
-under bot play. This is real game behaviour, not a broken detector, but either way an A/B
-there would have reported a confident delta about an ability that never fired. That is
-exactly CLAUDE.md's "check that your instrument can see the thing you changed", and it is
-why the primary evidence below is the seed-free table rather than the fight.
+~~The Reaper's meter charges only from `execute`-tagged hits and the Assassin's only from
+its own kit, so on a raid floor — one enormous body, almost no other kills — they never fill
+under bot play.~~ **The floor was not the reason. Struck by docket §38's measurement
+(`docs/execute-family.md`), which reran this on an ordinary depth-18 trash floor — nothing
+but other kills — and got zero casts there too.** What the conclusion below rests on is
+unchanged: an A/B on those two classes would still have reported a confident delta about an
+ability that never fired, which is exactly CLAUDE.md's "check that your instrument can see
+the thing you changed", and it is why the primary evidence below is the seed-free table
+rather than the fight. But the *cause* was diagnosed wrong here, and the corrected causes
+are different for the two classes:
+
+- **The Reaper** — `executioners_step` is the only non-ultimate ability in the class carrying
+  the `execute` tag its meter feeds on, and `autoSlotNewAbilities` takes the first three
+  unlocked abilities in declaration order, so the bot never equipped it. Force-slot it and
+  the meter fills on a trash floor. On a raid boss it still only reaches 0.350 across a whole
+  fight, because generation is `kill +8 / hitDealt +2` and a boss floor has one body and
+  nothing to kill. So the raid-floor half of the original sentence was right for the Reaper —
+  for the tag, not for the kill count — and the trash-floor half was wrong.
+- **The Assassin** — not a bot artifact at all. Its feeder (`mark_for_death`) *is*
+  auto-slotted, on a fully allocated tree with gear equipped, and the meter still caps at
+  **12–28%** of the bar over an entire floor on either floor type. Its ultimate cannot be
+  cast in normal play. That is a live defect rather than an instrument limitation, and it is
+  docketed separately — nerfing an ultimate nobody can reach is the wrong item.
+
+Both rows ran with **15 tree nodes allocated and 5 gear pieces equipped**, so this is not
+`docs/engineer-ultimate-loop.md`'s empty-build failure; that was checked explicitly before
+the conclusion was drawn.
 
 ### The direct instrument: what the rider adds, master → patched
 

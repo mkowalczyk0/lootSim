@@ -65,6 +65,7 @@
     "bosstarget": "node tools/run-tool.mjs bosstarget",
     "hublayout": "node tools/run-tool.mjs hub-layout",
     "execute": "node tools/run-tool.mjs execute",
+    "execute-attrib": "node tools/run-tool.mjs execute-attrib",
     "relicunion": "tsx tools/relicunion.ts",
     "ultimate-uptime": "node tools/run-tool.mjs ultimate-uptime",
     "ultfloor": "node tools/run-tool.mjs ultimate-floor",

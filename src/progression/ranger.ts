@@ -392,7 +392,16 @@ const H = (id: string, name: string, description: string, a: string, b: string, 
 
 export const RANGER_UNLOCKS: PathUnlockDef[] = [
   H("perfect_ambush", "Perfect Ambush", "A shot fired from stealth or Deadeye that hits a trapped enemy always executes.", "Deadeye", "Trapper", {
-    mutations: [{ id: "ranger.perfect_ambush", label: "trapped targets are marked for the kill", target: { withTag: "projectile" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.25 }] }],
+    // Docket §38. This was one mutation targeting `{ withTag: "projectile" }`, and The Last
+    // Hunt carries the `projectile` tag — so a node whose text is about *a shot* was adding
+    // +0.25 to the ultimate as well. Named per ability instead, the way
+    // `assassin.weak_point` (`{ abilityId: "assassin.ambush" }`) already does it. Nothing
+    // the two hybrids do to the Ranger's actual shots changes; see docs/execute-family.md.
+    mutations: [
+      { id: "ranger.perfect_ambush.splitshot", label: "trapped targets are marked for the kill", target: { abilityId: "ranger.splitshot" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.25 }] },
+      { id: "ranger.perfect_ambush.barbed_arrow", label: "trapped targets are marked for the kill", target: { abilityId: "ranger.barbed_arrow" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.25 }] },
+      { id: "ranger.perfect_ambush.pinning_shot", label: "trapped targets are marked for the kill", target: { abilityId: "ranger.pinning_shot" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.25 }] },
+    ],
     ui: { badge: "AMB" },
   }),
   H("hunting_party", "Hunting Party", "Your traps also arm your companion — it drags trapped enemies back onto the field.", "Trapper", "Beastmaster", {
@@ -416,7 +425,15 @@ export const RANGER_UNLOCKS: PathUnlockDef[] = [
     ui: { badge: "PACK" },
   }),
   H("winter_execution", "Winter Execution", "A held Deadeye shot on a frozen target is a guaranteed one-shot on anything but an elite.", "Deadeye", "Cold Hunt", {
-    mutations: [{ id: "ranger.winter_execution", label: "frozen quarry dies to the held shot", target: { withTag: "projectile" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.5 }] }],
+    // Docket §38, same defect as Perfect Ambush above and the larger half of it: +0.5 was
+    // reaching The Last Hunt from a node whose text is "a held Deadeye shot". Together the
+    // two were three quarters of a coefficient nothing ever printed, which is why halving
+    // the authored 0.2 twice never landed. See docs/execute-family.md.
+    mutations: [
+      { id: "ranger.winter_execution.splitshot", label: "frozen quarry dies to the held shot", target: { abilityId: "ranger.splitshot" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.5 }] },
+      { id: "ranger.winter_execution.barbed_arrow", label: "frozen quarry dies to the held shot", target: { abilityId: "ranger.barbed_arrow" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.5 }] },
+      { id: "ranger.winter_execution.pinning_shot", label: "frozen quarry dies to the held shot", target: { abilityId: "ranger.pinning_shot" }, ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.5 }] },
+    ],
     ui: { badge: "WEX" },
   }),
   {
