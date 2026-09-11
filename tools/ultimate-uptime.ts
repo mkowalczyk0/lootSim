@@ -19,7 +19,7 @@
  *
  * What is left is a loop that does not involve the ultimate at all: ward absorption *is*
  * counted in `prevented`; `damagePrevented` feeds both the ultimate meter (40/maxHealth
- * fraction) and Conviction (50); and Conviction above 60 grants `wardPower +0.15`, which
+ * fraction) and Conviction (50); and Conviction above 60 grants `healthPercent +0.05`, which
  * makes the ward bigger, which prevents more. This tool measures what that is worth in a
  * real fight.
  *

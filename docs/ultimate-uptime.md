@@ -53,7 +53,9 @@ is when six seconds of "cannot fall below 1 HP" is worth most.
 
 There is a real positive feedback here, but **the ultimate is not in it**: ward absorption
 counts as `damagePrevented`; `damagePrevented` feeds both the ultimate meter (40) and
-Conviction (50); Conviction above 60 grants `wardPower +0.15`; a bigger ward prevents more.
+Conviction (50); Conviction above 60 grants `healthPercent +0.05`. It used to read
+`wardPower +0.15` — a stat the simulation never implemented, so the feedback path argued
+about below was inert at that link. See docs/wardpower-removal.md.
 That loop runs whether or not Last Light is ever cast.
 
 ## The finding: the Lancer fires one ultimate every 1.2 seconds
@@ -103,7 +105,7 @@ roster sits outside it.
 would make the ultimate *unreachable* at ordinary depths where it is already unreachable
 while only slightly rarer where it is a problem. If 12% guard uptime is too much, the direct
 lever is `STATUS_UNDER_OATH.baseDuration` (currently 6s), which moves exactly the thing
-reported and nothing else. Damping the Conviction → `wardPower` → prevented feedback is the
+reported and nothing else. Damping the Conviction → ward → prevented feedback is the
 other candidate and is a bigger change to the class's identity; a tank charging by tanking is
 the design, and the loop is the generator feeding the thing that amplifies the generator.
 
