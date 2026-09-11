@@ -845,11 +845,9 @@ implementation work was nearly spent on it — by me — before a measurement co
 
 **Three separate errors, and they compound:**
 
-1. **A units error at the top.** `meter 2.0` is read as *"a full meter — the ultimate paid
-   for itself, immediately, and could be cast again."* Every ultimate meter has `max: 100`
-   and `probeUltimate` reads `.value`, not `.fraction`. It is a **2% gain**: a 50x
-   misreading, and the one that makes the entry read as an emergency rather than a rounding
-   error. Nothing downstream questioned it because the page was so obviously careful.
+1. **A units error at the top** — a 50x misreading of the one number the page is built on.
+   It gets its own entry below (§21), because it is a different species from the rest of
+   this one.
 2. **A mechanism inferred rather than traced.** "The ultimate summons constructs; construct
    packets carry no stamp; the tag matches; the meter fills" is a coherent chain in which
    every individual link is true. It is not what happens. Removing the zone step changes
@@ -880,6 +878,47 @@ those are three separate claims and the cheap one to check first is always the m
 because a units error invalidates the other two for free. And when a record turns out to be
 wrong, **correct it in place with the wrongness visible** rather than deleting it — the next
 session needs to know the page was confidently wrong, not merely that it is now right.
+
+## A twenty-first instance, a species with no precedent here: the instrument was right and was read in the wrong units
+
+Every other entry in this file is an instrument that could not see its subject. This one saw
+perfectly. `probeUltimate` measured the Engineer's ultimate meter exactly right, printed the
+number exactly right, and the number was read on the wrong scale.
+
+```
+  Engineer: THE ULTIMATE RULE — its own output did not refill the meter  — meter 2.0
+```
+
+`meterRightAfter` is `resources.ultimateMeter()?.value`. Every ultimate meter in the game is
+`max: 100`. So `meter 2.0` is **2% of a meter**. It was written up as:
+
+> `meter 2.0` is a full meter — the ultimate paid for itself, immediately, and could be cast
+> again.
+
+**A 50x error, and it set the severity of everything downstream.** It made a 2% per-cast
+trickle read as a self-sustaining loop; it justified a docket entry, a pinned smoke
+violation, a PM task brief, and an approved fix axis. None of those would have survived the
+question *"two out of what?"*
+
+What makes this its own species is that **no measurement was wrong and no scope was empty**.
+The usual remedies in this file — print what you walked, compare against a fixed reference,
+run a control, falsify by injection — would all have passed. A control would have confirmed
+the 2.0 was real, because it *is* real. The defect is entirely in the reading, and the only
+thing that catches it is asking what the number is a number *of*.
+
+The adjacent trap, worth naming because the same codebase has both: `Dungeon.specialCharge`
+returns `meter.fraction` (0–1) while `meterRightAfter` reads `meter.value` (0–100). Two
+accessors onto the same pool, differing by 100x, both called "the meter" in prose. A sweep
+turned up no other live instance, but `docs/arm-the-trees-rebaseline.md` had inherited the
+same sentence and was corrected alongside.
+
+**How to apply:** **a measurement without its units is not a measurement.** When a tool
+prints a bare number, print the scale with it — `meter 2.0/100` costs nothing and cannot be
+misread. When a design record quotes a number, it must say what scale it is on, and a reader
+who cannot tell from the page should treat the claim as unverified rather than assume. And
+when a number is the load-bearing fact of a diagnosis, **reproduce that number before
+building on it** — not the bug, the number: here it was thirty seconds of printing `pool.max`
+next to it, and the whole entry falls over before a line of code is written.
 
 ## Proposed for the owner, not adopted here
 
