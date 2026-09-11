@@ -519,6 +519,20 @@ not every five — and a reader trusting it would "fix" a circle edge to a multi
 
 ---
 
+## 9. The gate-reading rule taught on master is blind — a correction, not a CLAUDE.md edit
+
+**Branch:** `feat/nine-circles` (blind-instruments entry 26). `docs/pm-handoff-2026-09-11-morning.md`
+on master tells a reader to certify a gate with an anchored `grep -c '^FAIL'`. Every
+per-check failure line in `tools/` is indented by house style (`" FAIL  ..."`), so that grep
+reads every real red as zero; it was never correct for any tool. The corrected rule, now in
+force from the PM: the terminator (`ALL CHECKS PASSED` plus the launcher's `EXIT=0`) **and** a
+case-sensitive, unanchored `grep -c 'FAIL'` of zero — and a missing terminator means the
+chain halted and the later steps never ran. Nothing in `CLAUDE.md` states the old rule, so
+no edit is proposed there; this note exists so the owner sees the correction once, and so
+the handoff doc gets fixed on master rather than re-read as written.
+
+---
+
 ## Summary for a fast read
 
 | # | Draft | Source of proposed text | Branch | Reviewed by owner? |
