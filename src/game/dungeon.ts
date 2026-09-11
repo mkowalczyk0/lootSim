@@ -1750,8 +1750,10 @@ export class Dungeon implements CombatHost, RuleHost {
         if (!owner) { this.telegraphs.splice(i, 1); continue; }
         t.x = owner.x;
         t.y = owner.y;
-        // The offset is what keeps several blades off one boss from collapsing onto
-        // the same facing every time its rotation is refreshed.
+        // `owner.facing` is locked for the whole cast (`boss.ts`'s `beginAbility`), so
+        // this reproduces one fixed angle rather than tracking a moving target — the
+        // offset is what keeps several blades off one boss spaced apart rather than
+        // stacked on that one shared, fixed facing.
         if (t.shape === "cone" || t.shape === "line") t.angle = owner.facing + t.angleOffset;
       }
       // A pursuing shape (`hunt`, `mark`). It walks toward its hero at its own speed
@@ -3491,9 +3493,14 @@ export class Dungeon implements CombatHost, RuleHost {
       const d = dist(e.x, e.y, a.x, a.y);
       const toPlayer = Math.atan2(a.y - e.y, a.x - e.x);
       // A charger locks its facing when it commits — the wind-up and the dash both go
-      // where it was pointing, not where you dodged to.
-      const facingLocked = e.archetype.behavior === "charger"
-        && (e.windup > 0 || e.chargeVx !== 0 || e.chargeVy !== 0);
+      // where it was pointing, not where you dodged to. A boss's wind-up and charge-dash
+      // lock the same way, and for the same reason (`boss.ts`'s `beginAbility` sets the
+      // locked value; this just has to not immediately overwrite it) — without this, a
+      // boss's facing was reassigned to `nearestHero` right here, every tick, before
+      // `updateBoss` even ran, which undid the lock as fast as it was set.
+      const facingLocked = (e.archetype.behavior === "charger"
+        && (e.windup > 0 || e.chargeVx !== 0 || e.chargeVy !== 0))
+        || (e.boss != null && (e.boss.castTimer > 0 || e.boss.chargeTimer > 0));
       if (!facingLocked) e.facing = toPlayer;
 
       // The boss brain owns its own movement whenever it's casting or charging.
