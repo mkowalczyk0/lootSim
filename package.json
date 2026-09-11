@@ -59,7 +59,8 @@
     "hublayout": "node tools/run-tool.mjs hub-layout",
     "execute": "node tools/run-tool.mjs execute",
     "relicunion": "tsx tools/relicunion.ts",
-    "ultimate-uptime": "node tools/run-tool.mjs ultimate-uptime"
+    "ultimate-uptime": "node tools/run-tool.mjs ultimate-uptime",
+    "raidhealth": "node tools/run-tool.mjs raid-health-ab"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
