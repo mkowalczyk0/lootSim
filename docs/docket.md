@@ -1686,3 +1686,123 @@ Ask #4 also cuts the other way and is worth pricing before building: if a summon
 the owner's elemental conversion and damage percentages, a summoner build's scaling is
 now multiplicative with its own gear, and the honest question is whether #1 (more health)
 is still needed once #4 lands. Measure that before buffing both.
+
+---
+
+## New from the owner, 2026-09-11 afternoon — the boss-pressure pass
+
+Landed alongside batch four's sign-off:
+
+> "Add to the docket to nerf rangers execution ultimate again and decrease the time in
+> between boss attacks."
+
+Two items, and they are the same complaint from opposite ends: **a boss fight should be a
+fight.** One says the player deletes the boss too fast; the other says the boss does not
+push back hard enough. Whoever takes either should read the other's entry, because a
+faster boss and a weaker execute both move the same number (time-to-kill) and measuring
+one while the other is in flight will attribute the wrong cause.
+
+## 38. The Ranger's "The Last Hunt" is still too strong — the THIRD report
+
+**This is the third time the owner has reported this ability, and the first two fixes were
+not wrong — they were incomplete in a way that is worth stating before anyone touches a
+number, because the obvious move is to halve the coefficient again and that is exactly
+what has already failed twice.**
+
+The history, both fixes on master and both measured:
+
+- **§8 sized the number.** `executeMissingHealth` 0.4 → 0.2, plus `shape: { radius: 350 }`
+  to stop the field-wide wipe. Design record `docs/ranger-last-hunt-nerf.md`.
+- **§20 fixed the shape.** `EXECUTE_THRESHOLD = 0.5` and a normalised ramp in
+  `src/combat/damage.ts`, so the rider contributes nothing at or above half health and
+  ramps with no cliff below it. Design record `docs/execute-threshold.md`.
+
+So the rider is now half its original size *and* cannot fire at all above 50% health, and
+the owner is still reporting it. **That is evidence the execute rider is no longer the
+dominant term, and the next change should not be aimed at it by default.** The candidates,
+in the order they deserve measuring:
+
+1. **Cadence — how often the ultimate can be cast at all.** Neither previous fix touched
+   this. The Ranger's ultimate meter gains on crit *and* on inflicting ailments, and the
+   ability itself both crits and applies them, so it partly pays for its own next cast. An
+   ultimate cast three times in a boss fight at half strength is not a nerf; it is the
+   original complaint at a different cadence. **Measure casts-per-boss-fight first.** This
+   is the same lever §39 is about to pull on the boss's side of the same clock.
+2. **The direct packet, not the rider.** `src/progression/ranger.ts:290` is
+   `base: 3.4, scale: "attack", channel: "ultimate", to: "enemies"` at radius 350. Against
+   trash that is a room clear on its own with the rider contributing nothing, which is
+   consistent with a complaint that survived two rider nerfs.
+3. **The rider's remaining contribution.** At 0 HP it still adds `0.2 × maxHealth`. Against
+   a raid boss that is a large flat number, but it only exists in the bottom half of the
+   bar and it is the part that is *supposed* to finish a wounded target.
+
+**Do not start by changing a number. Start by measuring which of the three dominates in a
+real fight** — the project has now twice shipped a correctly-reasoned fix to a term that
+was not the one doing the damage, and a third one would be the same mistake with a smaller
+coefficient. `tools/execute.ts` already exists and pins the rider's properties; the missing
+instrument is a per-term damage attribution over a real boss fight.
+
+**Scope, and it needs an owner call before it widens.** `docs/ranger-last-hunt-nerf.md`
+already flagged that the Reaper's "Death Comes Due" (`executeMissingHealth: 1.0`,
+`to: "enemiesEverywhere"`, `src/progression/reaper.ts:249`) and the Assassin's ultimate
+(0.4, `to: "target"`) are the same pattern at larger coefficients. They have not been
+reported. Under `lootsim-scope-fixes-to-unshipped-content` this fix stays on the Ranger
+unless the owner says otherwise — flagged here, not swept.
+
+## 39. Decrease the time between boss attacks
+
+The owner's own words, and they name the lever CLAUDE.md already identifies as the correct
+one. From the boss section:
+
+> **A kit's difficulty is cadence × mean threat per card, not card count.** ... to make a
+> fight harder, move the cadence or raise the threat of the cards in it — do not add cards
+> and assume you added danger.
+
+Batch four added cards (seven bullet-hell patterns across all 44 encounters). By the law
+above that *dilutes* a kit unless the new cards carry at least the mean threat, and the
+owner is now asking for the other half of the same equation. **These two changes belong
+together and this one is the one that actually moves difficulty.**
+
+### Where the number is, and the one next to it that must not move
+
+`src/game/boss.ts`:
+
+- **The gap between casts** — `b.cooldowns[id] = ability.cooldown * phase.haste *
+  b.buffHasteMult` (~line 219). This is the quantity the owner is asking to shrink:
+  `ability.cooldown` per card in `src/data/bosses.ts`, `phase.haste` per phase, and the
+  crescendo ratchet already documented at ~line 74 as taking the gap to 0.82 of base.
+- **The wind-up, which is NOT this** — `const cast = Math.max(MIN_CAST, ability.cast *
+  Math.max(0.7, d.profile.telegraph))` (~line 212). **Do not shorten this to make the
+  fight harder.** CLAUDE.md's first boss rule is that every ability is telegraphed and that
+  if a hit landed it was readable; shortening the wind-up makes hits unreadable rather than
+  making the boss aggressive, and it would break the one design promise the smoke test
+  measures directly.
+
+### The coupling that has to be measured rather than assumed
+
+**Casting locks the boss in place, so its wind-up is also the player's damage window.** A
+shorter gap between casts therefore means the boss spends a *larger* fraction of the fight
+rooted — which is more danger and more free damage at the same time. Whether the fight gets
+harder or merely longer is an empirical question, not an arithmetic one, and it is exactly
+the confound `docs/raid-party-scaling.md` warns about: a metric that divides by fight
+length lies when fight length is itself part of what you changed.
+
+### The guardrails this change must clear
+
+1. **The telegraph A/B must still diverge sharply.** The smoke test runs the same character
+   on the same floor with telegraph-reading on and off and asserts the damage bill splits
+   and the potion belt empties. A boss that hits too often to read is a wall, not a fight —
+   CLAUDE.md says so in those words.
+2. **The rows must stay contested.** A row pinned at 0/16 or 16/16 cannot move in either
+   direction and measures nothing. Calibrate until each row is genuinely winnable and
+   genuinely losable before believing any delta.
+3. **This is a balance change across all 44 encounters, so it is the documented exception
+   to the cheap-gate rule** — it runs the full chain including `npm run smoke`, and it
+   needs a widened A/B against master in a throwaway worktree, not one default smoke run.
+
+### The parked dial that belongs in the same decision
+
+The bullet-hell patterns shipped with **per-bolt damage at 0.4–0.6× a boss hit**,
+deliberately parked pending exactly this kind of request. If the owner wants eaten fields
+to hurt more, that dial and the cadence dial should move in one measured pass rather than
+two, since they compound.
