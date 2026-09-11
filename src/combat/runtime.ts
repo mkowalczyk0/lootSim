@@ -20,6 +20,7 @@ import {
   type EffectTargetSel,
 } from "./ability";
 import { executeBonus, makeDamagePacket, type DamagePacket, type DamageSource, type DamageType } from "./damage";
+import { getStatusSpec } from "./status";
 import type { CombatHost, HostActor } from "./host";
 import type { ResourceEvent } from "./resources";
 import { resolveTargets, type TargetContext, type TargetResult } from "./targeting";
@@ -358,7 +359,10 @@ export class AbilityRuntime {
     }
 
     // --- cooldown / charges ---
-    const cd = ability.cooldown * (input.cooldownMult ?? 1);
+    // The floor is applied **after** `cooldownMult`, so cooldown reduction from gear or a
+    // tree can shorten an ultimate's wait but can never remove the gap. A floor a player
+    // can buy their way under is not a floor.
+    const cd = Math.max(ability.cooldown * (input.cooldownMult ?? 1), ultimateCooldownFloor(ability));
     if (ability.charges) {
       const have = this.charges.get(ability.id) ?? ability.charges.max;
       this.charges.set(ability.id, Math.max(0, have - 1));
@@ -438,6 +442,84 @@ export class AbilityRuntime {
 
     return { ok: true, targets, pending: [...this.pending] };
   }
+}
+
+// --- THE IMMUNITY DUTY CYCLE (docket §32) -----------------------------
+
+/**
+ * The floor under **every** ultimate's cooldown, in seconds.
+ *
+ * All 21 ultimates are authored `cooldown: 0` — they are gated by a charge meter, not a
+ * timer — so an ultimate's cast rate is whatever the meter's generation rules make it, and
+ * a build that charges fast enough has no upper bound at all. The owner cleared a Death
+ * March X depth-46 delve without dying by spamming the Paladin's.
+ *
+ * This is deliberately generous and **binds nothing on today's roster**: the fastest
+ * measured ultimate after the §31 Lancer fix is the Warlock's at ~18 casts/minute, a 3.3s
+ * interval. It exists so the *mechanism* is in place, not to retune nineteen classes
+ * nobody complained about.
+ */
+export const ULTIMATE_COOLDOWN_FLOOR = 2;
+
+/**
+ * An ultimate that makes its caster unkillable may not be up for more than this fraction
+ * of its own cycle — 2 meaning "at most half the time".
+ *
+ * The owner's rule was *"it can never exceed the time the invincibility lasts"*, which is
+ * the statement that **a gap must exist**. A duty cycle says the same thing and keeps
+ * saying it when the window changes: the Paladin's Mythic (Saint of the Last Stand) scales
+ * `under_oath` by 1.6, so a fixed floor authored against the base 4s window would have been
+ * silently wrong for exactly the build the exploit was reported on.
+ */
+export const IMMUNITY_DUTY_CYCLE = 2;
+
+/**
+ * The longest a single cast of `ability` can keep its target unkillable, in seconds,
+ * computed from the **resolved** ability — mutations folded in — because that is what the
+ * runtime is handed (`Player.resolvedAbility` -> `applyBuild` -> `applyMutations`).
+ *
+ * Reads `guardsDeath` off the status registry rather than a list of ability ids, so a
+ * status that gains a death guard tomorrow, or a new ultimate that applies an existing
+ * one, is covered without being enumerated anywhere.
+ */
+export function guardedSpan(ability: Ability): number {
+  let longest = 0;
+  const walk = (steps: readonly EffectStep[]): void => {
+    for (const step of steps) {
+      if (step.kind === "status") {
+        const spec = getStatusSpec(step.status);
+        if (spec?.guardsDeath === true) {
+          longest = Math.max(longest, spec.baseDuration * (step.durationMult ?? 1));
+        }
+      }
+      const s = step as EffectStep & {
+        effects?: readonly EffectStep[];
+        then?: readonly EffectStep[];
+        choices?: readonly { effects: readonly EffectStep[] }[];
+      };
+      if (s.effects) walk(s.effects);
+      if (s.then) walk(s.then);
+      if (s.choices) for (const c of s.choices) walk(c.effects);
+      if (step.kind === "projectile" && step.projectile.onExpire) walk(step.projectile.onExpire);
+    }
+  };
+  walk(ability.effects);
+  if (ability.followUp) walk(ability.followUp.effects);
+  return longest;
+}
+
+/**
+ * The minimum time that must pass between casts of `ability`.
+ *
+ * **There is no per-ability field to omit**, which is the whole design: a required
+ * `minCooldown` on 21 packets could be satisfied with `0` — this bug spelled explicitly —
+ * and an ultimate written next month would arrive unprotected. Same reasoning as the
+ * execute threshold (docket §20) and the map-wipe selector (§30). Non-ultimates are
+ * untouched: they already author real cooldowns.
+ */
+export function ultimateCooldownFloor(ability: Ability): number {
+  if (ability.isUltimate !== true) return 0;
+  return Math.max(ULTIMATE_COOLDOWN_FLOOR, guardedSpan(ability) * IMMUNITY_DUTY_CYCLE);
 }
 
 // --- THE MAP-WIPE RULE (docket §30) -----------------------------------

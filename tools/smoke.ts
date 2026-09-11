@@ -885,7 +885,34 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
   // self-loop but not "ultimate leaves a thing, the thing charges the meter". Keep the
   // door shut: no `allowFromUltimate` opt-out, and any untagged damage-scaled rule on an
   // ultimate meter stays a small top-up, never the whole meter.
-  const DAMAGE_TOPUP_CAP = 0.05; // Warlock's tuned-safe value is 0.03; the exploit was 0.3
+  // WIDENED (docket §31). The filter above used to be `perUnit === "damage"`, which
+  // examined **1 of the 41** ultimate-meter generation rules in the game — Warlock's,
+  // already tuned safe at 0.03 under a 0.05 cap — and skipped the Engineer's by its own
+  // `construct` tag, the one confirmed exploit in the repo. The scope had been transcribed
+  // from the signature of the two bugs that had already shipped, so it could only ever
+  // find those two, and now finds neither. See `docs/blind-instruments.md` §18.
+  //
+  // Three classes were found outside it by hand: Lancer (`perUnit: "distance"`), Paladin
+  // (`maxHealthFraction`) and the Engineer (tagged). This walks **all** of them and says
+  // how many, so a future narrowing is visible in the output instead of silent.
+  //
+  // The bound is the hard part and it is honest about its limits: `amount` means a
+  // different thing per `perUnit`, so a single cap cannot govern all 41. What can be
+  // asserted is a **comparison against the rule's own peers** — the same unit, on other
+  // classes — and, where a unit has no peers, the fact that it cannot be compared at all.
+  // That second case is not a technicality: `perUnit: "distance"` has exactly one rule in
+  // the game, and being a unit-of-one is precisely how it went unexamined.
+  const PEER_FACTOR = 4;
+  const rowsByUnit = new Map<string, { cls: string; on: string; amount: number }[]>();
+  let totalRules = 0;
+  for (const id of CLASS_IDS) {
+    const meter = CLASS_BY_ID[id]?.resources.find((r) => r.isUltimateMeter === true);
+    for (const r of meter?.generation ?? []) {
+      totalRules += 1;
+      const unit = r.perUnit ?? "flat";
+      rowsByUnit.set(unit, [...(rowsByUnit.get(unit) ?? []), { cls: id, on: r.on, amount: r.amount }]);
+    }
+  }
   for (const id of CLASS_IDS) {
     const def = CLASS_BY_ID[id];
     const meter = def?.resources.find((r) => r.isUltimateMeter === true);
@@ -893,10 +920,53 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
     const optOut = rules.filter((r) => r.allowFromUltimate === true);
     check(`${CLASSES[id].name}: no ultimate-meter rule opts out of THE ULTIMATE RULE`,
       optOut.length === 0, optOut.map((r) => r.on).join(", "));
-    const loopy = rules.filter((r) => r.perUnit === "damage" && !r.requireTags?.length && r.amount > DAMAGE_TOPUP_CAP);
-    check(`${CLASSES[id].name}: no untagged damage-scaled ultimate-meter rule above the top-up cap`,
-      loopy.length === 0, loopy.map((r) => `${r.on} ${r.amount}/dmg`).join(", "));
   }
+  // Every rule, against its own peers. A rule far above the median of the same unit on
+  // other classes is the shape both shipped exploits had, expressed without a magic number.
+  const outliers: string[] = [];
+  const lonely: string[] = [];
+  for (const [unit, rows] of rowsByUnit) {
+    if (rows.length < 2) {
+      for (const r of rows) lonely.push(`${r.cls} ${r.on} ${r.amount}/${unit}`);
+      continue;
+    }
+    // **Leave-one-out.** The first draft took the median of the whole group, which let a
+    // rule bound itself: with two rules in a unit, the bad one *is* the median. Replaying
+    // the original Engineer exploit (0.2 untagged `/damage`) against that version passed
+    // clean — the bound came from the thing under test, which is this repo's oldest
+    // documented instrument failure. Each rule is now compared against the median of the
+    // *other* rules of its unit, which the rule cannot move.
+    for (const r of rows) {
+      const others = rows.filter((o) => o !== r).map((o) => o.amount).sort((a, b) => a - b);
+      if (others.length === 0) continue;
+      const median = others[Math.floor(others.length / 2)]!;
+      if (median > 0 && r.amount > median * PEER_FACTOR) {
+        outliers.push(`${r.cls} ${r.on} ${r.amount}/${unit} = ${(r.amount / median).toFixed(1)}x its peers' median (${median})`);
+      }
+    }
+  }
+  console.log(`  walked ${totalRules} ultimate-meter generation rules across ${CLASS_IDS.length} classes,` +
+    ` ${rowsByUnit.size} distinct perUnit groups`);
+  check("no ultimate-meter rule is far above its own peers", outliers.length === 0, outliers.join("; "));
+  /**
+   * A `perUnit` with one rule in the whole roster cannot be checked against anything, so
+   * it is pinned by hand instead — `tools/legends.ts`'s idiom. Adding one is a decision;
+   * so is removing one. The Lancer sat here unexamined for the life of the project.
+   */
+  const REVIEWED_ALONE: Readonly<Record<string, string>> = {
+    "lancer move 0.06/distance": "reviewed §31 — was 0.6, which filled the meter every 167 units walked (51.7 ultimates/min measured, ~21x the roster median). 0.06 makes a full meter roughly a floor's traverse.",
+    "magician manaSpent 40/manaFraction": "reviewed §31: gated on spending the class's own finite, slowly-regenerating pool",
+  };
+  for (const l of lonely) {
+    // The note must describe the state that was found, not the failure — `check` prints it
+    // either way, and "ok ... not on the reviewed list" reads as a contradiction in the log.
+    check(`${l} is a unit-of-one and hand-reviewed`, l in REVIEWED_ALONE,
+      REVIEWED_ALONE[l] ?? "NOT on the reviewed list — a rule whose unit has no peers cannot be checked against anything, so it needs a human verdict here");
+  }
+  for (const k of Object.keys(REVIEWED_ALONE)) {
+    check(`${k} is still the only rule of its unit`, lonely.includes(k), "pin is stale — it has peers now, or it changed");
+  }
+
 }
 
 console.log("\n=== classes ===");

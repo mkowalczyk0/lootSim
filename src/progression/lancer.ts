@@ -65,7 +65,11 @@ export const LANCER_ULTIMATE_METER: ResourceSpec = {
   ui: "meter",
   isUltimateMeter: true,
   generation: [
-    { on: "move", amount: 0.6, perUnit: "distance" },
+    // 0.6 filled a 100-point meter every 167 units walked — measured at 51.7 ultimates a
+    // minute, one every 1.2 seconds, ~21x the roster median (docs/ultimate-uptime.md).
+    // 0.06 makes a full meter roughly a floor's traverse, which is what "earns the
+    // ultimate by covering ground" was always meant to mean.
+    { on: "move", amount: 0.06, perUnit: "distance" },
     { on: "hitDealt", amount: 6, requireTags: ["charge"] },
   ],
 };
