@@ -1898,3 +1898,71 @@ the 0.0 → 2.0 measurement and the three fix axes are in `docs/engineer-ultimat
 which deliberately proposes no number. The pin in the gate comes out only when the fix lands,
 and the `warlock.ts` untagged `{ on: "damageDealt", amount: 0.03 }` flagged in §27 stays
 flagged: it passes today, and passing today is not the same as being gated.
+
+---
+
+## Owner rulings, 2026-09-11 night — §38 rescoped, and §40 opened
+
+### §38 is now the Ranger and the Berserker, and nothing else
+
+> "Ranger + Berserker, same defect."
+
+The measurement that forced this is in `docs/execute-family.md`. The short version: **the
+three classes §38 named are not comparable**, and the owner's earlier "whole execute family"
+ruling was made on a premise that did not survive contact with a real build.
+
+- **Ranger** — The Last Hunt fires with an effective `executeMissingHealth` of **0.95**, not
+  the 0.2 authored on its packet. `perfect_ambush` (+0.25) and `winter_execution` (+0.5) both
+  target `{ withTag: "projectile" }`, the ultimate carries that tag, and neither node's prose
+  mentions the ultimate. So §8's "halve 0.4 to 0.2" was really 1.15 to 0.95 — a 17% cut
+  believed to be 50%.
+- **Berserker** — `worldbreaker` [ULT] collects **+0.30** from two tag-targeted adders and has
+  **no authored rider at all**. The identical mechanism, unreported, much smaller. Found only
+  because the attribution tool swept all 28 rider-carrying packets rather than the three the
+  docket named; **the docket's candidate list was a scope inherited from the complaint.**
+- **Reaper and Assassin** are removed from §38 — see §40. Their ultimates barely fire or do
+  not fire at all, and nerfing an ultimate nobody can cast is the wrong item entirely.
+
+**The fix is the shape, not the number.** Narrow the offending mutations to the abilities
+their own prose describes. On the Ranger that is 0.95 → 0.2, a 79% cut, with **no authored
+coefficient edited** — which is what makes it the one version of this fix that cannot be
+called a fourth guess at a number.
+
+**The reusable half, and it is why this took three attempts:** nothing anywhere ever printed
+the *composed* coefficient. Three people in a row reasoned correctly about an authored 0.2
+while the game ran 0.95. `npm run execute-attrib` now prints the effective value, and its
+`--roster` mode is what found the Berserker. Keep both.
+
+## 40. Two classes cannot charge their ultimate — the Assassin's has never worked
+
+> "Both now, one session."
+
+Opened from §38's measurement, and it is a bigger item than the nerf that found it. Both rows
+ran a **full build** — 15 tree nodes allocated, 5 gear pieces equipped — so the
+`docs/engineer-ultimate-loop.md` failure mode (verifying against a character incapable of
+expressing the bug) is ruled out by construction.
+
+- **Assassin — a real defect on every floor.** Correct feeder already auto-slotted, full tree,
+  full gear, and the meter caps at **12–28% of the bar over an entire floor**. Its ultimate
+  cannot be cast in normal play, anywhere. The force-slot row is byte-identical, which is the
+  control that rules out slotting as the cause. **`ASSASSIN_ULTIMATE_METER` already carries a
+  comment recording this exact bug being found and fixed once** — the fix moved the hook from
+  `hitDealt` to `statusApplied` and never checked that the rates could reach 100. So it has
+  failed twice in the same place, the second time with a comment in the source asserting it
+  was fixed. That is the same shape as the Ranger's authored-versus-composed coefficient: **a
+  written claim standing in for a measurement.**
+- **Reaper — castable on trash, uncastable on a raid boss.** Its meter feeds only on
+  `execute`-tagged events, and `executioners_step` is the *only* non-ultimate ability in the
+  class carrying that tag (the ultimate's own damage is refused by THE ULTIMATE RULE).
+  `autoSlotNewAbilities` takes the first three unlocked in declaration order, so it is never
+  equipped by default. Force-slotted it charges on trash; on a raid boss it still reaches only
+  **0.350** across the whole fight, because generation is `kill +8 / hitDealt +2` and a boss
+  floor has one body. **This confirms docket §24 and corrects its cause: the tag, not the
+  floor.**
+
+**The category, not the instances.** These are one bug — *a resource meter whose generation
+rates were never measured against the bar they fill.* The owner ruled both to one session for
+exactly that reason. **§27's Engineer loop is the same category from the other side** (rates
+that fill the bar too fast, via constructs the ultimate created), so it is folded in here: one
+session owns all three, and the fix should leave behind an instrument that measures every
+class's meter against its own bar rather than three separate patches.
