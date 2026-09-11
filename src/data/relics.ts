@@ -106,6 +106,20 @@ const artifact = (d: Authored): RelicDef => ({ ...d, tier: "artifact", rarity: R
 
 // --- odds --------------------------------------------------------------------
 
+/**
+ * The Abyssal Rift's artifact draw (`DropPool` in `data/drops.ts`). Every Abyss artifact
+ * source names it, so one event pays at most one of them at the best odds any single source
+ * declares — rather than rolling all fifteen independently, which is what made the rift a
+ * 92%-to-99% relic-tier guarantee that rose with every artifact authored.
+ */
+const ABYSS_ARTIFACT_POOL = "abyss-artifact";
+/**
+ * The relic-tier counterpart. **A no-op today** — `abyssDeep` has exactly one definition, so
+ * a pool of one pays exactly what it always paid. It is declared anyway so that a second
+ * deep-Abyss relic cannot silently reintroduce the defect the artifact pool just fixed.
+ */
+const ABYSS_RELIC_POOL = "abyss-relic";
+
 /** Per-source odds, so the two tiers stay in the ratio the spec asks for and one edit retunes a tier. */
 export const RELIC_ODDS = {
   /** A relic from a class's Proving — repeatable, at the bottom of the Delve. */
@@ -453,7 +467,7 @@ export const RELICS: readonly RelicDef[] = [
         },
       },
     ],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssDeep, 8),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssDeep, 8, ABYSS_RELIC_POOL),
   }),
 
   // ===== ARTIFACTS — meaningful, limited, Abyssal ======================================
@@ -476,7 +490,7 @@ export const RELICS: readonly RelicDef[] = [
         ],
       }],
     }],
-    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss" }],
+    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "hook-of-the-second-circle",
@@ -489,7 +503,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "A critical hit pulls every enemy near the target toward you.",
       effects: [{ kind: "pull", force: 160, to: "allTargets" }],
     }],
-    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss" }],
+    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "tooth-of-the-third-circle",
@@ -506,7 +520,7 @@ export const RELICS: readonly RelicDef[] = [
         ops: [{ kind: "damagePacket", addExecuteMissingHealth: 0.12 }],
       },
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "weight-of-the-fourth-circle",
@@ -516,7 +530,7 @@ export const RELICS: readonly RelicDef[] = [
     art: "relic.weight-of-the-fourth-circle",
     effects: [{ kind: "mods", mods: { coinFind: 0.3, gemFind: 0.2, pickupRadius: 0.25, moveSpeed: -0.04 } }],
     statStick: true,
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "tempo-of-the-fifth-circle",
@@ -529,7 +543,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "Taking a hit hastes you for two seconds.",
       effects: [{ kind: "status", status: "hasted", to: "self" }],
     }],
-    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss" }],
+    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "candle-of-the-sixth-circle",
@@ -542,7 +556,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "Casting a heal wards you for a slice of your attack damage.",
       effects: [{ kind: "shield", amount: 0.4, scale: "attack", duration: 3, to: "self" }],
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "drum-of-the-seventh-circle",
@@ -555,7 +569,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "Taking a hit deals physical damage to every enemy near you.",
       effects: [{ kind: "damage", damage: { base: 0.5, scale: "attack", type: "physical" }, to: "allTargets" }],
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "mirror-of-the-eighth-circle",
@@ -571,7 +585,7 @@ export const RELICS: readonly RelicDef[] = [
         { kind: "threat", op: "drop", to: "allTargets" },
       ],
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "frost-of-the-ninth-circle",
@@ -584,7 +598,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "A critical hit chills its target.",
       effects: [{ kind: "status", status: "chill", to: "target", chance: 1 }],
     }],
-    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss" }],
+    sources: [...riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL), { kind: "clearCache", minDepth: 1, chance: RELIC_ODDS.abyssCache, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
 
   // ---- the Abyss itself ---------------------------------------------------------------
@@ -603,7 +617,7 @@ export const RELICS: readonly RelicDef[] = [
         ops: [{ kind: "projectile", addPierce: 1 }],
       },
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBoss, undefined, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "echo-of-the-unmade",
@@ -620,7 +634,7 @@ export const RELICS: readonly RelicDef[] = [
         ops: [{ kind: "projectile", addCount: 1 }, { kind: "damagePacket", scaleBase: 0.85 }],
       },
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 3),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 3, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "chain-of-the-unmade",
@@ -637,7 +651,7 @@ export const RELICS: readonly RelicDef[] = [
         ops: [{ kind: "summon", addCount: 1, scaleDuration: 0.7 }],
       },
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 3),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 3, ABYSS_ARTIFACT_POOL),
   }),
   artifact({
     id: "whisper-of-the-nameless",
@@ -650,7 +664,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "A critical hit Exposes its target: it takes more from everything after.",
       effects: [{ kind: "status", status: "exposed", to: "target", chance: 1 }],
     }],
-    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 5),
+    sources: riftBossSources("abyss", RELIC_ODDS.abyssBossHigh, 5, ABYSS_ARTIFACT_POOL),
   }),
 
   // ---- the encounters the Abyss borrows -----------------------------------------------
@@ -671,7 +685,7 @@ export const RELICS: readonly RelicDef[] = [
         ],
       }],
     }],
-    sources: [{ kind: "boss", bossId: "warden", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }, { kind: "boss", bossId: "choir", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }],
+    sources: [{ kind: "boss", bossId: "warden", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }, { kind: "boss", bossId: "choir", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "fragment-of-the-choir",
@@ -690,7 +704,7 @@ export const RELICS: readonly RelicDef[] = [
         ],
       }],
     }],
-    sources: [{ kind: "boss", bossId: "choir", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }, { kind: "boss", bossId: "colossus", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }],
+    sources: [{ kind: "boss", bossId: "choir", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }, { kind: "boss", bossId: "colossus", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "breath-of-the-herald",
@@ -703,7 +717,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "A dash skill leaves burning ground where you started.",
       effects: [{ kind: "zone", zone: { damage: { base: 0.25, scale: "spell", type: "fire" }, radius: 42, duration: 2.5, tickInterval: 0.5, status: { id: "burn", chance: 0.5 } } }],
     }],
-    sources: [{ kind: "boss", bossId: "herald", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }, { kind: "boss", bossId: "nameless", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }],
+    sources: [{ kind: "boss", bossId: "herald", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }, { kind: "boss", bossId: "nameless", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "stitch-of-the-colossus",
@@ -716,7 +730,7 @@ export const RELICS: readonly RelicDef[] = [
       note: "Firing your ultimate heals you for a good slice of your attack damage.",
       effects: [{ kind: "heal", amount: 1.6, scale: "attack", to: "self" }],
     }],
-    sources: [{ kind: "boss", bossId: "colossus", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }, { kind: "boss", bossId: "herald", chance: RELIC_ODDS.abyssBoss, mode: "abyss" }],
+    sources: [{ kind: "boss", bossId: "colossus", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }, { kind: "boss", bossId: "herald", chance: RELIC_ODDS.abyssBoss, mode: "abyss", pool: ABYSS_ARTIFACT_POOL }],
   }),
   artifact({
     id: "interval-of-the-keepers",
