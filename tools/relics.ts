@@ -39,9 +39,9 @@ import { MOD_KEYS, type ModKey } from "../src/data/mods";
 import { delveConfig, riftConfig } from "../src/data/modes";
 import { towerConfig } from "../src/data/tower";
 import { NAMED_ITEMS } from "../src/data/named";
-import { RAIDS } from "../src/data/raids";
+import { RAIDS, raidConfig, raidDropQueries } from "../src/data/raids";
 import {
-  MAX_RELICS_WORN, RELICS, RELIC_BY_ID, RELIC_RULE_PREFIX, RELIC_SLOTS, RELIC_TIER_INFO,
+  MAX_RELICS_WORN, RELICS, RELIC_BY_ID, RELIC_ODDS, RELIC_RULE_PREFIX, RELIC_SLOTS, RELIC_TIER_INFO,
   normalizeRelicLoadout, relicMatchesFor, relicProblems, relicSocketBlocker, relicSourceLines, relicsForSource,
   relicsOfTier, rollRelicDrops, type RelicDef,
 } from "../src/data/relics";
@@ -320,6 +320,91 @@ section("6. rule 5 — chase value: odds, the dupe skip, the danger hook");
   check("...and never one the account already owns", rest.length === all.length - 3 && rest.every((d) => !owned.has(d.id)));
   check("with the dice against you, nothing drops", rollRelicDrops(q, { chance: () => false }, 1).length === 0);
   check("the danger hook is monotone and capped", dropChance(0.1, 1) === 0.1 && dropChance(0.1, 4) > dropChance(0.1, 2) && dropChance(0.5, 1e9) <= 1);
+}
+
+// =========================================================================
+// The union — what a player actually experiences, as comparisons.
+//
+// A per-source `chance` is not the quantity the player feels. A clear fires several drop
+// events, `rollTable` rolls every matching definition independently on each, and what the
+// player notices is whether *anything* relic-tier fell out of the whole run. That union is
+// the number the owner's 2026-09-10 complaint was about ("damn near guaranteed when doing
+// raids") and no individual number in `RELIC_ODDS` had to look wrong for it to be true:
+// a raid floor pays twice, so an authored 0.18 was a 33% per-clear artifact at tier 1.
+//
+// These are comparisons and equalities rather than thresholds on purpose. CLAUDE.md's
+// standing lesson is that a one-sided bound doesn't prove a design promise — so the
+// headline check below is an *equality* between what `RELIC_ODDS` says a raid pays and
+// what a raid clear actually pays, which goes red if a source stops naming its event, if
+// the floor gains a third payout, or if a raid's table gains a second artifact.
+section("6b. the union: what a clear actually pays, not what one source says");
+{
+  /** P(at least one def of `tier` drops) across every event of one clear. Fresh account. */
+  const unionOf = (events: readonly DropQuery[], danger: number, tier: string): number => {
+    const miss = new Map<string, number>();
+    for (const q of events) {
+      for (const m of relicMatchesFor(q)) {
+        if (m.def.tier !== tier) continue;
+        miss.set(m.def.id, (miss.get(m.def.id) ?? 1) * (1 - dropChance(m.src.chance, danger)));
+      }
+    }
+    let all = 1;
+    for (const p of miss.values()) all *= p;
+    return 1 - all;
+  };
+  const unionAny = (events: readonly DropQuery[], danger: number): number =>
+    1 - (1 - unionOf(events, danger, "artifact")) * (1 - unionOf(events, danger, "relic"));
+
+  // The event list comes from `data/raids.ts`, which is the same list `Dungeon` builds its
+  // two queries from — not a copy written out here, which would keep reporting the old
+  // composition after the real one changed.
+  const clears = RAIDS.map((spec) => ({ spec, events: raidDropQueries(spec.id, 1) }));
+  check(`the raid clear event list is the simulation's own, and there are ${clears[0].events.length} of them`,
+    clears.every((c) => c.events.length === 2));
+
+  // THE headline: the authored number is the experienced number. An artifact paid from
+  // both halves of the floor would read 1-(1-p)^2 here and fail immediately.
+  const authored = dropChance(RELIC_ODDS.raidArtifact, 1);
+  const offenders = clears.filter((c) => Math.abs(unionOf(c.events, 1, "artifact") - authored) > 1e-9);
+  check(
+    `a raid clear pays its artifact at exactly the odds RELIC_ODDS states (${(authored * 100).toFixed(1)}%), not the doubled composition`,
+    offenders.length === 0,
+    offenders.length ? offenders.map((c) => `${c.spec.id} ${(unionOf(c.events, 1, "artifact") * 100).toFixed(1)}%`).join(", ") : `${clears.length} raids`,
+  );
+
+  // "A raid clear is not a guaranteed artifact", as a comparison rather than a bound:
+  // more clears end with nothing relic-tier than end with something, at every tier a
+  // player can reach. Checked out to tier 12, well past the tier-8 gate §16 talks about.
+  const tiers = [1, 2, 3, 4, 6, 8, 10, 12];
+  const guaranteed: string[] = [];
+  for (const spec of RAIDS) {
+    for (const t of tiers) {
+      const cfg = raidConfig(spec, t);
+      const u = unionAny(raidDropQueries(spec.id, t), cfg.danger);
+      if (u >= 0.5) guaranteed.push(`${spec.id} t${t} ${(u * 100).toFixed(1)}%`);
+    }
+  }
+  check(
+    "a raid clear more often pays nothing relic-tier than pays something, at every tier to 12",
+    guaranteed.length === 0,
+    guaranteed.length ? guaranteed.join(", ") : `${RAIDS.length} raids x ${tiers.length} tiers`,
+  );
+
+  // Rule 5's ratio, restated on the quantity the player experiences rather than per source.
+  const ratioFails: string[] = [];
+  for (const spec of RAIDS) {
+    const t = 8; // above every raid relic's `minTier`, so both tiers are actually in play
+    const cfg = raidConfig(spec, t);
+    const ev = raidDropQueries(spec.id, t);
+    const a = unionOf(ev, cfg.danger, "artifact");
+    const r = unionOf(ev, cfg.danger, "relic");
+    if (!(r > 0 && a >= r * 1.5)) ratioFails.push(`${spec.id} a=${a.toFixed(3)} r=${r.toFixed(3)}`);
+  }
+  check(
+    "per clear, not just per source, a raid's artifact stays at least 1.5x its relic",
+    ratioFails.length === 0,
+    ratioFails.length ? ratioFails.join(", ") : `${RAIDS.length} raids at t8`,
+  );
 }
 
 // =========================================================================

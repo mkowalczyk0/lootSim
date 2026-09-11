@@ -70,6 +70,7 @@ import type { Player } from "./player";
 import { forgeNamedItem, randomItemType, rollItem, type Item } from "./item";
 import { rollNamedDrops } from "../data/named";
 import { rollOne, type DropQuery } from "../data/drops";
+import { raidDropQueries } from "../data/raids";
 import { rollRelicDrops } from "../data/relics";
 import {
   AUGMENTS, AUGMENT_BY_ID, DAILY_AUGMENT_CAP, WEEKLY_AUGMENT_CAP,
@@ -3129,9 +3130,10 @@ export class Dungeon implements CombatHost, RuleHost {
       // item leaking onto the Delve encounter this fight borrowed its kit from. The tier
       // rides along because the rarest half of a raid's table is gated behind one (§16).
       if (this.config.raid) {
-        this.dropFromTables(e.x, e.y, {
-          kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
-        }, source);
+        // `raidDropQueries` is the one statement of what a raid clear asks; [0] is the
+        // encounter half and `dropClearCache` takes [1]. Built there rather than here so
+        // a tool measuring the per-clear odds reads the same list this rolls.
+        this.dropFromTables(e.x, e.y, raidDropQueries(this.config.raid.spec.id, this.config.raid.tier)[0], source);
       }
     } else if (e.fromWave) {
       this.dropFromTables(e.x, e.y, {
@@ -3303,12 +3305,14 @@ export class Dungeon implements CombatHost, RuleHost {
       this.dropFromTables(x, y, { kind: "tower", floor: this.config.tower.height }, this.localHero);
     }
     // ...and so does the cache that closes a raid (UAT §15). The raid's floor *is* its
-    // boss floor, so this is the second half of the same payout and the same query the
-    // kill emitted — one address for one raid, asked twice because the floor pays twice.
+    // boss floor, so this is the second half of the same payout — one address for one
+    // raid, asked twice because the floor pays twice. The two asks differ only in `event`,
+    // which is what lets a source say it is paid from the encounter rather than from both
+    // halves: a source paid from both pays `1-(1-p)²` per clear rather than `p`, and the
+    // relic table now states its per-clear odds instead of inheriting that doubling.
+    // Named items deliberately still declare neither, so they are paid from both as before.
     if (this.config.raid) {
-      this.dropFromTables(x, y, {
-        kind: "raid", raidId: this.config.raid.spec.id, tier: this.config.raid.tier,
-      }, this.localHero);
+      this.dropFromTables(x, y, raidDropQueries(this.config.raid.spec.id, this.config.raid.tier)[1], this.localHero);
     }
 
     const gems = Math.round((8 + this.profile.depth * 0.9) * this.config.mode.gemMult * finale);

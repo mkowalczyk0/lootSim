@@ -42,7 +42,7 @@ import { NAMED_ITEMS, rollNamedDrops } from "../src/data/named";
 import { previewForRun } from "../src/data/previews";
 import {
   RAIDS, RAID_BY_ID, RAID_DAMAGE, RAID_HEALTH, raidBossId, raidBossSpec, raidConfig,
-  raidForLayer, raidLayer, raidOfBossId, raidProblems, raidTiersOpen, raidUnlocked,
+  raidDropQueries, raidForLayer, raidLayer, raidOfBossId, raidProblems, raidTiersOpen, raidUnlocked,
 } from "../src/data/raids";
 import { RELICS, rollRelicDrops } from "../src/data/relics";
 import { rewardCurve } from "../src/data/rewards";
@@ -388,14 +388,29 @@ section("7. it pays out in a live dungeon");
       wanted.length >= 4 && wanted.every((id) => got.includes(id)), got.join(", ") || "nothing");
   }
 
-  // The cache that closes the raid pays the same table — it is the same floor.
+  // The cache that closes the raid pays the raid's table too — it is the same floor, and
+  // `raidDropQueries` is the one statement of the two halves it pays across. Asked with
+  // the cache's own query rather than with the unqualified one: a source may now name the
+  // half it is paid from (`RaidDropEvent`), and the relic table uses that to state its
+  // per-clear odds instead of being rolled on both halves and paying `1-(1-p)^2`. So the
+  // honest assertion is "each half pays everything that half lists", not "either half pays
+  // everything the raid lists" — the latter would forbid a source ever naming a half.
   const cacheState = fresh(42);
   const cache = new Dungeon(cacheState, raidConfig(spec, 9), 902);
   rig(cache).dropClearCache();
+  const cacheQ = raidDropQueries(spec.id, 9)[1];
   check("the cache that closes the raid pays the raid's table too",
-    dropsForSource({ kind: "raid", raidId: spec.id, tier: 9 })
-      .every((m) => droppedIds(cache).includes(m.def.id)),
+    dropsForSource(cacheQ).every((m) => droppedIds(cache).includes(m.def.id)),
     droppedIds(cache).join(", ") || "nothing");
+
+  // ...and the relic half is deliberately not in it, which is the composition fix stated
+  // positively rather than left as the absence the check above now tolerates. A raid's
+  // artifact is paid by the encounter, so `RELIC_ODDS.raidArtifact` means the odds of a
+  // clear rather than the odds of one of a clear's two payouts. See docs/relic-economy.md.
+  const relicIds = new Set(RELICS.map((r) => r.id));
+  const relicsInCache = droppedIds(cache).filter((id) => relicIds.has(id));
+  check("...but not the relic half: a raid's artifact comes off the encounter, once per clear",
+    relicsInCache.length === 0, relicsInCache.join(", ") || "none");
 
   // The gate, live: tier 1 must not pay out what tier 1 cannot reach.
   const lowState = fresh(43);
