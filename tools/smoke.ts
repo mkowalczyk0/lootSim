@@ -958,7 +958,10 @@ console.log("\n=== the ultimate meter cannot pay for itself (UAT §10) ===");
     "magician manaSpent 40/manaFraction": "reviewed §31: gated on spending the class's own finite, slowly-regenerating pool",
   };
   for (const l of lonely) {
-    check(`${l} is a unit-of-one and hand-reviewed`, l in REVIEWED_ALONE, "not on the reviewed list");
+    // The note must describe the state that was found, not the failure — `check` prints it
+    // either way, and "ok ... not on the reviewed list" reads as a contradiction in the log.
+    check(`${l} is a unit-of-one and hand-reviewed`, l in REVIEWED_ALONE,
+      REVIEWED_ALONE[l] ?? "NOT on the reviewed list — a rule whose unit has no peers cannot be checked against anything, so it needs a human verdict here");
   }
   for (const k of Object.keys(REVIEWED_ALONE)) {
     check(`${k} is still the only rule of its unit`, lonely.includes(k), "pin is stale — it has peers now, or it changed");
