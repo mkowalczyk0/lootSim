@@ -299,7 +299,7 @@ export const JUGGERNAUT_PROGRESSION: ClassProgression = {
       name: "Sentinel",
       blurb: "Every hit you eat is one an ally didn't.",
       nodes: [
-        { name: "Cover Fire", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.15 } }] },
+        { name: "Cover Fire", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.08 } }] },
         { name: "Bodyblock", category: "behavior", effects: [{ kind: "rule", rule: "juggernaut.se.bodyblock", note: "Projectiles that would pass through you to hit an ally stop on you instead." }] },
         { name: "Rampart Share", category: "resource", effects: [{ kind: "resourceRule", resource: "fortify", patch: { addGeneration: [{ on: "damagePrevented", amount: 4 }] } }] },
         { name: "Hold the Door", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "se.hold_the_door", label: "Fortress Call redirects more, for longer", target: { abilityId: "juggernaut.fortress_call" }, ops: [{ kind: "cooldown", scale: 0.8 }] } }] },

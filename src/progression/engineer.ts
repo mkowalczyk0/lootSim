@@ -309,7 +309,7 @@ export const ENGINEER_PROGRESSION: ClassProgression = {
       name: "Mechanic",
       blurb: "Nothing you build should ever have to be built twice.",
       nodes: [
-        { name: "Spare Parts", category: "foundation", effects: [{ kind: "mods", mods: { wardPower: 0.1, cooldownRate: 0.05 } }] },
+        { name: "Spare Parts", category: "foundation", effects: [{ kind: "mods", mods: { cooldownRate: 0.08 } }] },
         { name: "Auto-Repair", category: "behavior", effects: [{ kind: "rule", rule: "engineer.mc.auto_repair", note: "Constructs slowly repair themselves and don't expire while you're near them." }] },
         { name: "Salvage Loop", category: "resource", effects: [{ kind: "resourceRule", resource: "scrap", patch: { regenPerSec: 0.5 } }] },
         { name: "Governor Removed", category: "mutation", effects: [{ kind: "mutate", mutation: { id: "mc.governor_removed", label: "Overclock is cheaper and lasts far longer", target: { abilityId: "engineer.overclock" }, ops: [{ kind: "cooldown", scale: 0.5 }] } }] },

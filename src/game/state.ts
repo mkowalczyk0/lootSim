@@ -1877,9 +1877,23 @@ function normalizeItem(raw: Item): Item {
   const type = ((raw.type as string) === "weapon" ? "sword" : raw.type) as Item["type"];
   const family = isWeaponType(type) ? type : null;
 
+  // Version-agnostic, the `normalizeAppearance` house style: a saved affix whose key has
+  // since been retired is rewritten to the live key that replaced it, *before* the filter
+  // below drops unknown keys. `wardPower` is the case this was written for — it was a mod
+  // key eleven class nodes and the "of Warding" suffix granted and the simulation never
+  // read, so it was retired rather than implemented (see docs/wardpower-removal.md). The
+  // suffix now rolls `defensePercent` at the identical base/perTier, so an item already in
+  // somebody's stash keeps its affix, its rolled number and its name, and finally does
+  // something. Dropping it instead would quietly shrink gear people already own.
+  const RETIRED_MOD_KEYS: Record<string, ModKey> = { wardPower: "defensePercent" };
   const mods: ItemMod[] = Array.isArray(raw.mods)
-    ? raw.mods.filter((m): m is ItemMod =>
-        !!m && typeof m.value === "number" && (MOD_KEYS as readonly string[]).includes(m.key))
+    ? raw.mods
+        .filter((m): m is ItemMod => !!m && typeof m.value === "number")
+        .map((m) => {
+          const live = RETIRED_MOD_KEYS[m.key as string];
+          return live ? { ...m, key: live } : m;
+        })
+        .filter((m) => (MOD_KEYS as readonly string[]).includes(m.key))
     : [];
 
   const essence = legacy.essence;

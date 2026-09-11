@@ -576,7 +576,7 @@ export const STORMCALLER_PROGRESSION: ClassProgression = {
       name: "Eye",
       blurb: "The safest place in a storm is the one you carry with you.",
       nodes: [
-        { name: "Still Point", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.1, wardPower: 0.1 } }] },
+        { name: "Still Point", category: "foundation", effects: [{ kind: "mods", mods: { defensePercent: 0.1 } }] },
         {
           name: "Outer Bands",
           category: "behavior",
