@@ -69,28 +69,59 @@ function walkNodeEffects(effects: readonly NodeEffect[], into: Set<string>): voi
   }
 }
 
-function collectSummonUnits(): string[] {
-  const units = new Set<string>();
+/**
+ * Which source(s) granted each unit, so "where does `kept_name` come from" is a question
+ * the walk answers rather than something to re-derive by eye a third time — the exact gap
+ * that made a real report ("named items") land on the wrong file (relics) for two of the
+ * 27, harmlessly here but not in general.
+ */
+function collectSummonSources(): Map<string, Set<string>> {
+  const bySource = new Map<string, Set<string>>();
+  const record = (label: string, found: ReadonlySet<string>): void => {
+    for (const unit of found) {
+      if (!bySource.has(unit)) bySource.set(unit, new Set());
+      bySource.get(unit)!.add(label);
+    }
+  };
 
   for (const def of ALL_CLASSES) {
     for (const ability of def.abilities) {
-      walkSteps(ability.effects, units);
-      if (ability.followUp) walkSteps(ability.followUp.effects, units);
+      const found = new Set<string>();
+      walkSteps(ability.effects, found);
+      if (ability.followUp) walkSteps(ability.followUp.effects, found);
+      record(`${def.classId}:${ability.id}`, found);
     }
     for (const path of def.progression.paths) {
-      for (const node of path.nodes) walkNodeEffects(node.effects, units);
+      for (const node of path.nodes) {
+        const found = new Set<string>();
+        walkNodeEffects(node.effects, found);
+        record(`${def.classId}:node:${node.name}`, found);
+      }
     }
     for (const unlock of def.unlocks) {
-      walkNodeEffects(unlock.effects, units);
-      if (unlock.mutations) walkMutations(unlock.mutations, units);
+      const found = new Set<string>();
+      walkNodeEffects(unlock.effects, found);
+      if (unlock.mutations) walkMutations(unlock.mutations, found);
+      record(`${def.classId}:unlock:${unlock.id}`, found);
     }
   }
 
-  for (const relic of RELICS) walkNodeEffects(relic.effects, units);
-  for (const named of NAMED_ITEMS) if (named.effects) walkNodeEffects(named.effects, units);
+  for (const relic of RELICS) {
+    const found = new Set<string>();
+    walkNodeEffects(relic.effects, found);
+    record(`relic:${relic.id}`, found);
+  }
+  for (const named of NAMED_ITEMS) {
+    if (!named.effects) continue;
+    const found = new Set<string>();
+    walkNodeEffects(named.effects, found);
+    record(`named:${named.id}`, found);
+  }
 
-  return [...units];
+  return bySource;
 }
+
+const SUMMON_UNIT_SOURCES: ReadonlyMap<string, ReadonlySet<string>> = collectSummonSources();
 
 /**
  * Every summon unit id that exists anywhere in the game today, alphabetised for a
@@ -98,4 +129,9 @@ function collectSummonUnits(): string[] {
  * this array is identical on both — the same guarantee `RELICS`'s declaration order
  * already gives the relic-drop wire encoding).
  */
-export const SUMMON_UNITS: readonly string[] = collectSummonUnits().sort();
+export const SUMMON_UNITS: readonly string[] = [...SUMMON_UNIT_SOURCES.keys()].sort();
+
+/** Where a unit id was found — `classId:abilityId`, `classId:unlock:id`, `relic:id`, `named:id`. */
+export function summonUnitSources(unit: string): readonly string[] {
+  return [...(SUMMON_UNIT_SOURCES.get(unit) ?? [])].sort();
+}

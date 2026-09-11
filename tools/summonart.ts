@@ -19,7 +19,7 @@
  * Headless, no browser. Run with `npm run summonart`.
  */
 
-import { SUMMON_UNITS } from "../src/data/summons";
+import { SUMMON_UNITS, summonUnitSources } from "../src/data/summons";
 import { PLAYER_COPY_UNITS } from "../src/render/minionart";
 import { SUMMON_UNIT_ART } from "../src/render/atlas/manifest";
 
@@ -41,11 +41,12 @@ check("SUMMON_UNITS is sorted — the wire index doesn't depend on walk order",
   JSON.stringify(SUMMON_UNITS) === JSON.stringify([...SUMMON_UNITS].sort()));
 
 for (const unit of SUMMON_UNITS) {
+  const sources = summonUnitSources(unit).join(", ");
   if (PLAYER_COPY_UNITS.has(unit)) {
-    check(`${unit}: player-copy — draws the summoning hero, no art row needed`, true);
+    check(`${unit}: player-copy — draws the summoning hero, no art row needed`, true, sources);
     continue;
   }
-  check(`${unit}: has a SUMMON_UNIT_ART row`, unit in SUMMON_UNIT_ART);
+  check(`${unit}: has a SUMMON_UNIT_ART row`, unit in SUMMON_UNIT_ART, sources);
 }
 
 // The two tables can drift in either direction: a unit removed from every ability/relic/
