@@ -21,7 +21,9 @@ import { Dungeon, type Hero } from "../src/game/dungeon";
 import type { Pickup } from "../src/game/entities";
 import { runBuildGrants } from "../src/game/abilities";
 import type { ResolvedBuild } from "../src/progression/index";
-import { Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS } from "../src/game/hub";
+import {
+  Hub, HUB_HEIGHT, HUB_WIDTH, HUB_PLAYER_RADIUS, PARTY_PORTAL, STATION_MODE, partyPortalFor,
+} from "../src/game/hub";
 import {
   DECK_COLS, DECK_ROWS, DECK_SPAWN, DECK_WALLS, deckIsRock, deckProblems,
 } from "../src/game/deck";
@@ -34,9 +36,11 @@ import { type ChestTier } from "../src/data/chests";
 import { challengerMultiplier } from "../src/data/challenger";
 import { CRAFTABLE_RARITIES, craftBulkCost, reforgeCoinCost } from "../src/data/crafting";
 import { profileFor } from "../src/data/depth";
+import { ResourcePool } from "../src/combat/resources";
 import { affixCountFor, affixPrefix, MONSTER_AFFIXES, rollMonsterAffixes } from "../src/data/monster-affixes";
 import {
-  EARLY_EXTRACT_KEEP, MODES, delveConfig, riftConfig, trainingConfig, type RunConfig,
+  EARLY_EXTRACT_KEEP, MODES, RUN_MODES, delveConfig, describeRun, riftConfig, trainingConfig,
+  type RunConfig, type RunModeId,
 } from "../src/data/modes";
 import {
   DAILY_DEPTH_MAX, DAILY_DEPTH_MIN, DAILY_KEY_ODDS, DAILY_MODIFIERS, DAILY_MODIFIER_IDS, DAILY_UNLOCK_DEPTH,
@@ -3757,6 +3761,69 @@ console.log("\n=== multiplayer ===");
   check("a client can bank what the host says it earned",
     client.localHero.loot.coins === host.heroes[1]!.loot.coins);
 
+  // 3a. The class's own resources cross the wire (the owner: "UI displays wrong
+  // resources, UI skill cooldowns are broken" in co-op). A client's `Dungeon.update`
+  // only reconciles and predicts — `hero.resources.tick` and `hero.rt.tick` never run
+  // there — so before `HeroSnap.rs` its pools sat at the constructor's starting value
+  // all floor and the HUD's resource bar, cost lines and `canCast` all read that.
+  // Asserted as a comparison against the host after 120s of real fighting, with the
+  // host's pools shown to have *moved* first so equality can't be two untouched pools.
+  {
+    const hostMate = host.heroes[1]!;
+    const me = client.localHero;
+    const hostPools = hostMate.resources.all();
+    const myPools = me.resources.all();
+    check("host and client built the same resource pools in the same order",
+      hostPools.length > 0 && hostPools.map((p) => p.spec.id).join() === myPools.map((p) => p.spec.id).join(),
+      `${hostPools.map((p) => p.spec.id).join(",")} vs ${myPools.map((p) => p.spec.id).join(",")}`);
+    // The bot above only basic-attacks — it never casts — so a magician's mana sits at
+    // full and its meter at empty for the whole fight, and "client equals host" would be
+    // two untouched pools agreeing with each other. So the host's pools are moved here
+    // on purpose, each to a value that is neither its start nor its max, before the
+    // snapshot is taken; the client then has to read *that*.
+    const startOf = (p: ResourcePool) => new ResourcePool(p.spec).value;
+    hostPools.forEach((p, i) => {
+      const rigged = p.max > 0 ? p.max * (0.3 + 0.1 * i) : 0;
+      p.value = Math.abs(rigged - startOf(p)) < 1 ? p.max * 0.75 : rigged;
+    });
+    check("the host's pools were moved off their starting values (so the next check isn't two untouched pools)",
+      hostPools.every((p) => Math.abs(p.value - startOf(p)) >= 1),
+      hostPools.map((p) => `${p.spec.id} ${startOf(p).toFixed(0)}->${p.value.toFixed(1)}`).join(" "));
+    applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+    check("a client reads its class resources off the host, every pool",
+      hostPools.every((p, i) => Math.abs((myPools[i]?.value ?? NaN) - p.value) <= 0.01),
+      hostPools.map((p, i) => `${p.spec.id} ${p.value.toFixed(1)}/${myPools[i]?.value.toFixed(1)}`).join(" "));
+    check("...and the ultimate meter agrees with `ch` rather than fighting it",
+      Math.abs(me.specialCharge - hostMate.specialCharge) < 0.011,
+      `${me.specialCharge.toFixed(3)} vs ${hostMate.specialCharge.toFixed(3)}`);
+    // Cooldowns. `cd` already crossed the wire; what didn't is *readiness* — the HUD
+    // colours a skill by `canCast`, which read the client's own `hero.rt`, a runtime that
+    // never casts and so never has anything on cooldown. The old read is quoted as the
+    // negative control: it says "ready" for the exact skill the host has on cooldown.
+    const slot = hostMate.player.activeAbilities.findIndex(Boolean);
+    const ability = slot >= 0 ? hostMate.player.activeAbilities[slot] : undefined;
+    if (!ability) {
+      check("the remote hero has an equipped skill to test cooldown readiness with", false);
+    } else {
+      hostMate.skillCooldowns[slot] = 4;
+      applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+      check("a client's skill on cooldown on the host is not castable on the client",
+        me.skillCooldowns[slot] === 4 && !client.canCast(slot),
+        `cd ${me.skillCooldowns[slot]}, canCast ${client.canCast(slot)}`);
+      check("...which the client's own runtime would have got wrong (the old read)",
+        me.rt.ready(ability) === true);
+      hostMate.skillCooldowns[slot] = 0;
+      applySnapshot(client, JSON.parse(JSON.stringify(encodeSnapshot(host))));
+      const affordable = (ability.costs ?? []).every((c) => (me.resources.get(c.resource)?.value ?? 0) >= c.amount);
+      check("...and castable again once the host's cooldown clears, if the wire's pools can pay for it",
+        client.canCast(slot) === affordable, `canCast ${client.canCast(slot)}, affordable ${affordable}`);
+    }
+    // What this costs on the wire, per hero, at the busiest moment measured above.
+    const rsBytes = JSON.stringify(encodeSnapshot(host).h.map((h) => h.rs)).length / host.heroes.length;
+    check("the resource pools cost a few bytes per hero per snapshot",
+      rsBytes <= 64, `${rsBytes.toFixed(0)} bytes/hero (${hostPools.length} pools)`);
+  }
+
   // The floor objective is the host's to count (UAT §5) — a client mirrors the two
   // numbers and derives the two requirements from the config it already had, so its
   // HUD reads the same objective without the wire carrying it.
@@ -4513,6 +4580,146 @@ console.log("\n=== multiplayer ===");
     picker.party.setPlan(delveConfig(5, 0), "dive");
     picker.party.syncHub(hostHub, DT);
     check("switching to the Delve takes the sector portal away again", hostHub.expedition === null && hostHub.partyTarget === "dive");
+
+    // The Tower in co-op. The owner's report was "the tower just makes you queue for the
+    // delve": `main.ts` picked the party's station off a hardcoded allowlist (`abyss`,
+    // `hoard`, else `dive`), so a Tower plan readied the party at the Delve portal, and two
+    // hand-rolled `describeRun` copies fell through to "Delve depth N". The station is now
+    // derived from the mode through one total table, and the naming is one exhaustive
+    // function — both asserted here as properties over every mode, then the climb is
+    // walked end to end on the same two-end rig the rifts and the Delve use above.
+    {
+      // (a) The table maps every mode with a portal back to itself through the station's
+      // own mode — a portal that "belongs" to a different mode is the allowlist bug in
+      // table form. The old expression is quoted verbatim as the comparison, so this check
+      // says what would have made it red: the Tower (and every other non-rift mode)
+      // landing on `dive`.
+      const oldStation = (mode: RunModeId) => (mode === "abyss" || mode === "hoard" ? mode : "dive");
+      const withPortal = RUN_MODES.filter((m) => PARTY_PORTAL[m] !== null);
+      check("every mode's party portal is a door to that same mode",
+        withPortal.every((m) => STATION_MODE[PARTY_PORTAL[m]!] === m),
+        withPortal.map((m) => `${m}->${PARTY_PORTAL[m]}`).join(" "));
+      const mismatched = withPortal.filter((m) => oldStation(m) !== PARTY_PORTAL[m]);
+      check("...and the old allowlist disagreed with it for the Tower, which is the bug",
+        mismatched.includes("tower") && STATION_MODE[oldStation("tower")] !== "tower",
+        `old allowlist wrong for: ${mismatched.join(", ")}`);
+      // The nulls are pinned by name, with the reason: the wire has no field for a Memory
+      // instance, a Vigil day or a Convergence week, so a party cannot be handed one.
+      // Adding a wire field for one of them is what un-pins it here.
+      const noPortal = RUN_MODES.filter((m) => PARTY_PORTAL[m] === null).sort().join(",");
+      check(`walked ${withPortal.length} modes with a party portal, ${RUN_MODES.length - withPortal.length} without`,
+        withPortal.length === 6 && noPortal === "convergence,memory,training,vigil", noPortal);
+
+      // (b) The naming: a Tower plan is announced as a climb, never as a Delve, and no two
+      // modes at the same numbers read as the same run.
+      const height = 3;
+      const towerCfg = towerConfig(height, 0, 2);
+      check("a Tower plan is described as a height, not a Delve depth",
+        /Tower/.test(describeRun(towerCfg)) && /height 3/.test(describeRun(towerCfg)) && !/Delve/.test(describeRun(towerCfg)),
+        describeRun(towerCfg));
+      const lines = RUN_MODES.map((m) => {
+        const c = m === "tower" ? towerConfig(3) : m === "delve" ? delveConfig(3)
+          : MODES[m].isRift ? riftConfig(m, 3, 1) : { ...delveConfig(3), mode: MODES[m] };
+        return describeRun(c);
+      });
+      check("no two modes describe themselves with the same line",
+        new Set(lines).size === lines.length, lines.join(" | "));
+
+      // (c) The party goes where the host goes — for EVERY mode a party can run, on a
+      // deck whose own account has unlocked nothing. `main.ts` sets every unlock flag
+      // from the viewer's own records each hub tick, just before `syncHub`; the raid and
+      // the Tower were each found broken here separately (a member below the gate had no
+      // station to stand in, so the ready check never saw them) and each got its own
+      // override. Now `Hub.stations` answers it once, and this walks the whole table so
+      // the next gated mode is covered before anyone plays it. The `never` makes a new
+      // plannable mode fail `check:tools` until it is given a config here.
+      const planFor = (mode: RunModeId): RunConfig | null => {
+        switch (mode) {
+          case "delve": return delveConfig(5, 0, 2);
+          case "abyss":
+          case "hoard": return { ...riftConfig(mode, 1, 1, 0), players: 2 };
+          case "tower": return towerCfg;
+          case "planet": return { ...planetConfig(PLANETS[0]!, 1, 1, 0), players: 2 };
+          case "raid": return raidConfig(RAIDS[0]!, 1, 0, 2);
+          case "memory": case "vigil": case "convergence": case "training": return null;
+          default: { const unhandled: never = mode; return unhandled; }
+        }
+      };
+      const lockEverything = (hub: Hub) => {
+        hub.towerOpen = false; hub.raidOpen = false; hub.vigilOpen = false;
+        hub.weeklyOpen = false; hub.altarOpen = false;
+      };
+      for (const mode of withPortal) {
+        const cfg = planFor(mode);
+        const portal = PARTY_PORTAL[mode]!;
+        if (!cfg) { check(`${mode} has a party portal but no config to plan it with`, false); continue; }
+        picker.party.setPlan(cfg, portal);
+        forward(picker, watcher);
+        lockEverything(hostHub);
+        lockEverything(mateHub);
+        picker.party.syncHub(hostHub, DT);
+        watcher.party.syncHub(mateHub, DT);
+        check(`a ${mode} plan puts the ${portal} on both decks when neither account has unlocked it`,
+          hostHub.partyStation?.kind === portal && mateHub.partyStation?.kind === portal
+          && watcher.party.plan?.station === portal,
+          `host ${hostHub.partyStation?.kind} / client ${mateHub.partyStation?.kind}`);
+      }
+      // Back to the Tower for the climb itself.
+      picker.party.setPlan(towerCfg, partyPortalFor("tower")!);
+      forward(picker, watcher);
+      lockEverything(hostHub);
+      lockEverything(mateHub);
+      picker.party.syncHub(hostHub, DT);
+      watcher.party.syncHub(mateHub, DT);
+      check("picking the Tower makes its portal the ready spot on both ends",
+        picker.party.plan?.station === "tower" && watcher.party.plan?.station === "tower"
+        && hostHub.partyTarget === "tower" && mateHub.partyTarget === "tower");
+      check("a client rebuilt the plan as a climb at the same height",
+        watcher.party.plan?.config.mode.id === "tower" && watcher.party.plan?.config.tower?.height === height,
+        JSON.stringify(watcher.party.plan?.config.tower));
+      const tower = hostHub.stations.find((s) => s.kind === "tower")!;
+      // What the *client* builds is the thing to read — the config its `onStart` receives
+      // has been through `configToWire` and `configFromWire` for real. (The host's sent
+      // buffer can't be read here: `walkBackIn`'s `report` helper clears it.)
+      const built: RunConfig[] = [];
+      const adopt = watcher.party.onStart;
+      watcher.party.onStart = (config, seed, heroes) => { built.push(config); adopt(config, seed, heroes); };
+      check("a Tower walk-in starts the Tower", walkBackIn(tower) === 1 && watcher.party.running);
+      const first = built[built.length - 1];
+      check("...and the client built a Tower floor at that height, sized to the party",
+        first?.mode.id === "tower" && first.tower?.height === height && first.depth === height && first.players === 2,
+        `mode ${first?.mode.id}, height ${first?.tower?.height}, players ${first?.players}`);
+      // Clearing it goes *up*, and the next floor is still the Tower on both ends — the
+      // client rebuilds through `towerConfig`, not the Delve fallback.
+      picker.party.endRun("descend");
+      picker.party.descend(picker.party.plan!.config);
+      forward(picker, watcher);
+      const next = built[built.length - 1];
+      check("clearing a Tower floor in a party climbs to the next height on the client too",
+        built.length === 2 && next?.mode.id === "tower" && next.tower?.height === height + 1
+        && next.depth === height + 1 && watcher.party.running,
+        `${built.length} floors built; last: mode ${next?.mode.id}, height ${next?.tower?.height}`);
+      watcher.party.onStart = adopt;
+      picker.party.endRun("extract");
+      forward(picker, watcher);
+      report(watcher, mateHub);
+      forward(watcher, picker);
+      stand(hostHub, OFF_DECK);
+      stand(mateHub, OFF_DECK);
+      report(picker, hostHub);
+      report(watcher, mateHub);
+      forward(picker, watcher);
+      forward(watcher, picker);
+      // Once the plan is no longer a climb, an un-unlocked deck loses the portal again.
+      picker.party.setPlan(delveConfig(5, 0), "dive");
+      forward(picker, watcher);
+      hostHub.towerOpen = false;
+      mateHub.towerOpen = false;
+      picker.party.syncHub(hostHub, DT);
+      watcher.party.syncHub(mateHub, DT);
+      check("switching away from the Tower takes its portal off a deck that hasn't earned it",
+        !hostHub.stations.some((s) => s.kind === "tower") && !mateHub.stations.some((s) => s.kind === "tower"));
+    }
     // Leaving the room clears the plan and the deck.
     watcher.party.leave();
     watcher.party.syncHub(mateHub, DT);
@@ -4526,6 +4733,7 @@ console.log("\n=== multiplayer ===");
     const fingerprint = (d: Dungeon) => JSON.stringify({
       size: [d.level.width, d.level.height, d.level.cols, d.level.rows],
       layout: d.level.layout, label: d.level.label, rooms: d.level.rooms, seed: d.level.seed,
+      biome: d.level.biome.name,
       start: d.level.start, portal: d.level.portal,
       walls: d.level.walls, traps: d.level.traps, props: d.level.props, nodes: d.level.resourceNodes,
       blocked: Array.from(d.level.blocked).reduce((h, v, i) => (h * 31 + v * (i + 1)) % 2147483647, 7),
@@ -4542,6 +4750,10 @@ console.log("\n=== multiplayer ===");
       ["a boss floor", delveConfig(10, 0, 2)],
       ["a rift floor", { ...riftConfig("abyss", 2, 1, 0), players: 2 }],
       ["a planet floor", { ...planetConfig(PLANETS[0]!, 1, 1, 0), players: 2 }],
+      // The Tower rides the wire on `mode` + `floor` alone; a client that rebuilt it
+      // through the Delve fallback would get the descent's biome at that depth.
+      ["a tower floor", towerConfig(7, 0, 2)],
+      ["a tower boss floor", towerConfig(10, 0, 2)],
     ];
     for (const [label, config] of cases) {
       const h = new Dungeon(hostSide, config, { seed: 31337, role: "host", heroes: pair });

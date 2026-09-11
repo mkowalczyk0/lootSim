@@ -3,7 +3,8 @@ import { Input, isEditableTarget } from "./core/input";
 import { formatNumber } from "./core/math";
 import { ELEMENT_COLORS } from "./data/elements";
 import {
-  delveConfig, MODES, modeUnlocked, riftConfig, trainingConfig, type RunConfig, type RunModeId,
+  delveConfig, describeRun, MODES, modeUnlocked, riftConfig, trainingConfig, type RunConfig,
+  type RunModeId,
 } from "./data/modes";
 import { PLANETS_BY_ID, nextFloorConfig, planetConfig } from "./data/planets";
 import { towerConfig } from "./data/tower";
@@ -15,7 +16,7 @@ import { RARITY_COLORS } from "./data/rarity";
 import { RAIDS, RAID_BY_ID, raidConfig, raidUnlocked } from "./data/raids";
 import { RELIC_BY_ID, RELIC_TIER_INFO } from "./data/relics";
 import { Dungeon, type HeroSetup } from "./game/dungeon";
-import { Hub } from "./game/hub";
+import { Hub, STATION_LABEL, partyPortalFor } from "./game/hub";
 import { Party } from "./net/party";
 import { GameState } from "./game/state";
 import { parseSaved } from "./core/save";
@@ -129,10 +130,7 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
       // The Reliquary Gate doesn't dive — it spawns a portal for you to walk into. In a
       // room, the host picking a sector makes that portal the party's (UAT §1 D1).
       hub.setExpedition(planet.id, tier);
-      if (party.inRoom && party.isHost) {
-        party.setPlan(planetConfig(planet, tier, 1, state.challengerTier), "expedition");
-        flash(`${planet.name} T${tier} it is — everyone into the Reliquary Portal.`);
-      }
+      if (party.inRoom && party.isHost) plan(planetConfig(planet, tier, 1, state.challengerTier));
       enterHub();
     },
     (raid, tier) => {
@@ -144,10 +142,7 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
       // overwrites it with the real room size the moment the floor actually starts, the
       // same as every other portal-picking station.
       hub.setRaid(raid.id, tier);
-      if (party.inRoom && party.isHost) {
-        party.setPlan(raidConfig(raid, tier, state.challengerTier), "raidPortal");
-        flash(`${raid.name} T${tier} it is — everyone into the Raid Portal.`);
-      }
+      if (party.inRoom && party.isHost) plan(raidConfig(raid, tier, state.challengerTier));
       enterHub();
     },
     (memoryId) => {
@@ -195,17 +190,30 @@ function start(state: GameState, who: AccountInfo, recordsClient: RecordsClient)
       enterHub();
       return;
     }
-    const station = config.mode.id === "abyss" || config.mode.id === "hoard" ? config.mode.id : "dive";
-    party.setPlan(config, station);
+    plan(config);
     enterHub();
-    flash(`${describeRun(config)} it is — everyone into the ${station === "dive" ? "Delve" : config.mode.name} portal.`);
   }
 
-  /** One line naming a run, for the party's flashes and lobby. */
-  function describeRun(config: RunConfig): string {
-    if (config.planet) return `${config.planet.spec.name} T${config.planet.tier}`;
-    if (config.mode.isRift) return `${config.mode.name} tier ${config.tier}`;
-    return `Delve depth ${config.depth}`;
+  /**
+   * Host only, in a room: make `config` the party's run. The portal the party readies in
+   * is *derived from the mode* (`partyPortalFor`, a total table over `RunModeId`) rather
+   * than named per call site — the previous allowlist here knew the two rifts and sent
+   * everything else, the Tower included, to the Delve portal. The flash says the same
+   * portal the ready check will read, because both come from the one table.
+   */
+  function plan(config: RunConfig): void {
+    const station = partyPortalFor(config.mode.id);
+    if (!station) {
+      // Every mode without a portal is refused before this is reached; this is the belt
+      // to those braces, so a future mode that forgets its refusal is told rather than
+      // silently sent to the Delve.
+      flash(`${config.mode.name} can't be run as a party.`);
+      return;
+    }
+    party.setPlan(config, station);
+    // "The Delve" / "Abyssal Rift" / "Raid Portal" all read as "into the …".
+    const label = STATION_LABEL[station].replace(/^The /, "");
+    flash(`${describeRun(config)} it is — everyone into the ${label}.`);
   }
 
   // --- the party ------------------------------------------------------------

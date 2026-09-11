@@ -2754,7 +2754,14 @@ export class Dungeon implements CombatHost, RuleHost {
   canCast(slot: number, hero: Hero = this.localHero): boolean {
     const base = hero.player.activeAbilities[slot];
     if (!base) return false;
-    if (!hero.rt.ready(base)) return false;
+    // A client's `hero.rt` never casts and never ticks — every cast happens on the host
+    // — so its cooldown map is empty and `ready()` would say yes to a skill the host has
+    // on cooldown. The host's word is the `cd` array the snapshot fills in. No ability
+    // declares `charges` today, so a cooldown alone is the whole readiness question; if
+    // one ever does, its charge count needs to cross the wire too.
+    if (this.role === "client") {
+      if ((hero.skillCooldowns[slot] ?? 0) > 0) return false;
+    } else if (!hero.rt.ready(base)) return false;
     for (const c of base.costs ?? []) {
       const pool = hero.resources.get(c.resource);
       if (!pool || !pool.canAfford(c.amount)) return false;

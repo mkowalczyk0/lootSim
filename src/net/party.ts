@@ -15,7 +15,7 @@ import { cleanPlayerName } from "../data/settings";
 import { nextFloorConfig } from "../data/planets";
 import type { RunConfig } from "../data/modes";
 import type { Dungeon, HeroSetup, RunEvent } from "../game/dungeon";
-import type { Hub, HubStationKind } from "../game/hub";
+import { partyPortalFor, type Hub, type HubStationKind } from "../game/hub";
 import type { GameState } from "../game/state";
 import { playerFromJSON, playerToJSON } from "../game/state";
 import { normalizeAppearance, type Appearance } from "../data/cosmetics";
@@ -244,17 +244,18 @@ export class Party {
     // this the host's deck grew a portal and no client's did: the party could see the plan
     // and had nowhere to stand. `RunConfigWire` already carries `raidId`/`raidTier` and
     // `configFromWire` rebuilds through `raidConfig`, so the plan arriving here is already
-    // the raid — the only thing missing was mirroring it into everybody's hub. This also
-    // bypasses the viewer's own `raidOpen` (their own account's unlock) for the duration:
-    // a party goes where the host goes, the same call joining a planet expedition already
-    // makes, so a member whose own frontier hasn't personally unlocked this raid still
-    // comes along rather than finding nothing to stand in.
+    // the raid — the only thing missing was mirroring it into everybody's hub.
+    //
+    // What is *not* here any more: the per-mode unlock overrides (`raidOpen = true`, then
+    // the Tower's `towerOpen = true`). Whether the party's portal is on a deck whose own
+    // account hasn't unlocked it is answered once, for every mode, in `Hub.stations` —
+    // `partyTarget` is always open. Only the two spawned portals' *parameters* need
+    // mirroring here.
     const raid = this.plan?.config.raid;
     if (raid) {
       if (hub.raid?.raidId !== raid.spec.id || hub.raid.tier !== raid.tier) {
         hub.setRaid(raid.spec.id, raid.tier);
       }
-      hub.raidOpen = true;
     } else if (hub.raid) {
       hub.clearRaid();
     }
@@ -471,9 +472,16 @@ export class Party {
       case "plan": {
         if (this.isHost) return;
         const previous = this.plan?.station ?? null;
-        this.plan = msg.run
-          ? { config: configFromWire(msg.run), station: (msg.station ?? "dive") as HubStationKind }
-          : null;
+        if (msg.run) {
+          const config = configFromWire(msg.run);
+          // The station on the wire is the host's word; absent it, derive it from the
+          // mode the same way the host did rather than guessing the Delve.
+          const station = (msg.station as HubStationKind | undefined)
+            ?? partyPortalFor(config.mode.id) ?? "dive";
+          this.plan = { config, station };
+        } else {
+          this.plan = null;
+        }
         // A *new* portal being picked is a fresh event: somebody already standing in it
         // is in it on purpose. The re-broadcast that follows a floor ending carries the
         // same station and arms nobody — that's the whole point of the latch.
