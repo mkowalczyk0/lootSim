@@ -228,6 +228,23 @@ export interface Minion extends Body {
   windup: number;
   speed: number;
   element: Element;
+  /**
+   * The owner's damage reduction and elemental resists, snapshotted at spawn (docket §37).
+   *
+   * Before this, `hurtMinion` subtracted nothing at all — the `element` argument only
+   * coloured the damage number. A summon's health already tracked the owner
+   * (`maxHealth * 0.12 * inherit`), so its *nominal* share was a flat 6%; but the owner
+   * multiplies their own health by armour and resists and the summon multiplied theirs by
+   * nothing, so the **effective** share fell from 2.86% at level 10 to 0.99% at level 70.
+   * That decay with gear is what "doesn't scale with the player" actually was. Carrying
+   * the mitigation makes the share gear-invariant instead of merely larger.
+   *
+   * Snapshotted rather than read live because a summon outliving a gear swap reading the
+   * new numbers is a co-op desync waiting to happen, and because the owner's mitigation is
+   * already a derived value the hero recomputes on `refresh()`.
+   */
+  readonly damageReduction: number;
+  readonly resists: Readonly<Record<Element, number>>;
   facing: number;
   hitFlash: number;
   knockX: number;

@@ -81,7 +81,7 @@ import {
   HERO_PORTRAIT_BODY_PX, STYLE_PORTRAIT_BODY_PX, portraitScale, portraitSpread,
 } from "../src/ui/portrait";
 import { BIOMES, type BiomeStyle } from "../src/data/biomes";
-import { ELEMENT_COLORS } from "../src/data/elements";
+import { ELEMENT_COLORS, zeroResists} from "../src/data/elements";
 import { decodePng } from "./png";
 import { existsSync, readFileSync } from "node:fs";
 import { RARITIES, rarityIndex, type Rarity } from "../src/data/rarity";
@@ -5054,6 +5054,7 @@ console.log("\n=== multiplayer ===");
       id: 41, owner: 0, unit: "skeleton", x: 300, y: 300, px: 300, py: 300, radius: 7,
       health: 30, maxHealth: 40, damage: 5, attackCooldown: 1, attackTimer: 0, attackRange: 20,
       windup: 0.3, speed: 100, element: "void", facing: 1, hitFlash: 0, knockX: 0, knockY: 0,
+      damageReduction: 0, resists: zeroResists(),
       remaining: 20, behavior: "follow", commandTargetId: null, guardX: 300, guardY: 300,
       sc: h.minions.length ? h.minions[0]!.sc : c.heroes[0]!.sc, stuckTimer: 0, dodgeDir: 1, embedTimer: 0,
     });

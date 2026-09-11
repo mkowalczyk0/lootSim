@@ -8,8 +8,7 @@ import {
 import { CHEST_TIERS, keyDropTier, type ChestTier } from "../data/chests";
 import {
   AILMENT_CHANCE, ELEMENT_COLORS, ELEMENT_PREFIX, ELEMENTS, LOOT_ELEMENTS, STATUS_FOR_ELEMENT,
-  zeroResists, type Element,
-} from "../data/elements";
+  zeroResists, type Element, resistFraction,} from "../data/elements";
 import { ARCHETYPES, infusionChance, type EnemyArchetype, type EnemyKind } from "../data/enemies";
 import { memoryEffects, memoryPlace } from "../data/memories";
 import { memoryMaterialSource } from "../data/planets";
@@ -2685,7 +2684,12 @@ export class Dungeon implements CombatHost, RuleHost {
   /** Damage onto a minion — no armour or resists, they are cheap bodies. Returns dealt. */
   private hurtMinion(m: Minion, amount: number, element: Element): number {
     if (m.health <= 0) return 0;
-    const dealt = Math.max(1, Math.round(amount));
+    // §37: the same curve the owner is mitigated by (`Player.mitigate`), against the
+    // mitigation snapshotted at spawn. Armour is half-weight against non-physical exactly
+    // as it is for a hero, so a summon is not quietly tougher than the player who made it.
+    const armor = m.damageReduction * (element === "physical" ? 1 : 0.5);
+    const resist = resistFraction(m.resists[element] ?? 0);
+    const dealt = Math.max(1, Math.round(amount * (1 - armor) * (1 - resist)));
     m.health -= dealt;
     m.hitFlash = 0.12;
     this.events.push({
@@ -5058,6 +5062,9 @@ export class Dungeon implements CombatHost, RuleHost {
         attackCooldown: 1.1, attackTimer: 0.3 + i * 0.05, attackRange: 20, windup: 0,
         speed: PLAYER_SPEED * 0.9,
         element: owner.player.attackElement,
+        // §37: what the owner survives by, carried onto the thing they made.
+        damageReduction: owner.player.damageReduction,
+        resists: { ...owner.player.resists },
         facing: angle, hitFlash: 0, knockX: 0, knockY: 0,
         remaining: lifespan,
         behavior: req.command.behavior,
