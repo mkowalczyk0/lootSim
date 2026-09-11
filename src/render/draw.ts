@@ -17,7 +17,7 @@ import { ATLAS } from "./atlas/manifest";
 import { StrikeLatch, castFrame, frameAt, frameAtProgress } from "./anim";
 import { gradedTileset, paintTilemap } from "./tilemap";
 import {
-  heroKey, heroSprite, itemSprite, resolveSprite, silhouetteCanvas,
+  heroKey, heroSprite, itemSprite, minionSprite, resolveSprite, silhouetteCanvas,
   spriteFrame, spriteFrameSilhouette, spriteFrameTinted,
   tintedCanvas, weaponDraw, weaponGlow,
   type SpriteName,
@@ -456,22 +456,37 @@ export class WorldRenderer {
   /**
    * Summoned combatants. Small, plain bodies in their owner's element — a legion should
    * read as a swarm of yours, not be mistaken for more monsters.
+   *
+   * Docket §36: `minionSprite` resolves the ladder (player-copy hero sprite -> an
+   * authored unit sprite -> null) and this stays the fallback rung when it comes back
+   * null — the literal same triangle as before, so a unit with no art (which today is
+   * all of them but the six player copies) draws exactly as it always has.
    */
   private drawMinions(ctx: CanvasRenderingContext2D, d: Dungeon, alpha: number): void {
     for (const m of d.minions) {
       const { x, y } = lerpPos(m, alpha);
       const color = ELEMENT_COLORS[m.element] ?? "#9fd3ff";
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(m.facing);
-      ctx.fillStyle = m.hitFlash > 0 ? "#ffffff" : color;
-      ctx.beginPath();
-      ctx.moveTo(m.radius + 2, 0);
-      ctx.lineTo(-m.radius, m.radius * 0.8);
-      ctx.lineTo(-m.radius, -m.radius * 0.8);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      const owner = d.heroes[m.owner];
+      const art = minionSprite(m.unit, m.element, owner ? { appearance: owner.appearance, classId: owner.player.classId } : undefined);
+      if (art) {
+        // Same directional vocabulary every monster and the hero already use: one
+        // authored pose, mirrored left/right, never rotated to `m.facing`.
+        const flip = Math.cos(m.facing) < 0;
+        const canvas = m.hitFlash > 0 ? silhouetteCanvas(art.canvas, `minion:${m.unit}:${m.owner}`) : art.canvas;
+        drawSprite(ctx, canvas, x, y, flip, art.worldScale, art.feet);
+      } else {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(m.facing);
+        ctx.fillStyle = m.hitFlash > 0 ? "#ffffff" : color;
+        ctx.beginPath();
+        ctx.moveTo(m.radius + 2, 0);
+        ctx.lineTo(-m.radius, m.radius * 0.8);
+        ctx.lineTo(-m.radius, -m.radius * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
       if (m.windup > 0) {
         ctx.save();
         ctx.globalAlpha = 0.6;

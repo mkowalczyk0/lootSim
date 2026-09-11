@@ -1106,6 +1106,35 @@ export const CLASS_HEROES: Record<ClassId, string | null> = {
 };
 
 /**
+ * Docket §36 — one authored sprite id per summon `unit`, or `null` where nobody has drawn
+ * one yet. Same shape and same reason as `CLASS_HEROES` right above: `Record<string, ...>`
+ * over `src/data/summons.ts`'s `SUMMON_UNITS` (walked from the ability/mutation/relic/
+ * named-item tables, not typed by hand here) means a summon unit cannot exist without an
+ * answer, `tools/summonart.ts` fails one that's missing, and a `null` here is the
+ * `MONSTER_SETS`/`CLASS_HEROES` precedent of "undeclared" rather than "declared but the
+ * PNG failed to load" — the two collapse to the same fallback either way.
+ *
+ * Six of the 27 total (`mirror_image`, `monk_afterimage`, `trickster_decoy`,
+ * `trickster_mirror`, `trickster_mirror_self`, `trickster_lure`) never get a row here at
+ * all — they're the player-copy family (`PLAYER_COPY_UNITS` in `render/minionart.ts`) and
+ * resolve unconditionally to the summoning hero's own composed sprite instead.
+ *
+ * `id` (once authored) is `summon.<unit-id-hyphenated>` by convention, PNGs under
+ * `src/render/atlas/summons/` — same shape as `reliquary.monster.*` / `tower.monster.*`.
+ * Don't declare the id here before its PNG is committed in the same change (the Tower
+ * tileset rule: an ATLAS row with no PNG fails `npm run smoke` and claims art the repo
+ * doesn't have) — leave it `null` until then.
+ */
+export const SUMMON_UNIT_ART: Record<string, string | null> = {
+  auto_turret: null, blood_servant: null, bone_turret: null, decoy_husk: null,
+  elder_spirit: null, falcon: null, ghost_deckhand: null, grave_guard: null,
+  healing_bloom: null, healing_spirit: null, kept_name: null, limbo_shade: null,
+  moon_guardian: null, mortar_pod: null, reaped_wraith: null, repair_drone: null,
+  shield_generator: null, siege_engine: null, skeleton_warrior: null, spirit_hawk: null,
+  spirit_wolf: null,
+};
+
+/**
  * The three reserved marker colours a cosmetic-layer PNG is quantized onto in place of
  * its three recolourable regions (`Cosmetic.colors[0..2]` — primary/secondary/accent,
  * the same convention `COSMETIC_ART`'s grid keys `1`/`2`/`3` use). Chosen as saturated
