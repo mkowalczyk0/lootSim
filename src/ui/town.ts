@@ -35,6 +35,10 @@ import { profileFor } from "../data/depth";
 import {
   ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS, resistFraction, type Element,
 } from "../data/elements";
+import {
+  affixCountLine, allNamedAffixes, explainAffix, explainCombatKey, explainElement, explainModKey,
+  rollsOnGear, STAT_EXPLANATIONS, type Explanation,
+} from "../data/affix-glossary";
 import { MATERIALS } from "../data/materials";
 import {
   NAMED_ITEMS, craftRecipeFor, craftableNamed, NAMED_BY_ID, namedSourceLines, type NamedItemDef,
@@ -62,11 +66,16 @@ import {
   weeklyUnlocked, weekNumber, msUntilWeeklyReset,
 } from "../data/weekly";
 import { trapsFor } from "../data/traps";
-import { EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot } from "../data/items";
+import {
+  EQUIP_SLOTS, STAT_KEYS, STAT_LABELS, triggerLine, type EquipSlot, type ModRoll, type StatKey,
+} from "../data/items";
 import { CLASSES, CLASS_IDS, type ClassId } from "../data/classes";
 import { DELVE_BOTTOM, legendName, provingFloor, provingUnlocked } from "../data/legends";
 import { previewForRun, type ActivityPreview } from "../data/previews";
-import { MOD_KEYS, MOD_LABELS, PERCENT_MODS, type ModKey } from "../data/mods";
+import {
+  COMBAT_MOD_KEYS, ELEMENT_RESIST_KEY, MOD_KEYS, MOD_LABELS, PERCENT_MODS,
+  type CombatModKey, type ModKey,
+} from "../data/mods";
 import { WEAPONS, type WeaponFamily } from "../data/weapons";
 import { RARITIES, RARITY_COLORS, rarityIndex, rarityLabel, type Rarity } from "../data/rarity";
 import { MAX_TROPHY_CASES, trophyCaseCost } from "../data/trophies";
@@ -190,6 +199,13 @@ type CollectionEntry =
   | { readonly kind: "named"; readonly def: NamedItemDef }
   | { readonly kind: "relic" | "artifact"; readonly def: RelicDef };
 
+/** One row of the Codex's "Affixes & Stats" view. */
+type CodexAffixRow =
+  | { readonly kind: "stat"; readonly key: StatKey }
+  | { readonly kind: "affix"; readonly mod: ModRoll }
+  | { readonly kind: "unitemized"; readonly key: CombatModKey }
+  | { readonly kind: "element"; readonly element: Element };
+
 const STYLE_ROWS: readonly StyleRow[] = [
   { kind: "hairStyle" },
   { kind: "hair" },
@@ -284,7 +300,7 @@ function tabHelp(
     case "Stash": return `${sel} / ${adj} move · up onto the bar to filter by rarity · ${e} equip · ${q} sell one`
       + ` · ${mark} mark for a batch, or click a card's checkbox · `
       + (stashMarked > 0 ? `${semi} salvage ${stashMarked} marked` : `${semi} sell all junk · ${salvageAll} salvage all junk`);
-    case "Hero": return `${sel} / ${adj} move — the relic row too · ${e} unequip, or open the relic picker on an empty one · ${q} back out of the picker`;
+    case "Hero": return `${sel} / ${adj} move — the relic row too · ${e} unequip, or open the relic picker on an empty one · ${q} back out of the picker · keep going down onto the sheet to read what a stat or modifier does`;
     case "Skills": return `${sel} / ${adj} move · up onto the bar to pick which slot, ${adj} to switch it · `
       + `${e} or click a card to set it there · ${q} clear the active slot`;
     case "Tree": return `${sel} walk a branch · ${adj} switch branch · ${e} spend a point · ${q} refund everything`;
@@ -293,7 +309,7 @@ function tabHelp(
     case "Style": return `${sel} choose · ${adj} change · ${e} next · ${q} take it off`;
     case "Standards": return `${sel} choose a mark or a cloth · ${e} fly it, wear it or buy it`;
     case "Capsules": return `${sel} choose capsule · ${e} open · ${adj} bulk 1↔10`;
-    case "Codex": return `${sel} browse the class roster · ${adj} switch view — the full 21-class design; play one from the Path tab`;
+    case "Codex": return `${sel} browse · ${adj} switch view — the full 21-class design and, on Affixes & Stats, every stat and every affix in the game; play a class from the Path tab`;
     case "Collection": return `${sel} / ${adj} move · pure browsing, nothing to spend or equip here`;
     case "Records": return "Nothing to do here — just numbers.";
     case "Leaderboards": return `${adj} switch board · ${semi} switch class filter · self-reported, no anti-cheat`;
@@ -437,6 +453,9 @@ export class TownUI {
   /** The workbench: which op the Reforge screen will apply, and to which affix when it needs one. */
   private forgeOp: ForgeOp = "reforge";
   private forgeAffix = 0;
+  /** Which possibility chip's full explanation is expanded, by `ModRoll.id` — the
+   *  possibilities panel's own click-through into the affix glossary. */
+  private forgeAffixInfo: string | null = null;
   /**
    * The workbench moved into its own bar under the item grid (UAT feedback: it was a
    * scrolling sidebar). W/A/S/D still drive one 2-D grid at a time, so this says which
@@ -473,7 +492,7 @@ export class TownUI {
     this.forgetArmed = null;
   }
   /** Codex tab: which slice of a class's design the side panel is showing. */
-  private codexView: 0 | 1 | 2 = 0;
+  private codexView: 0 | 1 | 2 | 3 = 0;
   /**
    * Skills (docket item 12): which of the three real slots a card click or `confirm`
    * fills. The grid itself (`cursor`, into `abilityPool`) and this are independent axes,
@@ -578,6 +597,23 @@ export class TownUI {
       const shopActionEl = target.closest<HTMLElement>("[data-shop-action]");
       if (shopActionEl) {
         if (shopActionEl.dataset.shopAction === "buy") this.primary(); else this.secondary();
+        this.render();
+        return;
+      }
+      const affixInfoEl = target.closest<HTMLElement>("[data-affix-info]");
+      if (affixInfoEl) {
+        const id = affixInfoEl.dataset.affixInfo!;
+        this.forgeAffixInfo = this.forgeAffixInfo === id ? null : id;
+        this.render();
+        return;
+      }
+      // The Hero screen's stat/resist/mod rows: purely informational, so a click only
+      // ever selects (same as landing the cursor there) and never fires `primary()` the
+      // way the generic `[data-index]` fallback below would — that path unequips a
+      // gear slot or takes a relic off, which reading what a number means must not do.
+      const heroInfoEl = target.closest<HTMLElement>("[data-hero-info]");
+      if (heroInfoEl) {
+        this.cursor = Number(heroInfoEl.dataset.heroInfo);
         this.render();
         return;
       }
@@ -770,6 +806,22 @@ export class TownUI {
       if (!row) return;
       this.cursor = Number(row.dataset.index);
       this.primary();
+      this.render();
+    });
+
+    // The owner's own words for the Hero screen's stats: "I think it should pop up when
+    // I hover over the stat." The cursor-driven side panel already answers that need
+    // for keyboard players; this is the literal ask for the mouse, wired to the exact
+    // same effect (landing the cursor there) rather than a second, separate popup —
+    // `mouseover` rather than `mouseenter` because delegation on one root listener needs
+    // a bubbling event, and the `cursor === index` guard keeps moving the mouse within
+    // one row from re-rendering on every pixel.
+    this.root.addEventListener("mouseover", (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-hero-info]");
+      if (!el) return;
+      const index = Number(el.dataset.heroInfo);
+      if (index === this.cursor) return;
+      this.cursor = index;
       this.render();
     });
   }
@@ -1066,7 +1118,7 @@ export class TownUI {
       case "Stash": return this.filteredStash().length;
       case "Hero": return this.relicPicking !== null
         ? this.relicCandidates().length
-        : EQUIP_SLOTS.length + RELIC_SLOTS;
+        : EQUIP_SLOTS.length + RELIC_SLOTS + this.heroInfoRows().length;
       // The whole learnable pool, not just the three equipped slots (docket item 12) —
       // `navSkills` walks this exact array as the card grid.
       case "Skills": return this.state.player.abilityPool.length;
@@ -1078,7 +1130,7 @@ export class TownUI {
       case "Style": return STYLE_ROWS.length;
       case "Standards": return standardsFor(this.state.player, this.state.activeClassId).length + BANNER_STYLES.length;
       case "Capsules": return CAPSULE_TIERS.length;
-      case "Codex": return ALL_CLASSES.length;
+      case "Codex": return this.codexView === 3 ? this.codexAffixRows().length : ALL_CLASSES.length;
       case "Collection": return this.collectionEntries().length;
       case "Records": return 0;
       case "Leaderboards": return 0;
@@ -1153,7 +1205,8 @@ export class TownUI {
       return true;
     }
     if (this.tab === "Codex") {
-      this.codexView = (((this.codexView + dir) % 3) + 3) % 3 as 0 | 1 | 2;
+      this.codexView = (((this.codexView + dir) % 4) + 4) % 4 as 0 | 1 | 2 | 3;
+      this.cursor = 0;
       return true;
     }
     if (this.tab === "Style") return this.cycleStyle(this.cursor, dir);
@@ -1433,10 +1486,37 @@ export class TownUI {
    * `trophyPicking`) rather than stepped through blind on the doll itself. W/S enter and
    * leave the row.
    */
+  /** Every stat/resist/modifier row the Hero screen's sheet prints, in the same order
+   *  they're printed — the cursor walks this list too, past the relic row, so a
+   *  keyboard player reaches the exact explanation a mouse hover does. Read live off
+   *  the same filters the sheet's own tables already use, so a row that's on screen is
+   *  always reachable and one that isn't is never a dead cursor stop. */
+  private heroInfoRows(): ModKey[] {
+    const p = this.state.player;
+    const resistKeys = ELEMENTS.filter((e) => e !== "physical").map((e) => ELEMENT_RESIST_KEY[e]!);
+    const activeMods = MOD_KEYS.filter((mk) => !isStatKey(mk) && !isResistKey(mk) && p.mods[mk] !== 0);
+    return [...STAT_KEYS, ...resistKeys, ...activeMods];
+  }
+
   private navHero(dx: number, dy: number): boolean {
     const layout = TownUI.DOLL_LAYOUT;
-    const relicIndex = this.cursor - EQUIP_SLOTS.length;
+    const infoStart = EQUIP_SLOTS.length + RELIC_SLOTS;
+    const infoIndex = this.cursor - infoStart;
 
+    if (infoIndex >= 0) {
+      if (dx !== 0) return false; // one column of read-only rows; nothing for A/D to do
+      if (dy < 0 && infoIndex === 0) {
+        this.cursor = EQUIP_SLOTS.length; // back up onto the relic row
+        return true;
+      }
+      const rows = this.heroInfoRows();
+      const next = clamp(infoIndex + dy, 0, rows.length - 1);
+      if (next === infoIndex) return false;
+      this.cursor = infoStart + next;
+      return true;
+    }
+
+    const relicIndex = this.cursor - EQUIP_SLOTS.length;
     if (relicIndex >= 0) {
       if (dx !== 0) {
         const next = clamp(relicIndex + dx, 0, RELIC_SLOTS - 1);
@@ -1454,7 +1534,13 @@ export class TownUI {
         this.cursor = EQUIP_SLOTS.indexOf(layout[col]![bottomRow]!);
         return true;
       }
-      return false; // dy > 0: the relic row is the bottom of the doll, nothing below it
+      if (dy > 0) {
+        // Off the bottom of the doll entirely, into the sheet's own rows below it.
+        if (this.heroInfoRows().length === 0) return false;
+        this.cursor = infoStart;
+        return true;
+      }
+      return false;
     }
 
     const cur = EQUIP_SLOTS[this.cursor] ?? "weapon";
@@ -2438,7 +2524,7 @@ export class TownUI {
 
     // Keep the highlighted row on screen when the list is longer than the panel — Chests
     // scrolls horizontally instead, hence "nearest" on both axes.
-    this.root.querySelector<HTMLElement>(".row.on, .item-card.on, .doll-slot.on")
+    this.root.querySelector<HTMLElement>(".row.on, .item-card.on, .doll-slot.on, tr.on")
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (this.tab === "Party") this.bindPartyFields();
   }
@@ -3857,6 +3943,12 @@ export class TownUI {
    */
   private renderPossibilities(item: Item): string {
     const poss = forgePossibilities(item, this.forgeOp, this.forgeAffix);
+    // A pool affix's id is a `ModRoll.id` (docket: "the affix codex"); reading the same
+    // live pool the glossary itself reads means a chip here can never point at prose the
+    // Codex doesn't also have, and can never point at nothing if the mod is ever removed.
+    const affixesById = poss.draw === "affix"
+      ? new Map(allNamedAffixes().map((m) => [m.id, m]))
+      : null;
     const chips = poss.outcomes.map((o) => {
       const range = o.range
         ? `<span class="wb-pool-val">${o.range[0] === o.range[1]
@@ -3870,7 +3962,19 @@ export class TownUI {
         ? `<span class="wb-pool-gate" style="color:${RARITY_COLORS[RARITIES[o.minTier] ?? "common"]}">${
             escapeHtml(RARITIES[o.minTier] ?? "")}</span>`
         : "";
-      return `<span class="wb-pool-item"><span class="wb-pool-name">${escapeHtml(o.label)}</span>${range}${gate}</span>`;
+      const mod = affixesById?.get(o.id);
+      const open = this.forgeAffixInfo === o.id;
+      const chip = `<span class="wb-pool-item${mod ? " clickable" : ""}"${mod ? ` data-affix-info="${o.id}"` : ""}
+          title="${mod ? "click for what this actually does" : ""}">
+          <span class="wb-pool-name">${escapeHtml(o.label)}</span>${range}${gate}</span>`;
+      if (!mod || !open) return chip;
+      const a = explainAffix(mod);
+      return `${chip}<div class="wb-pool-info">
+          <p style="margin:0 0 4px">${escapeHtml(a.what.what)}</p>
+          ${a.what.detail ? `<p class="muted" style="margin:0">${escapeHtml(a.what.detail)}</p>` : ""}
+          <p class="muted" style="margin:4px 0 0">Rolls on ${escapeHtml(a.where)} · ${escapeHtml(a.gate)}
+          · full entry in the Codex's Affixes &amp; Stats view.</p>
+        </div>`;
     }).join("");
     return `<div class="wb-pool">
         <div class="wb-pool-head">
@@ -5021,6 +5125,18 @@ export class TownUI {
       </aside>`;
   }
 
+  /** The side panel for a stat/resist/mod row — the affix codex's own explanation,
+   *  read live rather than a copy kept on the Hero screen's side of the wall. */
+  private renderHeroInfoPanel(key: ModKey): string {
+    const ex = explainModKey(key);
+    return `
+      <h3>${escapeHtml(MOD_LABELS[key])}</h3>
+      <p style="margin:0 0 4px">${escapeHtml(ex.what)}</p>
+      ${ex.detail ? `<p class="muted">${escapeHtml(ex.detail)}</p>` : ""}
+      <p class="muted">Full entry, and every affix that touches it, in the Codex's
+      Affixes &amp; Stats view.</p>`;
+  }
+
   private renderHero(): string {
     if (this.relicPicking !== null) return this.renderRelicPicker(this.relicPicking);
     const p = this.state.player;
@@ -5055,25 +5171,44 @@ export class TownUI {
         </div>
       </div>`;
 
+    // Every stat/resist/mod row is also a cursor stop and a hover target — the affix
+    // codex's explanation for whatever the cursor is on, reached the same way whether
+    // it got there by W/A/S/D or by the mouse (docket: the owner asked specifically for
+    // hover here). `infoRows` is `heroInfoRows()`'s own order; a running counter walks
+    // it in step with the three tables below rather than re-deriving each row's index.
+    const infoStart = EQUIP_SLOTS.length + RELIC_SLOTS;
+    const infoRows = this.heroInfoRows();
+    const infoIndex = this.cursor - infoStart;
+    let infoI = 0;
+    const infoRow = (label: string, valueCells: string): string => {
+      const key = infoRows[infoI]!;
+      const idx = infoStart + infoI;
+      infoI++;
+      return `<tr class="${idx === this.cursor ? "on" : ""}" data-hero-info="${idx}"
+          title="${escapeHtml(explainModKey(key).what)}"><td>${label}</td>${valueCells}</tr>`;
+    };
+
     const relicSlot = this.cursor - EQUIP_SLOTS.length;
     const selSlot = EQUIP_SLOTS[this.cursor];
     const selItem = selSlot ? p.equipment[selSlot] : undefined;
-    const selPanel = relicSlot >= 0
-      ? this.renderRelicSlotPanel(relicSlot)
-      : selItem
-        ? this.renderEquipped(selItem)
-        : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
-         Open the Stash to fill it — ${k(this.state.settings, "confirm")} on a slot takes the piece off.</p>`;
+    const selPanel = infoIndex >= 0
+      ? this.renderHeroInfoPanel(infoRows[infoIndex]!)
+      : relicSlot >= 0
+        ? this.renderRelicSlotPanel(relicSlot)
+        : selItem
+          ? this.renderEquipped(selItem)
+          : `<h3>${selSlot ?? "slot"}</h3><p class="muted">Nothing equipped here.
+           Open the Stash to fill it — ${k(this.state.settings, "confirm")} on a slot takes the piece off.</p>`;
 
     const s = p.stats;
-    const statRows = STAT_KEYS.map((k) => `<tr><td>${STAT_LABELS[k]}</td><td>${s[k]}</td></tr>`).join("");
+    const statRows = STAT_KEYS.map((sk) => infoRow(STAT_LABELS[sk], `<td>${s[sk]}</td>`)).join("");
 
     const resists = p.resists;
     const resistRows = ELEMENTS.filter((e) => e !== "physical").map((e) => {
       const flat = Math.round(resists[e]);
       const pct = (resistFraction(flat) * 100).toFixed(0);
-      return `<tr><td style="color:${ELEMENT_COLORS[e]}">${ELEMENT_LABELS[e]}</td>
-        <td>${flat}</td><td class="${flat > 0 ? "up" : "muted"}">${pct}%</td></tr>`;
+      return infoRow(`<span style="color:${ELEMENT_COLORS[e]}">${ELEMENT_LABELS[e]}</span>`,
+        `<td>${flat}</td><td class="${flat > 0 ? "up" : "muted"}">${pct}%</td>`);
     }).join("");
 
     const elemental = Object.entries(p.elementalDamage);
@@ -5084,8 +5219,10 @@ export class TownUI {
       : '<span class="muted">none — your hits are plain physical</span>';
 
     // Only the modifiers that are actually doing something, so the panel stays honest.
-    const combatRows = MOD_KEYS.filter((k) => !isStatKey(k) && !isResistKey(k) && p.mods[k] !== 0)
-      .map((k) => `<tr><td>${escapeHtml(shortLabel(k))}</td><td>${fmtMod(k, p.mods[k])}</td></tr>`)
+    // Must walk the identical filter `heroInfoRows()` used, in the identical order, or
+    // `infoRow`'s shared counter reads the wrong key against the wrong table row.
+    const combatRows = MOD_KEYS.filter((mk) => !isStatKey(mk) && !isResistKey(mk) && p.mods[mk] !== 0)
+      .map((mk) => infoRow(escapeHtml(shortLabel(mk)), `<td>${fmtMod(mk, p.mods[mk])}</td>`))
       .join("");
 
     const weapon = p.weapon;
@@ -5824,8 +5961,144 @@ export class TownUI {
    * asks for — class → resource → role → damage → mechanic → ultimate → paths → hybrids
    * — plus a drill-down into each class's ten skills and its hybrid/archetype builds.
    */
+  /** One row of the Codex's "Affixes & Stats" view — one continuous cursor-indexed list
+   *  across four groups, the same shape `renderDive`'s depth list uses for its layer
+   *  bands: a group header carries no `data-index`, so it can never be landed on. */
+  private codexAffixRows(): CodexAffixRow[] {
+    const affixes = allNamedAffixes();
+    // A combat mod nothing in `MOD_POOL`/`RESERVED_ELEMENTAL_MODS` grants is one class
+    // and tree effects hand out but no dropped item ever will — computed against the
+    // live pools rather than a list kept by hand, so a mod added to either pool falls
+    // out of this group on its own the moment it does.
+    const unitemized = COMBAT_MOD_KEYS.filter((k) => !affixes.some((m) => m.key === k));
+    return [
+      ...STAT_KEYS.map((key): CodexAffixRow => ({ kind: "stat", key })),
+      ...affixes.map((mod): CodexAffixRow => ({ kind: "affix", mod })),
+      ...unitemized.map((key): CodexAffixRow => ({ kind: "unitemized", key })),
+      ...ELEMENTS.map((element): CodexAffixRow => ({ kind: "element", element })),
+    ];
+  }
+
+  private renderAffixCodex(): string {
+    const VIEWS = ["Overview", "Skills", "Builds", "Affixes & Stats"] as const;
+    const entries = this.codexAffixRows();
+    const rows: string[] = [];
+    let group: CodexAffixRow["kind"] | null = null;
+    const groupLabel: Record<CodexAffixRow["kind"], string> = {
+      stat: "The six stats",
+      affix: "Named affixes — what a prefix or suffix actually rolls",
+      unitemized: "Class and tree only — not on a dropped affix yet",
+      element: "Elements and their ailments",
+    };
+    let i = 0;
+    for (const entry of entries) {
+      if (entry.kind !== group) {
+        group = entry.kind;
+        rows.push(`<div class="group">${escapeHtml(groupLabel[group])}</div>`);
+      }
+      const index = i++;
+      const on = index === this.cursor;
+      const { name, color, side } = this.codexAffixRowLine(entry);
+      rows.push(`
+        <div class="row ${on ? "on" : ""}" data-index="${index}">
+          <div class="row-main"><span class="name" style="color:${color}">${escapeHtml(name)}</span></div>
+          <div class="row-side" style="color:#8b93a2">${escapeHtml(side)}</div>
+        </div>`);
+    }
+
+    const sel = entries[this.cursor];
+    const tabs = VIEWS.map((v, vi) =>
+      `<span class="chip ${vi === this.codexView ? "on" : ""}" data-action="${vi === 0 ? "left" : "right"}">${v}</span>`,
+    ).join(" ");
+
+    return `<div class="list">${rows.join("")}</div>
+      <aside class="side">
+        <h3>Affixes &amp; Stats</h3>
+        <p>${tabs}</p>
+        ${sel ? this.renderAffixCodexDetail(sel) : '<p class="muted">Pick a row.</p>'}
+      </aside>`;
+  }
+
+  /** The name and one-line gist a row shows in the list, before it's selected. */
+  private codexAffixRowLine(entry: CodexAffixRow): { name: string; color: string; side: string } {
+    switch (entry.kind) {
+      case "stat":
+        return { name: STAT_LABELS[entry.key], color: "#e2e8f0", side: STAT_EXPLANATIONS[entry.key].what.split(".")[0]! };
+      case "affix": {
+        const a = explainAffix(entry.mod);
+        return {
+          name: a.name,
+          color: a.reserved ? "#9aa4b2" : "#e2e8f0",
+          side: `${MOD_LABELS[a.key]}${entry.mod.minTier > 0 ? ` · ${a.gate}` : ""}`,
+        };
+      }
+      case "unitemized":
+        return { name: MOD_LABELS[entry.key], color: "#5a6270", side: "class / tree only" };
+      case "element":
+        return {
+          name: ELEMENT_LABELS[entry.element],
+          color: ELEMENT_COLORS[entry.element],
+          side: entry.element === "physical" ? "the baseline"
+            : rollsOnGear(entry.element) ? "on random gear" : "reserved",
+        };
+    }
+  }
+
+  /** The full explanation for whichever row is selected. */
+  private renderAffixCodexDetail(entry: CodexAffixRow): string {
+    const block = (title: string, color: string, sub: string, ex: Explanation, extra = "") => `
+      <div class="cmp-hero" style="--r:${color}">
+        <div><h3 style="color:${color};margin:0">${escapeHtml(title)}</h3>
+        <p class="muted" style="margin:2px 0 0">${escapeHtml(sub)}</p></div>
+      </div>
+      <p style="margin:0 0 4px">${escapeHtml(ex.what)}</p>
+      ${ex.detail ? `<p class="muted" style="margin:0 0 4px">${escapeHtml(ex.detail)}</p>` : ""}
+      ${extra}`;
+    switch (entry.kind) {
+      case "stat":
+        return block(STAT_LABELS[entry.key], "#e2e8f0", "one of the six sheet stats", STAT_EXPLANATIONS[entry.key]);
+      case "affix": {
+        const a = explainAffix(entry.mod);
+        const color = a.reserved ? "#9aa4b2" : "#e2e8f0";
+        const gateRarity = RARITIES[entry.mod.minTier] ?? "common";
+        return block(
+          a.name, color, `${a.kind === "prefix" ? "prefix" : "suffix"} · ${MOD_LABELS[a.key]}`, a.what,
+          `<table class="cmp"><tr><td>Rolls on</td><td>${escapeHtml(a.where)}</td></tr>
+           <tr><td>Rarity</td><td>${escapeHtml(a.gate)}</td></tr>
+           <tr><td>As it gets rarer</td><td>${escapeHtml(a.scale)}</td></tr></table>
+           <p class="muted">An item that can carry this rolls ${escapeHtml(affixCountLine(gateRarity))}
+           affixes total at ${escapeHtml(rarityLabel(gateRarity))} — this is never guaranteed to be
+           one of them.</p>
+           ${a.reserved ? '<p class="muted">Authored the same as the other five elements — not a lesser version — it just doesn\'t turn up as an unrequested roll on ordinary gear.</p>' : ""}`,
+        );
+      }
+      case "unitemized":
+        return block(
+          MOD_LABELS[entry.key], "#5a6270", "class and tree only, for now", explainCombatKey(entry.key),
+          `<p class="muted">No dropped item currently carries this — it comes from your class,
+           the tree, or a relic instead. That's a roster gap, not a hidden rule: nothing says it
+           has to stay that way.</p>`,
+        );
+      case "element": {
+        const ex = explainElement(entry.element);
+        const color = ELEMENT_COLORS[entry.element];
+        return block(
+          ELEMENT_LABELS[entry.element], color,
+          entry.element === "physical" ? "the baseline damage type"
+            : rollsOnGear(entry.element) ? "rolls on random gear" : "reserved — kit or craft only",
+          ex,
+        );
+      }
+    }
+  }
+
   private renderCodex(): string {
-    const VIEWS = ["Overview", "Skills", "Builds"] as const;
+    // "Affixes & Stats" reads a completely different roster (every stat and affix in the
+    // game, not a selected class), so it's its own render path rather than a fourth
+    // branch woven into the class one below — the class rows, the class row count and
+    // this view's row count would otherwise have to agree on what `this.cursor` means.
+    if (this.codexView === 3) return this.renderAffixCodex();
+    const VIEWS = ["Overview", "Skills", "Builds", "Affixes & Stats"] as const;
     const rows = ALL_CLASSES.map((def, i) => {
       const color = CLASSES[def.classId as ClassId]?.color ?? "#9aa4b2";
       const m = classMatrixRow(def);

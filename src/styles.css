@@ -421,6 +421,11 @@ html, body {
 .cmp td { padding: 3px 0; font-size: 12px; }
 .cmp td:first-child { color: var(--muted); }
 .cmp td:not(:first-child) { text-align: right; }
+/* A row that's also a cursor stop into the affix codex (the Hero screen's sheet) —
+   selected via keyboard, click or hover, all the same effect. */
+.cmp tr[data-hero-info] { cursor: pointer; }
+.cmp tr[data-hero-info].on td { color: var(--accent); }
+.cmp tr[data-hero-info].on td:first-child { color: var(--accent); }
 .cmp.wide td { padding: 7px 0; border-bottom: 1px solid var(--line); }
 /* The Path screen's trophy shelf (Challenger completion badges): twenty pips per row is
    wider than an ordinary `.cmp` value, so the pip column runs a size smaller. Left free
@@ -1358,6 +1363,20 @@ html, body {
 .wb-pool-name { color: var(--text); }
 .wb-pool-val { color: var(--muted); }
 .wb-pool-gate { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; }
+.wb-pool-item.clickable { cursor: pointer; }
+.wb-pool-item.clickable:hover { border-color: var(--accent); }
+/* The affix codex's answer to "what does this actually do", expanded in place —
+   full width so it drops onto its own line inside the chip list's flex-wrap. */
+.wb-pool-info {
+  flex-basis: 100%;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
 
 /* --- the action bar (docket §15) ---------------------------------------
    The owner's third report in this family, so this is the settled shape: the one control

@@ -483,6 +483,60 @@ says so outright"). That doc is a proposal page rather than a live design record
 branch adds a one-line resolution note at its head rather than rewriting a proposal after the
 fact. `docs/relics.md` — the live design record — has been rewritten properly.
 
+## 7. Two small factual corrections, found while building the affix codex
+
+**Branch:** `feat/affix-codex`. Both found by cross-checking `CLAUDE.md`'s prose against
+`src/data/mods.ts`/`items.ts`/`player.ts` directly while writing a screen whose entire job
+is to read those files live — the same shape as §6's "the code changed under the
+sentence," except here the sentence was never true to begin with.
+
+### 7a. The rarity gate example is off by one rarity
+
+**Current text** (`CLAUDE.md`, "Items are modifier lists, not stat blocks"):
+
+> - `+1 projectile` doesn't exist below **epic**; `+1 ultimate bounce` doesn't below
+>   **mythic**.
+
+**What's actually true:** `+1 projectile` (`MOD_POOL`'s `"splitting"`, key `projectiles`)
+gates at `minTier: 4` — **legendary**, not epic. The epic-gated one (`minTier: 3`) is
+`+1 pierce` (`"piercing"`, "of Skewering"). The `+1 ultimate bounce` half of the sentence
+is correct as written (`"rebounding"`, `minTier: 5`, mythic).
+
+**Proposed text:**
+
+> - `+1 pierce` doesn't exist below **epic**; `+1 projectile` doesn't below **legendary**;
+>   `+1 ultimate bounce` doesn't below **mythic**.
+
+**Why this shape of mistake is worth naming, not just fixing:** the argument the sentence
+makes ("a whole extra thing doesn't exist below some rarity, which is why the chase keeps
+going") is still correct — only the specific example drifted from the data it illustrates.
+Nobody re-checks an illustration once the point it's making still sounds right.
+
+### 7b. Defense doesn't actually cap at 75% — only elemental resistance does
+
+**Current text** (`CLAUDE.md`, "Elemental damage, ailments and resistance"):
+
+> Resistance is asymptotic and capped at 75%, exactly like armor.
+
+**What's actually true:** elemental resistance genuinely hard-caps at 75%
+(`RESIST_CAP` in `elements.ts`, enforced by `Math.min` in `resistFraction`). Defense's own
+mitigation (`damageReduction = def / (def + 120)` in `player.ts`) is asymptotic **toward
+100%**, with no clamp anywhere in the formula — "exactly like armor" has the comparison
+backwards; armor is the one of the two that isn't capped. In practice nobody has likely
+stacked defense anywhere near the point this would read differently (roughly 1080 defense
+for 90% mitigation), which is probably why it's gone unnoticed.
+
+**Proposed text:**
+
+> Elemental resistance is asymptotic and hard-capped at 75%. Defense's own mitigation
+> (`def / (def + 120)`) is asymptotic the same way but **not** capped — it keeps
+> approaching 100% the more of it you stack, just with steadily smaller returns.
+
+**Why this one is lower-stakes but still worth fixing:** nobody has hit the difference in
+practice, but the affix codex now states defense's real behaviour to players directly (it
+reads the formula live, the same as it reads everything else) — a `CLAUDE.md` that says the
+opposite would be visibly wrong the moment someone compared the two.
+
 ---
 
 ## Summary for a fast read
@@ -496,6 +550,8 @@ fact. `docs/relics.md` — the live design record — has been rewritten properl
 | 5 | Difficulty philosophy — the reachable band's ruling | Found in full, on the branch (§11) | `investigate/power-curve2` (never merged) | No — and gated on `docs/reachable-band-decision.md`'s own pending re-confirmation; don't apply either until that clears |
 | 6 | THE MAP-WIPE RULE (new passage, not a replacement) | Written on the branch; **reverted from `CLAUDE.md` and rewritten against the final state** | `fix/no-mapwipe` | No. Sibling to THE EXECUTE RULE; the code is green and independent of this text |
 | 7 | Relic slots bullet — "No level gate" is now false | Written fresh against the shipped code on the branch; a factual correction, not a proposal | `feat/relic-level-gate` | No. The code is green and independent of this text |
+
+| 7 | Two one-line factual corrections (rarity gate example; defense vs. resistance cap) | Found cross-checking `CLAUDE.md` against `mods.ts`/`items.ts`/`player.ts` while building the affix codex | `feat/affix-codex` | No — both are narrow, mechanical corrections rather than design drafts |
 
 **On drafts 2 and 3 specifically:** these were reported not-found in the first pass of this
 page, and the PM asked me to write them once it was confirmed nobody had. They are not
